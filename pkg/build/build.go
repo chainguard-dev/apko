@@ -52,13 +52,31 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
 	bc.Summarize()
 
 	// initialize apk
-	bc.InitApkDb()
-	bc.InitApkKeyring()
-	bc.InitApkRepositories()
-	bc.InitApkWorld()
+	err = bc.InitApkDb()
+	if err != nil {
+		log.Fatalf("failed to initialize apk database: %v", err)
+	}
+
+	err = bc.InitApkKeyring()
+	if err != nil {
+		log.Fatalf("failed to initialize apk keyring: %v", err)
+	}
+
+	err = bc.InitApkRepositories()
+	if err != nil {
+		log.Fatalf("failed to initialize apk repositories: %v", err)
+	}
+
+	err = bc.InitApkWorld()
+	if err != nil {
+		log.Fatalf("failed to initialize apk world: %v", err)
+	}
 
 	// sync reality with desired apk world
-	bc.FixateApkWorld()
+	err = bc.FixateApkWorld()
+	if err != nil {
+		log.Fatalf("failed to fixate apk world: %v", err)
+	}
 
         return nil
 }
