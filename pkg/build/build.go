@@ -32,23 +32,23 @@ func (bc *BuildContext) Summarize() {
 }
 
 func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
-	bc := BuildContext{}
-
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic, err := LoadImageConfiguration(configFile)
 	if err != nil {
 		log.Fatalf("failed to load image configuration: %v", err)
 	}
-	bc.ImageConfiguration = ic
 
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		log.Fatalf("failed to create working directory: %v", err)
 	}
-	bc.WorkDir = wd
-	defer os.RemoveAll(bc.WorkDir)
+	defer os.RemoveAll(wd)
 
+	bc := BuildContext{
+		ImageConfiguration: ic,
+		WorkDir: wd,
+	}
 	bc.Summarize()
 
 	// initialize apk
