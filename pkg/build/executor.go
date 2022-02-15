@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cli
+package build
 
 import (
-	"github.com/spf13/cobra"
-	"sigs.k8s.io/release-utils/version"
+	"log"
+	"os/exec"
 )
 
-func New() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:			"apko",
-		DisableAutoGenTag:	true,
-		SilenceUsage:		true,
+func Execute(name string, arg... string) error {
+	cmd := exec.Command(name, arg...)
+	log.Printf("running: %v", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	cmd.AddCommand(Build())
-	cmd.AddCommand(version.Version())
-	return cmd
+	log.Printf("[%s] %s", name, output)
+	return nil
 }

@@ -16,17 +16,20 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-	"sigs.k8s.io/release-utils/version"
+	"chainguard.dev/apko/pkg/build"
 )
 
-func New() *cobra.Command {
+func Build() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:			"apko",
-		DisableAutoGenTag:	true,
-		SilenceUsage:		true,
+		Use:			"build",
+		Short:			"Build an image from a YAML configuration file",
+		Long:			"Build an image from a YAML configuration file",
+		Example:		`  apko build <config.yaml> <image>`,
+		Args:			cobra.ExactArgs(2),
+		RunE:			func(cmd *cobra.Command, args[] string) error {
+						return build.BuildCmd(cmd.Context(), args[0], args[1])
+					},
 	}
 
-	cmd.AddCommand(Build())
-	cmd.AddCommand(version.Version())
 	return cmd
 }
