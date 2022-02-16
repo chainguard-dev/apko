@@ -73,5 +73,7 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 		return errors.Wrap(err, "unable to write OCI image to disk")
 	}
 
+	log.Printf("output OCI image file to %s", outputTarGZ)
+
 	return nil
 }
