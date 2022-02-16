@@ -15,9 +15,9 @@
 package build
 
 import (
-	"log"
 	"os"
 
+	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,12 +41,12 @@ func LoadImageConfiguration(imageConfigPath string) (ImageConfiguration, error) 
 
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
-		log.Fatalf("failed to read file %s: %v", imageConfigPath, err)
+		return ic, errors.Wrap(err, "failed to read image configuration file")
 	}
 
 	err = yaml.Unmarshal(data, &ic)
 	if err != nil {
-		log.Fatalf("failed to parse file %s: %v", imageConfigPath, err)
+		return ic, errors.Wrap(err, "failed to parse image configuration")
 	}
 
 	return ic, nil

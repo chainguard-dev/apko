@@ -18,6 +18,8 @@ import (
 	"context"
 	"log"
 	"os"
+
+	"github.com/pkg/errors"
 )
 
 type BuildContext struct {
@@ -36,12 +38,12 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
 
 	ic, err := LoadImageConfiguration(configFile)
 	if err != nil {
-		log.Fatalf("failed to load image configuration: %v", err)
+		return errors.Wrap(err, "failed to load image configuration")
 	}
 
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
-		log.Fatalf("failed to create working directory: %v", err)
+		return errors.Wrap(err, "failed to create working directory")
 	}
 	defer os.RemoveAll(wd)
 
@@ -54,28 +56,28 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
 	// initialize apk
 	err = bc.InitApkDb()
 	if err != nil {
-		log.Fatalf("failed to initialize apk database: %v", err)
+		return errors.Wrap(err, "failed to initialize apk database")
 	}
 
 	err = bc.InitApkKeyring()
 	if err != nil {
-		log.Fatalf("failed to initialize apk keyring: %v", err)
+		return errors.Wrap(err, "failed to initialize apk keyring")
 	}
 
 	err = bc.InitApkRepositories()
 	if err != nil {
-		log.Fatalf("failed to initialize apk repositories: %v", err)
+		return errors.Wrap(err, "failed to initialize apk repositories")
 	}
 
 	err = bc.InitApkWorld()
 	if err != nil {
-		log.Fatalf("failed to initialize apk world: %v", err)
+		return errors.Wrap(err, "failed to initialize apk world")
 	}
 
 	// sync reality with desired apk world
 	err = bc.FixateApkWorld()
 	if err != nil {
-		log.Fatalf("failed to fixate apk world: %v", err)
+		return errors.Wrap(err, "failed to fixate apk world")
 	}
 
         return nil

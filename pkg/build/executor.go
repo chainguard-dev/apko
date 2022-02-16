@@ -17,6 +17,8 @@ package build
 import (
 	"log"
 	"os/exec"
+
+	"github.com/pkg/errors"
 )
 
 func Execute(name string, arg... string) error {
@@ -25,7 +27,7 @@ func Execute(name string, arg... string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatal(err)
+		return errors.Wrapf(err, "failed to run %s", name)
 	}
 
 	log.Printf("[%s] %s", name, output)

@@ -18,6 +18,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
@@ -39,7 +41,7 @@ func (bc *BuildContext) InitApkKeyring() error {
 
 	err := os.MkdirAll(bc.WorkDir + "/etc/apk/keys", 0755)
 	if err != nil {
-		log.Fatal(err)
+		return errors.Wrap(err, "failed to make keys dir")
 	}
 
 	for _, element := range bc.ImageConfiguration.Contents.Keyring {
@@ -47,12 +49,12 @@ func (bc *BuildContext) InitApkKeyring() error {
 
 		data, err := os.ReadFile(element)
 		if err != nil {
-			log.Fatal(err)
+			return errors.Wrap(err, "failed to read apk key")
 		}
 
 		err = os.WriteFile(bc.WorkDir + "/" + element, data, 0644)
 		if err != nil {
-			log.Fatal(err)
+			return errors.Wrap(err, "failed to write apk key")
 		}
 	}
 
@@ -66,7 +68,7 @@ func (bc *BuildContext) InitApkRepositories() error {
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories[:], "\n")
 	err := os.WriteFile(bc.WorkDir + "/etc/apk/repositories", []byte(data), 0644)
 	if err != nil {
-		log.Fatalf("while writing apk repositories: %v", err)
+		return errors.Wrap(err, "failed to write apk repositories list")
 	}
 
 	return nil
@@ -79,7 +81,7 @@ func (bc *BuildContext) InitApkWorld() error {
 	data := strings.Join(bc.ImageConfiguration.Contents.Packages[:], "\n")
 	err := os.WriteFile(bc.WorkDir + "/etc/apk/world", []byte(data), 0644)
 	if err != nil {
-		log.Fatalf("while writing apk world: %v", err)
+		return errors.Wrap(err, "failed to write apk world")
 	}
 
 	return nil
