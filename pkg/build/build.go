@@ -20,6 +20,8 @@ import (
 	"os"
 
 	"chainguard.dev/apko/pkg/tarball"
+	"chainguard.dev/apko/pkg/build/oci"
+
 	"github.com/pkg/errors"
 )
 
@@ -99,5 +101,10 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 	}
 	defer os.Remove(layerTarGZ)
 
-        return nil
+	err = oci.BuildImageRefFromLayer(imageRef, layerTarGZ, outputTarGZ)
+	if err != nil {
+		return errors.Wrap(err, "failed to build OCI image")
+	}
+
+	return nil
 }
