@@ -26,12 +26,52 @@ import (
 type BuildContext struct {
 	ImageConfiguration	ImageConfiguration
 	WorkDir			string
+	TarballPath		string
 }
 
 func (bc *BuildContext) Summarize() {
 	log.Printf("build context:")
 	log.Printf("  image configuration: %v", bc.ImageConfiguration)
 	log.Printf("  working directory: %v", bc.WorkDir)
+	log.Printf("  tarball path: %v", bc.TarballPath)
+}
+
+func (bc *BuildContext) BuildTarball() (string, error) {
+	var outfile *os.File
+	var err error
+
+	if bc.TarballPath != "" {
+		outfile, err = os.Create(bc.TarballPath)
+	} else {
+		outfile, err = os.CreateTemp("", "apko-*.tar.gz")
+	}
+	if err != nil {
+		return "", errors.Wrap(err, "opening the build context tarball path failed")
+	}
+	defer outfile.Close()
+
+	err = tarball.WriteArchive(bc.WorkDir, outfile)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to generate tarball for image")
+	}
+
+	log.Printf("built image layer tarball as %s", outfile.Name())
+	return outfile.Name(), nil
+}
+
+func (bc *BuildContext) BuildLayer() (string, error) {
+	bc.Summarize()
+
+	// build image filesystem
+	bc.BuildImage()
+
+	// build layer tarball
+	layerTarGZ, err := bc.BuildTarball()
+	if err != nil {
+		return "", err
+	}
+
+	return layerTarGZ, nil
 }
 
 func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
@@ -52,25 +92,12 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
 		ImageConfiguration: ic,
 		WorkDir: wd,
 	}
-	bc.Summarize()
 
-	// build image filesystem
-	bc.BuildImage()
-
-	// build layer tarball
-	outfile, err := os.CreateTemp("", "apko-*.tar.gz")
+	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
-		return errors.Wrap(err, "opening a temporary file failed")
+		return errors.Wrap(err, "failed to build layer image")
 	}
-	defer outfile.Close()
-
-	err = tarball.WriteArchive(bc.WorkDir, outfile)
-	if err != nil {
-		return errors.Wrap(err, "failed to generate tarball for image")
-	}
-//	defer os.Remove(outfile.Name())
-
-	log.Printf("built image layer tarball as %s", outfile.Name())
+	defer os.Remove(layerTarGZ)
 
         return nil
 }
