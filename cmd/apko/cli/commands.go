@@ -27,6 +27,7 @@ func New() *cobra.Command {
 	}
 
 	cmd.AddCommand(Build())
+	cmd.AddCommand(BuildMinirootFS())
 	cmd.AddCommand(version.Version())
 	return cmd
 }
