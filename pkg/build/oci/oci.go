@@ -68,6 +68,20 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 		return errors.Wrap(err, "unable to validate image reference tag")
 	}
 
+	cfg, err := v1Image.ConfigFile()
+	if err != nil {
+		return errors.Wrap(err, "unable to get OCI config file")
+	}
+
+	cfg = cfg.DeepCopy()
+	cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
+	cfg.Author = "github.com/chainguard-dev/apko"
+
+	v1Image, err = mutate.ConfigFile(v1Image, cfg)
+	if err != nil {
+		return errors.Wrap(err, "unable to update OCI config file")
+	}
+
 	err = v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image)
 	if err != nil {
 		return errors.Wrap(err, "unable to write OCI image to disk")
