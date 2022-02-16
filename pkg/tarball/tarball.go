@@ -80,19 +80,12 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 
 // Writes a tarball to a temporary file.  Caller's responsibility to
 // clean it up when it's done with it.
-func WriteArchive(src string) (string, error) {
-	outfile, err := os.CreateTemp("", "apko-*.tar.gz")
-	if err != nil {
-		return "", errors.Wrap(err, "opening a temporary file failed")
-	}
-	defer outfile.Close()
-
+func WriteArchive(src string, w io.Writer) error {
 	fs := os.DirFS(src)
-	err = WriteArchiveFromFS(src, fs, outfile)
+	err := WriteArchiveFromFS(src, fs, w)
 	if err != nil {
-		return "", errors.Wrap(err, "writing TAR archive failed")
+		return errors.Wrap(err, "writing TAR archive failed")
 	}
 
-	filename := outfile.Name()
-	return filename, nil
+	return nil
 }

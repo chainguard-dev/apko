@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 
+	"chainguard.dev/apko/pkg/tarball"
 	"github.com/pkg/errors"
 )
 
@@ -53,32 +54,23 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
 	}
 	bc.Summarize()
 
-	// initialize apk
-	err = bc.InitApkDb()
-	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk database")
-	}
+	// build image filesystem
+	bc.BuildImage()
 
-	err = bc.InitApkKeyring()
+	// build layer tarball
+	outfile, err := os.CreateTemp("", "apko-*.tar.gz")
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk keyring")
+		return errors.Wrap(err, "opening a temporary file failed")
 	}
+	defer outfile.Close()
 
-	err = bc.InitApkRepositories()
+	err = tarball.WriteArchive(bc.WorkDir, outfile)
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk repositories")
+		return errors.Wrap(err, "failed to generate tarball for image")
 	}
+//	defer os.Remove(outfile.Name())
 
-	err = bc.InitApkWorld()
-	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk world")
-	}
-
-	// sync reality with desired apk world
-	err = bc.FixateApkWorld()
-	if err != nil {
-		return errors.Wrap(err, "failed to fixate apk world")
-	}
+	log.Printf("built image layer tarball as %s", outfile.Name())
 
         return nil
 }
