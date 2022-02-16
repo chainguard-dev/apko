@@ -24,10 +24,10 @@ func Build() *cobra.Command {
 		Use:			"build",
 		Short:			"Build an image from a YAML configuration file",
 		Long:			"Build an image from a YAML configuration file",
-		Example:		`  apko build <config.yaml> <image>`,
-		Args:			cobra.ExactArgs(2),
+		Example:		`  apko build <config.yaml> <tag> <output.tar.gz>`,
+		Args:			cobra.ExactArgs(3),
 		RunE:			func(cmd *cobra.Command, args[] string) error {
-						return build.BuildCmd(cmd.Context(), args[0], args[1])
+						return build.BuildCmd(cmd.Context(), args[0], args[1], args[2])
 					},
 	}
 

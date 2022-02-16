@@ -74,7 +74,7 @@ func (bc *BuildContext) BuildLayer() (string, error) {
 	return layerTarGZ, nil
 }
 
-func BuildCmd(ctx context.Context, configFile string, imageRef string) error {
+func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic, err := LoadImageConfiguration(configFile)
