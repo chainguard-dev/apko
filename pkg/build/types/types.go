@@ -12,28 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package types
 
-import (
-	"os"
-
-	"chainguard.dev/apko/pkg/build/types"
-	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
-)
-
-func LoadImageConfiguration(imageConfigPath string) (types.ImageConfiguration, error) {
-	ic := types.ImageConfiguration{}
-
-	data, err := os.ReadFile(imageConfigPath)
-	if err != nil {
-		return ic, errors.Wrap(err, "failed to read image configuration file")
+type ImageConfiguration struct {
+	Contents struct {
+		Repositories []string
+		Keyring []string
+		Packages []string
 	}
+	Entrypoint struct {
+		Type string
+		Command string
 
-	err = yaml.Unmarshal(data, &ic)
-	if err != nil {
-		return ic, errors.Wrap(err, "failed to parse image configuration")
+		// TBD: presently a map of service names and the command to run
+		Services map[interface{}]interface{}
 	}
-
-	return ic, nil
 }
+

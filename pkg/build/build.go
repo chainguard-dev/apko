@@ -21,12 +21,13 @@ import (
 
 	"chainguard.dev/apko/pkg/tarball"
 	"chainguard.dev/apko/pkg/build/oci"
+	"chainguard.dev/apko/pkg/build/types"
 
 	"github.com/pkg/errors"
 )
 
 type BuildContext struct {
-	ImageConfiguration	ImageConfiguration
+	ImageConfiguration	types.ImageConfiguration
 	WorkDir			string
 	TarballPath		string
 }
