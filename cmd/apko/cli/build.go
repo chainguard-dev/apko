@@ -15,8 +15,14 @@
 package cli
 
 import (
+	"context"
+	"log"
+	"os"
+
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/build/oci"
 )
 
 func Build() *cobra.Command {
@@ -27,9 +33,42 @@ func Build() *cobra.Command {
 		Example:		`  apko build <config.yaml> <tag> <output.tar.gz>`,
 		Args:			cobra.ExactArgs(3),
 		RunE:			func(cmd *cobra.Command, args[] string) error {
-						return build.BuildCmd(cmd.Context(), args[0], args[1], args[2])
+						return BuildCmd(cmd.Context(), args[0], args[1], args[2])
 					},
 	}
 
 	return cmd
+}
+
+func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
+	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
+
+	ic, err := build.LoadImageConfiguration(configFile)
+	if err != nil {
+		return errors.Wrap(err, "failed to load image configuration")
+	}
+
+	wd, err := os.MkdirTemp("", "apko-*")
+	if err != nil {
+		return errors.Wrap(err, "failed to create working directory")
+	}
+	defer os.RemoveAll(wd)
+
+	bc := build.BuildContext{
+		ImageConfiguration: ic,
+		WorkDir: wd,
+	}
+
+	layerTarGZ, err := bc.BuildLayer()
+	if err != nil {
+		return errors.Wrap(err, "failed to build layer image")
+	}
+	defer os.Remove(layerTarGZ)
+
+	err = oci.BuildImageRefFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration)
+	if err != nil {
+		return errors.Wrap(err, "failed to build OCI image")
+	}
+
+	return nil
 }

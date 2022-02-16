@@ -15,12 +15,10 @@
 package build
 
 import (
-	"context"
 	"log"
 	"os"
 
 	"chainguard.dev/apko/pkg/tarball"
-	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 
 	"github.com/pkg/errors"
@@ -75,37 +73,4 @@ func (bc *BuildContext) BuildLayer() (string, error) {
 	}
 
 	return layerTarGZ, nil
-}
-
-func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
-	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
-
-	ic, err := LoadImageConfiguration(configFile)
-	if err != nil {
-		return errors.Wrap(err, "failed to load image configuration")
-	}
-
-	wd, err := os.MkdirTemp("", "apko-*")
-	if err != nil {
-		return errors.Wrap(err, "failed to create working directory")
-	}
-	defer os.RemoveAll(wd)
-
-	bc := BuildContext{
-		ImageConfiguration: ic,
-		WorkDir: wd,
-	}
-
-	layerTarGZ, err := bc.BuildLayer()
-	if err != nil {
-		return errors.Wrap(err, "failed to build layer image")
-	}
-	defer os.Remove(layerTarGZ)
-
-	err = oci.BuildImageRefFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration)
-	if err != nil {
-		return errors.Wrap(err, "failed to build OCI image")
-	}
-
-	return nil
 }
