@@ -24,12 +24,12 @@ e.g. `crane`.
 
 To build an image, use the `apko build` command:
 
-   # apko build config.yaml tag output.tar
+    # apko build config.yaml tag output.tar
 
 This will give you a Docker-style tarball which you can use with
 `docker load`:
 
-   # docker load < output.tar
+    # docker load < output.tar
 
 You need root, or at least fakeroot + fakechroot to build images
 with apko, due to apk-tools' use of chroot(2).
