@@ -18,6 +18,7 @@ import (
 	"log"
 	"time"
 
+	"chainguard.dev/apko/pkg/build/types"
 	"github.com/pkg/errors"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -26,7 +27,7 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ string) error {
+func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
 	log.Printf("building OCI image '%s' from layer '%s'", imageRef, layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
@@ -74,8 +75,15 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 	}
 
 	cfg = cfg.DeepCopy()
-	cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
 	cfg.Author = "github.com/chainguard-dev/apko"
+
+	if ic.Entrypoint.Type != "service-bundle" {
+		if ic.Entrypoint.Command != "" {
+			cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.Command}
+		} else {
+			cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
+		}
+	}
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {

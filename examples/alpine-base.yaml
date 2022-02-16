@@ -11,4 +11,4 @@ contents:
     - alpine-base
 
 entrypoint:
-  command: /bin/sh
+  command: /bin/sh -l
