@@ -16,6 +16,7 @@ package oci
 
 import (
 	"log"
+	"runtime"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -76,6 +77,8 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 
 	cfg = cfg.DeepCopy()
 	cfg.Author = "github.com/chainguard-dev/apko"
+	cfg.Architecture = runtime.GOARCH
+	cfg.OS = runtime.GOOS
 
 	if ic.Entrypoint.Type != "service-bundle" {
 		if ic.Entrypoint.Command != "" {
