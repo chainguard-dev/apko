@@ -20,34 +20,45 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 )
 
 // Writes a raw TAR archive to out, given an fs.FS.
-func WriteArchiveFromFS(fsys fs.FS, out io.Writer) error {
+func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 	gzw := gzip.NewWriter(out)
 	defer gzw.Close()
 
 	tw := tar.NewWriter(gzw)
 	defer tw.Close()
 
-	fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		info, err := d.Info()
 		if err != nil {
 			return err
 		}
 
-		header, err := tar.FileInfoHeader(info, path)
+		var link string
+		if info.Mode() & os.ModeSymlink == os.ModeSymlink {
+			// fs.FS does not implement readlink, so we have this hack for now.
+			if link, err = os.Readlink(filepath.Join(base, path)); err != nil {
+				return err
+			}
+		}
+
+		header, err := tar.FileInfoHeader(info, link)
 		if err != nil {
 			return err
 		}
+		// work around some weirdness, without this we wind up with just the basename
+		header.Name = path
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 
-		if !info.IsDir() {
+		if info.Mode().IsRegular() {
 			data, err := fsys.Open(path)
 			if err != nil {
 				return err
@@ -60,13 +71,16 @@ func WriteArchiveFromFS(fsys fs.FS, out io.Writer) error {
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // Writes a tarball to a temporary file.  Caller's responsibility to
 // clean it up when it's done with it.
-func WriteTarball(src string) (string, error) {
+func WriteArchive(src string) (string, error) {
 	outfile, err := os.CreateTemp("", "apko-*.tar.gz")
 	if err != nil {
 		return "", errors.Wrap(err, "opening a temporary file failed")
@@ -74,7 +88,7 @@ func WriteTarball(src string) (string, error) {
 	defer outfile.Close()
 
 	fs := os.DirFS(src)
-	err = WriteArchiveFromFS(fs, outfile)
+	err = WriteArchiveFromFS(src, fs, outfile)
 	if err != nil {
 		return "", errors.Wrap(err, "writing TAR archive failed")
 	}
