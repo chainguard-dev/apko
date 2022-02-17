@@ -64,7 +64,10 @@ func (bc *BuildContext) BuildLayer() (string, error) {
 	bc.Summarize()
 
 	// build image filesystem
-	bc.BuildImage()
+	err := bc.BuildImage()
+	if err != nil {
+		return "", err
+	}
 
 	// build layer tarball
 	layerTarGZ, err := bc.BuildTarball()
