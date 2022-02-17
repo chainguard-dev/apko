@@ -26,10 +26,12 @@ func Execute(name string, arg... string) error {
 	log.Printf("running: %v", cmd.String())
 
 	output, err := cmd.CombinedOutput()
+	if output != "" {
+		log.Printf("[%s] %s", name, output)
+	}
 	if err != nil {
 		return errors.Wrapf(err, "failed to run %s", name)
 	}
 
-	log.Printf("[%s] %s", name, output)
 	return nil
 }
