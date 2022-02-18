@@ -80,12 +80,10 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 	cfg.Architecture = runtime.GOARCH
 	cfg.OS = runtime.GOOS
 
-	if ic.Entrypoint.Type != "service-bundle" {
-		if ic.Entrypoint.Command != "" {
-			cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.Command}
-		} else {
-			cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
-		}
+	if ic.Entrypoint.Command != "" {
+		cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.Command}
+	} else {
+		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
 	}
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
