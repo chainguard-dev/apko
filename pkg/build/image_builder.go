@@ -57,6 +57,12 @@ func (bc *BuildContext) BuildImage() error {
 		return errors.Wrap(err, "failed to fixate apk world")
 	}
 
+	// write service supervision tree
+	err = bc.WriteSupervisionTree()
+	if err != nil {
+		return errors.Wrap(err, "failed to write supervision tree")
+	}
+
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
         return nil
 }

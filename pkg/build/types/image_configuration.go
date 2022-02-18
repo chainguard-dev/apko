@@ -48,7 +48,7 @@ func (ic *ImageConfiguration) Validate() error {
 // Do preflight checks and mutations on an image configured to manage
 // a service bundle.
 func (ic *ImageConfiguration) ValidateServiceBundle() error {
-	ic.Entrypoint.Command = "/bin/s6-supervise /sv"
+	ic.Entrypoint.Command = "/bin/s6-svscan /sv"
 
 	// It's harmless to have a duplicate entry in /etc/apk/world,
 	// apk will fix it up when the fixate op happens.
