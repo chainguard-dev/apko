@@ -12,28 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package types
 
 import (
 	"os"
 
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
-func LoadImageConfiguration(imageConfigPath string) (types.ImageConfiguration, error) {
-	ic := types.ImageConfiguration{}
-
+// Loads an image configuration given a configuration file path.
+func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
-		return ic, errors.Wrap(err, "failed to read image configuration file")
+		return errors.Wrap(err, "failed to read image configuration file")
 	}
 
-	err = yaml.Unmarshal(data, &ic)
+	err = yaml.Unmarshal(data, ic)
 	if err != nil {
-		return ic, errors.Wrap(err, "failed to parse image configuration")
+		return errors.Wrap(err, "failed to parse image configuration")
 	}
 
-	return ic, nil
+	return nil
 }

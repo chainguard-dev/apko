@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 func Build() *cobra.Command {
@@ -43,7 +44,8 @@ func Build() *cobra.Command {
 func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
-	ic, err := build.LoadImageConfiguration(configFile)
+	ic := types.ImageConfiguration{}
+	err := ic.Load(configFile)
 	if err != nil {
 		return errors.Wrap(err, "failed to load image configuration")
 	}

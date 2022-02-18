@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 func BuildMinirootFS() *cobra.Command {
@@ -42,7 +43,8 @@ func BuildMinirootFS() *cobra.Command {
 func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ string) error {
 	log.Printf("building minirootfs '%s' from config file '%s'", outputTarGZ, configFile)
 
-	ic, err := build.LoadImageConfiguration(configFile)
+	ic := types.ImageConfiguration{}
+	err := ic.Load(configFile)
 	if err != nil {
 		return errors.Wrap(err, "failed to load image configuration")
 	}
