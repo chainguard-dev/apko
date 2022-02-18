@@ -8,9 +8,10 @@ contents:
     - /etc/apk/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub
     - /etc/apk/keys/alpine-devel@lists.alpinelinux.org-61666e3f.rsa.pub
   packages:
+    - alpine-baselayout
     - nginx
 
 entrypoint:
   type: service-bundle
   services:
-    nginx: /usr/sbin/nginx -cf /etc/nginx.conf
+    nginx: /usr/sbin/nginx -c /etc/nginx/nginx.conf -g "daemon off;"
