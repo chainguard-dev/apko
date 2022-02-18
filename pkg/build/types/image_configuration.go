@@ -35,3 +35,24 @@ func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 
 	return nil
 }
+
+// Do preflight checks and mutations on an image configuration.
+func (ic *ImageConfiguration) Validate() error {
+	if ic.Entrypoint.Type == "service-bundle" {
+		return ic.ValidateServiceBundle()
+	}
+
+	return nil
+}
+
+// Do preflight checks and mutations on an image configured to manage
+// a service bundle.
+func (ic *ImageConfiguration) ValidateServiceBundle() error {
+	ic.Entrypoint.Command = "/bin/s6-supervise /sv"
+
+	// It's harmless to have a duplicate entry in /etc/apk/world,
+	// apk will fix it up when the fixate op happens.
+	ic.Contents.Packages = append(ic.Contents.Packages, "s6")
+
+	return nil
+}

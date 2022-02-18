@@ -22,10 +22,16 @@ import (
 
 // Builds the image in BuildContext.WorkDir.
 func (bc *BuildContext) BuildImage() error {
+	log.Printf("doing pre-flight checks")
+	err := bc.ImageConfiguration.Validate()
+	if err != nil {
+		return errors.Wrap(err, "failed to validate configuration")
+	}
+
 	log.Printf("building image fileystem in %s", bc.WorkDir)
 
 	// initialize apk
-	err := bc.InitApkDb()
+	err = bc.InitApkDb()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize apk database")
 	}
