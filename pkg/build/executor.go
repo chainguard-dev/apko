@@ -26,7 +26,7 @@ func Execute(name string, arg... string) error {
 	log.Printf("running: %v", cmd.String())
 
 	output, err := cmd.CombinedOutput()
-	if output != "" {
+	if output != nil {
 		log.Printf("[%s] %s", name, output)
 	}
 	if err != nil {
