@@ -64,5 +64,5 @@ func (bc *BuildContext) BuildImage() error {
 	}
 
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
-        return nil
+	return nil
 }
