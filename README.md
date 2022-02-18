@@ -33,3 +33,25 @@ This will give you a Docker-style tarball which you can use with
 
 You need root, or at least fakeroot + fakechroot to build images
 with apko, due to apk-tools' use of chroot(2).
+
+## Features
+
+### Sub-second image build times
+
+By using the very fast apk package manager to manage build artifacts,
+we can build images very quickly.  This means that developers win with
+a faster and more easy to reproduce build process.
+
+### Service bundles
+
+Some containers are complex, with multiple tightly-coupled services
+running in the same container.  `apko` understands this scenario out
+of the box, avoiding the need to deal with things like `s6-overlay`.
+If you define a `service-bundle` entrypoint, it will generate an
+appropriate supervision tree and ensure `s6` is installed.
+
+### SBOM (coming soon)
+
+As a result of using apk to manage distribution and build artifacts,
+we will be able to generate SBOMs for containers, using the new
+apk-tools 3.x SBOM feature.
