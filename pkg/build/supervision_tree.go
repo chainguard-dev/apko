@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bc *BuildContext) CreateSupervisionDirectory(name string) (string, error) {
+func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
 	svcdir := filepath.Join(bc.WorkDir, "sv", name)
 	log.Printf("  supervision dir: %s", svcdir)
 
@@ -35,7 +35,7 @@ func (bc *BuildContext) CreateSupervisionDirectory(name string) (string, error) 
 	return svcdir, nil
 }
 
-func (bc *BuildContext) WriteSupervisionTemplate(svcdir string, command string) error {
+func (bc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
 	file, err := os.Create(filepath.Join(svcdir, "run"))
 	if err != nil {
 		return errors.Wrap(err, "could not create runfile")
@@ -52,7 +52,7 @@ func (bc *BuildContext) WriteSupervisionTemplate(svcdir string, command string) 
 	return nil
 }
 
-func (bc *BuildContext) WriteSupervisionServiceSimple(name string, command string) error {
+func (bc *Context) WriteSupervisionServiceSimple(name string, command string) error {
 	log.Printf("simple service: %s => %s", name, command)
 
 	svcdir, err := bc.CreateSupervisionDirectory(name)
@@ -68,7 +68,7 @@ func (bc *BuildContext) WriteSupervisionServiceSimple(name string, command strin
 	return nil
 }
 
-func (bc *BuildContext) WriteSupervisionTree() error {
+func (bc *Context) WriteSupervisionTree() error {
 	log.Printf("generating supervision tree")
 
 	// generate the leaves

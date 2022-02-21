@@ -24,20 +24,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-type BuildContext struct {
+type Context struct {
 	ImageConfiguration types.ImageConfiguration
 	WorkDir            string
 	TarballPath        string
 }
 
-func (bc *BuildContext) Summarize() {
+func (bc *Context) Summarize() {
 	log.Printf("build context:")
 	log.Printf("  image configuration: %v", bc.ImageConfiguration)
 	log.Printf("  working directory: %v", bc.WorkDir)
 	log.Printf("  tarball path: %v", bc.TarballPath)
 }
 
-func (bc *BuildContext) BuildTarball() (string, error) {
+func (bc *Context) BuildTarball() (string, error) {
 	var outfile *os.File
 	var err error
 
@@ -60,7 +60,7 @@ func (bc *BuildContext) BuildTarball() (string, error) {
 	return outfile.Name(), nil
 }
 
-func (bc *BuildContext) BuildLayer() (string, error) {
+func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
 	// build image filesystem

@@ -61,7 +61,7 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 	}
 	defer os.RemoveAll(wd)
 
-	bc := build.BuildContext{
+	bc := build.Context{
 		ImageConfiguration: ic,
 		WorkDir:            wd,
 	}

@@ -55,7 +55,7 @@ func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ stri
 	}
 	defer os.RemoveAll(wd)
 
-	bc := build.BuildContext{
+	bc := build.Context{
 		ImageConfiguration: ic,
 		WorkDir:            wd,
 		TarballPath:        outputTarGZ,

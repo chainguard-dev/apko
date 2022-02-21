@@ -20,8 +20,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Builds the image in BuildContext.WorkDir.
-func (bc *BuildContext) BuildImage() error {
+// Builds the image in Context.WorkDir.
+func (bc *Context) BuildImage() error {
 	log.Printf("doing pre-flight checks")
 	err := bc.ImageConfiguration.Validate()
 	if err != nil {

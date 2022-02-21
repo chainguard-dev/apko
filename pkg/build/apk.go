@@ -29,14 +29,14 @@ import (
 // Initialize the APK database for a given build context.  It is assumed that
 // the build context itself is properly set up, and that `bc.WorkDir` is set
 // to the path of a working directory.
-func (bc *BuildContext) InitApkDB() error {
+func (bc *Context) InitApkDB() error {
 	log.Printf("initializing apk database")
 
 	return Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
 }
 
 // Installs the specified keys into the APK keyring inside the build context.
-func (bc *BuildContext) InitApkKeyring() error {
+func (bc *Context) InitApkKeyring() error {
 	log.Printf("initializing apk keyring")
 
 	err := os.MkdirAll(bc.WorkDir+"/etc/apk/keys", 0755)
@@ -63,7 +63,7 @@ func (bc *BuildContext) InitApkKeyring() error {
 }
 
 // Generates a specified /etc/apk/repositories file in the build context.
-func (bc *BuildContext) InitApkRepositories() error {
+func (bc *Context) InitApkRepositories() error {
 	log.Printf("initializing apk repositories")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
@@ -78,7 +78,7 @@ func (bc *BuildContext) InitApkRepositories() error {
 }
 
 // Generates a specified /etc/apk/world file in the build context.
-func (bc *BuildContext) InitApkWorld() error {
+func (bc *Context) InitApkWorld() error {
 	log.Printf("initializing apk world")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Packages, "\n")
@@ -93,7 +93,7 @@ func (bc *BuildContext) InitApkWorld() error {
 }
 
 // Force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
-func (bc *BuildContext) FixateApkWorld() error {
+func (bc *Context) FixateApkWorld() error {
 	log.Printf("synchronizing with desired apk world")
 
 	return Execute("apk", "fix", "--root", bc.WorkDir, "--no-cache", "--update-cache")
