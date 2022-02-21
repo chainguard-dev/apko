@@ -34,6 +34,10 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 	defer tw.Close()
 
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
 		info, err := d.Info()
 		if err != nil {
 			return err

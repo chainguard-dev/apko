@@ -29,7 +29,7 @@ import (
 // Initialize the APK database for a given build context.  It is assumed that
 // the build context itself is properly set up, and that `bc.WorkDir` is set
 // to the path of a working directory.
-func (bc *BuildContext) InitApkDb() error {
+func (bc *BuildContext) InitApkDB() error {
 	log.Printf("initializing apk database")
 
 	return Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
@@ -52,6 +52,7 @@ func (bc *BuildContext) InitApkKeyring() error {
 			return errors.Wrap(err, "failed to read apk key")
 		}
 
+		// #nosec G306 -- apk keyring must be publicly readable
 		err = os.WriteFile(bc.WorkDir+"/"+element, data, 0644)
 		if err != nil {
 			return errors.Wrap(err, "failed to write apk key")
@@ -65,7 +66,9 @@ func (bc *BuildContext) InitApkKeyring() error {
 func (bc *BuildContext) InitApkRepositories() error {
 	log.Printf("initializing apk repositories")
 
-	data := strings.Join(bc.ImageConfiguration.Contents.Repositories[:], "\n")
+	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
+
+	// #nosec G306 -- apk repositories must be publicly readable
 	err := os.WriteFile(bc.WorkDir+"/etc/apk/repositories", []byte(data), 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to write apk repositories list")
@@ -78,7 +81,9 @@ func (bc *BuildContext) InitApkRepositories() error {
 func (bc *BuildContext) InitApkWorld() error {
 	log.Printf("initializing apk world")
 
-	data := strings.Join(bc.ImageConfiguration.Contents.Packages[:], "\n")
+	data := strings.Join(bc.ImageConfiguration.Contents.Packages, "\n")
+
+	// #nosec G306 -- apk world must be publicly readable
 	err := os.WriteFile(bc.WorkDir+"/etc/apk/world", []byte(data), 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to write apk world")

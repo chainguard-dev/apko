@@ -31,7 +31,7 @@ func (bc *BuildContext) BuildImage() error {
 	log.Printf("building image fileystem in %s", bc.WorkDir)
 
 	// initialize apk
-	err = bc.InitApkDb()
+	err = bc.InitApkDB()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize apk database")
 	}
