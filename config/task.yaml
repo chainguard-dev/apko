@@ -1,0 +1,68 @@
+# Copyright 2022 Chainguard, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: apko
+spec:
+  description: "An apko task for building images."
+  params:
+    - name: dev.mink.sources.bundle
+      description: A self-extracting container image of source
+    - name: dev.mink.images.target
+      description: Where to publish an image.
+    - name: path
+      description: The bundle-relative path to the config file to build.
+      default: ./config.yaml
+
+  results:
+    - name: IMAGES
+      description: The list of images produced by this task (for chains)
+    - name: dev.mink.images.digest
+      description: The digest of the resulting image.
+
+  steps:
+    - name: extract-bundle
+      image: $(params["dev.mink.sources.bundle"])
+      workingDir: /workspace
+
+    - name: build-image
+      image: ko://chainguard.dev/apko/cmd/apko
+      workingDir: /workspace
+      args:
+      - build
+      - $(params["path"])
+      - $(params["dev.mink.images.target"])
+      # TODO(mattmoor): Move this to an emptyDir volume
+      - output.tar.gz
+
+    - name: push-image
+      # This is a version of "crane" with k8schain linked as
+      # a universal credential helper (for workload identity).
+      image: gcr.io/go-containerregistry/krane
+      workingDir: /workspace
+      args:
+      - push
+      - --image-refs=/tekton/results/IMAGES
+      - output.tar.gz
+      - $(params["dev.mink.images.target"])
+
+    # mink wants just the digest in its result, but the above produces
+    # a fully qualified digest.
+    - name: massage-digest
+      image: gcr.io/distroless/base:debug-nonroot
+      command: ["/busybox/sh", "-c"]
+      args:
+      - echo -n $(cat /tekton/results/IMAGES | cut -d'@' -f 2) > /tekton/results/dev.mink.images.digest
