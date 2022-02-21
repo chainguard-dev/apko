@@ -41,7 +41,11 @@ func (bc *BuildContext) WriteSupervisionTemplate(svcdir string, command string) 
 		return errors.Wrap(err, "could not create runfile")
 	}
 	defer file.Close()
-	defer os.Chmod(file.Name(), 755)
+
+	err = os.Chmod(file.Name(), 0755)
+	if err != nil {
+		return errors.Wrap(err, "could not set permissions on runfile")
+	}
 
 	fmt.Fprintf(file, "#!/bin/execlineb\n%s\n", command)
 
