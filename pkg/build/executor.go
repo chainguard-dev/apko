@@ -21,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func Execute(name string, arg... string) error {
+func Execute(name string, arg ...string) error {
 	cmd := exec.Command(name, arg...)
 	log.Printf("running: %v", cmd.String())
 

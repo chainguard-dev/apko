@@ -40,7 +40,7 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 		}
 
 		var link string
-		if info.Mode() & os.ModeSymlink == os.ModeSymlink {
+		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
 			// fs.FS does not implement readlink, so we have this hack for now.
 			if link, err = os.Readlink(filepath.Join(base, path)); err != nil {
 				return err

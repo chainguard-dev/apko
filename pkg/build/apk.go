@@ -39,7 +39,7 @@ func (bc *BuildContext) InitApkDb() error {
 func (bc *BuildContext) InitApkKeyring() error {
 	log.Printf("initializing apk keyring")
 
-	err := os.MkdirAll(bc.WorkDir + "/etc/apk/keys", 0755)
+	err := os.MkdirAll(bc.WorkDir+"/etc/apk/keys", 0755)
 	if err != nil {
 		return errors.Wrap(err, "failed to make keys dir")
 	}
@@ -52,7 +52,7 @@ func (bc *BuildContext) InitApkKeyring() error {
 			return errors.Wrap(err, "failed to read apk key")
 		}
 
-		err = os.WriteFile(bc.WorkDir + "/" + element, data, 0644)
+		err = os.WriteFile(bc.WorkDir+"/"+element, data, 0644)
 		if err != nil {
 			return errors.Wrap(err, "failed to write apk key")
 		}
@@ -66,7 +66,7 @@ func (bc *BuildContext) InitApkRepositories() error {
 	log.Printf("initializing apk repositories")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories[:], "\n")
-	err := os.WriteFile(bc.WorkDir + "/etc/apk/repositories", []byte(data), 0644)
+	err := os.WriteFile(bc.WorkDir+"/etc/apk/repositories", []byte(data), 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to write apk repositories list")
 	}
@@ -79,7 +79,7 @@ func (bc *BuildContext) InitApkWorld() error {
 	log.Printf("initializing apk world")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Packages[:], "\n")
-	err := os.WriteFile(bc.WorkDir + "/etc/apk/world", []byte(data), 0644)
+	err := os.WriteFile(bc.WorkDir+"/etc/apk/world", []byte(data), 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to write apk world")
 	}

@@ -18,16 +18,16 @@ import (
 	"log"
 	"os"
 
-	"chainguard.dev/apko/pkg/tarball"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/tarball"
 
 	"github.com/pkg/errors"
 )
 
 type BuildContext struct {
-	ImageConfiguration	types.ImageConfiguration
-	WorkDir			string
-	TarballPath		string
+	ImageConfiguration types.ImageConfiguration
+	WorkDir            string
+	TarballPath        string
 }
 
 func (bc *BuildContext) Summarize() {

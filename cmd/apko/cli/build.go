@@ -19,28 +19,28 @@ import (
 	"log"
 	"os"
 
-	"github.com/pkg/errors"
-	"github.com/spf13/cobra"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
 )
 
 func Build() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:			"build",
-		Short:			"Build an image from a YAML configuration file",
-		Long:			`Build an image from a YAML configuration file.
+		Use:   "build",
+		Short: "Build an image from a YAML configuration file",
+		Long: `Build an image from a YAML configuration file.
 
 The generated image is in a format which can be used with the "docker load"
 command, e.g.
 
   # docker load < output.tar`,
-		Example:		`  apko build <config.yaml> <tag> <output.tar>`,
-		Args:			cobra.ExactArgs(3),
-		RunE:			func(cmd *cobra.Command, args[] string) error {
-						return BuildCmd(cmd.Context(), args[0], args[1], args[2])
-					},
+		Example: `  apko build <config.yaml> <tag> <output.tar>`,
+		Args:    cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return BuildCmd(cmd.Context(), args[0], args[1], args[2])
+		},
 	}
 
 	return cmd
@@ -63,7 +63,7 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 
 	bc := build.BuildContext{
 		ImageConfiguration: ic,
-		WorkDir: wd,
+		WorkDir:            wd,
 	}
 
 	layerTarGZ, err := bc.BuildLayer()

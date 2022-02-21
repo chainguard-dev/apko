@@ -20,12 +20,12 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"github.com/pkg/errors"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/pkg/errors"
 )
 
 func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
@@ -53,10 +53,10 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 	adds = append(adds, mutate.Addendum{
 		Layer: v1Layer,
 		History: v1.History{
-			Author: "apko",
-			Comment: "This is an apko single-layer image",
+			Author:    "apko",
+			Comment:   "This is an apko single-layer image",
 			CreatedBy: "apko",
-			Created: v1.Time{Time: time.Now()},
+			Created:   v1.Time{Time: time.Now()},
 		},
 	})
 

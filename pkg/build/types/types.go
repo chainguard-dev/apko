@@ -17,15 +17,14 @@ package types
 type ImageConfiguration struct {
 	Contents struct {
 		Repositories []string
-		Keyring []string
-		Packages []string
+		Keyring      []string
+		Packages     []string
 	}
 	Entrypoint struct {
-		Type string
+		Type    string
 		Command string
 
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
 	}
 }
-

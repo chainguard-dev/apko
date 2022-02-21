@@ -19,22 +19,22 @@ import (
 	"log"
 	"os"
 
-	"github.com/pkg/errors"
-	"github.com/spf13/cobra"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
 )
 
 func BuildMinirootFS() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:			"build-minirootfs",
-		Short:			"Build a minirootfs image from a YAML configuration file",
-		Long:			"Build a minirootfs image from a YAML configuration file",
-		Example:		`  apko build-minirootfs <config.yaml> <output.tar.gz>`,
-		Args:			cobra.ExactArgs(2),
-		RunE:			func(cmd *cobra.Command, args[] string) error {
-						return BuildMinirootFSCmd(cmd.Context(), args[0], args[1])
-					},
+		Use:     "build-minirootfs",
+		Short:   "Build a minirootfs image from a YAML configuration file",
+		Long:    "Build a minirootfs image from a YAML configuration file",
+		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return BuildMinirootFSCmd(cmd.Context(), args[0], args[1])
+		},
 	}
 
 	return cmd
@@ -57,8 +57,8 @@ func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ stri
 
 	bc := build.BuildContext{
 		ImageConfiguration: ic,
-		WorkDir: wd,
-		TarballPath: outputTarGZ,
+		WorkDir:            wd,
+		TarballPath:        outputTarGZ,
 	}
 
 	layerTarGZ, err := bc.BuildLayer()

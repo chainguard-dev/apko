@@ -21,9 +21,9 @@ import (
 
 func New() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:			"apko",
-		DisableAutoGenTag:	true,
-		SilenceUsage:		true,
+		Use:               "apko",
+		DisableAutoGenTag: true,
+		SilenceUsage:      true,
 	}
 
 	cmd.AddCommand(Build())
