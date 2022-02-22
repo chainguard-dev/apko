@@ -1,0 +1,62 @@
+name: mink e2e
+
+on:
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  mink-e2e:
+    name: apko task
+    runs-on: ubuntu-latest
+
+    env:
+      KO_DOCKER_REPO: registry.local:5000/chainguard
+
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+
+    - uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.1.5
+      with:
+        go-version: '1.17.x'
+
+    - uses: imjasonh/setup-ko@v0.4
+      with:
+        version: v0.10.0
+
+    - uses: chainguard-dev/actions/setup-kind@main
+      with:
+        k8s-version: v1.22.x
+        registry-authority: registry.local:5000
+
+    - uses: chainguard-dev/actions/setup-mink@main
+      with:
+        version: 1.1.0
+
+    - name: "Configure and install mink"
+      run: |
+        cat > $HOME/.mink.yaml <<EOF
+        # Bundle source context to here by default!
+        bundle: ${KO_DOCKER_REPO}/bundle:latest
+        # Send the resulting image here by default!
+        image: ${KO_DOCKER_REPO}/image:latest
+        EOF
+
+        mink install
+
+    - name: Build and install apko task
+      run: |
+        ko apply -BRf config/
+
+    - name: Build examples
+      run: |
+        for cfg in $(find ./examples/ -name '*.yaml'); do
+          DIGEST=$(mink run task apko -- --path=$cfg)
+
+          echo $cfg produced: $DIGEST
+        done
+
+    - uses: chainguard-dev/actions/kind-diag@main
+      if: ${{failure()}}
