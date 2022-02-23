@@ -20,15 +20,17 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/pkg/errors"
 )
 
-func buildImageFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
+func buildImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
 	log.Printf("building OCI image '%s' from layer '%s'", imageRef, layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
@@ -90,7 +92,7 @@ func buildImageFromLayer(imageRef string, layerTarGZ string, outputTarGZ string,
 }
 
 func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
-	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, outputTarGZ, ic)
+	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, ic)
 	if err != nil {
 		return err
 	}
@@ -106,5 +108,24 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 	}
 
 	log.Printf("output OCI image file to %s", outputTarGZ)
+	return nil
+}
+
+func PublishImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) error {
+	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, ic)
+	if err != nil {
+		return err
+	}
+
+	imgRef, err := name.ParseReference(imageRef)
+	if err != nil {
+		return errors.Wrap(err, "unable to parse reference")
+	}
+
+	err = remote.Write(imgRef, v1Image, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	if err != nil {
+		return errors.Wrap(err, "failed to publish")
+	}
+
 	return nil
 }
