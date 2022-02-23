@@ -26,27 +26,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func Build() *cobra.Command {
+func Publish() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "build",
-		Short: "Build an image from a YAML configuration file",
-		Long: `Build an image from a YAML configuration file.
+		Use:   "publish",
+		Short: "Build and publish an image",
+		Long: `Publish a built image from a YAML configuration file.
 
-The generated image is in a format which can be used with the "docker load"
-command, e.g.
-
-  # docker load < output.tar`,
-		Example: `  apko build <config.yaml> <tag> <output.tar>`,
-		Args:    cobra.ExactArgs(3),
+It is assumed that you have used "docker login" to store credentials
+in a keychain.`,
+		Example: `  apko publish <config.yaml> <tag>`,
+		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildCmd(cmd.Context(), args[0], args[1], args[2])
+			return PublishCmd(cmd.Context(), args[0], args[1])
 		},
 	}
 
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
+func PublishCmd(ctx context.Context, configFile string, imageRef string) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic := types.ImageConfiguration{}
@@ -72,7 +70,7 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 	}
 	defer os.Remove(layerTarGZ)
 
-	err = oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration)
+	err = oci.PublishImageFromLayer(imageRef, layerTarGZ, bc.ImageConfiguration)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}
