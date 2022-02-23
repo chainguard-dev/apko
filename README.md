@@ -1,6 +1,6 @@
-# apko
+# apko: APK-based OCI image builder
 
-Build images for apk-based distributions declaratively!
+Build OCI images for apk-based distributions declaratively!
 
 ## Why
 
