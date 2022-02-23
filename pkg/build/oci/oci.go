@@ -28,22 +28,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
+func buildImageFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
 	log.Printf("building OCI image '%s' from layer '%s'", imageRef, layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
 	if err != nil {
-		return errors.Wrap(err, "failed to create OCI layer from tar.gz")
+		return empty.Image, errors.Wrap(err, "failed to create OCI layer from tar.gz")
 	}
 
 	digest, err := v1Layer.Digest()
 	if err != nil {
-		return errors.Wrap(err, "could not calculate layer digest")
+		return empty.Image, errors.Wrap(err, "could not calculate layer digest")
 	}
 
 	diffid, err := v1Layer.DiffID()
 	if err != nil {
-		return errors.Wrap(err, "could not calculate layer diff id")
+		return empty.Image, errors.Wrap(err, "could not calculate layer diff id")
 	}
 
 	log.Printf("OCI layer digest: %v", digest)
@@ -62,17 +62,12 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 
 	v1Image, err := mutate.Append(empty.Image, adds...)
 	if err != nil {
-		return errors.Wrap(err, "unable to append OCI layer to empty image")
-	}
-
-	imgRefTag, err := name.NewTag(imageRef)
-	if err != nil {
-		return errors.Wrap(err, "unable to validate image reference tag")
+		return empty.Image, errors.Wrap(err, "unable to append OCI layer to empty image")
 	}
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return errors.Wrap(err, "unable to get OCI config file")
+		return empty.Image, errors.Wrap(err, "unable to get OCI config file")
 	}
 
 	cfg = cfg.DeepCopy()
@@ -88,7 +83,21 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
-		return errors.Wrap(err, "unable to update OCI config file")
+		return empty.Image, errors.Wrap(err, "unable to update OCI config file")
+	}
+
+	return v1Image, nil
+}
+
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
+	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, outputTarGZ, ic)
+	if err != nil {
+		return err
+	}
+
+	imgRefTag, err := name.NewTag(imageRef)
+	if err != nil {
+		return errors.Wrap(err, "unable to validate image reference tag")
 	}
 
 	err = v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image)
@@ -97,6 +106,5 @@ func BuildImageRefFromLayer(imageRef string, layerTarGZ string, outputTarGZ stri
 	}
 
 	log.Printf("output OCI image file to %s", outputTarGZ)
-
 	return nil
 }
