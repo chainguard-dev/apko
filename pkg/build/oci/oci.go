@@ -15,15 +15,20 @@
 package oci
 
 import (
+	"io/ioutil"
 	"log"
 	"runtime"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	ecr "github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
+	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -111,21 +116,33 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 	return nil
 }
 
-func PublishImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) error {
+func PublishImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) (name.Digest, error) {
 	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, ic)
 	if err != nil {
-		return err
+		return name.Digest{}, err
 	}
 
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
-		return errors.Wrap(err, "unable to parse reference")
+		return name.Digest{}, errors.Wrap(err, "unable to parse reference")
 	}
 
-	err = remote.Write(imgRef, v1Image, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	kc := authn.NewMultiKeychain(
+		authn.DefaultKeychain,
+		google.Keychain,
+		authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(ioutil.Discard))),
+		authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
+		github.Keychain,
+	)
+
+	h, err := v1Image.Digest()
 	if err != nil {
-		return errors.Wrap(err, "failed to publish")
+		return name.Digest{}, errors.Wrap(err, "failed to compute digest")
 	}
 
-	return nil
+	err = remote.Write(imgRef, v1Image, remote.WithAuthFromKeychain(kc))
+	if err != nil {
+		return name.Digest{}, errors.Wrap(err, "failed to publish")
+	}
+	return imgRef.Context().Digest(h.String()), nil
 }

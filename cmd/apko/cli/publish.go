@@ -27,6 +27,8 @@ import (
 )
 
 func Publish() *cobra.Command {
+	var imageRefs string
+
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "Build and publish an image",
@@ -37,14 +39,20 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return PublishCmd(cmd.Context(), args[0], args[1])
+			err := PublishCmd(cmd.Context(), args[0], args[1], imageRefs)
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, configFile string, imageRef string) error {
+func PublishCmd(ctx context.Context, configFile string, imageRef string, outputRefs string) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic := types.ImageConfiguration{}
@@ -70,10 +78,21 @@ func PublishCmd(ctx context.Context, configFile string, imageRef string) error {
 	}
 	defer os.Remove(layerTarGZ)
 
-	err = oci.PublishImageFromLayer(imageRef, layerTarGZ, bc.ImageConfiguration)
+	digest, err := oci.PublishImageFromLayer(imageRef, layerTarGZ, bc.ImageConfiguration)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}
+
+	// If provided, this is the name of the file to write digest referenced into
+	if outputRefs != "" {
+		//nolint:gosec // Make image ref file readable by non-root
+		if err := os.WriteFile(outputRefs, []byte(digest.String()), 0666); err != nil {
+			return err
+		}
+	}
+	// TODO: We should write the image digest to STDOUT (and everything
+	// else to STDERR) in order to enable command composition
+	// e.g. kn service create --image=$(apko publish ...)
 
 	return nil
 }
