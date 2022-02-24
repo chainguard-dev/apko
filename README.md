@@ -31,6 +31,10 @@ This will give you a Docker-style tarball which you can use with
 
     # docker load < output.tar
 
+You can also publish an image using the `apko publish` command:
+
+    # apko publish config.yaml foo.dev/bar/baz:latest
+
 You need root, or at least fakeroot + fakechroot to build images
 with apko, due to apk-tools' use of chroot(2).
 
