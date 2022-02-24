@@ -38,6 +38,9 @@ You can also publish an image using the `apko publish` command:
 You need root, or at least fakeroot + fakechroot to build images
 with apko, due to apk-tools' use of chroot(2).
 
+Some example configurations are available in the examples
+directory.
+
 ## Features
 
 ### Sub-second image build times
