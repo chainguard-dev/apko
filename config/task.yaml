@@ -38,25 +38,13 @@ spec:
       image: $(params["dev.mink.sources.bundle"])
       workingDir: /workspace
 
-    - name: build-image
+    - name: build-and-push-image
       image: ko://chainguard.dev/apko/cmd/apko
       workingDir: /workspace
       args:
-      - build
-      - $(params["path"])
-      - $(params["dev.mink.images.target"])
-      # TODO(mattmoor): Move this to an emptyDir volume
-      - output.tar.gz
-
-    - name: push-image
-      # This is a version of "crane" with k8schain linked as
-      # a universal credential helper (for workload identity).
-      image: gcr.io/go-containerregistry/krane
-      workingDir: /workspace
-      args:
-      - push
+      - publish
       - --image-refs=/tekton/results/IMAGES
-      - output.tar.gz
+      - $(params["path"])
       - $(params["dev.mink.images.target"])
 
     # mink wants just the digest in its result, but the above produces
