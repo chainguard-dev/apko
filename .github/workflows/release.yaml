@@ -1,0 +1,65 @@
+on:
+  push:
+    tags:
+    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+name: Create Release
+
+jobs:
+  cli:
+    name: Release the CLI
+    runs-on: ubuntu-latest
+
+    # https://docs.github.com/en/actions/reference/authentication-in-a-workflow
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.17.x
+    - uses: actions/checkout@v2
+    - uses: sigstore/cosign-installer@main
+    - uses: goreleaser/goreleaser-action@v2
+      with:
+        version: latest
+        args: release --rm-dist
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ko-build:
+    name: Release apko image
+    runs-on: ubuntu-latest
+
+    # https://docs.github.com/en/actions/reference/authentication-in-a-workflow
+    permissions:
+      id-token: write
+      packages: write
+      contents: read
+
+    env:
+      KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
+      KOFLAGS: --platform=all --bare
+      COSIGN_EXPERIMENTAL: "true"
+
+    steps:
+    - uses: actions/setup-go@v1
+      with:
+        go-version: 1.17.x
+    - uses: imjasonh/setup-ko@v0.4
+      with:
+        version: v0.10.0
+    - uses: sigstore/cosign-installer@main
+    - uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ github.token }}
+    - uses: actions/checkout@v2
+    - name: Publish apko image
+      run: |
+        DIGEST=$(ko build ${KOFLAGS} --tags $(basename "${{ github.ref }}" ) ./cmd/apko)
+
+        # TODO: Add attributes with version, sha, etc.
+        cosign sign ${DIGEST}
