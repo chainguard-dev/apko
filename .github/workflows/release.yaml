@@ -16,12 +16,12 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab
+    - uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.2.0
       with:
         go-version: 1.17.x
-    - uses: actions/checkout@v2
-    - uses: sigstore/cosign-installer@main
-    - uses: goreleaser/goreleaser-action@v2
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+    - uses: sigstore/cosign-installer@179e0f15e70e22ca2e7254fc12d68a9fbab35614 # v2.0.1
+    - uses: goreleaser/goreleaser-action@79d4afbba1b4eff8b9a98e3d2e58c4dbaf094e2b # v2.8.1
       with:
         version: latest
         args: release --rm-dist
@@ -44,20 +44,20 @@ jobs:
       COSIGN_EXPERIMENTAL: "true"
 
     steps:
-    - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab
+    - uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.2.0
       with:
         go-version: 1.17.x
-    - uses: imjasonh/setup-ko@v0.4
+    - uses: imjasonh/setup-ko@2c3450ca27f6e6f2b02e72a40f2163c281a1f675 # v0.4
       with:
         version: v0.10.0
-    - uses: sigstore/cosign-installer@main
-    - uses: docker/login-action@v1
+    - uses: sigstore/cosign-installer@179e0f15e70e22ca2e7254fc12d68a9fbab35614 # v2.0.1
+    - uses: docker/login-action@6af3c118c8376c675363897acf1757f7a9be6583 # v1.13.0
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
         password: ${{ github.token }}
-    - uses: actions/checkout@v2
-    - name: Publish apko image
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+    - name: Publish/Sign apko image
       run: |
         DIGEST=$(ko build ${KOFLAGS} --tags $(basename "${{ github.ref }}" ) ./cmd/apko)
 
