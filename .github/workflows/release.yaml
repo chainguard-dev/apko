@@ -1,9 +1,13 @@
+
+name: Create Release
+
 on:
   push:
     tags:
     - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
-name: Create Release
+env:
+  GO_VERSION: 1.17.x
 
 jobs:
   cli:
@@ -18,13 +22,15 @@ jobs:
     steps:
     - uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.2.0
       with:
-        go-version: 1.17.x
+        go-version: ${{ env.GO_VERSION }}
     - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
     - uses: sigstore/cosign-installer@179e0f15e70e22ca2e7254fc12d68a9fbab35614 # v2.0.1
     - uses: goreleaser/goreleaser-action@79d4afbba1b4eff8b9a98e3d2e58c4dbaf094e2b # v2.8.1
       with:
-        version: latest
-        args: release --rm-dist
+        version: v1.5.0
+        install-only: true
+    - name: Release
+      run: make release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -40,13 +46,12 @@ jobs:
 
     env:
       KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
-      KOFLAGS: --platform=all --bare
       COSIGN_EXPERIMENTAL: "true"
 
     steps:
     - uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.2.0
       with:
-        go-version: 1.17.x
+        go-version: ${{ env.GO_VERSION }}
     - uses: imjasonh/setup-ko@2c3450ca27f6e6f2b02e72a40f2163c281a1f675 # v0.4
       with:
         version: v0.10.0
@@ -59,7 +64,4 @@ jobs:
     - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
     - name: Publish/Sign apko image
       run: |
-        DIGEST=$(ko build ${KOFLAGS} --tags $(basename "${{ github.ref }}" ) ./cmd/apko)
-
-        # TODO: Add attributes with version, sha, etc.
-        cosign sign ${DIGEST}
+        make sign-image

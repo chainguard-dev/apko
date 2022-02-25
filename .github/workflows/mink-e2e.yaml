@@ -48,7 +48,7 @@ jobs:
 
     - name: Build and install apko task
       run: |
-        ko apply -BRf config/
+        make ko-apply
 
     - name: Build examples
       run: |
