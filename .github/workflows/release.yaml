@@ -16,7 +16,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/setup-go@v2
+    - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab
       with:
         go-version: 1.17.x
     - uses: actions/checkout@v2
@@ -44,7 +44,7 @@ jobs:
       COSIGN_EXPERIMENTAL: "true"
 
     steps:
-    - uses: actions/setup-go@v1
+    - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab
       with:
         go-version: 1.17.x
     - uses: imjasonh/setup-ko@v0.4
