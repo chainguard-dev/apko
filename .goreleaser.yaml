@@ -10,7 +10,7 @@ env:
 builds:
 - id: apko-build
   binary: apko
-  main: ./cmd/apko/main.go
+  main: ./
   env:
   - CGO_ENABLED=0
   goos:

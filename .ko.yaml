@@ -14,12 +14,10 @@
 
 baseImageOverrides:
   # TODO(mattmoor): Talk to kaniini about the best image to use here.
-  chainguard.dev/apko/cmd/apko: docker.io/alpine:latest
+  chainguard.dev/apko: docker.io/alpine:latest
 
 builds:
 - id: apko
-  dir: .
-  main: ./cmd/apko
   env:
   - CGO_ENABLED=0
   flags:
