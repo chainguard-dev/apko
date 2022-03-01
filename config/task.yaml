@@ -39,7 +39,7 @@ spec:
       workingDir: /workspace
 
     - name: build-and-push-image
-      image: ko://chainguard.dev/apko/
+      image: ko://chainguard.dev/apko
       workingDir: /workspace
       args:
       - publish
