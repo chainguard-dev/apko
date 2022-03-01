@@ -17,7 +17,7 @@ package main
 import (
 	"log"
 
-	"chainguard.dev/apko/cmd/apko/cli"
+	"chainguard.dev/apko/pkg/cli"
 )
 
 func main() {

@@ -29,7 +29,7 @@ ifeq ($(DIFF), 1)
     GIT_TREESTATE = "dirty"
 endif
 
-SRCS = $(shell find cmd -iname "*.go") $(shell find pkg -iname "*.go")
+SRCS = $(shell find . -iname "*.go")
 
 PKG ?= sigs.k8s.io/release-utils/version
 LDFLAGS=-buildid= -X $(PKG).gitVersion=$(GIT_VERSION) \
@@ -49,7 +49,7 @@ ko: ## Build images using ko
 	$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	ko build --bare \
 		--platform=all --tags $(GIT_VERSION) --tags $(GIT_HASH) \
-		chainguard.dev/apko/cmd/apko))
+		chainguard.dev/apko))
 	@echo Image Digest $(DIGEST)
 
 .PHONY: ko-local
@@ -57,7 +57,7 @@ ko-local:  ## Build images locally using ko
 	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	ko build --bare \
 		--tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
-		chainguard.dev/apko/cmd/apko
+		chainguard.dev/apko
 
 .PHONY: ko-apply
 ko-apply:  ## Build the image and apply the manifests
@@ -71,7 +71,7 @@ ko-apply:  ## Build the image and apply the manifests
 
 .PHONY: apko
 apko: $(SRCS)
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./cmd/apko
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
 
 .PHONY: install
 install: $(SRCS) apko
