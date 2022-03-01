@@ -49,7 +49,7 @@ ko: ## Build images using ko
 	$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	ko build --bare \
 		--platform=all --tags $(GIT_VERSION) --tags $(GIT_HASH) \
-		chainguard.dev/apko/))
+		chainguard.dev/apko))
 	@echo Image Digest $(DIGEST)
 
 .PHONY: ko-local
@@ -57,7 +57,7 @@ ko-local:  ## Build images locally using ko
 	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	ko build --bare \
 		--tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
-		chainguard.dev/apko/
+		chainguard.dev/apko
 
 .PHONY: ko-apply
 ko-apply:  ## Build the image and apply the manifests
