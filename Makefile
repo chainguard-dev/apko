@@ -1,3 +1,7 @@
+# Some nice defines for the "make install" target
+PREFIX ?= /usr
+BINDIR ?= ${PREFIX}/bin
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -70,8 +74,8 @@ apko: $(SRCS)
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./cmd/apko
 
 .PHONY: install
-install: $(SRCS)
-	CGO_ENABLED=0 go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/apko
+install: $(SRCS) apko
+	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
 
 #####################
 # lint / test section
