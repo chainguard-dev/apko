@@ -16,6 +16,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -90,9 +91,10 @@ func PublishCmd(ctx context.Context, configFile string, imageRef string, outputR
 			return err
 		}
 	}
-	// TODO: We should write the image digest to STDOUT (and everything
-	// else to STDERR) in order to enable command composition
-	// e.g. kn service create --image=$(apko publish ...)
+
+	// Write the image digest to STDOUT in order to enable command
+	// composition e.g. kn service create --image=$(apko publish ...)
+	fmt.Println(digest)
 
 	return nil
 }
