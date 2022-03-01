@@ -21,4 +21,4 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
     - name: Test
-      run: go test ./...
+      run: make test

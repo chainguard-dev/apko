@@ -20,6 +20,12 @@ builds:
     - "386"
     - amd64
     - arm64
+  flags:
+    - -trimpath
+  mod_timestamp: '{{ .CommitTimestamp }}'
+  ldflags:
+    - -extldflags "-static"
+    - "{{ .Env.LDFLAGS }}"
 
 signs:
   - id: apko-cosign

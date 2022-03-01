@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
 
+env:
+  GO_VERSION: 1.17.x
+
 jobs:
   build:
     name: build
@@ -14,21 +17,19 @@ jobs:
 
       - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab # v2.1.5
         with:
-          go-version: '1.17.x'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: build
-        run: go build -o apko ./cmd/apko/main.go
+        run: |
+          make apko
+          ./apko version
 
-  test:
-    name: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
-
-      - uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab # v2.1.5
+      - uses: goreleaser/goreleaser-action@79d4afbba1b4eff8b9a98e3d2e58c4dbaf094e2b # v2.8.1
         with:
-          go-version: '1.17.x'
+          version: v1.5.0
+          install-only: true
 
-      - name: test
-        run: go test ./...
+      - name: snapshot
+        run: |
+          make snapshot
+          ./dist/apko-build_linux_amd64/apko version
