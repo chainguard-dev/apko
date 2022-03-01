@@ -17,10 +17,13 @@ package build
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
 )
+
+var systemKeyringLocations = []string{"/etc/apk/keys/"}
 
 // Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
 // but this has been designed so that we can port it easily to use libapk-go once
@@ -35,16 +38,51 @@ func (bc *Context) InitApkDB() error {
 	return Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
 }
 
+// loadSystemKeyring returns the keys found in the system keyring
+// directory by trying some common locations. These can be overridden
+// by passing one or more directories as arguments.
+func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
+	ring := []string{}
+	if len(locations) == 0 {
+		locations = systemKeyringLocations
+	}
+	for _, d := range locations {
+		keyFiles, err := os.ReadDir(d)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.Wrap(err, "reading keyring directory")
+		}
+
+		for _, f := range keyFiles {
+			if filepath.Ext(f.Name()) == ".pub" {
+				ring = append(ring, f.Name())
+			}
+		}
+		if len(ring) > 0 {
+			return ring, nil
+		}
+	}
+	// Return an error since reading the system keyring is the last resort
+	return nil, errors.New("no suitable keyring directory found")
+}
+
 // Installs the specified keys into the APK keyring inside the build context.
-func (bc *Context) InitApkKeyring() error {
+func (bc *Context) InitApkKeyring() (err error) {
 	log.Printf("initializing apk keyring")
 
-	err := os.MkdirAll(bc.WorkDir+"/etc/apk/keys", 0755)
-	if err != nil {
+	if err := os.MkdirAll(bc.WorkDir+"/etc/apk/keys", 0755); err != nil {
 		return errors.Wrap(err, "failed to make keys dir")
 	}
 
-	for _, element := range bc.ImageConfiguration.Contents.Keyring {
+	keyFiles := bc.ImageConfiguration.Contents.Keyring
+
+	if len(keyFiles) == 0 {
+		keyFiles, err = bc.loadSystemKeyring()
+		if err != nil {
+			return errors.Wrap(err, "opening system keyring")
+		}
+	}
+
+	for _, element := range keyFiles {
 		log.Printf("installing key %v", element)
 
 		data, err := os.ReadFile(element)
@@ -53,8 +91,7 @@ func (bc *Context) InitApkKeyring() error {
 		}
 
 		// #nosec G306 -- apk keyring must be publicly readable
-		err = os.WriteFile(bc.WorkDir+"/"+element, data, 0644)
-		if err != nil {
+		if err := os.WriteFile(bc.WorkDir+"/"+element, data, 0644); err != nil {
 			return errors.Wrap(err, "failed to write apk key")
 		}
 	}
