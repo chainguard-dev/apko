@@ -54,7 +54,7 @@ func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
 
 		for _, f := range keyFiles {
 			if filepath.Ext(f.Name()) == ".pub" {
-				ring = append(ring, f.Name())
+				ring = append(ring, filepath.Join(d, f.Name()))
 			}
 		}
 		if len(ring) > 0 {
