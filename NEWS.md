@@ -1,3 +1,8 @@
+# Changes from 0.1.1 to 0.1.2
+
+* Minor bugfix for usage scenario involving the APK system
+  keyring.
+
 # Changes from 0.1 to 0.1.1
 
 * Build system refactoring c/o Jason Hall and Carlos Panato
