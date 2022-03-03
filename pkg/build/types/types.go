@@ -17,6 +17,7 @@ package types
 type User struct {
 	UserName string
 	UID      int
+	GID      int
 }
 
 type Group struct {
