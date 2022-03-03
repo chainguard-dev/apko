@@ -16,11 +16,13 @@ package build
 
 import (
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
+	"go.lsp.dev/uri"
 )
 
 var systemKeyringLocations = []string{"/etc/apk/keys/"}
@@ -85,9 +87,20 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		log.Printf("installing key %v", element)
 
-		data, err := os.ReadFile(element)
+		asUri := uri.New(element)
+		asUrl, err := url.Parse(string(asUri))
 		if err != nil {
-			return errors.Wrap(err, "failed to read apk key")
+			return errors.Wrap(err, "failed to parse key as URI")
+		}
+
+		var data []byte
+		if asUrl.Scheme == "file" {
+			data, err = os.ReadFile(element)
+			if err != nil {
+				return errors.Wrap(err, "failed to read apk key")
+			}
+		} else {
+			return errors.Errorf("scheme %s not supported", asUrl.Scheme)
 		}
 
 		// #nosec G306 -- apk keyring must be publicly readable
