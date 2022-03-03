@@ -15,7 +15,9 @@
 package build
 
 import (
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -98,6 +100,16 @@ func (bc *Context) InitApkKeyring() (err error) {
 			data, err = os.ReadFile(element)
 			if err != nil {
 				return errors.Wrap(err, "failed to read apk key")
+			}
+		} else if asUrl.Scheme == "https" {
+			resp, err := http.Get(asUrl.String())
+			if err != nil {
+				return errors.Wrap(err, "failed to fetch apk key")
+			}
+
+			data, err = io.ReadAll(resp.Body)
+			if err != nil {
+				return errors.Wrap(err, "failed to read apk key response")
 			}
 		} else {
 			return errors.Errorf("scheme %s not supported", asUrl.Scheme)
