@@ -46,7 +46,7 @@ func (bc *Context) InitApkDB() error {
 // directory by trying some common locations. These can be overridden
 // by passing one or more directories as arguments.
 func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
-	ring := []string{}
+	var ring []string
 	if len(locations) == 0 {
 		locations = systemKeyringLocations
 	}
