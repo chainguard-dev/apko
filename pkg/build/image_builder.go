@@ -18,6 +18,7 @@ import (
 	"log"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 )
 
 // Builds the image in Context.WorkDir.
@@ -36,19 +37,34 @@ func (bc *Context) BuildImage() error {
 		return errors.Wrap(err, "failed to initialize apk database")
 	}
 
-	err = bc.InitApkKeyring()
-	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk keyring")
-	}
+	var eg errgroup.Group
 
-	err = bc.InitApkRepositories()
-	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk repositories")
-	}
+	eg.Go(func() error {
+		err = bc.InitApkKeyring()
+		if err != nil {
+			return errors.Wrap(err, "failed to initialize apk keyring")
+		}
+		return nil
+	})
 
-	err = bc.InitApkWorld()
-	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk world")
+	eg.Go(func() error {
+		err = bc.InitApkRepositories()
+		if err != nil {
+			return errors.Wrap(err, "failed to initialize apk repositories")
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		err = bc.InitApkWorld()
+		if err != nil {
+			return errors.Wrap(err, "failed to initialize apk world")
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
 	// sync reality with desired apk world
