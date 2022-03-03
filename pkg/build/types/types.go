@@ -14,6 +14,17 @@
 
 package types
 
+type User struct {
+	UserName string
+	UID      int
+}
+
+type Group struct {
+	GroupName string
+	GID       int
+	Members   []string
+}
+
 type ImageConfiguration struct {
 	Contents struct {
 		Repositories []string
@@ -26,5 +37,10 @@ type ImageConfiguration struct {
 
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
+	}
+	Accounts struct {
+		RunAs  string
+		Users  []User
+		Groups []Group
 	}
 }
