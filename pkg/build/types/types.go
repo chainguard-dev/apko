@@ -39,7 +39,7 @@ type ImageConfiguration struct {
 		Services map[interface{}]interface{}
 	}
 	Accounts struct {
-		RunAs  string
+		RunAs  string `yaml:run-as`
 		Users  []User
 		Groups []Group
 	}
