@@ -89,20 +89,21 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		log.Printf("installing key %v", element)
 
-		asUri := uri.New(element)
-		asUrl, err := url.Parse(string(asUri))
+		asURI := uri.New(element)
+		asURL, err := url.Parse(string(asURI))
 		if err != nil {
 			return errors.Wrap(err, "failed to parse key as URI")
 		}
 
 		var data []byte
-		if asUrl.Scheme == "file" {
+		switch asURL.Scheme {
+		case "file":
 			data, err = os.ReadFile(element)
 			if err != nil {
 				return errors.Wrap(err, "failed to read apk key")
 			}
-		} else if asUrl.Scheme == "https" {
-			resp, err := http.Get(asUrl.String())
+		case "https":
+			resp, err := http.Get(asURL.String())
 			if err != nil {
 				return errors.Wrap(err, "failed to fetch apk key")
 			}
@@ -111,8 +112,8 @@ func (bc *Context) InitApkKeyring() (err error) {
 			if err != nil {
 				return errors.Wrap(err, "failed to read apk key response")
 			}
-		} else {
-			return errors.Errorf("scheme %s not supported", asUrl.Scheme)
+		default:
+			return errors.Errorf("scheme %s not supported", asURL.Scheme)
 		}
 
 		// #nosec G306 -- apk keyring must be publicly readable
