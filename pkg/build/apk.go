@@ -213,7 +213,7 @@ func (bc *Context) fixScriptsTar() error {
 	for {
 		header, err := tr.Next()
 
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
