@@ -110,6 +110,11 @@ func (bc *Context) InitApkKeyring() (err error) {
 			if err != nil {
 				return errors.Wrap(err, "failed to fetch apk key")
 			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode < 200 || resp.StatusCode > 299 {
+				return errors.New("failed to fetch apk key: http response indicated error")
+			}
 
 			data, err = io.ReadAll(resp.Body)
 			if err != nil {
