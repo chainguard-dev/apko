@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -38,7 +38,7 @@ type UserEntry struct {
 
 // A UserFile contains the entries from an /etc/passwd file.
 type UserFile struct {
-	Entries	[]UserEntry
+	Entries []UserEntry
 }
 
 // Parse an /etc/passwd file into a UserFile.
