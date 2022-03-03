@@ -79,7 +79,6 @@ func (bc *Context) BuildImage() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to mutate accounts")
 	}
-	return nil
 
 	// write service supervision tree
 	err = bc.WriteSupervisionTree()
