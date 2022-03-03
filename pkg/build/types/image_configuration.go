@@ -39,7 +39,34 @@ func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 // Do preflight checks and mutations on an image configuration.
 func (ic *ImageConfiguration) Validate() error {
 	if ic.Entrypoint.Type == "service-bundle" {
-		return ic.ValidateServiceBundle()
+		err := ic.ValidateServiceBundle()
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, u := range ic.Accounts.Users {
+		if u.UserName == "" {
+			return errors.Errorf("configured user %v has no configured user name", u)
+		}
+
+		if u.UID == 0 {
+			return errors.Errorf("configured user %v has UID 0", u)
+		}
+
+		if u.GID == 0 {
+			u.GID = u.UID
+		}
+	}
+
+	for _, g := range ic.Accounts.Groups {
+		if g.GroupName == "" {
+			return errors.Errorf("configured group %v has no configured group name", g)
+		}
+
+		if g.GID == 0 {
+			return errors.Errorf("configured group %v has GID 0", g)
+		}
 	}
 
 	return nil
