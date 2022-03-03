@@ -25,11 +25,7 @@ func (bc *Context) Execute(name string, arg ...string) error {
 	logname := name
 
 	if bc.UseProot {
-		arg = append(arg, "")
-		arg = append(arg, "")
-		copy(arg[2:], arg[0:])
-		arg[0] = "-0"
-		arg[1] = name
+		arg = append([]string{"-0", name}, arg...)
 		name = "proot"
 	}
 
