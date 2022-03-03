@@ -21,6 +21,27 @@ import (
 	"github.com/pkg/errors"
 )
 
+func runCommand(cmd *exec.Cmd, logname string) error {
+	log.Printf("running: %v", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if output != nil {
+		log.Printf("[%s] %s", logname, output)
+	}
+	if err != nil {
+		return errors.Wrapf(err, "failed to run %s", cmd.String())
+	}
+
+	return nil
+}
+
+// TODO(kaniini): Add support for using qemu-binfmt here for multiarch.
+func (bc *Context) ExecuteChroot(name string, arg ...string) error {
+	arg = append([]string{"-S", bc.WorkDir, name}, arg...)
+	cmd := exec.Command("proot", arg...)
+	return runCommand(cmd, name)
+}
+
 func (bc *Context) Execute(name string, arg ...string) error {
 	logname := name
 
@@ -30,15 +51,5 @@ func (bc *Context) Execute(name string, arg ...string) error {
 	}
 
 	cmd := exec.Command(name, arg...)
-	log.Printf("running: %v", cmd.String())
-
-	output, err := cmd.CombinedOutput()
-	if output != nil {
-		log.Printf("[%s] %s", logname, output)
-	}
-	if err != nil {
-		return errors.Wrapf(err, "failed to run %s", name)
-	}
-
-	return nil
+	return runCommand(cmd, logname)
 }
