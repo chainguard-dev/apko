@@ -22,6 +22,8 @@ import (
 )
 
 func (bc *Context) Execute(name string, arg ...string) error {
+	logname := name
+
 	if bc.UseProot {
 		arg = append(arg, "")
 		arg = append(arg, "")
@@ -36,7 +38,7 @@ func (bc *Context) Execute(name string, arg ...string) error {
 
 	output, err := cmd.CombinedOutput()
 	if output != nil {
-		log.Printf("[%s] %s", name, output)
+		log.Printf("[%s] %s", logname, output)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "failed to run %s", name)
