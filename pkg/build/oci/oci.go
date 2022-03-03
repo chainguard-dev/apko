@@ -63,7 +63,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Ima
 			Author:    "apko",
 			Comment:   "This is an apko single-layer image",
 			CreatedBy: "apko",
-			Created:   v1.Time{Time: time.Now()},
+			Created:   v1.Time{Time: time.Time{}},
 		},
 	})
 

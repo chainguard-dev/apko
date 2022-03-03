@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -57,6 +58,11 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 		}
 		// work around some weirdness, without this we wind up with just the basename
 		header.Name = path
+
+		// zero out timestamps for reproducibility
+		header.AccessTime = time.Time{}
+		header.ModTime = time.Time{}
+		header.ChangeTime = time.Time{}
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err

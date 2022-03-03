@@ -15,6 +15,7 @@
 package build
 
 import (
+	"archive/tar"
 	"io"
 	"log"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.lsp.dev/uri"
@@ -185,4 +187,53 @@ func (bc *Context) FixateApkWorld() error {
 	}
 
 	return bc.Execute("apk", args...)
+}
+
+func (bc *Context) fixScriptsTar() error {
+	outfile, err := os.CreateTemp("", "apko-scripts-*.tar")
+	if err != nil {
+		return err
+	}
+
+	defer outfile.Close()
+
+	scriptsTar := filepath.Join(bc.WorkDir, "lib", "apk", "db", "scripts.tar")
+	f, err := os.Open(scriptsTar)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	tr := tar.NewReader(f)
+	tw := tar.NewWriter(outfile)
+
+	defer tw.Close()
+
+	for {
+		header, err := tr.Next()
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		// zero out timestamps for reproducibility
+		header.AccessTime = time.Time{}
+		header.ModTime = time.Time{}
+		header.ChangeTime = time.Time{}
+
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(tw, tr); err != nil {
+			return err
+		}
+	}
+
+	return os.Rename(outfile.Name(), scriptsTar)
 }
