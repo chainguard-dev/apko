@@ -27,6 +27,8 @@ import (
 )
 
 func Build() *cobra.Command {
+	var useProot bool
+
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build an image from a YAML configuration file",
@@ -39,14 +41,16 @@ command, e.g.
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildCmd(cmd.Context(), args[0], args[1], args[2])
+			return BuildCmd(cmd.Context(), args[0], args[1], args[2], useProot)
 		},
 	}
+
+	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string) error {
+func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string, useProot bool) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic := types.ImageConfiguration{}
@@ -64,6 +68,7 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 	bc := build.Context{
 		ImageConfiguration: ic,
 		WorkDir:            wd,
+		UseProot:           useProot,
 	}
 
 	layerTarGZ, err := bc.BuildLayer()
