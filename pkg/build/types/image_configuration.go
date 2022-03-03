@@ -53,10 +53,6 @@ func (ic *ImageConfiguration) Validate() error {
 		if u.UID == 0 {
 			return errors.Errorf("configured user %v has UID 0", u)
 		}
-
-		if u.GID == 0 {
-			u.GID = u.UID
-		}
 	}
 
 	for _, g := range ic.Accounts.Groups {
