@@ -24,13 +24,11 @@ import (
 )
 
 func TestSystemKeyringLocations(t *testing.T) {
-	dir, err := os.MkdirTemp("", "keyring-test-")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	c := Context{}
 	// Read the empty dir, passing only one empty location should err
-	_, err = c.loadSystemKeyring(dir)
+	_, err := c.loadSystemKeyring(dir)
 	require.Error(t, err)
 
 	// Write some dummy keyfiles
@@ -57,4 +55,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 	require.NoError(t, os.Chmod(dir, 0o000))
 	_, err = c.loadSystemKeyring(dir)
 	require.Error(t, err)
+
+	// reset permissions back to 0700 or the tmpdir won't be removed
+	require.NoError(t, os.Chmod(dir, 0o700))
 }
