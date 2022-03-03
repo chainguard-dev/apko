@@ -22,6 +22,15 @@ import (
 )
 
 func (bc *Context) Execute(name string, arg ...string) error {
+	if bc.UseProot {
+		arg = append(arg, "")
+		arg = append(arg, "")
+		copy(arg[2:], arg[0:])
+		arg[0] = "-0"
+		arg[1] = name
+		name = "proot"
+	}
+
 	cmd := exec.Command(name, arg...)
 	log.Printf("running: %v", cmd.String())
 

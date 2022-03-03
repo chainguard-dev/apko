@@ -29,6 +29,7 @@ import (
 
 func Publish() *cobra.Command {
 	var imageRefs string
+	var useProot bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -40,7 +41,7 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := PublishCmd(cmd.Context(), args[0], args[1], imageRefs)
+			err := PublishCmd(cmd.Context(), args[0], args[1], imageRefs, useProot)
 			if err != nil {
 				return err
 			}
@@ -49,11 +50,12 @@ in a keychain.`,
 	}
 
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
+	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, configFile string, imageRef string, outputRefs string) error {
+func PublishCmd(ctx context.Context, configFile string, imageRef string, outputRefs string, useProot bool) error {
 	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
 
 	ic := types.ImageConfiguration{}
@@ -71,6 +73,7 @@ func PublishCmd(ctx context.Context, configFile string, imageRef string, outputR
 	bc := build.Context{
 		ImageConfiguration: ic,
 		WorkDir:            wd,
+		UseProot:           useProot,
 	}
 
 	layerTarGZ, err := bc.BuildLayer()
