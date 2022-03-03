@@ -22,14 +22,14 @@ import (
 )
 
 func runCommand(cmd *exec.Cmd, logname string) error {
-	log.Printf("running: %v", cmd.String())
+	log.Printf("running: %s", cmd)
 
 	output, err := cmd.CombinedOutput()
 	if output != nil {
 		log.Printf("[%s] %s", logname, output)
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to run %s", cmd.String())
+		return errors.Wrapf(err, "failed to run %s", cmd)
 	}
 
 	return nil
