@@ -15,12 +15,16 @@
 package build
 
 import (
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
+	"go.lsp.dev/uri"
 )
 
 var systemKeyringLocations = []string{"/etc/apk/keys/"}
@@ -85,9 +89,39 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		log.Printf("installing key %v", element)
 
-		data, err := os.ReadFile(element)
+		// Normalize the element as a URI, so that local paths
+		// are translated into file:// URLs, allowing them to be parsed
+		// into a url.URL{}.
+		asURI := uri.New(element)
+		asURL, err := url.Parse(string(asURI))
 		if err != nil {
-			return errors.Wrap(err, "failed to read apk key")
+			return errors.Wrap(err, "failed to parse key as URI")
+		}
+
+		var data []byte
+		switch asURL.Scheme {
+		case "file":
+			data, err = os.ReadFile(element)
+			if err != nil {
+				return errors.Wrap(err, "failed to read apk key")
+			}
+		case "https":
+			resp, err := http.Get(asURL.String())
+			if err != nil {
+				return errors.Wrap(err, "failed to fetch apk key")
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode < 200 || resp.StatusCode > 299 {
+				return errors.New("failed to fetch apk key: http response indicated error")
+			}
+
+			data, err = io.ReadAll(resp.Body)
+			if err != nil {
+				return errors.Wrap(err, "failed to read apk key response")
+			}
+		default:
+			return errors.Errorf("scheme %s not supported", asURL.Scheme)
 		}
 
 		// #nosec G306 -- apk keyring must be publicly readable
