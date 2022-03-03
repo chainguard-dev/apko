@@ -133,5 +133,10 @@ func (bc *Context) InitApkWorld() error {
 func (bc *Context) FixateApkWorld() error {
 	log.Printf("synchronizing with desired apk world")
 
-	return bc.Execute("apk", "fix", "--root", bc.WorkDir, "--no-cache", "--update-cache")
+	args := []string{"fix", "--root", bc.WorkDir, "--no-cache", "--update-cache"}
+	if bc.UseProot {
+		args = append(args, "--no-scripts")
+	}
+
+	return bc.Execute("apk", args...)
 }
