@@ -38,10 +38,10 @@ func Publish() *cobra.Command {
 
 It is assumed that you have used "docker login" to store credentials
 in a keychain.`,
-		Example: `  apko publish <config.yaml> <tag>`,
-		Args:    cobra.ExactArgs(2),
+		Example: `  apko publish <config.yaml> <tag...>`,
+		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := PublishCmd(cmd.Context(), args[0], args[1], imageRefs, useProot)
+			err := PublishCmd(cmd.Context(), args[0], imageRefs, useProot, args[1:]...)
 			if err != nil {
 				return err
 			}
@@ -55,8 +55,8 @@ in a keychain.`,
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, configFile string, imageRef string, outputRefs string, useProot bool) error {
-	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
+func PublishCmd(ctx context.Context, configFile string, outputRefs string, useProot bool, tags ...string) error {
+	log.Printf("building tags %v from config file '%s'", tags, configFile)
 
 	ic := types.ImageConfiguration{}
 	err := ic.Load(configFile)
@@ -82,7 +82,7 @@ func PublishCmd(ctx context.Context, configFile string, imageRef string, outputR
 	}
 	defer os.Remove(layerTarGZ)
 
-	digest, err := oci.PublishImageFromLayer(imageRef, layerTarGZ, bc.ImageConfiguration)
+	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, tags...)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}

@@ -35,8 +35,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-func buildImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
-	log.Printf("building OCI image '%s' from layer '%s'", imageRef, layerTarGZ)
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
+	log.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
 	if err != nil {
@@ -97,7 +97,7 @@ func buildImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfi
 }
 
 func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
-	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, ic)
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic)
 	if err != nil {
 		return err
 	}
@@ -116,15 +116,28 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 	return nil
 }
 
-func PublishImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageConfiguration) (name.Digest, error) {
-	v1Image, err := buildImageFromLayer(imageRef, layerTarGZ, ic)
+func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash, kc authn.Keychain) (name.Digest, error) {
+	imgRef, err := name.ParseReference(imageRef)
+	if err != nil {
+		return name.Digest{}, errors.Wrap(err, "unable to parse reference")
+	}
+
+	err = remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc))
+	if err != nil {
+		return name.Digest{}, errors.Wrap(err, "failed to publish")
+	}
+	return imgRef.Context().Digest(hash.String()), nil
+}
+
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, tags ...string) (name.Digest, error) {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic)
 	if err != nil {
 		return name.Digest{}, err
 	}
 
-	imgRef, err := name.ParseReference(imageRef)
+	h, err := v1Image.Digest()
 	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "unable to parse reference")
+		return name.Digest{}, errors.Wrap(err, "failed to compute digest")
 	}
 
 	kc := authn.NewMultiKeychain(
@@ -135,14 +148,14 @@ func PublishImageFromLayer(imageRef string, layerTarGZ string, ic types.ImageCon
 		github.Keychain,
 	)
 
-	h, err := v1Image.Digest()
-	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "failed to compute digest")
+	digest := name.Digest{}
+	for _, tag := range tags {
+		log.Printf("publishing tag %v", tag)
+		digest, err = publishTagFromImage(v1Image, tag, h, kc)
+		if err != nil {
+			return name.Digest{}, err
+		}
 	}
 
-	err = remote.Write(imgRef, v1Image, remote.WithAuthFromKeychain(kc))
-	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "failed to publish")
-	}
-	return imgRef.Context().Digest(h.String()), nil
+	return digest, nil
 }
