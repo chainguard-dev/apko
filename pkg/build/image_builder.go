@@ -73,6 +73,14 @@ func (bc *Context) BuildImage() error {
 		return errors.Wrap(err, "failed to fixate apk world")
 	}
 
+	// TODO(kaniini): use errgroup to parallelize these tasks
+	// mutate accounts
+	err = bc.MutateAccounts()
+	if err != nil {
+		return errors.Wrap(err, "failed to mutate accounts")
+	}
+	return nil
+
 	// write service supervision tree
 	err = bc.WriteSupervisionTree()
 	if err != nil {
