@@ -55,4 +55,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 	require.NoError(t, os.Chmod(dir, 0o000))
 	_, err = c.loadSystemKeyring(dir)
 	require.Error(t, err)
+
+	// reset permissions back to 0700 or the tmpdir won't be removed
+	require.NoError(t, os.Chmod(dir, 0o700))
 }
