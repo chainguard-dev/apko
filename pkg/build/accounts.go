@@ -26,27 +26,27 @@ import (
 func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
-		GID: group.GID,
-		Members: group.Members,
-		Password: "x",
+		GID:       group.GID,
+		Members:   group.Members,
+		Password:  "x",
 	}
 	return append(groups, ge)
 }
 
 func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
-	if (user.GID == 0) {
+	if user.GID == 0 {
 		log.Printf("guessing unset GID for user %v", user)
 		user.GID = user.UID
 	}
 
 	ue := passwd.UserEntry{
 		UserName: user.UserName,
-		UID: user.UID,
-		GID: user.GID,
-		HomeDir: filepath.Join("/home", user.UserName),
+		UID:      user.UID,
+		GID:      user.GID,
+		HomeDir:  filepath.Join("/home", user.UserName),
 		Password: "x",
-		Info: "Account created by apko",
-		Shell: "/bin/sh",
+		Info:     "Account created by apko",
+		Shell:    "/bin/sh",
 	}
 	return append(users, ue)
 }
