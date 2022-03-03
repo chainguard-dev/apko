@@ -89,6 +89,9 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		log.Printf("installing key %v", element)
 
+		// Normalize the element as a URI, so that local paths
+		// are translated into file:// URLs, allowing them to be parsed
+		// into a url.URL{}.
 		asURI := uri.New(element)
 		asURL, err := url.Parse(string(asURI))
 		if err != nil {
