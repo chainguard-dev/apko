@@ -189,7 +189,19 @@ func (bc *Context) FixateApkWorld() error {
 	return bc.Execute("apk", args...)
 }
 
-func (bc *Context) fixScriptsTar() error {
+func (bc *Context) normalizeApkScriptsTar() error {
+	scriptsTar := filepath.Join(bc.WorkDir, "lib", "apk", "db", "scripts.tar")
+
+	f, err := os.Open(scriptsTar)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+
+	defer f.Close()
+
 	outfile, err := os.CreateTemp("", "apko-scripts-*.tar")
 	if err != nil {
 		return err
@@ -197,13 +209,6 @@ func (bc *Context) fixScriptsTar() error {
 
 	defer outfile.Close()
 
-	scriptsTar := filepath.Join(bc.WorkDir, "lib", "apk", "db", "scripts.tar")
-	f, err := os.Open(scriptsTar)
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
 
 	tr := tar.NewReader(f)
 	tw := tar.NewWriter(outfile)

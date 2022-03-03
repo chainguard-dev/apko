@@ -75,7 +75,7 @@ func (bc *Context) BuildImage() error {
 		return errors.Wrap(err, "failed to fixate apk world")
 	}
 
-	if err := bc.fixScriptsTar(); err != nil {
+	if err := bc.normalizeApkScriptsTar(); err != nil {
 		return err
 	}
 
