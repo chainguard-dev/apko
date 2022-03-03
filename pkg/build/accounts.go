@@ -15,6 +15,7 @@
 package build
 
 import (
+	"log"
 	"path/filepath"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -33,6 +34,11 @@ func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEn
 }
 
 func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
+	if (user.GID == 0) {
+		log.Printf("guessing unset GID for user %v", user)
+		user.GID = user.UID
+	}
+
 	ue := passwd.UserEntry{
 		UserName: user.UserName,
 		UID: user.UID,
