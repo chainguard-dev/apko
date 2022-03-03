@@ -68,6 +68,8 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 				return err
 			}
 
+			defer data.Close()
+
 			if _, err := io.Copy(tw, data); err != nil {
 				return err
 			}
