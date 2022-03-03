@@ -29,7 +29,7 @@ import (
 type GroupEntry struct {
 	GroupName string
 	Password  string
-	GID       int
+	GID       uint32
 	Members   []string
 }
 
@@ -116,7 +116,7 @@ func (ge *GroupEntry) Parse(line string) error {
 	if err != nil {
 		return errors.Errorf("failed to parse UID %s", parts[2])
 	}
-	ge.GID = gid
+	ge.GID = uint32(gid)
 
 	ge.Members = strings.Split(parts[3], ",")
 

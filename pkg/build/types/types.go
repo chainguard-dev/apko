@@ -16,13 +16,13 @@ package types
 
 type User struct {
 	UserName string
-	UID      int
-	GID      int
+	UID      uint32
+	GID      uint32
 }
 
 type Group struct {
 	GroupName string
-	GID       int
+	GID       uint32
 	Members   []string
 }
 

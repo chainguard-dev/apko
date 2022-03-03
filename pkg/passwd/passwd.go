@@ -29,8 +29,8 @@ import (
 type UserEntry struct {
 	UserName string
 	Password string
-	UID      int
-	GID      int
+	UID      uint32
+	GID      uint32
 	Info     string
 	HomeDir  string
 	Shell    string
@@ -119,13 +119,13 @@ func (ue *UserEntry) Parse(line string) error {
 	if err != nil {
 		return errors.Errorf("failed to parse UID %s", parts[2])
 	}
-	ue.UID = uid
+	ue.UID = uint32(uid)
 
 	gid, err := strconv.Atoi(parts[3])
 	if err != nil {
 		return errors.Errorf("failed to parse GID %s", parts[3])
 	}
-	ue.GID = gid
+	ue.GID = uint32(gid)
 
 	ue.Info = parts[4]
 	ue.HomeDir = parts[5]
