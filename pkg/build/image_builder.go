@@ -102,7 +102,7 @@ func (bc *Context) BuildImage() error {
 
 // Installs the BusyBox symlinks, if appropriate.
 func (bc *Context) InstallBusyboxSymlinks() error {
-	path := filepath.Join(bc.WorkDir, "/bin/busybox")
+	path := filepath.Join(bc.WorkDir, "bin", "busybox")
 
 	_, err := os.Stat(path)
 	if err != nil {
