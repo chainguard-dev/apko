@@ -51,23 +51,33 @@ func ReadUserFile(filePath string) (UserFile, error) {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	err = uf.Load(file)
+	if err != nil {
+		return uf, err
+	}
+
+	return uf, nil
+}
+
+// Load an /etc/passwd file into a UserFile from an io.Reader.
+func (uf *UserFile) Load(r io.Reader) error {
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		ue := UserEntry{}
 
-		err = ue.Parse(scanner.Text())
+		err := ue.Parse(scanner.Text())
 		if err != nil {
-			return uf, errors.Wrapf(err, "unable to parse %s", filePath)
+			return errors.Wrap(err, "unable to parse")
 		}
 
 		uf.Entries = append(uf.Entries, ue)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return uf, errors.Wrapf(err, "unable to parse %s", filePath)
+		return errors.Wrap(err, "unable to parse")
 	}
 
-	return uf, nil
+	return nil
 }
 
 // Write an /etc/passwd file from a UserFile.
@@ -78,8 +88,13 @@ func (uf *UserFile) WriteFile(filePath string) error {
 	}
 	defer file.Close()
 
+	return uf.Write(file)
+}
+
+// Write an /etc/passwd file into an io.Writer.
+func (uf *UserFile) Write(w io.Writer) error {
 	for _, ue := range uf.Entries {
-		err = ue.Write(file)
+		err := ue.Write(w)
 		if err != nil {
 			return errors.Wrapf(err, "unable to write passwd entry")
 		}
