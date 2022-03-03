@@ -28,6 +28,7 @@ type Context struct {
 	ImageConfiguration types.ImageConfiguration
 	WorkDir            string
 	TarballPath        string
+	UseProot           bool
 }
 
 func (bc *Context) Summarize() {

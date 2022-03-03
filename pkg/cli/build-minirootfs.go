@@ -26,6 +26,8 @@ import (
 )
 
 func BuildMinirootFS() *cobra.Command {
+	var useProot bool
+
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
 		Short:   "Build a minirootfs image from a YAML configuration file",
@@ -33,14 +35,16 @@ func BuildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildMinirootFSCmd(cmd.Context(), args[0], args[1])
+			return BuildMinirootFSCmd(cmd.Context(), args[0], args[1], useProot)
 		},
 	}
+
+	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 
 	return cmd
 }
 
-func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ string) error {
+func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ string, useProot bool) error {
 	log.Printf("building minirootfs '%s' from config file '%s'", outputTarGZ, configFile)
 
 	ic := types.ImageConfiguration{}
@@ -59,6 +63,7 @@ func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ stri
 		ImageConfiguration: ic,
 		WorkDir:            wd,
 		TarballPath:        outputTarGZ,
+		UseProot:           useProot,
 	}
 
 	layerTarGZ, err := bc.BuildLayer()

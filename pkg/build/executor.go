@@ -21,13 +21,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-func Execute(name string, arg ...string) error {
+func (bc *Context) Execute(name string, arg ...string) error {
+	logname := name
+
+	if bc.UseProot {
+		arg = append([]string{"-0", name}, arg...)
+		name = "proot"
+	}
+
 	cmd := exec.Command(name, arg...)
 	log.Printf("running: %v", cmd.String())
 
 	output, err := cmd.CombinedOutput()
 	if output != nil {
-		log.Printf("[%s] %s", name, output)
+		log.Printf("[%s] %s", logname, output)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "failed to run %s", name)

@@ -35,7 +35,7 @@ var systemKeyringLocations = []string{"/etc/apk/keys/"}
 func (bc *Context) InitApkDB() error {
 	log.Printf("initializing apk database")
 
-	return Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
+	return bc.Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
@@ -133,5 +133,10 @@ func (bc *Context) InitApkWorld() error {
 func (bc *Context) FixateApkWorld() error {
 	log.Printf("synchronizing with desired apk world")
 
-	return Execute("apk", "fix", "--root", bc.WorkDir, "--no-cache", "--update-cache")
+	args := []string{"fix", "--root", bc.WorkDir, "--no-cache", "--update-cache"}
+	if bc.UseProot {
+		args = append(args, "--no-scripts")
+	}
+
+	return bc.Execute("apk", args...)
 }
