@@ -33,6 +33,7 @@ type Context struct {
 	Tags               []string
 	SourceDateEpoch    time.Time
 	Assertions         []Assertion
+	WantSBOM           bool
 }
 
 func (bc *Context) Summarize() {
@@ -41,6 +42,7 @@ func (bc *Context) Summarize() {
 	log.Printf("  tarball path: %s", bc.TarballPath)
 	log.Printf("  use proot: %t", bc.UseProot)
 	log.Printf("  source date: %s", bc.SourceDateEpoch)
+	log.Printf("  generate SBOM: %t", bc.WantSBOM)
 	bc.ImageConfiguration.Summarize()
 }
 
@@ -187,6 +189,14 @@ func WithBuildDate(s string) Option {
 		}
 
 		bc.SourceDateEpoch = t
+
+		return nil
+	}
+}
+
+func WithSBOM(enable bool) Option {
+	return func(bc *Context) error {
+		bc.WantSBOM = enable
 		return nil
 	}
 }
