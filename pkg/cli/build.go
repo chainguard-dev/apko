@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
+	"chainguard.dev/apko/pkg/build/types"
 	"github.com/spf13/cobra"
 )
 
@@ -70,6 +72,11 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 	if err != nil {
 		return err
 	}
+	arch := types.Architecture(runtime.GOARCH)
+	if len(bc.ImageConfiguration.Archs) != 0 {
+		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", arch)
+	}
+	bc.Arch = arch
 
 	log.Printf("building image '%s'", imageRef)
 
@@ -79,7 +86,7 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 	}
 	defer os.Remove(layerTarGZ)
 
-	if err := oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch); err != nil {
+	if err := oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch); err != nil {
 		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
 

@@ -22,6 +22,9 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
+	"chainguard.dev/apko/pkg/build/types"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +33,7 @@ func Publish() *cobra.Command {
 	var useProot bool
 	var buildDate string
 	var sbomPath string
+	var archstrs []string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -41,7 +45,8 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := PublishCmd(cmd.Context(), imageRefs,
+			archs := types.ParseArchitectures(archstrs)
+			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
 				build.WithTags(args[1:]...),
@@ -58,11 +63,12 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, outputRefs string, opts ...build.Option) error {
+func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -74,17 +80,51 @@ func PublishCmd(ctx context.Context, outputRefs string, opts ...build.Option) er
 		return err
 	}
 
+	if len(archs) == 0 {
+		archs = types.AllArchs
+	}
+	if len(bc.ImageConfiguration.Archs) == 0 {
+		bc.ImageConfiguration.Archs = archs
+	}
+
 	log.Printf("building tags %v", bc.Tags)
 
-	layerTarGZ, err := bc.BuildLayer()
-	if err != nil {
-		return fmt.Errorf("failed to build layer image: %w", err)
-	}
-	defer os.Remove(layerTarGZ)
+	var digest name.Digest
+	switch len(bc.ImageConfiguration.Archs) {
+	case 0:
+		return fmt.Errorf("no archs requested: %w", err)
+	case 1:
+		bc.Arch = bc.ImageConfiguration.Archs[0]
+		layerTarGZ, err := bc.BuildLayer()
+		if err != nil {
+			return fmt.Errorf("failed to build layer image: %w", err)
+		}
+		defer os.Remove(layerTarGZ)
 
-	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Tags...)
-	if err != nil {
-		return fmt.Errorf("failed to build OCI image: %w", err)
+		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch, bc.Tags...)
+		if err != nil {
+			return fmt.Errorf("failed to build OCI image: %w", err)
+		}
+	default:
+		var imgs []v1.Image
+		for _, arch := range archs {
+			bc.Arch = arch
+			layerTarGZ, err := bc.BuildLayer()
+			if err != nil {
+				return fmt.Errorf("failed to build layer image: %w", err)
+			}
+			defer os.Remove(layerTarGZ)
+
+			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch)
+			if err != nil {
+				return fmt.Errorf("failed to build OCI image: %w", err)
+			}
+			imgs = append(imgs, img)
+		}
+		digest, err = oci.PublishIndex(imgs, bc.Tags...)
+		if err != nil {
+			return fmt.Errorf("failed to build OCI index: %w", err)
+		}
 	}
 
 	// If provided, this is the name of the file to write digest referenced into

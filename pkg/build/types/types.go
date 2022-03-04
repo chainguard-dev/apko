@@ -14,6 +14,8 @@
 
 package types
 
+import "sort"
+
 type User struct {
 	UserName string
 	UID      uint32
@@ -44,4 +46,56 @@ type ImageConfiguration struct {
 		Users  []User
 		Groups []Group
 	}
+	Archs []Architecture
+}
+
+type Architecture string
+
+const (
+	amd64   Architecture = "amd64"
+	arm64   Architecture = "arm64"
+	ppc64le Architecture = "ppc64le"
+	s390x   Architecture = "s390x"
+	_386    Architecture = "386"
+	riscv64 Architecture = "riscv64"
+	// TODO: armv7 and armhf (av6)
+)
+
+var AllArchs = []Architecture{amd64, arm64, ppc64le, s390x, _386, riscv64}
+
+func (a Architecture) ToAPK() string {
+	switch a {
+	case _386:
+		return "x86"
+	case amd64:
+		return "x86_64"
+	case arm64:
+		return "aarch64"
+	default:
+		return string(a)
+	}
+}
+
+func ParseArchitectures(in []string) []Architecture {
+	uniq := map[Architecture]struct{}{}
+	for _, s := range in {
+		a := Architecture(s)
+		switch s {
+		case "x86":
+			a = _386
+		case "x86_64":
+			a = amd64
+		case "aarch64":
+			a = arm64
+		}
+		uniq[a] = struct{}{}
+	}
+	archs := make([]Architecture, 0, len(uniq))
+	for k := range uniq {
+		archs = append(archs, k)
+	}
+	sort.Slice(archs, func(i, j int) bool {
+		return i < j
+	})
+	return archs
 }
