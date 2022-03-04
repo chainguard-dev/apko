@@ -20,7 +20,6 @@ import (
 	"os"
 
 	"chainguard.dev/apko/pkg/build"
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +34,11 @@ func BuildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildMinirootFSCmd(cmd.Context(), args[0], args[1], useProot)
+			return BuildMinirootFSCmd(cmd.Context(),
+				build.WithConfig(args[0]),
+				build.WithTarball(args[1]),
+				build.WithProot(useProot),
+			)
 		},
 	}
 
@@ -44,15 +47,7 @@ func BuildMinirootFS() *cobra.Command {
 	return cmd
 }
 
-func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ string, useProot bool) error {
-	log.Printf("building minirootfs '%s' from config file '%s'", outputTarGZ, configFile)
-
-	ic := types.ImageConfiguration{}
-	err := ic.Load(configFile)
-	if err != nil {
-		return errors.Wrap(err, "failed to load image configuration")
-	}
-
+func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return errors.Wrap(err, "failed to create working directory")
@@ -60,11 +55,16 @@ func BuildMinirootFSCmd(ctx context.Context, configFile string, outputTarGZ stri
 	defer os.RemoveAll(wd)
 
 	bc := build.Context{
-		ImageConfiguration: ic,
-		WorkDir:            wd,
-		TarballPath:        outputTarGZ,
-		UseProot:           useProot,
+		WorkDir: wd,
 	}
+
+	for _, opt := range opts {
+		if err := opt(&bc); err != nil {
+			return err
+		}
+	}
+
+	log.Printf("building minirootfs '%s'", bc.TarballPath)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
