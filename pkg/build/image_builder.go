@@ -77,7 +77,7 @@ func (bc *Context) BuildImage() error {
 
 	eg.Go(func() error {
 		if err := bc.normalizeApkScriptsTar(); err != nil {
-			return errors.Wrapf(err, "failed to normalize scripts tar")
+			return errors.Wrapf(err, "failed to normalize scripts.tar")
 		}
 		return nil
 	})
