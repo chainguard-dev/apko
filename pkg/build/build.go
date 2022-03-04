@@ -40,6 +40,7 @@ func (bc *Context) Summarize() {
 	log.Printf("  working directory: %s", bc.WorkDir)
 	log.Printf("  tarball path: %s", bc.TarballPath)
 	log.Printf("  use proot: %t", bc.UseProot)
+	log.Printf("  source date: %s", bc.SourceDateEpoch)
 	bc.ImageConfiguration.Summarize()
 }
 
