@@ -22,7 +22,6 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +40,11 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := PublishCmd(cmd.Context(), args[0], imageRefs, useProot, args[1:]...)
+			err := PublishCmd(cmd.Context(), imageRefs,
+				build.WithConfig(args[0]),
+				build.WithProot(useProot),
+				build.WithTags(args[1:]...),
+			)
 			if err != nil {
 				return err
 			}
@@ -55,15 +58,7 @@ in a keychain.`,
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, configFile string, outputRefs string, useProot bool, tags ...string) error {
-	log.Printf("building tags %v from config file '%s'", tags, configFile)
-
-	ic := types.ImageConfiguration{}
-	err := ic.Load(configFile)
-	if err != nil {
-		return errors.Wrap(err, "failed to load image configuration")
-	}
-
+func PublishCmd(ctx context.Context, outputRefs string, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return errors.Wrap(err, "failed to create working directory")
@@ -71,10 +66,16 @@ func PublishCmd(ctx context.Context, configFile string, outputRefs string, usePr
 	defer os.RemoveAll(wd)
 
 	bc := build.Context{
-		ImageConfiguration: ic,
-		WorkDir:            wd,
-		UseProot:           useProot,
+		WorkDir: wd,
 	}
+
+	for _, opt := range opts {
+		if err := opt(&bc); err != nil {
+			return err
+		}
+	}
+
+	log.Printf("building tags %v", bc.Tags)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
@@ -82,7 +83,7 @@ func PublishCmd(ctx context.Context, configFile string, outputRefs string, usePr
 	}
 	defer os.Remove(layerTarGZ)
 
-	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, tags...)
+	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Tags...)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}

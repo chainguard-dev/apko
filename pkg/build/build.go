@@ -29,6 +29,7 @@ type Context struct {
 	WorkDir            string
 	TarballPath        string
 	UseProot           bool
+	Tags               []string
 }
 
 func (bc *Context) Summarize() {
@@ -78,4 +79,41 @@ func (bc *Context) BuildLayer() (string, error) {
 	}
 
 	return layerTarGZ, nil
+}
+
+type Option func(*Context) error
+
+func WithConfig(configFile string) Option {
+	return func(bc *Context) error {
+		log.Printf("loading config file: %s", configFile)
+
+		var ic types.ImageConfiguration
+		if err := ic.Load(configFile); err != nil {
+			return errors.Wrap(err, "failed to load image configuration")
+		}
+
+		bc.ImageConfiguration = ic
+		return nil
+	}
+}
+
+func WithProot(enable bool) Option {
+	return func(bc *Context) error {
+		bc.UseProot = enable
+		return nil
+	}
+}
+
+func WithTags(tags ...string) Option {
+	return func(bc *Context) error {
+		bc.Tags = tags
+		return nil
+	}
+}
+
+func WithTarball(path string) Option {
+	return func(bc *Context) error {
+		bc.TarballPath = path
+		return nil
+	}
 }

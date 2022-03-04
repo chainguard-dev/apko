@@ -21,7 +21,6 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +40,10 @@ command, e.g.
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildCmd(cmd.Context(), args[0], args[1], args[2], useProot)
+			return BuildCmd(cmd.Context(), args[1], args[2],
+				build.WithConfig(args[0]),
+				build.WithProot(useProot),
+			)
 		},
 	}
 
@@ -50,15 +52,7 @@ command, e.g.
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTarGZ string, useProot bool) error {
-	log.Printf("building image '%s' from config file '%s'", imageRef, configFile)
-
-	ic := types.ImageConfiguration{}
-	err := ic.Load(configFile)
-	if err != nil {
-		return errors.Wrap(err, "failed to load image configuration")
-	}
-
+func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return errors.Wrap(err, "failed to create working directory")
@@ -66,10 +60,16 @@ func BuildCmd(ctx context.Context, configFile string, imageRef string, outputTar
 	defer os.RemoveAll(wd)
 
 	bc := build.Context{
-		ImageConfiguration: ic,
-		WorkDir:            wd,
-		UseProot:           useProot,
+		WorkDir: wd,
 	}
+
+	for _, opt := range opts {
+		if err := opt(&bc); err != nil {
+			return err
+		}
+	}
+
+	log.Printf("building image '%s'", imageRef)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
