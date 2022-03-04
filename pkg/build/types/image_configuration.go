@@ -15,6 +15,7 @@
 package types
 
 import (
+	"log"
 	"os"
 
 	"github.com/pkg/errors"
@@ -78,4 +79,24 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	ic.Contents.Packages = append(ic.Contents.Packages, "s6")
 
 	return nil
+}
+
+func (ic *ImageConfiguration) Summarize() {
+	log.Printf("image configuration:")
+	log.Printf("  contents:")
+	log.Printf("    repositories: %v", ic.Contents.Repositories)
+	log.Printf("    keyring:      %v", ic.Contents.Keyring)
+	log.Printf("    packages:     %v", ic.Contents.Packages)
+	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
+		log.Printf("  entrypoint:")
+		log.Printf("    type:    %s", ic.Entrypoint.Type)
+		log.Printf("    cmd:     %s", ic.Entrypoint.Command)
+		log.Printf("    service: %v", ic.Entrypoint.Services)
+	}
+	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
+		log.Printf("  accounts:")
+		log.Printf("    runas:  %s", ic.Accounts.RunAs)
+		log.Printf("    users:  %v", ic.Accounts.Users)
+		log.Printf("    groups: %v", ic.Accounts.Groups)
+	}
 }
