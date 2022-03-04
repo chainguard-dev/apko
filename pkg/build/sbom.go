@@ -15,7 +15,6 @@
 package build
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -163,17 +162,19 @@ func (bc *Context) GenerateSBOM() error {
 		Dependencies: pkgDependencies,
 	}
 
-	var buf bytes.Buffer
+	out, err := os.Create(bc.SBOMPath)
+	if err != nil {
+		return errors.Wrapf(err, "unable to open SBOM path %s for writing", bc.SBOMPath)
+	}
+	defer out.Close()
 
-	enc := json.NewEncoder(&buf)
+	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 
 	err = enc.Encode(bom)
 	if err != nil {
 		return errors.Wrap(err, "unable to encode BOM")
 	}
-
-	log.Printf("%s", buf)
 
 	return nil
 }
