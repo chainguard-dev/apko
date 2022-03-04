@@ -43,7 +43,7 @@ func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
 		UserName: user.UserName,
 		UID:      user.UID,
 		GID:      user.GID,
-		HomeDir:  filepath.Join("/home", user.UserName),
+		HomeDir:  "/home/" + user.UserName,
 		Password: "x",
 		Info:     "Account created by apko",
 		Shell:    "/bin/sh",
@@ -58,7 +58,7 @@ func (bc *Context) MutateAccounts() error {
 
 	// Mutate the /etc/groups file
 	eg.Go(func() error {
-		path := filepath.Join(bc.WorkDir, "/etc/group")
+		path := filepath.Join(bc.WorkDir, "etc", "group")
 
 		gf, err := passwd.ReadGroupFile(path)
 		if err != nil {
@@ -79,7 +79,7 @@ func (bc *Context) MutateAccounts() error {
 
 	// Mutate the /etc/passwd file
 	eg.Go(func() error {
-		path := filepath.Join(bc.WorkDir, "/etc/passwd")
+		path := filepath.Join(bc.WorkDir, "etc", "passwd")
 
 		uf, err := passwd.ReadUserFile(path)
 		if err != nil {
