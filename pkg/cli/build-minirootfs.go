@@ -27,6 +27,7 @@ import (
 func BuildMinirootFS() *cobra.Command {
 	var useProot bool
 	var buildDate string
+	var sbomPath string
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -40,12 +41,14 @@ func BuildMinirootFS() *cobra.Command {
 				build.WithTarball(args[1]),
 				build.WithProot(useProot),
 				build.WithBuildDate(buildDate),
+				build.WithSBOM(sbomPath),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
+	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 
 	return cmd
 }
