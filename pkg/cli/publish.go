@@ -29,6 +29,7 @@ import (
 func Publish() *cobra.Command {
 	var imageRefs string
 	var useProot bool
+	var buildDate string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -44,6 +45,7 @@ in a keychain.`,
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
 				build.WithTags(args[1:]...),
+				build.WithBuildDate(buildDate),
 			)
 			if err != nil {
 				return err
@@ -54,6 +56,7 @@ in a keychain.`,
 
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
+	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 
 	return cmd
 }
@@ -83,7 +86,7 @@ func PublishCmd(ctx context.Context, outputRefs string, opts ...build.Option) er
 	}
 	defer os.Remove(layerTarGZ)
 
-	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Tags...)
+	digest, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Tags...)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}

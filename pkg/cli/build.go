@@ -27,6 +27,7 @@ import (
 
 func Build() *cobra.Command {
 	var useProot bool
+	var buildDate string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -43,11 +44,13 @@ command, e.g.
 			return BuildCmd(cmd.Context(), args[1], args[2],
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
+				build.WithBuildDate(buildDate),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
+	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 
 	return cmd
 }
@@ -77,7 +80,7 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 	}
 	defer os.Remove(layerTarGZ)
 
-	err = oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration)
+	err = oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch)
 	if err != nil {
 		return errors.Wrap(err, "failed to build OCI image")
 	}
