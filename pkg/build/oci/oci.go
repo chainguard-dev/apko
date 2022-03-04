@@ -88,6 +88,10 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Ima
 		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
 	}
 
+	if ic.Accounts.RunAs != "" {
+		cfg.Config.User = ic.Accounts.RunAs
+	}
+
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
 		return empty.Image, errors.Wrap(err, "unable to update OCI config file")

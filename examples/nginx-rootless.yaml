@@ -1,0 +1,20 @@
+contents:
+  repositories:
+    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+  packages:
+    - alpine-baselayout
+    - nginx
+
+entrypoint:
+  type: service-bundle
+  services:
+    nginx: /usr/sbin/nginx -c /etc/nginx/nginx.conf -g "daemon off;"
+
+accounts:
+  groups:
+    - groupname: nginx
+      gid: 10000
+  users:
+    - username: nginx
+      uid: 10000
+  run-as: nginx

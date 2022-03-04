@@ -14,6 +14,18 @@
 
 package types
 
+type User struct {
+	UserName string
+	UID      uint32
+	GID      uint32
+}
+
+type Group struct {
+	GroupName string
+	GID       uint32
+	Members   []string
+}
+
 type ImageConfiguration struct {
 	Contents struct {
 		Repositories []string
@@ -26,5 +38,10 @@ type ImageConfiguration struct {
 
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
+	}
+	Accounts struct {
+		RunAs  string `yaml:"run-as"`
+		Users  []User
+		Groups []Group
 	}
 }
