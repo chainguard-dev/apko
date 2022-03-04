@@ -27,7 +27,7 @@ import (
 )
 
 // Writes a raw TAR archive to out, given an fs.FS.
-func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
+func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch time.Time) error {
 	gzw := gzip.NewWriter(out)
 	defer gzw.Close()
 
@@ -60,9 +60,9 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 		header.Name = path
 
 		// zero out timestamps for reproducibility
-		header.AccessTime = time.Time{}
-		header.ModTime = time.Time{}
-		header.ChangeTime = time.Time{}
+		header.AccessTime = sourceDateEpoch
+		header.ModTime = sourceDateEpoch
+		header.ChangeTime = sourceDateEpoch
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
@@ -92,9 +92,9 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 
 // Writes a tarball to a temporary file.  Caller's responsibility to
 // clean it up when it's done with it.
-func WriteArchive(src string, w io.Writer) error {
+func WriteArchive(src string, w io.Writer, sourceDateEpoch time.Time) error {
 	fs := os.DirFS(src)
-	err := WriteArchiveFromFS(src, fs, w)
+	err := WriteArchiveFromFS(src, fs, w, sourceDateEpoch)
 	if err != nil {
 		return errors.Wrap(err, "writing TAR archive failed")
 	}

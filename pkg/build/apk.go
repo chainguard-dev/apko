@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"go.lsp.dev/uri"
@@ -209,7 +208,6 @@ func (bc *Context) normalizeApkScriptsTar() error {
 
 	defer outfile.Close()
 
-
 	tr := tar.NewReader(f)
 	tw := tar.NewWriter(outfile)
 
@@ -227,9 +225,9 @@ func (bc *Context) normalizeApkScriptsTar() error {
 		}
 
 		// zero out timestamps for reproducibility
-		header.AccessTime = time.Time{}
-		header.ModTime = time.Time{}
-		header.ChangeTime = time.Time{}
+		header.AccessTime = bc.SourceDateEpoch
+		header.ModTime = bc.SourceDateEpoch
+		header.ChangeTime = bc.SourceDateEpoch
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err

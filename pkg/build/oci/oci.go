@@ -35,7 +35,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Image, error) {
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time) (v1.Image, error) {
 	log.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
@@ -63,7 +63,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Ima
 			Author:    "apko",
 			Comment:   "This is an apko single-layer image",
 			CreatedBy: "apko",
-			Created:   v1.Time{Time: time.Time{}},
+			Created:   v1.Time{Time: created},
 		},
 	})
 
@@ -100,8 +100,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration) (v1.Ima
 	return v1Image, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration) error {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic)
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time) error {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created)
 	if err != nil {
 		return err
 	}
@@ -133,8 +133,8 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash, kc authn
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, tags ...string) (name.Digest, error) {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, tags ...string) (name.Digest, error) {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created)
 	if err != nil {
 		return name.Digest{}, err
 	}
