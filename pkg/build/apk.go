@@ -54,13 +54,24 @@ func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
 	}
 	for _, d := range locations {
 		keyFiles, err := os.ReadDir(d)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
+
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("%s doesn't exist, skipping...", d)
+			continue
+		}
+
+		if err != nil {
 			return nil, errors.Wrap(err, "reading keyring directory")
 		}
 
 		for _, f := range keyFiles {
-			if filepath.Ext(f.Name()) == ".pub" {
-				ring = append(ring, filepath.Join(d, f.Name()))
+			ext := filepath.Ext(f.Name())
+			p := filepath.Join(d, f.Name())
+
+			if ext == ".pub" {
+				ring = append(ring, p)
+			} else {
+				log.Printf("%s has invalid extension (%s), skipping...", p, ext)
 			}
 		}
 		if len(ring) > 0 {
