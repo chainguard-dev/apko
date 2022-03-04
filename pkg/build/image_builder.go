@@ -75,15 +75,22 @@ func (bc *Context) BuildImage() error {
 		return errors.Wrap(err, "failed to fixate apk world")
 	}
 
-	if err := bc.normalizeApkScriptsTar(); err != nil {
-		return err
-	}
+	eg.Go(func() error {
+		if err := bc.normalizeApkScriptsTar(); err != nil {
+			return errors.Wrapf(err, "failed to normalize scripts.tar")
+		}
+		return nil
+	})
 
-	// TODO(kaniini): use errgroup to parallelize these tasks
-	// mutate accounts
-	err = bc.MutateAccounts()
-	if err != nil {
-		return errors.Wrap(err, "failed to mutate accounts")
+	eg.Go(func() error {
+		if err = bc.MutateAccounts(); err != nil {
+			return errors.Wrap(err, "failed to mutate accounts")
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
 	// maybe install busybox symlinks
