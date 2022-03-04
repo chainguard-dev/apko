@@ -25,6 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 	"go.lsp.dev/uri"
+	"golang.org/x/sync/errgroup"
 )
 
 var systemKeyringLocations = []string{"/etc/apk/keys/"}
@@ -87,52 +88,59 @@ func (bc *Context) InitApkKeyring() (err error) {
 		}
 	}
 
+	var eg errgroup.Group
+
 	for _, element := range keyFiles {
-		log.Printf("installing key %v", element)
+		element := element
+		eg.Go(func() error {
+			log.Printf("installing key %v", element)
 
-		// Normalize the element as a URI, so that local paths
-		// are translated into file:// URLs, allowing them to be parsed
-		// into a url.URL{}.
-		asURI := uri.New(element)
-		asURL, err := url.Parse(string(asURI))
-		if err != nil {
-			return errors.Wrap(err, "failed to parse key as URI")
-		}
-
-		var data []byte
-		switch asURL.Scheme {
-		case "file":
-			data, err = os.ReadFile(element)
+			// Normalize the element as a URI, so that local paths
+			// are translated into file:// URLs, allowing them to be parsed
+			// into a url.URL{}.
+			asURI := uri.New(element)
+			asURL, err := url.Parse(string(asURI))
 			if err != nil {
-				return errors.Wrap(err, "failed to read apk key")
-			}
-		case "https":
-			resp, err := http.Get(asURL.String())
-			if err != nil {
-				return errors.Wrap(err, "failed to fetch apk key")
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode < 200 || resp.StatusCode > 299 {
-				return errors.New("failed to fetch apk key: http response indicated error")
+				return errors.Wrap(err, "failed to parse key as URI")
 			}
 
-			data, err = io.ReadAll(resp.Body)
-			if err != nil {
-				return errors.Wrap(err, "failed to read apk key response")
-			}
-		default:
-			return errors.Errorf("scheme %s not supported", asURL.Scheme)
-		}
+			var data []byte
+			switch asURL.Scheme {
+			case "file":
+				data, err = os.ReadFile(element)
+				if err != nil {
+					return errors.Wrap(err, "failed to read apk key")
+				}
+			case "https":
+				resp, err := http.Get(asURL.String())
+				if err != nil {
+					return errors.Wrap(err, "failed to fetch apk key")
+				}
+				defer resp.Body.Close()
 
-		// #nosec G306 -- apk keyring must be publicly readable
-		if err := os.WriteFile(filepath.Join(bc.WorkDir, element), data,
-			0644); err != nil {
-			return errors.Wrap(err, "failed to write apk key")
-		}
+				if resp.StatusCode < 200 || resp.StatusCode > 299 {
+					return errors.New("failed to fetch apk key: http response indicated error")
+				}
+
+				data, err = io.ReadAll(resp.Body)
+				if err != nil {
+					return errors.Wrap(err, "failed to read apk key response")
+				}
+			default:
+				return errors.Errorf("scheme %s not supported", asURL.Scheme)
+			}
+
+			// #nosec G306 -- apk keyring must be publicly readable
+			if err := os.WriteFile(filepath.Join(bc.WorkDir, element), data,
+				0644); err != nil {
+				return errors.Wrap(err, "failed to write apk key")
+			}
+
+			return nil
+		})
 	}
 
-	return nil
+	return eg.Wait()
 }
 
 // Generates a specified /etc/apk/repositories file in the build context.
