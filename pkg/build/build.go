@@ -33,9 +33,10 @@ type Context struct {
 
 func (bc *Context) Summarize() {
 	log.Printf("build context:")
-	log.Printf("  image configuration: %v", bc.ImageConfiguration)
-	log.Printf("  working directory: %v", bc.WorkDir)
-	log.Printf("  tarball path: %v", bc.TarballPath)
+	log.Printf("  working directory: %s", bc.WorkDir)
+	log.Printf("  tarball path: %s", bc.TarballPath)
+	log.Printf("  use proot: %t", bc.UseProot)
+	bc.ImageConfiguration.Summarize()
 }
 
 func (bc *Context) BuildTarball() (string, error) {
