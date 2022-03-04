@@ -16,6 +16,8 @@ package build
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -80,6 +82,14 @@ func (bc *Context) BuildImage() error {
 		return errors.Wrap(err, "failed to mutate accounts")
 	}
 
+	// maybe install busybox symlinks
+	if bc.UseProot {
+		err = bc.InstallBusyboxSymlinks()
+		if err != nil {
+			return errors.Wrap(err, "failed to install busybox symlinks")
+		}
+	}
+
 	// write service supervision tree
 	err = bc.WriteSupervisionTree()
 	if err != nil {
@@ -87,5 +97,27 @@ func (bc *Context) BuildImage() error {
 	}
 
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
+	return nil
+}
+
+// Installs the BusyBox symlinks, if appropriate.
+func (bc *Context) InstallBusyboxSymlinks() error {
+	path := filepath.Join(bc.WorkDir, "bin", "busybox")
+
+	_, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return err
+	}
+
+	// use proot + qemu to run the installer
+	err = bc.ExecuteChroot("/bin/busybox", "--install", "-s")
+	if err != nil {
+		return errors.Wrap(err, "failed to install busybox symlinks")
+	}
+
 	return nil
 }
