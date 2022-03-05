@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	osr "github.com/dominodatalab/os-release"
-	"github.com/pkg/errors"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 )
 
@@ -75,13 +74,13 @@ func (bc *Context) GenerateSBOM() error {
 
 	installedDB, err := os.Open(filepath.Join(bc.WorkDir, "lib", "apk", "db", "installed"))
 	if err != nil {
-		return errors.Wrap(err, "unable to open APK installed db")
+		return fmt.Errorf("unable to open APK installed db: %w", err)
 	}
 
 	// repository.ParsePackageIndex closes the file itself
 	packages, err := repository.ParsePackageIndex(installedDB)
 	if err != nil {
-		return errors.Wrap(err, "unable to parse APK installed db")
+		return fmt.Errorf("unable to parse APK installed db: %w", err)
 	}
 
 	// TODO(kaniini): figure out something better to do than this
@@ -164,7 +163,7 @@ func (bc *Context) GenerateSBOM() error {
 
 	out, err := os.Create(bc.SBOMPath)
 	if err != nil {
-		return errors.Wrapf(err, "unable to open SBOM path %s for writing", bc.SBOMPath)
+		return fmt.Errorf("unable to open SBOM path %s for writing: %w", bc.SBOMPath, err)
 	}
 	defer out.Close()
 
@@ -173,7 +172,7 @@ func (bc *Context) GenerateSBOM() error {
 
 	err = enc.Encode(bom)
 	if err != nil {
-		return errors.Wrap(err, "unable to encode BOM")
+		return fmt.Errorf("unable to encode BOM: %w", err)
 	}
 
 	return nil

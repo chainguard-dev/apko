@@ -110,7 +110,7 @@ func (bc *Context) BuildImage() error {
 	if bc.SBOMPath != "" {
 		err = bc.GenerateSBOM()
 		if err != nil {
-			return errors.Wrap(err, "failed to generate SBOM")
+			return fmt.Errorf("failed to generate SBOM: %w", err)
 		}
 	}
 
