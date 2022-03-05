@@ -97,7 +97,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 	if len(keyFiles) == 0 {
 		keyFiles, err = bc.loadSystemKeyring()
 		if err != nil {
-			return fmt.Errorf("opening system keyring: %w")
+			return fmt.Errorf("opening system keyring: %w", err)
 		}
 	}
 
