@@ -16,6 +16,8 @@ package build
 
 import (
 	"archive/tar"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -24,7 +26,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
 	"go.lsp.dev/uri"
 	"golang.org/x/sync/errgroup"
 )
@@ -61,7 +62,7 @@ func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
 		}
 
 		if err != nil {
-			return nil, errors.Wrap(err, "reading keyring directory")
+			return nil, fmt.Errorf("reading keyring directory: %w", err)
 		}
 
 		for _, f := range keyFiles {
@@ -88,7 +89,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 
 	if err := os.MkdirAll(filepath.Join(bc.WorkDir, "etc", "apk", "keys"),
 		0755); err != nil {
-		return errors.Wrap(err, "failed to make keys dir")
+		return fmt.Errorf("failed to make keys dir: %w", err)
 	}
 
 	keyFiles := bc.ImageConfiguration.Contents.Keyring
@@ -96,7 +97,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 	if len(keyFiles) == 0 {
 		keyFiles, err = bc.loadSystemKeyring()
 		if err != nil {
-			return errors.Wrap(err, "opening system keyring")
+			return fmt.Errorf("opening system keyring: %w", err)
 		}
 	}
 
@@ -113,7 +114,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 			asURI := uri.New(element)
 			asURL, err := url.Parse(string(asURI))
 			if err != nil {
-				return errors.Wrap(err, "failed to parse key as URI")
+				return fmt.Errorf("failed to parse key as URI: %w", err)
 			}
 
 			var data []byte
@@ -121,12 +122,12 @@ func (bc *Context) InitApkKeyring() (err error) {
 			case "file":
 				data, err = os.ReadFile(element)
 				if err != nil {
-					return errors.Wrap(err, "failed to read apk key")
+					return fmt.Errorf("failed to read apk key: %w", err)
 				}
 			case "https":
 				resp, err := http.Get(asURL.String())
 				if err != nil {
-					return errors.Wrap(err, "failed to fetch apk key")
+					return fmt.Errorf("failed to fetch apk key: %w", err)
 				}
 				defer resp.Body.Close()
 
@@ -136,16 +137,16 @@ func (bc *Context) InitApkKeyring() (err error) {
 
 				data, err = io.ReadAll(resp.Body)
 				if err != nil {
-					return errors.Wrap(err, "failed to read apk key response")
+					return fmt.Errorf("failed to read apk key response: %w", err)
 				}
 			default:
-				return errors.Errorf("scheme %s not supported", asURL.Scheme)
+				return fmt.Errorf("scheme %s not supported", asURL.Scheme)
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
 			if err := os.WriteFile(filepath.Join(bc.WorkDir, element), data,
 				0644); err != nil {
-				return errors.Wrap(err, "failed to write apk key")
+				return fmt.Errorf("failed to write apk key: %w", err)
 			}
 
 			return nil
@@ -165,7 +166,7 @@ func (bc *Context) InitApkRepositories() error {
 	err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "repositories"),
 		[]byte(data), 0644)
 	if err != nil {
-		return errors.Wrap(err, "failed to write apk repositories list")
+		return fmt.Errorf("failed to write apk repositories list: %w", err)
 	}
 
 	return nil
@@ -181,7 +182,7 @@ func (bc *Context) InitApkWorld() error {
 	err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "world"),
 		[]byte(data), 0644)
 	if err != nil {
-		return errors.Wrap(err, "failed to write apk world")
+		return fmt.Errorf("failed to write apk world: %w", err)
 	}
 
 	return nil

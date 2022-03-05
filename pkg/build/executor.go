@@ -15,10 +15,9 @@
 package build
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
-
-	"github.com/pkg/errors"
 )
 
 func runCommand(cmd *exec.Cmd, logname string) error {
@@ -29,7 +28,7 @@ func runCommand(cmd *exec.Cmd, logname string) error {
 		log.Printf("[%s] %s", logname, output)
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to run %s", cmd)
+		return fmt.Errorf("failed to run %s: %w", cmd, err)
 	}
 
 	return nil

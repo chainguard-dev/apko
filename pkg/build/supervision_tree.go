@@ -15,12 +15,11 @@
 package build
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-
-	"github.com/pkg/errors"
 )
 
 func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
@@ -29,7 +28,7 @@ func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
 
 	err := os.MkdirAll(svcdir, 0755)
 	if err != nil {
-		return svcdir, errors.Wrap(err, "could not make supervision directory")
+		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
 	}
 
 	return svcdir, nil
@@ -38,13 +37,13 @@ func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
 func (bc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
 	file, err := os.Create(filepath.Join(svcdir, "run"))
 	if err != nil {
-		return errors.Wrap(err, "could not create runfile")
+		return fmt.Errorf("could not create runfile: %w", err)
 	}
 	defer file.Close()
 
 	err = os.Chmod(file.Name(), 0755)
 	if err != nil {
-		return errors.Wrap(err, "could not set permissions on runfile")
+		return fmt.Errorf("could not set permissions on runfile: %w", err)
 	}
 
 	fmt.Fprintf(file, "#!/bin/execlineb\n%s\n", command)

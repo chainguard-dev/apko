@@ -21,8 +21,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 // An UserEntry contains the parsed data from an /etc/passwd entry.
@@ -47,7 +45,7 @@ func ReadUserFile(filePath string) (UserFile, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return uf, errors.Wrapf(err, "failed to open %s", filePath)
+		return uf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -67,14 +65,14 @@ func (uf *UserFile) Load(r io.Reader) error {
 
 		err := ue.Parse(scanner.Text())
 		if err != nil {
-			return errors.Wrap(err, "unable to parse")
+			return fmt.Errorf("unable to parse: %w", err)
 		}
 
 		uf.Entries = append(uf.Entries, ue)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return errors.Wrap(err, "unable to parse")
+		return fmt.Errorf("unable to parse: %w", err)
 	}
 
 	return nil
@@ -84,7 +82,7 @@ func (uf *UserFile) Load(r io.Reader) error {
 func (uf *UserFile) WriteFile(filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "unable to open %s for writing", filePath)
+		return fmt.Errorf("unable to open %s for writing: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -96,7 +94,7 @@ func (uf *UserFile) Write(w io.Writer) error {
 	for _, ue := range uf.Entries {
 		err := ue.Write(w)
 		if err != nil {
-			return errors.Wrapf(err, "unable to write passwd entry")
+			return fmt.Errorf("unable to write passwd entry: %w", err)
 		}
 	}
 
@@ -109,7 +107,7 @@ func (ue *UserEntry) Parse(line string) error {
 
 	parts := strings.Split(line, ":")
 	if len(parts) != 7 {
-		return errors.Errorf("malformed line, contains %d parts, expecting 7", len(parts))
+		return fmt.Errorf("malformed line, contains %d parts, expecting 7", len(parts))
 	}
 
 	ue.UserName = parts[0]
@@ -117,13 +115,13 @@ func (ue *UserEntry) Parse(line string) error {
 
 	uid, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return errors.Errorf("failed to parse UID %s", parts[2])
+		return fmt.Errorf("failed to parse UID %s", parts[2])
 	}
 	ue.UID = uint32(uid)
 
 	gid, err := strconv.Atoi(parts[3])
 	if err != nil {
-		return errors.Errorf("failed to parse GID %s", parts[3])
+		return fmt.Errorf("failed to parse GID %s", parts[3])
 	}
 	ue.GID = uint32(gid)
 

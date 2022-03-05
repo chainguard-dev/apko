@@ -21,8 +21,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 // A GroupEntry describes a single line in /etc/group.
@@ -44,7 +42,7 @@ func ReadGroupFile(filePath string) (GroupFile, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return gf, errors.Wrapf(err, "failed to open %s", filePath)
+		return gf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -64,14 +62,14 @@ func (gf *GroupFile) Load(r io.Reader) error {
 
 		err := ge.Parse(scanner.Text())
 		if err != nil {
-			return errors.Wrap(err, "unable to parse")
+			return fmt.Errorf("unable to parse: %w", err)
 		}
 
 		gf.Entries = append(gf.Entries, ge)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return errors.Wrap(err, "unable to parse")
+		return fmt.Errorf("unable to parse: %w", err)
 	}
 
 	return nil
@@ -81,7 +79,7 @@ func (gf *GroupFile) Load(r io.Reader) error {
 func (gf *GroupFile) WriteFile(filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "unable to open %s for writing", filePath)
+		return fmt.Errorf("unable to open %s for writing: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -93,7 +91,7 @@ func (gf *GroupFile) Write(w io.Writer) error {
 	for _, ge := range gf.Entries {
 		err := ge.Write(w)
 		if err != nil {
-			return errors.Wrapf(err, "unable to write group entry")
+			return fmt.Errorf("unable to write group entry: %w", err)
 		}
 	}
 
@@ -106,7 +104,7 @@ func (ge *GroupEntry) Parse(line string) error {
 
 	parts := strings.Split(line, ":")
 	if len(parts) != 4 {
-		return errors.Errorf("malformed line, contains %d parts, expecting 4", len(parts))
+		return fmt.Errorf("malformed line, contains %d parts, expecting 4", len(parts))
 	}
 
 	ge.GroupName = parts[0]
@@ -114,7 +112,7 @@ func (ge *GroupEntry) Parse(line string) error {
 
 	gid, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return errors.Errorf("failed to parse UID %s", parts[2])
+		return fmt.Errorf("failed to parse UID %s", parts[2])
 	}
 	ge.GID = uint32(gid)
 

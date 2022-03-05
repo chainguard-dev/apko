@@ -16,12 +16,12 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +58,7 @@ command, e.g.
 func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
-		return errors.Wrap(err, "failed to create working directory")
+		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
 
@@ -76,13 +76,13 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
-		return errors.Wrap(err, "failed to build layer image")
+		return fmt.Errorf("failed to build layer image: %w", err)
 	}
 	defer os.Remove(layerTarGZ)
 
 	err = oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch)
 	if err != nil {
-		return errors.Wrap(err, "failed to build OCI image")
+		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
 
 	return nil

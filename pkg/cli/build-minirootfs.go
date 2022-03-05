@@ -16,11 +16,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
 	"chainguard.dev/apko/pkg/build"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ func BuildMinirootFS() *cobra.Command {
 func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
-		return errors.Wrap(err, "failed to create working directory")
+		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
 
@@ -71,7 +71,7 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
-		return errors.Wrap(err, "failed to build layer image")
+		return fmt.Errorf("failed to build layer image: %w", err)
 	}
 	log.Printf("wrote minirootfs to %s\n", layerTarGZ)
 
