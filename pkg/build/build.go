@@ -84,8 +84,43 @@ func (bc *Context) BuildLayer() (string, error) {
 	return layerTarGZ, nil
 }
 
+// New creates a build context.
+// The SOURCE_DATE_EPOCH env variable is supported and will
+// overwrite the provided timestamp if present.
+func New(workDir string, opts ...Option) (*Context, error) {
+	bc := Context{
+		WorkDir: workDir,
+	}
+
+	for _, opt := range opts {
+		if err := opt(&bc); err != nil {
+			return nil, err
+		}
+	}
+
+	// SOURCE_DATE_EPOCH will always overwrite the build flag
+	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
+		// The value MUST be an ASCII representation of an integer
+		// with no fractional component, identical to the output
+		// format of date +%s.
+		sec, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			// If the value is malformed, the build process
+			// SHOULD exit with a non-zero error code.
+			return nil, fmt.Errorf("failed to parse SOURCE_DATE_EPOCH: %w", err)
+		}
+
+		bc.SourceDateEpoch = time.Unix(sec, 0)
+	}
+
+	return &bc, nil
+}
+
+// Option is an option for the build context.
 type Option func(*Context) error
 
+// WithConfig sets the image configuration for the build context.
+// The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
 		log.Printf("loading config file: %s", configFile)
@@ -100,6 +135,7 @@ func WithConfig(configFile string) Option {
 	}
 }
 
+// WithProot enables proot for rootless image builds.
 func WithProot(enable bool) Option {
 	return func(bc *Context) error {
 		bc.UseProot = enable
@@ -107,6 +143,7 @@ func WithProot(enable bool) Option {
 	}
 }
 
+// WithTags sets the tags for the build context.
 func WithTags(tags ...string) Option {
 	return func(bc *Context) error {
 		bc.Tags = tags
@@ -114,6 +151,7 @@ func WithTags(tags ...string) Option {
 	}
 }
 
+// WithTarball sets the output path of the layer tarball.
 func WithTarball(path string) Option {
 	return func(bc *Context) error {
 		bc.TarballPath = path
@@ -121,24 +159,12 @@ func WithTarball(path string) Option {
 	}
 }
 
+// WithBuildDate sets the timestamps for the build context.
+// The string is parsed according to RFC3339.
+// An empty string is a special case and will default to
+// the unix epoch.
 func WithBuildDate(s string) Option {
 	return func(bc *Context) error {
-		// SOURCE_DATE_EPOCH takes priority
-		if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
-			// The value MUST be an ASCII representation of an integer
-			// with no fractional component, identical to the output
-			// format of date +%s.
-			sec, err := strconv.ParseInt(v, 10, 64)
-			if err != nil {
-				// If the value is malformed, the build process
-				// SHOULD exit with a non-zero error code.
-				return err
-			}
-
-			bc.SourceDateEpoch = time.Unix(sec, 0)
-			return nil
-		}
-
 		// default to 0 for reproducibility
 		if s == "" {
 			bc.SourceDateEpoch = time.Unix(0, 0)

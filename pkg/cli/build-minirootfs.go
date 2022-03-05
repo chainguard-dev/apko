@@ -57,14 +57,9 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	bc := build.Context{
-		WorkDir: wd,
-	}
-
-	for _, opt := range opts {
-		if err := opt(&bc); err != nil {
-			return err
-		}
+	bc, err := build.New(wd, opts...)
+	if err != nil {
+		return err
 	}
 
 	log.Printf("building minirootfs '%s'", bc.TarballPath)
