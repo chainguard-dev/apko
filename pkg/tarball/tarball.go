@@ -17,13 +17,12 @@ package tarball
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // Writes a raw TAR archive to out, given an fs.FS.
@@ -96,7 +95,7 @@ func WriteArchive(src string, w io.Writer, sourceDateEpoch time.Time) error {
 	fs := os.DirFS(src)
 	err := WriteArchiveFromFS(src, fs, w, sourceDateEpoch)
 	if err != nil {
-		return errors.Wrap(err, "writing TAR archive failed")
+		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 
 	return nil

@@ -15,10 +15,10 @@
 package types
 
 import (
+	"fmt"
 	"log"
 	"os"
 
-	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,12 +26,12 @@ import (
 func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
-		return errors.Wrap(err, "failed to read image configuration file")
+		return fmt.Errorf("failed to read image configuration file: %w", err)
 	}
 
 	err = yaml.Unmarshal(data, ic)
 	if err != nil {
-		return errors.Wrap(err, "failed to parse image configuration")
+		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
 	return nil
@@ -48,21 +48,21 @@ func (ic *ImageConfiguration) Validate() error {
 
 	for _, u := range ic.Accounts.Users {
 		if u.UserName == "" {
-			return errors.Errorf("configured user %v has no configured user name", u)
+			return fmt.Errorf("configured user %v has no configured user name", u)
 		}
 
 		if u.UID == 0 {
-			return errors.Errorf("configured user %v has UID 0", u)
+			return fmt.Errorf("configured user %v has UID 0", u)
 		}
 	}
 
 	for _, g := range ic.Accounts.Groups {
 		if g.GroupName == "" {
-			return errors.Errorf("configured group %v has no configured group name", g)
+			return fmt.Errorf("configured group %v has no configured group name", g)
 		}
 
 		if g.GID == 0 {
-			return errors.Errorf("configured group %v has GID 0", g)
+			return fmt.Errorf("configured group %v has GID 0", g)
 		}
 	}
 

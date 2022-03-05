@@ -15,11 +15,12 @@
 package build
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,7 +29,7 @@ func (bc *Context) BuildImage() error {
 	log.Printf("doing pre-flight checks")
 	err := bc.ImageConfiguration.Validate()
 	if err != nil {
-		return errors.Wrap(err, "failed to validate configuration")
+		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
 	log.Printf("building image fileystem in %s", bc.WorkDir)
@@ -36,7 +37,7 @@ func (bc *Context) BuildImage() error {
 	// initialize apk
 	err = bc.InitApkDB()
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize apk database")
+		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
@@ -44,7 +45,7 @@ func (bc *Context) BuildImage() error {
 	eg.Go(func() error {
 		err = bc.InitApkKeyring()
 		if err != nil {
-			return errors.Wrap(err, "failed to initialize apk keyring")
+			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
@@ -52,7 +53,7 @@ func (bc *Context) BuildImage() error {
 	eg.Go(func() error {
 		err = bc.InitApkRepositories()
 		if err != nil {
-			return errors.Wrap(err, "failed to initialize apk repositories")
+			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
 	})
@@ -60,7 +61,7 @@ func (bc *Context) BuildImage() error {
 	eg.Go(func() error {
 		err = bc.InitApkWorld()
 		if err != nil {
-			return errors.Wrap(err, "failed to initialize apk world")
+			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
 	})
@@ -72,19 +73,19 @@ func (bc *Context) BuildImage() error {
 	// sync reality with desired apk world
 	err = bc.FixateApkWorld()
 	if err != nil {
-		return errors.Wrap(err, "failed to fixate apk world")
+		return fmt.Errorf("failed to fixate apk world: %w", err)
 	}
 
 	eg.Go(func() error {
 		if err := bc.normalizeApkScriptsTar(); err != nil {
-			return errors.Wrapf(err, "failed to normalize scripts.tar")
+			return fmt.Errorf("failed to normalize scripts.tar: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
 		if err = bc.MutateAccounts(); err != nil {
-			return errors.Wrap(err, "failed to mutate accounts")
+			return fmt.Errorf("failed to mutate accounts: %w", err)
 		}
 		return nil
 	})
@@ -97,14 +98,14 @@ func (bc *Context) BuildImage() error {
 	if bc.UseProot {
 		err = bc.InstallBusyboxSymlinks()
 		if err != nil {
-			return errors.Wrap(err, "failed to install busybox symlinks")
+			return fmt.Errorf("failed to install busybox symlinks: %w", err)
 		}
 	}
 
 	// write service supervision tree
 	err = bc.WriteSupervisionTree()
 	if err != nil {
-		return errors.Wrap(err, "failed to write supervision tree")
+		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
@@ -127,7 +128,7 @@ func (bc *Context) InstallBusyboxSymlinks() error {
 	// use proot + qemu to run the installer
 	err = bc.ExecuteChroot("/bin/busybox", "--install", "-s")
 	if err != nil {
-		return errors.Wrap(err, "failed to install busybox symlinks")
+		return fmt.Errorf("failed to install busybox symlinks: %w", err)
 	}
 
 	return nil

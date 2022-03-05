@@ -15,6 +15,7 @@
 package oci
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"runtime"
@@ -32,7 +33,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
-	"github.com/pkg/errors"
 )
 
 func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time) (v1.Image, error) {
@@ -40,17 +40,17 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "failed to create OCI layer from tar.gz")
+		return empty.Image, fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
 	}
 
 	digest, err := v1Layer.Digest()
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "could not calculate layer digest")
+		return empty.Image, fmt.Errorf("could not calculate layer digest: %w", err)
 	}
 
 	diffid, err := v1Layer.DiffID()
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "could not calculate layer diff id")
+		return empty.Image, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
 	log.Printf("OCI layer digest: %v", digest)
@@ -69,12 +69,12 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	v1Image, err := mutate.Append(empty.Image, adds...)
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "unable to append OCI layer to empty image")
+		return empty.Image, fmt.Errorf("unable to append OCI layer to empty image: %w", err)
 	}
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "unable to get OCI config file")
+		return empty.Image, fmt.Errorf("unable to get OCI config file: %w", err)
 	}
 
 	cfg = cfg.DeepCopy()
@@ -94,7 +94,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
-		return empty.Image, errors.Wrap(err, "unable to update OCI config file")
+		return empty.Image, fmt.Errorf("unable to update OCI config file: %w", err)
 	}
 
 	return v1Image, nil
@@ -108,12 +108,12 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 
 	imgRefTag, err := name.NewTag(imageRef)
 	if err != nil {
-		return errors.Wrap(err, "unable to validate image reference tag")
+		return fmt.Errorf("unable to validate image reference tag: %w", err)
 	}
 
 	err = v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image)
 	if err != nil {
-		return errors.Wrap(err, "unable to write OCI image to disk")
+		return fmt.Errorf("unable to write OCI image to disk: %w", err)
 	}
 
 	log.Printf("output OCI image file to %s", outputTarGZ)
@@ -123,12 +123,12 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash, kc authn.Keychain) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "unable to parse reference")
+		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
 	err = remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc))
 	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "failed to publish")
+		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil
 }
@@ -141,7 +141,7 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 
 	h, err := v1Image.Digest()
 	if err != nil {
-		return name.Digest{}, errors.Wrap(err, "failed to compute digest")
+		return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
 	}
 
 	kc := authn.NewMultiKeychain(

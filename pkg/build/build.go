@@ -15,6 +15,7 @@
 package build
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -22,8 +23,6 @@ import (
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarball"
-
-	"github.com/pkg/errors"
 )
 
 type Context struct {
@@ -54,13 +53,13 @@ func (bc *Context) BuildTarball() (string, error) {
 		outfile, err = os.CreateTemp("", "apko-*.tar.gz")
 	}
 	if err != nil {
-		return "", errors.Wrap(err, "opening the build context tarball path failed")
+		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
 	defer outfile.Close()
 
 	err = tarball.WriteArchive(bc.WorkDir, outfile, bc.SourceDateEpoch)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to generate tarball for image")
+		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
 	log.Printf("built image layer tarball as %s", outfile.Name())
@@ -93,7 +92,7 @@ func WithConfig(configFile string) Option {
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {
-			return errors.Wrap(err, "failed to load image configuration")
+			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
 		bc.ImageConfiguration = ic
