@@ -62,14 +62,9 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 	}
 	defer os.RemoveAll(wd)
 
-	bc := build.Context{
-		WorkDir: wd,
-	}
-
-	for _, opt := range opts {
-		if err := opt(&bc); err != nil {
-			return err
-		}
+	bc, err := build.New(wd, opts...)
+	if err != nil {
+		return err
 	}
 
 	log.Printf("building image '%s'", imageRef)
