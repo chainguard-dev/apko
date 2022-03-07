@@ -40,13 +40,12 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := PublishCmd(cmd.Context(), imageRefs,
+			if err := PublishCmd(cmd.Context(), imageRefs,
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
 				build.WithTags(args[1:]...),
 				build.WithBuildDate(buildDate),
-			)
-			if err != nil {
+			); err != nil {
 				return err
 			}
 			return nil

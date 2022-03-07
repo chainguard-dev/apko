@@ -33,7 +33,7 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch 
 	tw := tar.NewWriter(gzw)
 	defer tw.Close()
 
-	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -81,8 +81,7 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch 
 		}
 
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -93,8 +92,7 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch 
 // clean it up when it's done with it.
 func WriteArchive(src string, w io.Writer, sourceDateEpoch time.Time) error {
 	fs := os.DirFS(src)
-	err := WriteArchiveFromFS(src, fs, w, sourceDateEpoch)
-	if err != nil {
+	if err := WriteArchiveFromFS(src, fs, w, sourceDateEpoch); err != nil {
 		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 

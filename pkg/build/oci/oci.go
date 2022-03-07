@@ -111,8 +111,7 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 		return fmt.Errorf("unable to validate image reference tag: %w", err)
 	}
 
-	err = v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image)
-	if err != nil {
+	if err := v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image); err != nil {
 		return fmt.Errorf("unable to write OCI image to disk: %w", err)
 	}
 
@@ -126,8 +125,7 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash, kc authn
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
-	err = remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc))
-	if err != nil {
+	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc)); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil

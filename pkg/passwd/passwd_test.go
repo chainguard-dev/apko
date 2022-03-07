@@ -43,8 +43,7 @@ func TestWriter(t *testing.T) {
 	}
 
 	w := &bytes.Buffer{}
-	err = uf.Write(w)
-	if err != nil {
+	if err := uf.Write(w); err != nil {
 		t.Errorf("error while writing; %v", err)
 	}
 
@@ -53,8 +52,7 @@ func TestWriter(t *testing.T) {
 	uf2.Load(r)
 
 	w2 := &bytes.Buffer{}
-	err = uf2.Write(w2)
-	if err != nil {
+	if err := uf2.Write(w2); err != nil {
 		t.Errorf("error while writing; %v", err)
 	}
 

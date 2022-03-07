@@ -43,8 +43,7 @@ func TestGroupWriter(t *testing.T) {
 	}
 
 	w := &bytes.Buffer{}
-	err = gf.Write(w)
-	if err != nil {
+	if err := gf.Write(w); err != nil {
 		t.Errorf("error while writing; %v", err)
 	}
 
@@ -53,8 +52,7 @@ func TestGroupWriter(t *testing.T) {
 	gf2.Load(r)
 
 	w2 := &bytes.Buffer{}
-	err = gf2.Write(w2)
-	if err != nil {
+	if err := gf2.Write(w2); err != nil {
 		t.Errorf("error while writing; %v", err)
 	}
 

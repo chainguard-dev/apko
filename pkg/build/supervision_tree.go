@@ -26,8 +26,7 @@ func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
 	svcdir := filepath.Join(bc.WorkDir, "sv", name)
 	log.Printf("  supervision dir: %s", svcdir)
 
-	err := os.MkdirAll(svcdir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(svcdir, 0755); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
 	}
 
@@ -41,8 +40,7 @@ func (bc *Context) WriteSupervisionTemplate(svcdir string, command string) error
 	}
 	defer file.Close()
 
-	err = os.Chmod(file.Name(), 0755)
-	if err != nil {
+	if err := os.Chmod(file.Name(), 0755); err != nil {
 		return fmt.Errorf("could not set permissions on runfile: %w", err)
 	}
 
@@ -59,8 +57,7 @@ func (bc *Context) WriteSupervisionServiceSimple(name string, command string) er
 		return err
 	}
 
-	err = bc.WriteSupervisionTemplate(svcdir, command)
-	if err != nil {
+	if err := bc.WriteSupervisionTemplate(svcdir, command); err != nil {
 		return err
 	}
 
@@ -78,8 +75,7 @@ func (bc *Context) WriteSupervisionTree() error {
 		}
 
 		if svccmd, ok := descriptor.(string); ok {
-			err := bc.WriteSupervisionServiceSimple(service, svccmd)
-			if err != nil {
+			if err := bc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
 				return err
 			}
 		} else {

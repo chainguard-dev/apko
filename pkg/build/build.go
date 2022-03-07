@@ -57,8 +57,7 @@ func (bc *Context) BuildTarball() (string, error) {
 	}
 	defer outfile.Close()
 
-	err = tarball.WriteArchive(bc.WorkDir, outfile, bc.SourceDateEpoch)
-	if err != nil {
+	if err := tarball.WriteArchive(bc.WorkDir, outfile, bc.SourceDateEpoch); err != nil {
 		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
@@ -70,8 +69,7 @@ func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
 	// build image filesystem
-	err := bc.BuildImage()
-	if err != nil {
+	if err := bc.BuildImage(); err != nil {
 		return "", err
 	}
 
