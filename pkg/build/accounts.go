@@ -69,8 +69,7 @@ func (bc *Context) MutateAccounts() error {
 			gf.Entries = appendGroup(gf.Entries, g)
 		}
 
-		err = gf.WriteFile(path)
-		if err != nil {
+		if err := gf.WriteFile(path); err != nil {
 			return err
 		}
 
@@ -90,8 +89,7 @@ func (bc *Context) MutateAccounts() error {
 			uf.Entries = appendUser(uf.Entries, u)
 		}
 
-		err = uf.WriteFile(path)
-		if err != nil {
+		if err := uf.WriteFile(path); err != nil {
 			return err
 		}
 

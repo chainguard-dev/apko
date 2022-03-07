@@ -29,8 +29,7 @@ func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 		return fmt.Errorf("failed to read image configuration file: %w", err)
 	}
 
-	err = yaml.Unmarshal(data, ic)
-	if err != nil {
+	if err := yaml.Unmarshal(data, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
@@ -40,8 +39,7 @@ func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 // Do preflight checks and mutations on an image configuration.
 func (ic *ImageConfiguration) Validate() error {
 	if ic.Entrypoint.Type == "service-bundle" {
-		err := ic.ValidateServiceBundle()
-		if err != nil {
+		if err := ic.ValidateServiceBundle(); err != nil {
 			return err
 		}
 	}

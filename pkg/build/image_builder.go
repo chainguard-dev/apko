@@ -27,40 +27,35 @@ import (
 // Builds the image in Context.WorkDir.
 func (bc *Context) BuildImage() error {
 	log.Printf("doing pre-flight checks")
-	err := bc.ImageConfiguration.Validate()
-	if err != nil {
+	if err := bc.ImageConfiguration.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
 	log.Printf("building image fileystem in %s", bc.WorkDir)
 
 	// initialize apk
-	err = bc.InitApkDB()
-	if err != nil {
+	if err := bc.InitApkDB(); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		err = bc.InitApkKeyring()
-		if err != nil {
+		if err := bc.InitApkKeyring(); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		err = bc.InitApkRepositories()
-		if err != nil {
+		if err := bc.InitApkRepositories(); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		err = bc.InitApkWorld()
-		if err != nil {
+		if err := bc.InitApkWorld(); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
@@ -71,8 +66,7 @@ func (bc *Context) BuildImage() error {
 	}
 
 	// sync reality with desired apk world
-	err = bc.FixateApkWorld()
-	if err != nil {
+	if err := bc.FixateApkWorld(); err != nil {
 		return fmt.Errorf("failed to fixate apk world: %w", err)
 	}
 
@@ -84,7 +78,7 @@ func (bc *Context) BuildImage() error {
 	})
 
 	eg.Go(func() error {
-		if err = bc.MutateAccounts(); err != nil {
+		if err := bc.MutateAccounts(); err != nil {
 			return fmt.Errorf("failed to mutate accounts: %w", err)
 		}
 		return nil
@@ -96,15 +90,13 @@ func (bc *Context) BuildImage() error {
 
 	// maybe install busybox symlinks
 	if bc.UseProot {
-		err = bc.InstallBusyboxSymlinks()
-		if err != nil {
+		if err := bc.InstallBusyboxSymlinks(); err != nil {
 			return fmt.Errorf("failed to install busybox symlinks: %w", err)
 		}
 	}
 
 	// write service supervision tree
-	err = bc.WriteSupervisionTree()
-	if err != nil {
+	if err := bc.WriteSupervisionTree(); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
@@ -126,8 +118,7 @@ func (bc *Context) InstallBusyboxSymlinks() error {
 	}
 
 	// use proot + qemu to run the installer
-	err = bc.ExecuteChroot("/bin/busybox", "--install", "-s")
-	if err != nil {
+	if err := bc.ExecuteChroot("/bin/busybox", "--install", "-s"); err != nil {
 		return fmt.Errorf("failed to install busybox symlinks: %w", err)
 	}
 

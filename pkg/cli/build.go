@@ -75,8 +75,7 @@ func BuildCmd(ctx context.Context, imageRef string, outputTarGZ string, opts ...
 	}
 	defer os.Remove(layerTarGZ)
 
-	err = oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch)
-	if err != nil {
+	if err := oci.BuildImageTarballFromLayer(imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch); err != nil {
 		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
 

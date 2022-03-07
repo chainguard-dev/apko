@@ -163,9 +163,8 @@ func (bc *Context) InitApkRepositories() error {
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
 
 	// #nosec G306 -- apk repositories must be publicly readable
-	err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "repositories"),
-		[]byte(data), 0644)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "repositories"),
+		[]byte(data), 0644); err != nil {
 		return fmt.Errorf("failed to write apk repositories list: %w", err)
 	}
 
@@ -179,9 +178,8 @@ func (bc *Context) InitApkWorld() error {
 	data := strings.Join(bc.ImageConfiguration.Contents.Packages, "\n")
 
 	// #nosec G306 -- apk world must be publicly readable
-	err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "world"),
-		[]byte(data), 0644)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "world"),
+		[]byte(data), 0644); err != nil {
 		return fmt.Errorf("failed to write apk world: %w", err)
 	}
 

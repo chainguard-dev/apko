@@ -46,8 +46,7 @@ func ReadGroupFile(filePath string) (GroupFile, error) {
 	}
 	defer file.Close()
 
-	err = gf.Load(file)
-	if err != nil {
+	if err := gf.Load(file); err != nil {
 		return gf, err
 	}
 
@@ -60,8 +59,7 @@ func (gf *GroupFile) Load(r io.Reader) error {
 	for scanner.Scan() {
 		ge := GroupEntry{}
 
-		err := ge.Parse(scanner.Text())
-		if err != nil {
+		if err := ge.Parse(scanner.Text()); err != nil {
 			return fmt.Errorf("unable to parse: %w", err)
 		}
 
@@ -89,8 +87,7 @@ func (gf *GroupFile) WriteFile(filePath string) error {
 // Write an /etc/passwd file into an io.Writer.
 func (gf *GroupFile) Write(w io.Writer) error {
 	for _, ge := range gf.Entries {
-		err := ge.Write(w)
-		if err != nil {
+		if err := ge.Write(w); err != nil {
 			return fmt.Errorf("unable to write group entry: %w", err)
 		}
 	}

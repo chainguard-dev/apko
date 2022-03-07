@@ -49,8 +49,7 @@ func ReadUserFile(filePath string) (UserFile, error) {
 	}
 	defer file.Close()
 
-	err = uf.Load(file)
-	if err != nil {
+	if err := uf.Load(file); err != nil {
 		return uf, err
 	}
 
@@ -63,8 +62,7 @@ func (uf *UserFile) Load(r io.Reader) error {
 	for scanner.Scan() {
 		ue := UserEntry{}
 
-		err := ue.Parse(scanner.Text())
-		if err != nil {
+		if err := ue.Parse(scanner.Text()); err != nil {
 			return fmt.Errorf("unable to parse: %w", err)
 		}
 
@@ -92,8 +90,7 @@ func (uf *UserFile) WriteFile(filePath string) error {
 // Write an /etc/passwd file into an io.Writer.
 func (uf *UserFile) Write(w io.Writer) error {
 	for _, ue := range uf.Entries {
-		err := ue.Write(w)
-		if err != nil {
+		if err := ue.Write(w); err != nil {
 			return fmt.Errorf("unable to write passwd entry: %w", err)
 		}
 	}
