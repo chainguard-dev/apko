@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
@@ -107,17 +108,19 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	default:
 		var imgs []v1.Image
+		workDir := bc.WorkDir
 		for _, arch := range archs {
 			bc.Arch = arch
+			bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
 			layerTarGZ, err := bc.BuildLayer()
 			if err != nil {
-				return fmt.Errorf("failed to build layer image: %w", err)
+				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
 			defer os.Remove(layerTarGZ)
 
 			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch)
 			if err != nil {
-				return fmt.Errorf("failed to build OCI image: %w", err)
+				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
 			imgs = append(imgs, img)
 		}
