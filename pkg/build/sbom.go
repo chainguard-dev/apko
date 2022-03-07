@@ -76,6 +76,7 @@ func (bc *Context) GenerateSBOM() error {
 	if err != nil {
 		return fmt.Errorf("unable to open APK installed db: %w", err)
 	}
+	defer installedDB.Close()
 
 	// repository.ParsePackageIndex closes the file itself
 	packages, err := repository.ParsePackageIndex(installedDB)
