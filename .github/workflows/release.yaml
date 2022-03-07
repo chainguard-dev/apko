@@ -56,7 +56,7 @@ jobs:
       with:
         version: v0.10.0
     - uses: sigstore/cosign-installer@179e0f15e70e22ca2e7254fc12d68a9fbab35614 # v2.0.1
-    - uses: docker/login-action@bb984efc561711aaa26e433c32c3521176eae55b # v1.13.0
+    - uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7 # v1.13.0
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
