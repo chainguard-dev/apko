@@ -132,7 +132,7 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Di
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
-	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc)); err != nil {
+	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil

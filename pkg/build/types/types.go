@@ -105,7 +105,7 @@ func ParseArchitectures(in []string) []Architecture {
 		archs = append(archs, k)
 	}
 	sort.Slice(archs, func(i, j int) bool {
-		return i < j
+		return archs[i] < archs[j]
 	})
 	return archs
 }
