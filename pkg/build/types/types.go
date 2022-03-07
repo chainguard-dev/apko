@@ -49,6 +49,7 @@ type ImageConfiguration struct {
 	Archs []Architecture
 }
 
+// Architecture represents a CPU architecture for the container image.
 type Architecture string
 
 const (
@@ -61,8 +62,11 @@ const (
 	// TODO: armv7 and armhf (av6)
 )
 
+// AllArchs contains the standard set of supported architectures, which are
+// used by `apko publish` when no architectures are specified.
 var AllArchs = []Architecture{amd64, arm64, ppc64le, s390x, _386, riscv64}
 
+// ToAPK returns the apk-style equivalent string for the Architecture.
 func (a Architecture) ToAPK() string {
 	switch a {
 	case _386:
@@ -76,6 +80,12 @@ func (a Architecture) ToAPK() string {
 	}
 }
 
+// ParseArchitectures parses architecture values in string form, and returns
+// the equivalent slice of Architectures.
+//
+// apk-style arch strings (e.g., "x86_64") are converted to the OCI-style
+// equivalent ("amd64"). Values are deduped, and the resulting slice is sorted
+// for reproducibility.
 func ParseArchitectures(in []string) []Architecture {
 	uniq := map[Architecture]struct{}{}
 	for _, s := range in {
