@@ -22,44 +22,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"chainguard.dev/apko/pkg/sbom/cyclonedx"
 	osr "github.com/dominodatalab/os-release"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 )
-
-// TODO(kaniini): Move most of this over to gitlab.alpinelinux.org/alpine/go.
-type document struct {
-	BOMFormat    string       `json:"bomFormat"`
-	SpecVersion  string       `json:"specVersion"`
-	Version      int          `json:"version"`
-	Components   []component  `json:"components,omitempty"`
-	Dependencies []dependency `json:"dependencies,omitempty"`
-}
-
-type component struct {
-	BOMRef             string              `json:"bom-ref"`
-	Type               string              `json:"type"`
-	Name               string              `json:"name"`
-	Version            string              `json:"version"`
-	Description        string              `json:"description"`
-	PUrl               string              `json:"purl"`
-	ExternalReferences []externalReference `json:"externalReferences,omitempty"`
-	Licenses           []license           `json:"licenses,omitempty"`
-	Components         []component         `json:"components,omitempty"`
-}
-
-type license struct {
-	Expression string `json:"expression"`
-}
-
-type externalReference struct {
-	URL  string `json:"url"`
-	Type string `json:"type"`
-}
-
-type dependency struct {
-	Ref       string   `json:"ref"`
-	DependsOn []string `json:"dependsOn"`
-}
 
 func bomRef(ns string, pkg *repository.Package) string {
 	return fmt.Sprintf("pkg:apk/%s/%s", ns, pkg.Name)
@@ -98,17 +64,17 @@ func (bc *Context) GenerateSBOM() error {
 		osVersion = info.VersionID
 	}
 
-	pkgComponents := []component{}
-	pkgDependencies := []dependency{}
+	pkgComponents := []cyclonedx.Component{}
+	pkgDependencies := []cyclonedx.Dependency{}
 
 	for _, pkg := range packages {
 		// add the component
-		c := component{
+		c := cyclonedx.Component{
 			BOMRef:      bomRef(osID, pkg),
 			Name:        pkg.Name,
 			Version:     pkg.Version,
 			Description: pkg.Description,
-			Licenses: []license{
+			Licenses: []cyclonedx.License{
 				{
 					Expression: pkg.License,
 				},
@@ -139,14 +105,14 @@ func (bc *Context) GenerateSBOM() error {
 			depRefs = append(depRefs, fmt.Sprintf("pkg:apk/%s/%s", osID, dep))
 		}
 
-		d := dependency{
+		d := cyclonedx.Dependency{
 			Ref:       bomRef(osID, pkg),
 			DependsOn: depRefs,
 		}
 		pkgDependencies = append(pkgDependencies, d)
 	}
 
-	rootComponent := component{
+	rootComponent := cyclonedx.Component{
 		BOMRef:     fmt.Sprintf("pkg:apk/%s", osID),
 		Name:       osName,
 		Version:    osVersion,
@@ -154,11 +120,11 @@ func (bc *Context) GenerateSBOM() error {
 		Components: pkgComponents,
 	}
 
-	bom := document{
+	bom := cyclonedx.Document{
 		BOMFormat:    "CycloneDX",
 		SpecVersion:  "1.4",
 		Version:      1,
-		Components:   []component{rootComponent},
+		Components:   []cyclonedx.Component{rootComponent},
 		Dependencies: pkgDependencies,
 	}
 
