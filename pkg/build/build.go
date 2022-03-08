@@ -158,6 +158,10 @@ func WithTarball(path string) Option {
 	}
 }
 
+// WithAssertions adds assertions to validate the result
+// of this build context.
+// Assertions are checked in parallel at the end of the
+// build process.
 func WithAssertions(a ...Assertion) Option {
 	return func(bc *Context) error {
 		bc.Assertions = append(bc.Assertions, a...)
