@@ -14,10 +14,15 @@
 
 package sbom
 
+const ()
+
 type Options struct {
 	OsName    string
 	OsID      string
 	OsVersion string
+
+	// Working directory,inherited from buid context
+	WorkDir string
 }
 
 var Default = Options{
@@ -27,11 +32,17 @@ var Default = Options{
 }
 
 type SBOM struct {
-	impl SBOMImplementation
+	impl    sbomImplementation
+	Options Options
 }
 
-func (sbom *SBOM) 
-
-type SBOMImplementation interface {
-	
+func New() *SBOM {
+	return &SBOM{
+		impl: &defaultSBOMImplementation{},
+	}
 }
+
+type sbomImplementation interface {
+}
+
+type defaultSBOMImplementation struct{}
