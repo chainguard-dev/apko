@@ -16,6 +16,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -93,7 +94,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var digest name.Digest
 	switch len(bc.ImageConfiguration.Archs) {
 	case 0:
-		return fmt.Errorf("no archs requested: %w", err)
+		return errors.New("no archs requested")
 	case 1:
 		bc.Arch = bc.ImageConfiguration.Archs[0]
 		layerTarGZ, err := bc.BuildLayer()
