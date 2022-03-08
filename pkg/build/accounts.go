@@ -56,45 +56,49 @@ func (bc *Context) MutateAccounts() error {
 
 	var eg errgroup.Group
 
-	// Mutate the /etc/groups file
-	eg.Go(func() error {
-		path := filepath.Join(bc.WorkDir, "etc", "group")
+	if len(ic.Accounts.Groups) != 0 {
+		// Mutate the /etc/groups file
+		eg.Go(func() error {
+			path := filepath.Join(bc.WorkDir, "etc", "group")
 
-		gf, err := passwd.ReadGroupFile(path)
-		if err != nil {
-			return err
-		}
+			gf, err := passwd.ReadGroupFile(path)
+			if err != nil {
+				return err
+			}
 
-		for _, g := range ic.Accounts.Groups {
-			gf.Entries = appendGroup(gf.Entries, g)
-		}
+			for _, g := range ic.Accounts.Groups {
+				gf.Entries = appendGroup(gf.Entries, g)
+			}
 
-		if err := gf.WriteFile(path); err != nil {
-			return err
-		}
+			if err := gf.WriteFile(path); err != nil {
+				return err
+			}
 
-		return nil
-	})
+			return nil
+		})
+	}
 
-	// Mutate the /etc/passwd file
-	eg.Go(func() error {
-		path := filepath.Join(bc.WorkDir, "etc", "passwd")
+	if len(ic.Accounts.Users) != 0 {
+		// Mutate the /etc/passwd file
+		eg.Go(func() error {
+			path := filepath.Join(bc.WorkDir, "etc", "passwd")
 
-		uf, err := passwd.ReadUserFile(path)
-		if err != nil {
-			return err
-		}
+			uf, err := passwd.ReadUserFile(path)
+			if err != nil {
+				return err
+			}
 
-		for _, u := range ic.Accounts.Users {
-			uf.Entries = appendUser(uf.Entries, u)
-		}
+			for _, u := range ic.Accounts.Users {
+				uf.Entries = appendUser(uf.Entries, u)
+			}
 
-		if err := uf.WriteFile(path); err != nil {
-			return err
-		}
+			if err := uf.WriteFile(path); err != nil {
+				return err
+			}
 
-		return nil
-	})
+			return nil
+		})
+	}
 
 	if err := eg.Wait(); err != nil {
 		return err
