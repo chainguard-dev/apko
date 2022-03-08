@@ -88,6 +88,17 @@ func (bc *Context) BuildImage() error {
 		return err
 	}
 
+	for _, a := range bc.Assertions {
+		a := a
+		eg.Go(func() error {
+			return a(bc)
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
 	// maybe install busybox symlinks
 	if bc.UseProot {
 		if err := bc.InstallBusyboxSymlinks(); err != nil {

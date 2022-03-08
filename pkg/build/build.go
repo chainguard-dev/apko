@@ -32,6 +32,7 @@ type Context struct {
 	UseProot           bool
 	Tags               []string
 	SourceDateEpoch    time.Time
+	Assertions         []Assertion
 }
 
 func (bc *Context) Summarize() {
@@ -153,6 +154,13 @@ func WithTags(tags ...string) Option {
 func WithTarball(path string) Option {
 	return func(bc *Context) error {
 		bc.TarballPath = path
+		return nil
+	}
+}
+
+func WithAssertions(a ...Assertion) Option {
+	return func(bc *Context) error {
+		bc.Assertions = append(bc.Assertions, a...)
 		return nil
 	}
 }
