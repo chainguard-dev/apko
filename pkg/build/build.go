@@ -178,3 +178,12 @@ func WithBuildDate(s string) Option {
 		return nil
 	}
 }
+
+// WithImageConfiguration sets the ImageConfiguration object
+// to use when building.
+func WithImageConfiguration(ic types.ImageConfiguration) Option {
+	return func(bc *Context) error {
+		bc.ImageConfiguration = ic
+		return nil
+	}
+}
