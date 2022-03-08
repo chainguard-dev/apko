@@ -20,7 +20,7 @@ import (
 )
 
 func TestGroupParser(t *testing.T) {
-	gf, err := ReadGroupFile("testdata/group")
+	gf, err := ReadOrCreateGroupFile("testdata/group")
 	if err != nil {
 		t.Errorf("error while parsing; %v", err)
 	}
@@ -37,7 +37,7 @@ func TestGroupParser(t *testing.T) {
 }
 
 func TestGroupWriter(t *testing.T) {
-	gf, err := ReadGroupFile("testdata/group")
+	gf, err := ReadOrCreateGroupFile("testdata/group")
 	if err != nil {
 		t.Errorf("error while parsing; %v", err)
 	}

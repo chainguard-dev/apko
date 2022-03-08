@@ -40,10 +40,10 @@ type UserFile struct {
 }
 
 // Parse an /etc/passwd file into a UserFile.
-func ReadUserFile(filePath string) (UserFile, error) {
+func ReadOrCreateUserFile(filePath string) (UserFile, error) {
 	uf := UserFile{}
 
-	file, err := os.Open(filePath)
+	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return uf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}

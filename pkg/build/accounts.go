@@ -61,7 +61,7 @@ func (bc *Context) MutateAccounts() error {
 		eg.Go(func() error {
 			path := filepath.Join(bc.WorkDir, "etc", "group")
 
-			gf, err := passwd.ReadGroupFile(path)
+			gf, err := passwd.ReadOrCreateGroupFile(path)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func (bc *Context) MutateAccounts() error {
 		eg.Go(func() error {
 			path := filepath.Join(bc.WorkDir, "etc", "passwd")
 
-			uf, err := passwd.ReadUserFile(path)
+			uf, err := passwd.ReadOrCreateUserFile(path)
 			if err != nil {
 				return err
 			}

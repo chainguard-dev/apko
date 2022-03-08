@@ -20,7 +20,7 @@ import (
 )
 
 func TestParser(t *testing.T) {
-	uf, err := ReadUserFile("testdata/passwd")
+	uf, err := ReadOrCreateUserFile("testdata/passwd")
 	if err != nil {
 		t.Errorf("error while parsing; %v", err)
 	}
@@ -37,7 +37,7 @@ func TestParser(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
-	uf, err := ReadUserFile("testdata/passwd")
+	uf, err := ReadOrCreateUserFile("testdata/passwd")
 	if err != nil {
 		t.Errorf("error while parsing; %v", err)
 	}

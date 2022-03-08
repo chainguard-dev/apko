@@ -37,10 +37,10 @@ type GroupFile struct {
 }
 
 // Parse an /etc/group file into a GroupFile.
-func ReadGroupFile(filePath string) (GroupFile, error) {
+func ReadOrCreateGroupFile(filePath string) (GroupFile, error) {
 	gf := GroupFile{}
 
-	file, err := os.Open(filePath)
+	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return gf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
