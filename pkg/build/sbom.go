@@ -15,131 +15,30 @@
 package build
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"chainguard.dev/apko/pkg/sbom/cyclonedx"
-	osr "github.com/dominodatalab/os-release"
-	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"chainguard.dev/apko/pkg/sbom"
 )
 
-func bomRef(ns string, pkg *repository.Package) string {
-	return fmt.Sprintf("pkg:apk/%s/%s", ns, pkg.Name)
-}
-
-func bomPurl(ns string, pkg *repository.Package) string {
-	return fmt.Sprintf("pkg:apk/%s/%s@%s", ns, pkg.Name, pkg.Version)
-}
-
+// GenerateSBOM runs the sbom generation
 func (bc *Context) GenerateSBOM() error {
 	log.Printf("generating SBOM")
 
-	installedDB, err := os.Open(filepath.Join(bc.WorkDir, "lib", "apk", "db", "installed"))
+	// TODO(puerco): Split GenerateSBOM into context implementation
+	s := sbom.NewWithWorkDir(bc.WorkDir)
+
+	// Generate the packages externally as we may
+	// move the package reader somewhere else
+	packages, err := s.ReadPackageIndex()
 	if err != nil {
-		return fmt.Errorf("unable to open APK installed db: %w", err)
+		return fmt.Errorf("getting installed packagesx from sbom: %w", err)
 	}
-	defer installedDB.Close()
+	s.Options.OutputDir = bc.SBOMPath
+	s.Options.Packages = packages
 
-	// repository.ParsePackageIndex closes the file itself
-	packages, err := repository.ParsePackageIndex(installedDB)
-	if err != nil {
-		return fmt.Errorf("unable to parse APK installed db: %w", err)
-	}
-
-	// TODO(kaniini): figure out something better to do than this
-	osName := "Alpine Linux"
-	osID := "alpine"
-	osVersion := "Unknown"
-
-	osReleaseData, err := os.ReadFile(filepath.Join(bc.WorkDir, "etc", "os-release"))
-	if err == nil {
-		info := osr.Parse(string(osReleaseData))
-
-		osName = info.Name
-		osID = info.ID
-		osVersion = info.VersionID
-	}
-
-	pkgComponents := []cyclonedx.Component{}
-	pkgDependencies := []cyclonedx.Dependency{}
-
-	for _, pkg := range packages {
-		// add the component
-		c := cyclonedx.Component{
-			BOMRef:      bomRef(osID, pkg),
-			Name:        pkg.Name,
-			Version:     pkg.Version,
-			Description: pkg.Description,
-			Licenses: []cyclonedx.License{
-				{
-					Expression: pkg.License,
-				},
-			},
-			PUrl: bomPurl(osID, pkg),
-			// TODO(kaniini): Talk with CycloneDX people about adding "package" type.
-			Type: "operating-system",
-		}
-
-		pkgComponents = append(pkgComponents, c)
-
-		// walk the dependency list
-		depRefs := []string{}
-		for _, dep := range pkg.Dependencies {
-			// TODO(kaniini): Properly handle virtual dependencies...
-			if strings.ContainsRune(dep, ':') {
-				continue
-			}
-
-			i := strings.IndexAny(dep, " ~<>=/!")
-			if i > -1 {
-				dep = dep[:i]
-			}
-			if dep == "" {
-				continue
-			}
-
-			depRefs = append(depRefs, fmt.Sprintf("pkg:apk/%s/%s", osID, dep))
-		}
-
-		d := cyclonedx.Dependency{
-			Ref:       bomRef(osID, pkg),
-			DependsOn: depRefs,
-		}
-		pkgDependencies = append(pkgDependencies, d)
-	}
-
-	rootComponent := cyclonedx.Component{
-		BOMRef:     fmt.Sprintf("pkg:apk/%s", osID),
-		Name:       osName,
-		Version:    osVersion,
-		Type:       "operating-system",
-		Components: pkgComponents,
-	}
-
-	bom := cyclonedx.Document{
-		BOMFormat:    "CycloneDX",
-		SpecVersion:  "1.4",
-		Version:      1,
-		Components:   []cyclonedx.Component{rootComponent},
-		Dependencies: pkgDependencies,
-	}
-
-	out, err := os.Create(bc.SBOMPath)
-	if err != nil {
-		return fmt.Errorf("unable to open SBOM path %s for writing: %w", bc.SBOMPath, err)
-	}
-	defer out.Close()
-
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-
-	err = enc.Encode(bom)
-	if err != nil {
-		return fmt.Errorf("unable to encode BOM: %w", err)
+	if _, err := s.Generate(); err != nil {
+		return fmt.Errorf("generating SBOMs: %w", err)
 	}
 
 	return nil
