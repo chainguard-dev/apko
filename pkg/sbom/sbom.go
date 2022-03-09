@@ -67,8 +67,12 @@ func NewWithWorkDir(path string) *SBOM {
 	return s
 }
 
+func (s *SBOM) SetImplementation(impl sbomImplementation) {
+	s.impl = impl
+}
+
 func (s *SBOM) ReadReleaseData() error {
-	if err := s.impl.readReleaseData(
+	if err := s.impl.ReadReleaseData(
 		&s.Options, filepath.Join(s.Options.WorkDir, osReleasePath),
 	); err != nil {
 		return fmt.Errorf("reading release data: %w", err)
@@ -79,7 +83,7 @@ func (s *SBOM) ReadReleaseData() error {
 // ReadPackageIndex parses the package index in the working directory
 // and returns a slice of the installed packages
 func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
-	pks, err := s.impl.readPackageIndex(
+	pks, err := s.impl.ReadPackageIndex(
 		&s.Options, filepath.Join(s.Options.WorkDir, packageIndexPath),
 	)
 	if err != nil {
@@ -90,12 +94,12 @@ func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
 
 // Generate creates the sboms according to the options set
 func (s *SBOM) Generate() ([]string, error) {
-	if err := s.impl.checkGenerators(
+	if err := s.impl.CheckGenerators(
 		&s.Options, s.Generators,
 	); err != nil {
 		return nil, err
 	}
-	files, err := s.impl.generate(&s.Options, s.Generators)
+	files, err := s.impl.Generate(&s.Options, s.Generators)
 	if err != nil {
 		return nil, fmt.Errorf("generating sboms: %w", err)
 	}
@@ -104,16 +108,16 @@ func (s *SBOM) Generate() ([]string, error) {
 
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
-	readReleaseData(*options.Options, string) error
-	readPackageIndex(*options.Options, string) ([]*repository.Package, error)
-	generate(*options.Options, map[string]generator.Generator) ([]string, error)
-	checkGenerators(*options.Options, map[string]generator.Generator) error
+	ReadReleaseData(*options.Options, string) error
+	ReadPackageIndex(*options.Options, string) ([]*repository.Package, error)
+	Generate(*options.Options, map[string]generator.Generator) ([]string, error)
+	CheckGenerators(*options.Options, map[string]generator.Generator) error
 }
 
 type defaultSBOMImplementation struct{}
 
 // readReleaseDataInternal reads the information from /etc/os-release
-func (di *defaultSBOMImplementation) readReleaseData(opts *options.Options, path string) error {
+func (di *defaultSBOMImplementation) ReadReleaseData(opts *options.Options, path string) error {
 	osReleaseData, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading os-release: %w", err)
@@ -129,7 +133,7 @@ func (di *defaultSBOMImplementation) readReleaseData(opts *options.Options, path
 }
 
 // readPackageIndex parses the apk database passed in the path
-func (di *defaultSBOMImplementation) readPackageIndex(
+func (di *defaultSBOMImplementation) ReadPackageIndex(
 	opts *options.Options, path string,
 ) (packages []*repository.Package, err error) {
 	installedDB, err := os.Open(path)
@@ -147,20 +151,10 @@ func (di *defaultSBOMImplementation) readPackageIndex(
 }
 
 // generate creates the documents according to the specified options
-func (di *defaultSBOMImplementation) generate(
+func (di *defaultSBOMImplementation) Generate(
 	opts *options.Options, generators map[string]generator.Generator,
 ) ([]string, error) {
-	// Check the generators before running
-	for _, format := range opts.Formats {
-		if _, ok := generators[format]; !ok {
-			return nil, fmt.Errorf(
-				"unable to generate sboms: no generator available for format %s", format,
-			)
-		}
-	}
-
 	files := []string{}
-
 	for _, format := range opts.Formats {
 		path := filepath.Join(
 			opts.OutputDir, opts.FileName+"."+generators[format].Ext(),
@@ -175,9 +169,15 @@ func (di *defaultSBOMImplementation) generate(
 
 // checkGenerators verifies we have generators available for the
 // formats specified in the options
-func (di *defaultSBOMImplementation) checkGenerators(
+func (di *defaultSBOMImplementation) CheckGenerators(
 	opts *options.Options, generators map[string]generator.Generator,
 ) error {
+	if len(generators) == 0 {
+		return fmt.Errorf("no generators defined")
+	}
+	if len(opts.Formats) == 0 {
+		return fmt.Errorf("no sbom format enabled in options")
+	}
 	for _, format := range opts.Formats {
 		if _, ok := generators[format]; !ok {
 			return fmt.Errorf(

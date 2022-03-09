@@ -14,10 +14,14 @@
 
 package generator
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
+
+//counterfeiter:generate . Generator
 
 type Generator interface {
 	Key() string

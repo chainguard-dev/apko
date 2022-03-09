@@ -15,13 +15,19 @@
 package sbom
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"chainguard.dev/apko/pkg/sbom/generator"
+	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
+
 	"chainguard.dev/apko/pkg/sbom/options"
 	"github.com/stretchr/testify/require"
 )
+
+var errFake = fmt.Errorf("synthetic error")
 
 func TestReadReleaseData(t *testing.T) {
 	osinfoData := `NAME="Alpine Linux"
@@ -40,9 +46,9 @@ BUG_REPORT_URL="https://bugs.alpinelinux.org/"
 	di := defaultSBOMImplementation{}
 
 	// Non existent file, should err
-	require.Error(t, di.readReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
+	require.Error(t, di.ReadReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
 	opts := options.Options{}
-	require.NoError(t, di.readReleaseData(&opts, filepath.Join(tdir, "os-release")))
+	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
 	require.Equal(t, "alpine", opts.OS.ID)
 	require.Equal(t, "Alpine Linux", opts.OS.Name)
 	require.Equal(t, "3.15.0", opts.OS.Version)
@@ -117,12 +123,79 @@ Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
 
 	// Non existent file must fail
 	opts := &options.Options{}
-	_, err := di.readPackageIndex(opts, filepath.Join(tdir, "non-existent"))
+	_, err := di.ReadPackageIndex(opts, filepath.Join(tdir, "non-existent"))
 	require.Error(t, err)
-	_, err = di.readPackageIndex(opts, filepath.Join(tdir, "installed-corrupt"))
+	_, err = di.ReadPackageIndex(opts, filepath.Join(tdir, "installed-corrupt"))
 	require.Error(t, err)
-	pkg, err := di.readPackageIndex(opts, filepath.Join(tdir, "installed"))
+	pkg, err := di.ReadPackageIndex(opts, filepath.Join(tdir, "installed"))
 	require.NoError(t, err)
 	require.NotNil(t, pkg)
 	require.Len(t, pkg, 2)
+}
+
+func TestCheckGenerators(t *testing.T) {
+	di := defaultSBOMImplementation{}
+	gen := generatorfakes.FakeGenerator{}
+
+	// No generators set
+	require.Error(t, di.CheckGenerators(
+		&options.Options{Formats: []string{"cyclonedx"}},
+		map[string]generator.Generator{},
+	))
+	// No generators enabled in the options
+	require.Error(t, di.CheckGenerators(
+		&options.Options{Formats: []string{}},
+		map[string]generator.Generator{"fake": &gen},
+	))
+	// No generator for specified format
+	require.Error(t, di.CheckGenerators(
+		&options.Options{Formats: []string{"cyclonedx"}},
+		map[string]generator.Generator{"fake": &gen},
+	))
+	// Success
+	require.NoError(t, di.CheckGenerators(
+		&options.Options{Formats: []string{"fake"}},
+		map[string]generator.Generator{"fake": &gen},
+	))
+}
+
+func TestGenerate(t *testing.T) {
+	di := defaultSBOMImplementation{}
+	outputDir := "/path/to/sbom"
+	formats := []string{"fake"}
+
+	for _, tc := range []struct {
+		prepare func(*generatorfakes.FakeGenerator)
+		opts    options.Options
+		assert  func([]string, error)
+	}{
+		{
+			// Success
+			prepare: func(fg *generatorfakes.FakeGenerator) {
+				fg.GenerateReturns(nil)
+			},
+			opts: options.Options{OutputDir: outputDir, Formats: formats},
+			assert: func(sboms []string, err error) {
+				require.NoError(t, err)
+				require.GreaterOrEqual(t, len(sboms), 1)
+			},
+		},
+		{
+			// Generate fails
+			prepare: func(fg *generatorfakes.FakeGenerator) {
+				fg.GenerateReturns(errFake)
+			},
+			opts: options.Options{OutputDir: outputDir, Formats: formats},
+			assert: func(s []string, err error) {
+				require.Error(t, err)
+			},
+		},
+	} {
+		mock := &generatorfakes.FakeGenerator{}
+		tc.prepare(mock)
+		res, err := di.Generate(
+			&tc.opts, map[string]generator.Generator{"fake": mock},
+		)
+		tc.assert(res, err)
+	}
 }
