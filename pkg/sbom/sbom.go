@@ -14,7 +14,17 @@
 
 package sbom
 
-const ()
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	osr "github.com/dominodatalab/os-release"
+)
+
+const (
+	osReleasePath = "etc/os-release"
+)
 
 type Options struct {
 	OsName    string
@@ -25,7 +35,7 @@ type Options struct {
 	WorkDir string
 }
 
-var Default = Options{
+var DefaultOptions = Options{
 	OsName:    "Alpine Linux",
 	OsID:      "alpine",
 	OsVersion: "Unknown",
@@ -38,11 +48,38 @@ type SBOM struct {
 
 func New() *SBOM {
 	return &SBOM{
-		impl: &defaultSBOMImplementation{},
+		impl:    &defaultSBOMImplementation{},
+		Options: DefaultOptions,
 	}
 }
 
+func (sbom *SBOM) ReadReleaseData() error {
+	if err := sbom.impl.readReleaseData(
+		&sbom.Options, filepath.Join(sbom.Options.WorkDir, osReleasePath),
+	); err != nil {
+		return fmt.Errorf("reading release data: %w", err)
+	}
+	return nil
+}
+
 type sbomImplementation interface {
+	readReleaseData(*Options, string) error
 }
 
 type defaultSBOMImplementation struct{}
+
+// readReleaseDataInternal reads the information from /etc/os-release
+func (di *defaultSBOMImplementation) readReleaseData(opts *Options, path string) error {
+	osReleaseData, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading os-release: %w", err)
+	}
+
+	info := osr.Parse(string(osReleaseData))
+	fmt.Printf("%+v", info)
+
+	opts.OsName = info.Name
+	opts.OsID = info.ID
+	opts.OsVersion = info.VersionID
+	return nil
+}
