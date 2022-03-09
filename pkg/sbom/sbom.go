@@ -90,6 +90,11 @@ func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
 
 // Generate creates the sboms according to the options set
 func (s *SBOM) Generate() ([]string, error) {
+	if err := s.impl.checkGenerators(
+		&s.Options, s.Generators,
+	); err != nil {
+		return nil, err
+	}
 	files, err := s.impl.generate(&s.Options, s.Generators)
 	if err != nil {
 		return nil, fmt.Errorf("generating sboms: %w", err)
@@ -102,6 +107,7 @@ type sbomImplementation interface {
 	readReleaseData(*options.Options, string) error
 	readPackageIndex(*options.Options, string) ([]*repository.Package, error)
 	generate(*options.Options, map[string]generator.Generator) ([]string, error)
+	checkGenerators(*options.Options, map[string]generator.Generator) error
 }
 
 type defaultSBOMImplementation struct{}
@@ -165,4 +171,19 @@ func (di *defaultSBOMImplementation) generate(
 		files = append(files, path)
 	}
 	return files, nil
+}
+
+// checkGenerators verifies we have generators available for the
+// formats specified in the options
+func (di *defaultSBOMImplementation) checkGenerators(
+	opts *options.Options, generators map[string]generator.Generator,
+) error {
+	for _, format := range opts.Formats {
+		if _, ok := generators[format]; !ok {
+			return fmt.Errorf(
+				"unable to generate sboms: no generator available for format %s", format,
+			)
+		}
+	}
+	return nil
 }
