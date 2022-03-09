@@ -30,6 +30,8 @@ type Context struct {
 	OverrideUIDGID  bool
 	UID             int
 	GID             int
+	OverrideUname   string
+	OverrideGname   string
 }
 
 type Option func(*Context) error
@@ -61,6 +63,22 @@ func WithOverrideUIDGID(uid, gid int) Option {
 		ctx.OverrideUIDGID = true
 		ctx.UID = uid
 		ctx.GID = gid
+		return nil
+	}
+}
+
+// WithOverrideUname sets the Uname to use with Context.
+func WithOverrideUname(uname string) Option {
+	return func(ctx *Context) error {
+		ctx.OverrideUname = uname
+		return nil
+	}
+}
+
+// WithOverrideGname sets the Gname to use with Context.
+func WithOverrideGname(gname string) Option {
+	return func(ctx *Context) error {
+		ctx.OverrideGname = gname
 		return nil
 	}
 }
@@ -106,6 +124,14 @@ func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) e
 		if ctx.OverrideUIDGID {
 			header.Uid = ctx.UID
 			header.Gid = ctx.GID
+		}
+
+		if ctx.OverrideUname != "" {
+			header.Uname = ctx.OverrideUname
+		}
+
+		if ctx.OverrideGname != "" {
+			header.Gname = ctx.OverrideGname
 		}
 
 		if err := tw.WriteHeader(header); err != nil {
