@@ -20,10 +20,12 @@ import (
 	"path/filepath"
 
 	osr "github.com/dominodatalab/os-release"
+	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 )
 
 const (
-	osReleasePath = "etc/os-release"
+	osReleasePath    = "/etc/os-release"
+	packageIndexPath = "/lib/apk/db/installed"
 )
 
 type Options struct {
@@ -53,17 +55,30 @@ func New() *SBOM {
 	}
 }
 
-func (sbom *SBOM) ReadReleaseData() error {
-	if err := sbom.impl.readReleaseData(
-		&sbom.Options, filepath.Join(sbom.Options.WorkDir, osReleasePath),
+func (s *SBOM) ReadReleaseData() error {
+	if err := s.impl.readReleaseData(
+		&s.Options, filepath.Join(s.Options.WorkDir, osReleasePath),
 	); err != nil {
 		return fmt.Errorf("reading release data: %w", err)
 	}
 	return nil
 }
 
+// ReadPackageIndex parses the package index in the working directory
+// and returns a slice of the installed packages
+func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
+	pks, err := s.impl.readPackageIndex(
+		&s.Options, filepath.Join(s.Options.WorkDir, packageIndexPath),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("reading apk package index: %w", err)
+	}
+	return pks, nil
+}
+
 type sbomImplementation interface {
 	readReleaseData(*Options, string) error
+	readPackageIndex(*Options, string) ([]*repository.Package, error)
 }
 
 type defaultSBOMImplementation struct{}
@@ -82,4 +97,22 @@ func (di *defaultSBOMImplementation) readReleaseData(opts *Options, path string)
 	opts.OsID = info.ID
 	opts.OsVersion = info.VersionID
 	return nil
+}
+
+// readPackageIndex parses the apk database passed in the path
+func (di *defaultSBOMImplementation) readPackageIndex(
+	opts *Options, path string,
+) (packages []*repository.Package, err error) {
+	installedDB, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening APK installed db: %w", err)
+	}
+	defer installedDB.Close()
+
+	// repository.ParsePackageIndex closes the file itself
+	packages, err = repository.ParsePackageIndex(installedDB)
+	if err != nil {
+		return nil, fmt.Errorf("parsing APK installed db: %w", err)
+	}
+	return packages, nil
 }

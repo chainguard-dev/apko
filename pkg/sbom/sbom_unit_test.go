@@ -46,3 +46,82 @@ BUG_REPORT_URL="https://bugs.alpinelinux.org/"
 	require.Equal(t, "Alpine Linux", opts.OsName)
 	require.Equal(t, "3.15.0", opts.OsVersion)
 }
+
+func TestReadPackageIndex(t *testing.T) {
+	sampleDB := `
+C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
+P:musl
+V:1.2.2-r7
+A:x86_64
+S:383152
+I:622592
+T:the musl c library (libc) implementation
+U:https://musl.libc.org/
+L:MIT
+o:musl
+m:Pkg Author <user@domain.com>
+t:1632431095
+c:bf5bbfdbf780092f387b7abe401fbfceda90c84d
+p:so:libc.musl-x86_64.so.1=1
+F:lib
+R:ld-musl-x86_64.so.1
+a:0:0:755
+Z:Q12adwqQOjo9dFl+VJD2Ecd901vhE=
+R:libc.musl-x86_64.so.1
+a:0:0:777
+Z:Q17yJ3JFNypA4mxhJJr0ou6CzsJVI=
+
+C:Q1UQjutTNeqKQgMlKQyyZFnumOg3c=
+P:libretls
+V:3.3.4-r2
+A:x86_64
+S:29183
+I:86016
+T:port of libtls from libressl to openssl
+U:https://git.causal.agency/libretls/
+L:ISC AND (BSD-3-Clause OR MIT)
+o:libretls
+m:Pkg Author <user@domain.com>
+t:1634364270
+c:670bf5a8cc5bc605eede8ca2fd55b50a5c9f8660
+D:ca-certificates-bundle so:libc.musl-x86_64.so.1 so:libcrypto.so.1.1 so:libssl.so.1.1
+p:so:libtls.so.2=2.0.3
+F:usr
+F:usr/lib
+R:libtls.so.2
+a:0:0:777
+Z:Q1nNEC9T/t6W+Ecm0DxqMUnRvcT6k=
+R:libtls.so.2.0.3
+a:0:0:755
+Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
+
+`
+	tdir := t.TempDir()
+	require.NoError(
+		t, os.WriteFile(
+			filepath.Join(tdir, "installed"), []byte(sampleDB), os.FileMode(0o644),
+		),
+	)
+
+	// Write an invalid DB
+	require.NoError(
+		t, os.WriteFile(
+			filepath.Join(tdir, "installed-corrupt"),
+			[]byte("sldkjflskdjflsjdflkjsdlfkjsldfkj\nskdjfhksjdhfkjhsdkfjhksdjhf"),
+			os.FileMode(0o644),
+		),
+	)
+
+	di := defaultSBOMImplementation{}
+
+	// Non existent file must fail
+	opts := &Options{}
+	_, err := di.readPackageIndex(opts, filepath.Join(tdir, "non-existent"))
+	require.Error(t, err)
+	_, err = di.readPackageIndex(opts, filepath.Join(tdir, "installed-corrupt"))
+	require.Error(t, err)
+	pkg, err := di.readPackageIndex(opts, filepath.Join(tdir, "installed"))
+	require.NoError(t, err)
+	require.NotNil(t, pkg)
+	require.Len(t, pkg, 2)
+}
