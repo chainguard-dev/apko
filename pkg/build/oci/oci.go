@@ -164,7 +164,7 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 
 func PublishIndex(imgs map[types.Architecture]v1.Image, tags ...string) (name.Digest, error) {
 	var idx v1.ImageIndex = empty.Index
-	var archs []types.Architecture
+	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
 	}
