@@ -30,8 +30,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var systemKeyringLocations = []string{"/etc/apk/keys/"}
-
 // Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
 // but this has been designed so that we can port it easily to use libapk-go once
 // it is ready.
@@ -42,16 +40,18 @@ var systemKeyringLocations = []string{"/etc/apk/keys/"}
 func (bc *Context) InitApkDB() error {
 	log.Printf("initializing apk database")
 
-	return bc.Execute("apk", "add", "--initdb", "--root", bc.WorkDir)
+	return bc.Execute("apk", "add", "--initdb", "--arch", bc.Arch.ToAPK(), "--root", bc.WorkDir)
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
 // directory by trying some common locations. These can be overridden
 // by passing one or more directories as arguments.
-func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
+func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 	var ring []string
 	if len(locations) == 0 {
-		locations = systemKeyringLocations
+		locations = []string{
+			filepath.Join("/usr/share/apk/keys/", bc.Arch.ToAPK()),
+		}
 	}
 	for _, d := range locations {
 		keyFiles, err := os.ReadDir(d)
@@ -75,9 +75,9 @@ func (*Context) loadSystemKeyring(locations ...string) ([]string, error) {
 				log.Printf("%s has invalid extension (%s), skipping...", p, ext)
 			}
 		}
-		if len(ring) > 0 {
-			return ring, nil
-		}
+	}
+	if len(ring) > 0 {
+		return ring, nil
 	}
 	// Return an error since reading the system keyring is the last resort
 	return nil, errors.New("no suitable keyring directory found")
@@ -144,7 +144,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
-			if err := os.WriteFile(filepath.Join(bc.WorkDir, element), data,
+			if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc/apk/keys", filepath.Base(element)), data,
 				0644); err != nil {
 				return fmt.Errorf("failed to write apk key: %w", err)
 			}
@@ -190,7 +190,7 @@ func (bc *Context) InitApkWorld() error {
 func (bc *Context) FixateApkWorld() error {
 	log.Printf("synchronizing with desired apk world")
 
-	args := []string{"fix", "--root", bc.WorkDir, "--no-cache", "--update-cache"}
+	args := []string{"fix", "--root", bc.WorkDir, "--no-cache", "--update-cache", "--arch", bc.Arch.ToAPK()}
 	if bc.UseProot {
 		args = append(args, "--no-scripts")
 	}

@@ -35,6 +35,7 @@ type Context struct {
 	Assertions         []Assertion
 	WantSBOM           bool
 	SBOMPath           string
+	Arch               types.Architecture
 }
 
 func (bc *Context) Summarize() {
@@ -44,6 +45,7 @@ func (bc *Context) Summarize() {
 	log.Printf("  use proot: %t", bc.UseProot)
 	log.Printf("  source date: %s", bc.SourceDateEpoch)
 	log.Printf("  SBOM output path: %s", bc.SBOMPath)
+	log.Printf("  arch: %v", bc.Arch.ToAPK())
 	bc.ImageConfiguration.Summarize()
 }
 
@@ -212,6 +214,14 @@ func WithSBOM(path string) Option {
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
 		bc.ImageConfiguration = ic
+		return nil
+	}
+}
+
+// WithArch sets the architecture for the build context.
+func WithArch(arch types.Architecture) Option {
+	return func(bc *Context) error {
+		bc.Arch = arch
 		return nil
 	}
 }

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"runtime"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -35,7 +34,15 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time) (v1.Image, error) {
+var keychain = authn.NewMultiKeychain(
+	authn.DefaultKeychain,
+	google.Keychain,
+	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(ioutil.Discard))),
+	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
+	github.Keychain,
+)
+
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
 	log.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
@@ -79,8 +86,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	cfg = cfg.DeepCopy()
 	cfg.Author = "github.com/chainguard-dev/apko"
-	cfg.Architecture = runtime.GOARCH
-	cfg.OS = runtime.GOOS
+	cfg.Architecture = string(arch)
+	cfg.OS = "linux"
 
 	if ic.Entrypoint.Command != "" {
 		cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.Command}
@@ -100,8 +107,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	return v1Image, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time) error {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created)
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) error {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
 	if err != nil {
 		return err
 	}
@@ -119,45 +126,105 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 	return nil
 }
 
-func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash, kc authn.Keychain) (name.Digest, error) {
+func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
-	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(kc)); err != nil {
+	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, tags ...string) (name.Digest, error) {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, tags ...string) (name.Digest, v1.Image, error) {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
 	if err != nil {
-		return name.Digest{}, err
+		return name.Digest{}, nil, err
 	}
 
 	h, err := v1Image.Digest()
 	if err != nil {
-		return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
+		return name.Digest{}, nil, fmt.Errorf("failed to compute digest: %w", err)
 	}
-
-	kc := authn.NewMultiKeychain(
-		authn.DefaultKeychain,
-		google.Keychain,
-		authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(ioutil.Discard))),
-		authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
-		github.Keychain,
-	)
 
 	digest := name.Digest{}
 	for _, tag := range tags {
 		log.Printf("publishing tag %v", tag)
-		digest, err = publishTagFromImage(v1Image, tag, h, kc)
+		digest, err = publishTagFromImage(v1Image, tag, h)
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+	}
+
+	return digest, v1Image, nil
+}
+
+func PublishIndex(imgs []v1.Image, tags ...string) (name.Digest, error) {
+	var idx v1.ImageIndex = empty.Index
+	for _, img := range imgs {
+		mt, err := img.MediaType()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get mediatype: %w", err)
+		}
+
+		h, err := img.Digest()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
+		}
+
+		size, err := img.Size()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to compute size: %w", err)
+		}
+
+		cfg, err := img.ConfigFile()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get config file: %w", err)
+		}
+		plat := v1.Platform{
+			OS:           cfg.OS,
+			Architecture: cfg.Architecture,
+		}
+
+		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
+			Add: img,
+			Descriptor: v1.Descriptor{
+				MediaType: mt,
+				Digest:    h,
+				Size:      size,
+				Platform:  &plat,
+			},
+		})
+	}
+
+	h, err := idx.Digest()
+	if err != nil {
+		return name.Digest{}, err
+	}
+
+	digest := name.Digest{}
+	for _, tag := range tags {
+		log.Printf("publishing tag %v", tag)
+		digest, err = publishTagFromIndex(idx, tag, h)
 		if err != nil {
 			return name.Digest{}, err
 		}
 	}
 
 	return digest, nil
+}
+
+func publishTagFromIndex(index v1.ImageIndex, imageRef string, hash v1.Hash) (name.Digest, error) {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
+	}
+
+	err = remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
+	}
+	return ref.Context().Digest(hash.String()), nil
 }

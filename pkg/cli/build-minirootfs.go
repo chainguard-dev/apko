@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/build/types"
 	"github.com/spf13/cobra"
 )
 
@@ -64,6 +66,12 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	if err != nil {
 		return err
 	}
+
+	arch := types.Architecture(runtime.GOARCH)
+	if len(bc.ImageConfiguration.Archs) != 0 {
+		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", arch)
+	}
+	bc.Arch = arch
 
 	log.Printf("building minirootfs '%s'", bc.TarballPath)
 
