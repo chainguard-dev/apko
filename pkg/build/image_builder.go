@@ -20,7 +20,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/hashicorp/go-multierror"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -88,6 +90,10 @@ func (bc *Context) BuildImage() error {
 		return err
 	}
 
+	if err := bc.runAssertions(); err != nil {
+		return err
+	}
+
 	// maybe install busybox symlinks
 	if bc.UseProot {
 		if err := bc.InstallBusyboxSymlinks(); err != nil {
@@ -102,6 +108,33 @@ func (bc *Context) BuildImage() error {
 
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
 	return nil
+}
+
+func (bc *Context) runAssertions() error {
+	var wg sync.WaitGroup
+	var result error
+	errCh := make(chan error, len(bc.Assertions))
+
+	for _, a := range bc.Assertions {
+		a := a
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a(bc); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		result = multierror.Append(result, err)
+	}
+
+	return result
 }
 
 // Installs the BusyBox symlinks, if appropriate.

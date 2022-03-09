@@ -45,6 +45,7 @@ command, e.g.
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
 				build.WithBuildDate(buildDate),
+				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 			)
 		},
 	}
