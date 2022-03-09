@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"sort"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -161,9 +162,17 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs []v1.Image, tags ...string) (name.Digest, error) {
+func PublishIndex(imgs map[types.Architecture]v1.Image, tags ...string) (name.Digest, error) {
 	var idx v1.ImageIndex = empty.Index
-	for _, img := range imgs {
+	archs := make([]types.Architecture, 0, len(imgs))
+	for arch := range imgs {
+		archs = append(archs, arch)
+	}
+	sort.Slice(archs, func(i, j int) bool {
+		return archs[i] < archs[j]
+	})
+	for _, arch := range archs {
+		img := imgs[arch]
 		mt, err := img.MediaType()
 		if err != nil {
 			return name.Digest{}, fmt.Errorf("failed to get mediatype: %w", err)
@@ -179,22 +188,13 @@ func PublishIndex(imgs []v1.Image, tags ...string) (name.Digest, error) {
 			return name.Digest{}, fmt.Errorf("failed to compute size: %w", err)
 		}
 
-		cfg, err := img.ConfigFile()
-		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to get config file: %w", err)
-		}
-		plat := v1.Platform{
-			OS:           cfg.OS,
-			Architecture: cfg.Architecture,
-		}
-
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
 				MediaType: mt,
 				Digest:    h,
 				Size:      size,
-				Platform:  &plat,
+				Platform:  arch.ToOCIPlatform(),
 			},
 		})
 	}

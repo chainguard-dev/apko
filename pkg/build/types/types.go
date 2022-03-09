@@ -14,7 +14,11 @@
 
 package types
 
-import "sort"
+import (
+	"sort"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+)
 
 type User struct {
 	UserName string
@@ -53,18 +57,28 @@ type ImageConfiguration struct {
 type Architecture string
 
 const (
+	_386    Architecture = "386"
 	amd64   Architecture = "amd64"
 	arm64   Architecture = "arm64"
+	armv6   Architecture = "arm/v6"
+	armv7   Architecture = "arm/v7"
 	ppc64le Architecture = "ppc64le"
-	s390x   Architecture = "s390x"
-	_386    Architecture = "386"
 	riscv64 Architecture = "riscv64"
-	// TODO: armv7 and armhf (av6)
+	s390x   Architecture = "s390x"
 )
 
 // AllArchs contains the standard set of supported architectures, which are
 // used by `apko publish` when no architectures are specified.
-var AllArchs = []Architecture{amd64, arm64, ppc64le, s390x, _386, riscv64}
+var AllArchs = []Architecture{
+	_386,
+	amd64,
+	arm64,
+	armv6,
+	armv7,
+	ppc64le,
+	riscv64,
+	s390x,
+}
 
 // ToAPK returns the apk-style equivalent string for the Architecture.
 func (a Architecture) ToAPK() string {
@@ -75,9 +89,28 @@ func (a Architecture) ToAPK() string {
 		return "x86_64"
 	case arm64:
 		return "aarch64"
+	case armv6:
+		return "armhf"
+	case armv7:
+		return "armv7"
 	default:
 		return string(a)
 	}
+}
+
+func (a Architecture) ToOCIPlatform() *v1.Platform {
+	plat := v1.Platform{OS: "linux"}
+	switch a {
+	case armv6:
+		plat.Architecture = "arm"
+		plat.Variant = "v6"
+	case armv7:
+		plat.Architecture = "arm"
+		plat.Variant = "v7"
+	default:
+		plat.Architecture = string(a)
+	}
+	return &plat
 }
 
 // ParseArchitectures parses architecture values in string form, and returns
@@ -97,6 +130,10 @@ func ParseArchitectures(in []string) []Architecture {
 			a = amd64
 		case "aarch64":
 			a = arm64
+		case "armhf":
+			a = armv6
+		case "armv7":
+			a = armv7
 		}
 		uniq[a] = struct{}{}
 	}
