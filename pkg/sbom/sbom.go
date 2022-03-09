@@ -14,6 +14,8 @@
 
 package sbom
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"fmt"
 	"os"
@@ -76,6 +78,7 @@ func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
 	return pks, nil
 }
 
+//counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
 	readReleaseData(*Options, string) error
 	readPackageIndex(*Options, string) ([]*repository.Package, error)

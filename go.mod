@@ -8,6 +8,7 @@ require (
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/google/go-containerregistry v0.8.1-0.20220223122423-dd8d514a9b24
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.4.1
 	github.com/spf13/cobra v1.3.0
 	github.com/stretchr/testify v1.7.0
 	gitlab.alpinelinux.org/alpine/go v0.3.0
@@ -63,9 +64,12 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
+	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
 	golang.org/x/sys v0.0.0-20220128215802-99c3d69c2c27 // indirect
+	golang.org/x/tools v0.1.9 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
