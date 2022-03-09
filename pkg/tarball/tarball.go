@@ -27,6 +27,9 @@ import (
 
 type Context struct {
 	SourceDateEpoch time.Time
+	OverrideUIDGID  bool
+	UID             int
+	GID             int
 }
 
 type Option func(*Context) error
@@ -48,6 +51,16 @@ func NewContext(opts ...Option) (*Context, error) {
 func WithSourceDateEpoch(t time.Time) Option {
 	return func(ctx *Context) error {
 		ctx.SourceDateEpoch = t
+		return nil
+	}
+}
+
+// WithOverrideUIDGID sets the UID/GID to override with for Context.
+func WithOverrideUIDGID(uid, gid int) Option {
+	return func(ctx *Context) error {
+		ctx.OverrideUIDGID = true
+		ctx.UID = uid
+		ctx.GID = gid
 		return nil
 	}
 }
@@ -89,6 +102,11 @@ func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) e
 		header.AccessTime = ctx.SourceDateEpoch
 		header.ModTime = ctx.SourceDateEpoch
 		header.ChangeTime = ctx.SourceDateEpoch
+
+		if ctx.OverrideUIDGID {
+			header.Uid = ctx.UID
+			header.Gid = ctx.GID
+		}
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
