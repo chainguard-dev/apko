@@ -108,7 +108,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
 	default:
-		var imgs []v1.Image
+		imgs := map[types.Architecture]v1.Image{}
 		workDir := bc.WorkDir
 		for _, arch := range archs {
 			bc.Arch = arch
@@ -123,7 +123,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
-			imgs = append(imgs, img)
+			imgs[arch] = img
 		}
 		digest, err = oci.PublishIndex(imgs, bc.Tags...)
 		if err != nil {

@@ -31,16 +31,16 @@ func TestParseArchitectures(t *testing.T) {
 		want: []Architecture{},
 	}, {
 		desc: "sort",
-		in:   []string{"riscv64", "amd64"},
-		want: []Architecture{amd64, riscv64},
+		in:   []string{"riscv64", "amd64", "arm/v6"},
+		want: []Architecture{amd64, armv6, riscv64},
 	}, {
 		desc: "dedupe",
 		in:   []string{"amd64", "amd64", "arm64"},
 		want: []Architecture{amd64, arm64},
 	}, {
 		desc: "dedupe w/ apk style",
-		in:   []string{"x86_64", "amd64", "arm64"},
-		want: []Architecture{amd64, arm64},
+		in:   []string{"x86_64", "amd64", "arm64", "arm/v6", "armhf"},
+		want: []Architecture{amd64, armv6, arm64},
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
 			got := ParseArchitectures(c.in)
