@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"chainguard.dev/apko/pkg/sbom/generator"
+	"chainguard.dev/apko/pkg/sbom/options"
 	osr "github.com/dominodatalab/os-release"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 )
@@ -30,30 +32,30 @@ const (
 	packageIndexPath = "/lib/apk/db/installed"
 )
 
-type Options struct {
-	OsName    string
-	OsID      string
-	OsVersion string
-
-	// Working directory,inherited from buid context
-	WorkDir string
-}
-
-var DefaultOptions = Options{
-	OsName:    "Alpine Linux",
-	OsID:      "alpine",
-	OsVersion: "Unknown",
+var DefaultOptions = options.Options{
+	OS: struct {
+		Name    string
+		ID      string
+		Version string
+	}{
+		ID:      "alpine",
+		Name:    "Alpine Linux",
+		Version: "Unknown",
+	},
+	Formats: []string{"cyclonedx"},
 }
 
 type SBOM struct {
-	impl    sbomImplementation
-	Options Options
+	Generators map[string]generator.Generator
+	impl       sbomImplementation
+	Options    options.Options
 }
 
 func New() *SBOM {
 	return &SBOM{
-		impl:    &defaultSBOMImplementation{},
-		Options: DefaultOptions,
+		Generators: generator.Generators(),
+		impl:       &defaultSBOMImplementation{},
+		Options:    DefaultOptions,
 	}
 }
 
@@ -80,14 +82,14 @@ func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
 
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
-	readReleaseData(*Options, string) error
-	readPackageIndex(*Options, string) ([]*repository.Package, error)
+	readReleaseData(*options.Options, string) error
+	readPackageIndex(*options.Options, string) ([]*repository.Package, error)
 }
 
 type defaultSBOMImplementation struct{}
 
 // readReleaseDataInternal reads the information from /etc/os-release
-func (di *defaultSBOMImplementation) readReleaseData(opts *Options, path string) error {
+func (di *defaultSBOMImplementation) readReleaseData(opts *options.Options, path string) error {
 	osReleaseData, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading os-release: %w", err)
@@ -96,15 +98,15 @@ func (di *defaultSBOMImplementation) readReleaseData(opts *Options, path string)
 	info := osr.Parse(string(osReleaseData))
 	fmt.Printf("%+v", info)
 
-	opts.OsName = info.Name
-	opts.OsID = info.ID
-	opts.OsVersion = info.VersionID
+	opts.OS.Name = info.Name
+	opts.OS.ID = info.ID
+	opts.OS.Version = info.VersionID
 	return nil
 }
 
 // readPackageIndex parses the apk database passed in the path
 func (di *defaultSBOMImplementation) readPackageIndex(
-	opts *Options, path string,
+	opts *options.Options, path string,
 ) (packages []*repository.Package, err error) {
 	installedDB, err := os.Open(path)
 	if err != nil {
