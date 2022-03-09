@@ -48,10 +48,14 @@ define create_kocache_path
 endef
 
 ##########
-# ko build
+# default
 ##########
 
-all: apko
+default: help
+
+##########
+# ko build
+##########
 
 .PHONY: ko
 ko: ## Build images using ko
@@ -82,11 +86,11 @@ ko-apply:  ## Build the image and apply the manifests
 ##########
 
 .PHONY: apko
-apko: $(SRCS)
+apko: $(SRCS) ## Builds apko
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
 
 .PHONY: install
-install: $(SRCS) apko
+install: $(SRCS) apko ## Builds and moves apko into BINDIR (default /usr/bin)
 	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
 
 #####################
