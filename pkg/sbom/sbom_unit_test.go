@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"chainguard.dev/apko/pkg/sbom/options"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,12 +40,12 @@ BUG_REPORT_URL="https://bugs.alpinelinux.org/"
 	di := defaultSBOMImplementation{}
 
 	// Non existent file, should err
-	require.Error(t, di.readReleaseData(&Options{}, filepath.Join(tdir, "non-existent")))
-	opts := Options{}
+	require.Error(t, di.readReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
+	opts := options.Options{}
 	require.NoError(t, di.readReleaseData(&opts, filepath.Join(tdir, "os-release")))
-	require.Equal(t, "alpine", opts.OsID)
-	require.Equal(t, "Alpine Linux", opts.OsName)
-	require.Equal(t, "3.15.0", opts.OsVersion)
+	require.Equal(t, "alpine", opts.OS.ID)
+	require.Equal(t, "Alpine Linux", opts.OS.Name)
+	require.Equal(t, "3.15.0", opts.OS.Version)
 }
 
 func TestReadPackageIndex(t *testing.T) {
@@ -115,7 +116,7 @@ Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
 	di := defaultSBOMImplementation{}
 
 	// Non existent file must fail
-	opts := &Options{}
+	opts := &options.Options{}
 	_, err := di.readPackageIndex(opts, filepath.Join(tdir, "non-existent"))
 	require.Error(t, err)
 	_, err = di.readPackageIndex(opts, filepath.Join(tdir, "installed-corrupt"))
