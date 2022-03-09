@@ -51,6 +51,8 @@ endef
 # ko build
 ##########
 
+all: apko
+
 .PHONY: ko
 ko: ## Build images using ko
 	$(create_kocache_path)
