@@ -25,8 +25,35 @@ import (
 	"time"
 )
 
+type Context struct {
+	SourceDateEpoch time.Time
+}
+
+type Option func(*Context) error
+
+// Generates a new context from a set of options.
+func NewContext(opts ...Option) (*Context, error) {
+	ctx := Context{}
+
+	for _, opt := range opts {
+		if err := opt(&ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	return &ctx, nil
+}
+
+// Sets SourceDateEpoch for Context.
+func WithSourceDateEpoch(t time.Time) Option {
+	return func(ctx *Context) error {
+		ctx.SourceDateEpoch = t
+		return nil
+	}
+}
+
 // Writes a raw TAR archive to out, given an fs.FS.
-func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch time.Time) error {
+func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 	gzw := gzip.NewWriter(out)
 	defer gzw.Close()
 
@@ -59,9 +86,9 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch 
 		header.Name = path
 
 		// zero out timestamps for reproducibility
-		header.AccessTime = sourceDateEpoch
-		header.ModTime = sourceDateEpoch
-		header.ChangeTime = sourceDateEpoch
+		header.AccessTime = ctx.SourceDateEpoch
+		header.ModTime = ctx.SourceDateEpoch
+		header.ChangeTime = ctx.SourceDateEpoch
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
@@ -90,9 +117,9 @@ func WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer, sourceDateEpoch 
 
 // Writes a tarball to a temporary file.  Caller's responsibility to
 // clean it up when it's done with it.
-func WriteArchive(src string, w io.Writer, sourceDateEpoch time.Time) error {
+func (ctx *Context) WriteArchive(src string, w io.Writer) error {
 	fs := os.DirFS(src)
-	if err := WriteArchiveFromFS(src, fs, w, sourceDateEpoch); err != nil {
+	if err := ctx.WriteArchiveFromFS(src, fs, w); err != nil {
 		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 

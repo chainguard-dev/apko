@@ -61,7 +61,12 @@ func (bc *Context) BuildTarball() (string, error) {
 	}
 	defer outfile.Close()
 
-	if err := tarball.WriteArchive(bc.WorkDir, outfile, bc.SourceDateEpoch); err != nil {
+	tw, err := tarball.NewContext(tarball.WithSourceDateEpoch(bc.SourceDateEpoch))
+	if err != nil {
+		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
+	}
+
+	if err := tw.WriteArchive(bc.WorkDir, outfile); err != nil {
 		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
