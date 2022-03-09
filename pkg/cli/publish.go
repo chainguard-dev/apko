@@ -29,6 +29,7 @@ func Publish() *cobra.Command {
 	var imageRefs string
 	var useProot bool
 	var buildDate string
+	var sbomPath string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -45,6 +46,7 @@ in a keychain.`,
 				build.WithProot(useProot),
 				build.WithTags(args[1:]...),
 				build.WithBuildDate(buildDate),
+				build.WithSBOM(sbomPath),
 			); err != nil {
 				return err
 			}
@@ -55,6 +57,7 @@ in a keychain.`,
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
+	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 
 	return cmd
 }

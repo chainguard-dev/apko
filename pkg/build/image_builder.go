@@ -106,6 +106,13 @@ func (bc *Context) BuildImage() error {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
+	// generate SBOM
+	if bc.SBOMPath != "" {
+		if err := bc.GenerateSBOM(); err != nil {
+			return fmt.Errorf("failed to generate SBOM: %w", err)
+		}
+	}
+
 	log.Printf("finished building filesystem in %s", bc.WorkDir)
 	return nil
 }
