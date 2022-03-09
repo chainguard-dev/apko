@@ -42,7 +42,8 @@ var DefaultOptions = options.Options{
 		Name:    "Alpine Linux",
 		Version: "Unknown",
 	},
-	Formats: []string{"cyclonedx"},
+	FileName: "sbom",
+	Formats:  []string{"cyclonedx"},
 }
 
 type SBOM struct {
@@ -57,6 +58,13 @@ func New() *SBOM {
 		impl:       &defaultSBOMImplementation{},
 		Options:    DefaultOptions,
 	}
+}
+
+// NewWithWorkDir returns a new sbom object with a working dir preset
+func NewWithWorkDir(path string) *SBOM {
+	s := New()
+	s.Options.WorkDir = path
+	return s
 }
 
 func (s *SBOM) ReadReleaseData() error {
@@ -80,10 +88,20 @@ func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
 	return pks, nil
 }
 
+// Generate creates the sboms according to the options set
+func (s *SBOM) Generate() ([]string, error) {
+	files, err := s.impl.generate(&s.Options, s.Generators)
+	if err != nil {
+		return nil, fmt.Errorf("generating sboms: %w", err)
+	}
+	return files, nil
+}
+
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
 	readReleaseData(*options.Options, string) error
 	readPackageIndex(*options.Options, string) ([]*repository.Package, error)
+	generate(*options.Options, map[string]generator.Generator) ([]string, error)
 }
 
 type defaultSBOMImplementation struct{}
@@ -120,4 +138,31 @@ func (di *defaultSBOMImplementation) readPackageIndex(
 		return nil, fmt.Errorf("parsing APK installed db: %w", err)
 	}
 	return packages, nil
+}
+
+// generate creates the documents according to the specified options
+func (di *defaultSBOMImplementation) generate(
+	opts *options.Options, generators map[string]generator.Generator,
+) ([]string, error) {
+	// Check the generators before running
+	for _, format := range opts.Formats {
+		if _, ok := generators[format]; !ok {
+			return nil, fmt.Errorf(
+				"unable to generate sboms: no generator available for format %s", format,
+			)
+		}
+	}
+
+	files := []string{}
+
+	for _, format := range opts.Formats {
+		path := filepath.Join(
+			opts.OutputDir, opts.FileName+"."+generators[format].Ext(),
+		)
+		if err := generators[format].Generate(opts, path); err != nil {
+			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+		}
+		files = append(files, path)
+	}
+	return files, nil
 }

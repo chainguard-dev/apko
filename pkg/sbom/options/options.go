@@ -26,6 +26,12 @@ type Options struct {
 	// Working directory,inherited from buid context
 	WorkDir string
 
+	// OutputDir is the directory where the sboms will be written
+	OutputDir string
+
+	// FileName is the base name for the sboms, the proper extension will get appended
+	FileName string
+
 	// Formats dictates which SBOM formats we will output
 	Formats []string
 
