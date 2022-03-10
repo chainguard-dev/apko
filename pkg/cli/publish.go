@@ -114,7 +114,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		workDir := bc.WorkDir
 		for _, arch := range archs {
 			arch := arch
-			bc := bc.DeepCopy()
+			bc := *bc // Don't modify the original build context.
+
 			errg.Go(func() error {
 				bc.Arch = arch
 				bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
