@@ -20,7 +20,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/hashicorp/go-multierror"
 	"golang.org/x/sync/errgroup"
@@ -118,30 +117,14 @@ func (bc *Context) BuildImage() error {
 }
 
 func (bc *Context) runAssertions() error {
-	var wg sync.WaitGroup
-	var result error
-	errCh := make(chan error, len(bc.Assertions))
+	var eg multierror.Group
 
 	for _, a := range bc.Assertions {
 		a := a
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := a(bc); err != nil {
-				errCh <- err
-			}
-		}()
+		eg.Go(func() error { return a(bc) })
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	for err := range errCh {
-		result = multierror.Append(result, err)
-	}
-
-	return result
+	return eg.Wait().ErrorOrNil()
 }
 
 // Installs the BusyBox symlinks, if appropriate.
