@@ -17,6 +17,8 @@ package tarball
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha1" // nolint:gosec
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -33,6 +35,7 @@ type Context struct {
 	OverrideUname   string
 	OverrideGname   string
 	SkipClose       bool
+	UseChecksums    bool
 }
 
 type Option func(*Context) error
@@ -94,6 +97,15 @@ func WithSkipClose(skipClose bool) Option {
 	}
 }
 
+// WithUseChecksums is used to determine whether the tar stream
+// should have the APK-TOOLS.checksum.SHA1 extension.
+func WithUseChecksums(useChecksums bool) Option {
+	return func(ctx *Context) error {
+		ctx.UseChecksums = useChecksums
+		return nil
+	}
+}
+
 // Writes a raw TAR archive to out, given an fs.FS.
 func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 	gzw := gzip.NewWriter(out)
@@ -147,6 +159,30 @@ func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) e
 
 		if ctx.OverrideGname != "" {
 			header.Gname = ctx.OverrideGname
+		}
+
+		if ctx.UseChecksums {
+			header.PAXRecords = map[string]string{}
+
+			if link != "" {
+				linkDigest := sha1.Sum([]byte(link)) // nolint:gosec
+				linkChecksum := hex.EncodeToString(linkDigest[:])
+				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = linkChecksum
+			} else if info.Mode().IsRegular() {
+				data, err := fsys.Open(path)
+				if err != nil {
+					return err
+				}
+				defer data.Close()
+
+				fileDigest := sha1.New() // nolint:gosec
+				if _, err := io.Copy(fileDigest, data); err != nil {
+					return err
+				}
+
+				fileChecksum := hex.EncodeToString(fileDigest.Sum(nil))
+				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = fileChecksum
+			}
 		}
 
 		if err := tw.WriteHeader(header); err != nil {
