@@ -87,7 +87,7 @@ func WithOverrideGname(gname string) Option {
 // WithSkipClose is used to determine whether the tar stream
 // should be closed.  For concatenated tar streams such as APKv2
 // containers, only the final tar stream should be closed.
-func (ctx *Context) WithSkipClose(skipClose bool) Option {
+func WithSkipClose(skipClose bool) Option {
 	return func(ctx *Context) error {
 		ctx.SkipClose = skipClose
 		return nil
