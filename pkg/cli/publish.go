@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func Publish() *cobra.Command {
@@ -108,22 +109,31 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
 	default:
+		var errg errgroup.Group
 		imgs := map[types.Architecture]v1.Image{}
 		workDir := bc.WorkDir
 		for _, arch := range archs {
-			bc.Arch = arch
-			bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
-			layerTarGZ, err := bc.BuildLayer()
-			if err != nil {
-				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
-			}
-			defer os.Remove(layerTarGZ)
+			arch := arch
+			bc := bc.DeepCopy()
+			errg.Go(func() error {
+				bc.Arch = arch
+				bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
+				layerTarGZ, err := bc.BuildLayer()
+				if err != nil {
+					return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
+				}
+				defer os.Remove(layerTarGZ)
 
-			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch)
-			if err != nil {
-				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
-			}
-			imgs[arch] = img
+				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch)
+				if err != nil {
+					return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
+				}
+				imgs[arch] = img
+				return nil
+			})
+		}
+		if err := errg.Wait(); err != nil {
+			return err
 		}
 		digest, err = oci.PublishIndex(imgs, bc.Tags...)
 		if err != nil {

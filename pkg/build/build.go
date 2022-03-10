@@ -36,6 +36,23 @@ type Context struct {
 	WantSBOM           bool
 	SBOMPath           string
 	Arch               types.Architecture
+	// NOTE: If you're adding a field, be sure to add it to DeepCopy below.
+}
+
+func (bc *Context) DeepCopy() *Context {
+	// TODO: generate this if there are many more fields.
+	return &Context{
+		ImageConfiguration: bc.ImageConfiguration,
+		WorkDir:            bc.WorkDir,
+		TarballPath:        bc.TarballPath,
+		UseProot:           bc.UseProot,
+		Tags:               bc.Tags[:],
+		SourceDateEpoch:    bc.SourceDateEpoch,
+		Assertions:         bc.Assertions[:],
+		WantSBOM:           bc.WantSBOM,
+		SBOMPath:           bc.SBOMPath,
+		Arch:               bc.Arch,
+	}
 }
 
 func (bc *Context) Summarize() {
