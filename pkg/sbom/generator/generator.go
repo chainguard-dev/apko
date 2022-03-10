@@ -18,6 +18,7 @@ package generator
 
 import (
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -31,6 +32,9 @@ type Generator interface {
 
 func Generators() map[string]Generator {
 	generators := map[string]Generator{}
+
+	sx := spdx.New()
+	generators[sx.Key()] = &sx
 
 	cdx := cyclonedx.New()
 	generators[cdx.Key()] = &cdx
