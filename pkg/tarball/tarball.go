@@ -162,19 +162,27 @@ func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) e
 		}
 
 		if ctx.UseChecksums {
-			data, err := fsys.Open(path)
-			if err != nil {
-				return err
-			}
-			defer data.Close()
+			header.PAXRecords = map[string]string{}
 
-			fileDigest := sha1.New() // nolint:gosec
-			if _, err := io.Copy(fileDigest, data); err != nil {
-				return err
-			}
+			if link != "" {
+				linkDigest := sha1.Sum([]byte(link)) // nolint:gosec
+				linkChecksum := hex.EncodeToString(linkDigest[:])
+				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = linkChecksum
+			} else if info.Mode().IsRegular() {
+				data, err := fsys.Open(path)
+				if err != nil {
+					return err
+				}
+				defer data.Close()
 
-			fileChecksum := hex.EncodeToString(fileDigest.Sum(nil))
-			header.PAXRecords["APK-TOOLS.checksum.SHA1"] = fileChecksum
+				fileDigest := sha1.New() // nolint:gosec
+				if _, err := io.Copy(fileDigest, data); err != nil {
+					return err
+				}
+
+				fileChecksum := hex.EncodeToString(fileDigest.Sum(nil))
+				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = fileChecksum
+			}
 		}
 
 		if err := tw.WriteHeader(header); err != nil {
