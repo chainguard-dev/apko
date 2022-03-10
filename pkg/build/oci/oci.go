@@ -16,7 +16,7 @@ package oci
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"sort"
 	"time"
@@ -38,7 +38,7 @@ import (
 var keychain = authn.NewMultiKeychain(
 	authn.DefaultKeychain,
 	google.Keychain,
-	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(ioutil.Discard))),
+	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(io.Discard))),
 	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
 	github.Keychain,
 )
