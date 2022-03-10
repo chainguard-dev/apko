@@ -111,7 +111,12 @@ func (bc *Context) InitApkKeyring() (err error) {
 			// Normalize the element as a URI, so that local paths
 			// are translated into file:// URLs, allowing them to be parsed
 			// into a url.URL{}.
-			asURI := uri.New(element)
+			var asURI uri.URI
+			if strings.HasPrefix(element, "https://") {
+				asURI, _ = uri.Parse(element)
+			} else {
+				asURI = uri.New(element)
+			}
 			asURL, err := url.Parse(string(asURI))
 			if err != nil {
 				return fmt.Errorf("failed to parse key as URI: %w", err)
