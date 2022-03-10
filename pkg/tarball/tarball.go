@@ -119,6 +119,11 @@ func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) e
 	}
 
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		// skip the root path, superfluous
+		if path == "." {
+			return nil
+		}
+
 		if err != nil {
 			return err
 		}
