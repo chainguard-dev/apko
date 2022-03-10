@@ -32,6 +32,7 @@ type Context struct {
 	GID             int
 	OverrideUname   string
 	OverrideGname   string
+	SkipClose       bool
 }
 
 type Option func(*Context) error
@@ -83,13 +84,27 @@ func WithOverrideGname(gname string) Option {
 	}
 }
 
+// WithSkipClose is used to determine whether the tar stream
+// should be closed.  For concatenated tar streams such as APKv2
+// containers, only the final tar stream should be closed.
+func (ctx *Context) WithSkipClose(skipClose bool) Option {
+	return func(ctx *Context) error {
+		ctx.SkipClose = skipClose
+		return nil
+	}
+}
+
 // Writes a raw TAR archive to out, given an fs.FS.
 func (ctx *Context) WriteArchiveFromFS(base string, fsys fs.FS, out io.Writer) error {
 	gzw := gzip.NewWriter(out)
 	defer gzw.Close()
 
 	tw := tar.NewWriter(gzw)
-	defer tw.Close()
+	if !ctx.SkipClose {
+		defer tw.Close()
+	} else {
+		defer tw.Flush()
+	}
 
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
