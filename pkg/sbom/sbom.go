@@ -43,7 +43,7 @@ var DefaultOptions = options.Options{
 		Version: "Unknown",
 	},
 	FileName: "sbom",
-	Formats:  []string{"cyclonedx"},
+	Formats:  []string{"spdx", "cyclonedx"},
 }
 
 type SBOM struct {
