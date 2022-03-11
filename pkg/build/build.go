@@ -62,6 +62,7 @@ func (bc *Context) BuildTarball() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
+	bc.TarballPath = outfile.Name()
 	defer outfile.Close()
 
 	tw, err := tarball.NewContext(tarball.WithSourceDateEpoch(bc.SourceDateEpoch))
@@ -89,6 +90,11 @@ func (bc *Context) BuildLayer() (string, error) {
 	layerTarGZ, err := bc.BuildTarball()
 	if err != nil {
 		return "", err
+	}
+
+	// generate SBOM
+	if err := bc.GenerateSBOM(); err != nil {
+		return "", fmt.Errorf("generating SBOMs: %w", err)
 	}
 
 	return layerTarGZ, nil
