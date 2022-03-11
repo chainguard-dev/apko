@@ -1126,6 +1126,8 @@ github.com/yvasiyarov/gorelic v0.0.0-20141212073537-a9bba5b9ab50/go.mod h1:NUSPS
 github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f/go.mod h1:GlGEuHIJweS1mbCqG+7vt2nvWLzLLnRHbXz5JKd/Qbg=
 gitlab.alpinelinux.org/alpine/go v0.3.0 h1:4wVjXZRAd4rApnvVEFZqReDTdOe8ZLEKa8/egMPqVJM=
 gitlab.alpinelinux.org/alpine/go v0.3.0/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
+gitlab.alpinelinux.org/alpine/go v0.3.1 h1:mZEtxIt4YAS2xqbtfQL7YqCvzbjV/8tRHasuHSC2Vho=
+gitlab.alpinelinux.org/alpine/go v0.3.1/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.4/go.mod h1:G5EMThwa9y8QZGBClrRx5EY+Yw9kAhnjy3bSjsnlVTQ=
