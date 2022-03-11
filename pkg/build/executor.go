@@ -36,8 +36,16 @@ func runCommand(cmd *exec.Cmd, logname string) error {
 
 // TODO(kaniini): Add support for using qemu-binfmt here for multiarch.
 func (bc *Context) ExecuteChroot(name string, arg ...string) error {
-	arg = append([]string{"-S", bc.WorkDir, name}, arg...)
-	cmd := exec.Command("proot", arg...)
+	var cmd *exec.Cmd
+
+	if bc.UseProot {
+		arg = append([]string{"-S", bc.WorkDir, name}, arg...)
+		cmd = exec.Command("proot", arg...)
+	} else {
+		arg = append([]string{bc.WorkDir, name}, arg...)
+		cmd = exec.Command("chroot", arg...)
+	}
+
 	return runCommand(cmd, name)
 }
 
