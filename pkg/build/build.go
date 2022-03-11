@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/tarball"
 )
 
@@ -71,7 +72,7 @@ func (bc *Context) BuildTarball() (string, error) {
 		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
 	}
 
-	if err := tw.WriteArchive(bc.WorkDir, outfile); err != nil {
+	if err := tw.WriteArchive(outfile, apkofs.DirFS(bc.WorkDir)); err != nil {
 		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
