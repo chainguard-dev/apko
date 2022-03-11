@@ -56,9 +56,10 @@ var testOpts = &options.Options{
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	sx := New()
-	err := sx.Generate(testOpts, dir)
+	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
+	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)
-	require.FileExists(t, filepath.Join(dir, "sbom.spdx.json"))
+	require.FileExists(t, path)
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools
@@ -72,10 +73,11 @@ func TestValidateSPDX(t *testing.T) {
 	}
 	dir := t.TempDir()
 	sx := New()
+	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
 	err := sx.Generate(testOpts, dir)
 	require.NoError(t, err)
-	require.FileExists(t, filepath.Join(dir, "sbom.spdx.json"))
+	require.FileExists(t, path)
 	require.NoError(t, command.New(
-		"java", "-jar", jarPath, "Verify", filepath.Join(dir, "sbom.spdx.json"),
+		"java", "-jar", jarPath, "Verify", path,
 	).RunSuccess())
 }
