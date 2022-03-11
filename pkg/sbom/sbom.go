@@ -33,23 +33,14 @@ const (
 )
 
 var DefaultOptions = options.Options{
-	OS: struct {
-		Name    string
-		ID      string
-		Version string
-	}{
+	OS: options.OSInfo{
 		ID:      "alpine",
 		Name:    "Alpine Linux",
 		Version: "Unknown",
 	},
-	ImageInfo: struct {
-		Reference  string
-		Tag        string
-		Name       string
-		Repository string
-	}{},
-	FileName: "sbom",
-	Formats:  []string{"spdx", "cyclonedx"},
+	ImageInfo: options.ImageInfo{},
+	FileName:  "sbom",
+	Formats:   []string{"spdx", "cyclonedx"},
 }
 
 type SBOM struct {

@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/sbom/options"
-	"chainguard.dev/apko/pkg/sbom/purl"
+	purl "github.com/package-url/packageurl-go"
 )
 
 const NOASSERTION = "NOASSERTION"
@@ -72,6 +72,18 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		mainPkgID = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
 	}
 
+	// Main ackage purl
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+
 	mainPackage := Package{
 		ID:               mainPkgID,
 		Name:             "apko-OS-Layer",
@@ -85,8 +97,18 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		SourceInfo:       "",
 		CopyrightText:    NOASSERTION,
 		Checksums:        []Checksum{},
-		ExternalRefs:     []ExternalRef{},
+		ExternalRefs: []ExternalRef{
+			{
+				Category: "PACKAGE_MANAGER",
+				Type:     "purl",
+				Locator: purl.NewPackageURL(
+					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+					purl.QualifiersFromMap(mmMain), "",
+				).String(),
+			},
+		},
 	}
+	mm := map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()}
 
 	doc.Packages = append(doc.Packages, mainPackage)
 	doc.DocumentDescribes = []string{mainPackage.ID}
@@ -114,8 +136,10 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			ExternalRefs: []ExternalRef{
 				{
 					Category: "PACKAGE_MANAGER",
-					Locator:  purl.Versioned(opts.OS.ID, pkg),
-					Type:     "purl",
+					Locator: purl.NewPackageURL(
+						"apk", opts.OS.ID, pkg.Name, pkg.Version,
+						purl.QualifiersFromMap(mm), "").String(),
+					Type: "purl",
 				},
 			},
 		}

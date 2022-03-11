@@ -14,21 +14,15 @@
 
 package options
 
-import "gitlab.alpinelinux.org/alpine/go/pkg/repository"
+import (
+	"chainguard.dev/apko/pkg/build/types"
+	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+)
 
 type Options struct {
-	OS struct {
-		Name    string
-		ID      string
-		Version string
-	}
+	OS OSInfo
 
-	ImageInfo struct {
-		Reference  string
-		Tag        string
-		Name       string
-		Repository string
-	}
+	ImageInfo ImageInfo
 
 	// Working directory,inherited from buid context
 	WorkDir string
@@ -47,4 +41,19 @@ type Options struct {
 
 	// Packages is alist of packages which will be listed in the SBOM
 	Packages []*repository.Package
+}
+
+type OSInfo struct {
+	Name    string
+	ID      string
+	Version string
+}
+
+type ImageInfo struct {
+	Reference  string
+	Tag        string
+	Name       string
+	Repository string
+	Digest     string
+	Arch       types.Architecture
 }

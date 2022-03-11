@@ -901,6 +901,8 @@ github.com/otiai10/curr v0.0.0-20150429015615-9b4961190c95/go.mod h1:9qAhocn7zKJ
 github.com/otiai10/curr v1.0.0/go.mod h1:LskTG5wDwr8Rs+nNQ+1LlxRjAtTZZjtJW4rMXl6j4vs=
 github.com/otiai10/mint v1.3.0/go.mod h1:F5AjcsTsWUqX+Na9fpHb52P8pcRX2CI6A3ctIT91xUo=
 github.com/otiai10/mint v1.3.1/go.mod h1:/yxELlJQ0ufhjUwhshSj+wFjZ78CnZ48/1wtmBH1OTc=
+github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a h1:tkTSd1nhioPqi5Whu3CQ79UjPtaGOytqyNnSCVOqzHM=
+github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a/go.mod h1:uQd4a7Rh3ZsVg5j0lNyAfyxIeGde9yrlhjF78GzeW0c=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/uuid v1.2.0/go.mod h1:X/NO0urCmaxf9VXbdlT7C2Yzkj2IKimNn4k+gtPdI/k=
@@ -1124,8 +1126,6 @@ github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1
 github.com/yvasiyarov/go-metrics v0.0.0-20140926110328-57bccd1ccd43/go.mod h1:aX5oPXxHm3bOH+xeAttToC8pqch2ScQN/JoXYupl6xs=
 github.com/yvasiyarov/gorelic v0.0.0-20141212073537-a9bba5b9ab50/go.mod h1:NUSPSUX/bi6SeDMUh6brw0nXpxHnc96TguQh0+r/ssA=
 github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f/go.mod h1:GlGEuHIJweS1mbCqG+7vt2nvWLzLLnRHbXz5JKd/Qbg=
-gitlab.alpinelinux.org/alpine/go v0.3.0 h1:4wVjXZRAd4rApnvVEFZqReDTdOe8ZLEKa8/egMPqVJM=
-gitlab.alpinelinux.org/alpine/go v0.3.0/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
 gitlab.alpinelinux.org/alpine/go v0.3.1 h1:mZEtxIt4YAS2xqbtfQL7YqCvzbjV/8tRHasuHSC2Vho=
 gitlab.alpinelinux.org/alpine/go v0.3.1/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
