@@ -17,6 +17,7 @@ package build
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"chainguard.dev/apko/pkg/sbom"
 )
@@ -31,6 +32,21 @@ func (bc *Context) GenerateSBOM() error {
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
 	s := sbom.NewWithWorkDir(bc.WorkDir)
+
+	// Parse the image reference
+	if len(bc.Tags) > 0 {
+		parts := strings.Split(bc.Tags[0], ":")
+		s.Options.ImageInfo.Reference = parts[0]
+		if len(parts) > 1 {
+			s.Options.ImageInfo.Tag = parts[1]
+		}
+		// Split the reference
+		parts = strings.Split(s.Options.ImageInfo.Reference, "/")
+		s.Options.ImageInfo.Name = parts[len(parts)-1]
+		if len(parts) > 1 {
+			s.Options.ImageInfo.Repository = strings.Join(parts, "/")
+		}
+	}
 
 	// Generate the packages externally as we may
 	// move the package reader somewhere else

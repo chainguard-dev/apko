@@ -23,8 +23,18 @@ type Options struct {
 		Version string
 	}
 
+	ImageInfo struct {
+		Reference  string
+		Tag        string
+		Name       string
+		Repository string
+	}
+
 	// Working directory,inherited from buid context
 	WorkDir string
+
+	// The reference of the generated image. Used for naming and purls
+	ImageReference string
 
 	// OutputDir is the directory where the sboms will be written
 	OutputDir string

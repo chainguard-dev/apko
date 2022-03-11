@@ -62,6 +62,7 @@ bill of materials) describing the image contents.
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
+				build.WithTags(args[1]),
 			)
 		},
 	}

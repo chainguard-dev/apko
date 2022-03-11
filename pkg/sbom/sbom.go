@@ -42,6 +42,12 @@ var DefaultOptions = options.Options{
 		Name:    "Alpine Linux",
 		Version: "Unknown",
 	},
+	ImageInfo: struct {
+		Reference  string
+		Tag        string
+		Name       string
+		Repository string
+	}{},
 	FileName: "sbom",
 	Formats:  []string{"spdx", "cyclonedx"},
 }
