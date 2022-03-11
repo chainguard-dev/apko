@@ -94,10 +94,8 @@ func (bc *Context) BuildImage() error {
 	}
 
 	// maybe install busybox symlinks
-	if bc.UseProot {
-		if err := bc.InstallBusyboxSymlinks(); err != nil {
-			return fmt.Errorf("failed to install busybox symlinks: %w", err)
-		}
+	if err := bc.InstallBusyboxSymlinks(); err != nil {
+		return fmt.Errorf("failed to install busybox symlinks: %w", err)
 	}
 
 	// write service supervision tree
