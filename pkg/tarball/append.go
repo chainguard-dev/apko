@@ -12,7 +12,7 @@ type multi struct {
 	out  io.Writer
 }
 
-func (ctx *Context) Out(dst io.Writer) *multi {
+func Out(dst io.Writer) *multi {
 	return &multi{
 		out: dst,
 	}
