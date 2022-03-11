@@ -18,14 +18,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/sbom/options"
 	purl "github.com/package-url/packageurl-go"
 )
+
+// https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
+var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
 
 const NOASSERTION = "NOASSERTION"
 
@@ -43,11 +47,28 @@ func (sx *SPDX) Ext() string {
 	return "spdx.json"
 }
 
+func stringToIdentifier(in string) (out string) {
+	return validIDCharsRe.ReplaceAllStringFunc(in, func(s string) string {
+		r := ""
+		for i := 0; i < len(s); i++ {
+			uc, _ := utf8.DecodeRuneInString(string(s[i]))
+			r = fmt.Sprintf("%sC%d", r, uc)
+		}
+		return r
+	})
+}
+
 // Generate writes a cyclondx sbom in path
 func (sx *SPDX) Generate(opts *options.Options, path string) error {
+	// The default document name makes no attempt to avoid
+	// clashes. Ensuring a unique name requires a digest
+	documentName := "sbom"
+	if opts.ImageInfo.Digest != "" {
+		documentName += "-" + opts.ImageInfo.Digest
+	}
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
-		Name:    "apko-" + uuid.NewString(),
+		Name:    documentName,
 		Version: "SPDX-2.2",
 		CreationInfo: CreationInfo{
 			Created: "1970-01-01T00:00:00Z",
@@ -58,21 +79,22 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			LicenseListVersion: "3.16",
 		},
 		DataLicense:   "CC0-1.0",
-		Namespace:     "https://spdx.org/spdxdocs/apko-" + uuid.NewString(),
+		Namespace:     "https://spdx.org/spdxdocs/apko/",
 		Packages:      []Package{},
 		Relationships: []Relationship{},
 	}
 
-	mainPkgID := "SPDXRef-Package-apko-os-layer-" + uuid.NewString()
+	mainPkgName := "apko-os-layer"
 	if opts.ImageInfo.Reference != "" {
 		x := ""
 		if !strings.Contains(opts.ImageInfo.Reference, "/") {
 			x = "index.docker.io/library/"
 		}
-		mainPkgID = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
+		mainPkgName = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
 	}
+	mainPkgID := stringToIdentifier(mainPkgName)
 
-	// Main ackage purl
+	// Main package purl
 	mmMain := map[string]string{}
 	if opts.ImageInfo.Tag != "" {
 		mmMain["tag"] = opts.ImageInfo.Tag
@@ -85,8 +107,8 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	mainPackage := Package{
-		ID:               mainPkgID,
-		Name:             "apko-OS-Layer",
+		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
+		Name:             mainPkgName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		LicenseConcluded: NOASSERTION,
@@ -116,7 +138,9 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	for _, pkg := range opts.Packages {
 		// add the package
 		p := Package{
-			ID:               "SPDXRef-Package-apko-pkg-" + uuid.NewString(),
+			ID: stringToIdentifier(fmt.Sprintf(
+				"SPDXRef-Package-%s-%s-%s", mainPkgID, pkg.Name, pkg.Version,
+			)),
 			Name:             pkg.Name,
 			Version:          pkg.Version,
 			FilesAnalyzed:    false,
