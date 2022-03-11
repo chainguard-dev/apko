@@ -36,6 +36,7 @@ type Context struct {
 	WantSBOM           bool
 	SBOMPath           string
 	SBOMFormats        []string
+	ExtraKeyFiles      []string
 	Arch               types.Architecture
 }
 
@@ -219,6 +220,13 @@ func WithSBOM(path string) Option {
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
 		bc.SBOMFormats = formats
+		return nil
+	}
+}
+
+func WithExtraKeys(keys []string) Option {
+	return func(bc *Context) error {
+		bc.ExtraKeyFiles = keys
 		return nil
 	}
 }

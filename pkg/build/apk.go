@@ -101,6 +101,11 @@ func (bc *Context) InitApkKeyring() (err error) {
 		}
 	}
 
+	if len(bc.ExtraKeyFiles) > 0 {
+		log.Printf("appending %d extra keys to keyring", len(bc.ExtraKeyFiles))
+		keyFiles = append(keyFiles, bc.ExtraKeyFiles...)
+	}
+
 	var eg errgroup.Group
 
 	for _, element := range keyFiles {
