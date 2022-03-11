@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/google/uuid"
 
@@ -104,7 +103,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			ExternalRefs: []ExternalRef{
 				{
 					Category: "PACKAGE_MANAGER",
-					Locator:  purl.Package(opts.OS.ID, pkg),
+					Locator:  purl.Versioned(opts.OS.ID, pkg),
 					Type:     "purl",
 				},
 			},
@@ -120,7 +119,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 	}
 
-	out, err := os.Create(filepath.Join(path, fmt.Sprintf("%s.%s", opts.FileName, sx.Ext())))
+	out, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
 	}

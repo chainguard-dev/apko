@@ -23,6 +23,10 @@ import (
 
 // GenerateSBOM runs the sbom generation
 func (bc *Context) GenerateSBOM() error {
+	if len(bc.SBOMFormats) == 0 {
+		log.Printf("skipping SBOM generation")
+		return nil
+	}
 	log.Printf("generating SBOM")
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
@@ -32,10 +36,11 @@ func (bc *Context) GenerateSBOM() error {
 	// move the package reader somewhere else
 	packages, err := s.ReadPackageIndex()
 	if err != nil {
-		return fmt.Errorf("getting installed packagesx from sbom: %w", err)
+		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
 	s.Options.OutputDir = bc.SBOMPath
 	s.Options.Packages = packages
+	s.Options.Formats = bc.SBOMFormats
 
 	if _, err := s.Generate(); err != nil {
 		return fmt.Errorf("generating SBOMs: %w", err)

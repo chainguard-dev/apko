@@ -35,6 +35,7 @@ type Context struct {
 	Assertions         []Assertion
 	WantSBOM           bool
 	SBOMPath           string
+	SBOMFormats        []string
 	Arch               types.Architecture
 }
 
@@ -205,6 +206,13 @@ func WithBuildDate(s string) Option {
 func WithSBOM(path string) Option {
 	return func(bc *Context) error {
 		bc.SBOMPath = path
+		return nil
+	}
+}
+
+func WithSBOMFormats(formats []string) Option {
+	return func(bc *Context) error {
+		bc.SBOMFormats = formats
 		return nil
 	}
 }
