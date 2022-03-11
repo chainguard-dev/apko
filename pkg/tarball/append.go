@@ -18,8 +18,8 @@ func (ctx *Context) Out(dst io.Writer) *multi {
 	}
 }
 
-func (m *multi) Append(ctx *Context, extra io.Writer, src fs.FS) *multi {
-	dst := io.MultiWriter(m.out, extra)
+func (m *multi) Append(ctx *Context, src fs.FS, extra ...io.Writer) *multi {
+	dst := io.MultiWriter(append([]io.Writer{m.out}, extra...)...)
 
 	gzw := gzip.NewWriter(dst)
 	tw := tar.NewWriter(gzw)
