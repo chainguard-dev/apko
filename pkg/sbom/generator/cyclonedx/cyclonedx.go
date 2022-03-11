@@ -97,8 +97,22 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 		pkgDependencies = append(pkgDependencies, d)
 	}
 
+	// Main package purl qualifiers
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
 	rootComponent := Component{
-		BOMRef:     fmt.Sprintf("pkg:apk/%s", opts.OS.ID),
+		BOMRef: purl.NewPackageURL(
+			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+			purl.QualifiersFromMap(mmMain), "",
+		).String(),
 		Name:       opts.OS.Name,
 		Version:    opts.OS.Version,
 		Type:       "operating-system",

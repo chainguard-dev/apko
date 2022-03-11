@@ -17,9 +17,10 @@ package build
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	"chainguard.dev/apko/pkg/sbom"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
 // GenerateSBOM runs the sbom generation
@@ -33,19 +34,24 @@ func (bc *Context) GenerateSBOM() error {
 	// TODO(puerco): Split GenerateSBOM into context implementation
 	s := sbom.NewWithWorkDir(bc.WorkDir)
 
+	v1Layer, err := v1tar.LayerFromFile(bc.TarballPath)
+	if err != nil {
+		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+	}
+
+	digest, err := v1Layer.Digest()
+	if err != nil {
+		return fmt.Errorf("could not calculate layer digest: %w", err)
+	}
+
 	// Parse the image reference
 	if len(bc.Tags) > 0 {
-		parts := strings.Split(bc.Tags[0], ":")
-		s.Options.ImageInfo.Reference = parts[0]
-		if len(parts) > 1 {
-			s.Options.ImageInfo.Tag = parts[1]
+		tag, err := name.NewTag(bc.Tags[0])
+		if err != nil {
+			return fmt.Errorf("parsing tag %s: %w", bc.Tags[0], err)
 		}
-		// Split the reference
-		parts = strings.Split(s.Options.ImageInfo.Reference, "/")
-		s.Options.ImageInfo.Name = parts[len(parts)-1]
-		if len(parts) > 1 {
-			s.Options.ImageInfo.Repository = strings.Join(parts, "/")
-		}
+		s.Options.ImageInfo.Tag = tag.TagStr()
+		s.Options.ImageInfo.Name = tag.String()
 	}
 
 	// Generate the packages externally as we may
@@ -54,6 +60,8 @@ func (bc *Context) GenerateSBOM() error {
 	if err != nil {
 		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
+	s.Options.ImageInfo.Arch = bc.Arch
+	s.Options.ImageInfo.Digest = digest.String()
 	s.Options.OutputDir = bc.SBOMPath
 	s.Options.Packages = packages
 	s.Options.Formats = bc.SBOMFormats
