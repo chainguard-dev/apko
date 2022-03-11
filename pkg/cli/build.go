@@ -35,6 +35,7 @@ func Build() *cobra.Command {
 	var writeSBOM bool
 	var sbomPath string
 	var sbomFormats []string
+	var extraKeys []string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -62,6 +63,7 @@ bill of materials) describing the image contents.
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
+				build.WithExtraKeys(sbomFormats),
 				build.WithTags(args[1]),
 			)
 		},
@@ -71,6 +73,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
+	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 
 	return cmd
