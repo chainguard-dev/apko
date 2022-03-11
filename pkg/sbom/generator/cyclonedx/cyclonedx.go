@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"chainguard.dev/apko/pkg/sbom/options"
-	"chainguard.dev/apko/pkg/sbom/purl"
+	purl "github.com/package-url/packageurl-go"
 )
 
 type CycloneDX struct{}
@@ -43,10 +43,14 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	pkgComponents := []Component{}
 	pkgDependencies := []Dependency{}
 
+	mm := map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()}
+
 	for _, pkg := range opts.Packages {
 		// add the component
 		c := Component{
-			BOMRef:      purl.Package(opts.OS.ID, pkg),
+			BOMRef: purl.NewPackageURL(
+				"apk", opts.OS.ID, pkg.Name, pkg.Version,
+				purl.QualifiersFromMap(mm), "").String(),
 			Name:        pkg.Name,
 			Version:     pkg.Version,
 			Description: pkg.Description,
@@ -55,7 +59,9 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 					Expression: pkg.License,
 				},
 			},
-			PUrl: purl.Package(opts.OS.ID, pkg),
+			PUrl: purl.NewPackageURL(
+				"apk", opts.OS.ID, pkg.Name, pkg.Version,
+				purl.QualifiersFromMap(mm), "").String(),
 			// TODO(kaniini): Talk with CycloneDX people about adding "package" type.
 			Type: "operating-system",
 		}
@@ -78,18 +84,35 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 				continue
 			}
 
-			depRefs = append(depRefs, fmt.Sprintf("pkg:apk/%s/%s", opts.OS.ID, dep))
+			depRefs = append(depRefs, purl.NewPackageURL("apk", opts.OS.ID, pkg.Name, "",
+				purl.QualifiersFromMap(mm), "").String())
 		}
 
 		d := Dependency{
-			Ref:       purl.Package(opts.OS.ID, pkg),
+			Ref: purl.NewPackageURL(
+				"apk", opts.OS.ID, pkg.Name, pkg.Version,
+				purl.QualifiersFromMap(mm), "").String(),
 			DependsOn: depRefs,
 		}
 		pkgDependencies = append(pkgDependencies, d)
 	}
 
+	// Main package purl qualifiers
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
 	rootComponent := Component{
-		BOMRef:     fmt.Sprintf("pkg:apk/%s", opts.OS.ID),
+		BOMRef: purl.NewPackageURL(
+			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+			purl.QualifiersFromMap(mmMain), "",
+		).String(),
 		Name:       opts.OS.Name,
 		Version:    opts.OS.Version,
 		Type:       "operating-system",

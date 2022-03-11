@@ -35,6 +35,7 @@ type Context struct {
 	Assertions         []Assertion
 	WantSBOM           bool
 	SBOMPath           string
+	SBOMFormats        []string
 	Arch               types.Architecture
 }
 
@@ -61,6 +62,7 @@ func (bc *Context) BuildTarball() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
+	bc.TarballPath = outfile.Name()
 	defer outfile.Close()
 
 	tw, err := tarball.NewContext(tarball.WithSourceDateEpoch(bc.SourceDateEpoch))
@@ -88,6 +90,11 @@ func (bc *Context) BuildLayer() (string, error) {
 	layerTarGZ, err := bc.BuildTarball()
 	if err != nil {
 		return "", err
+	}
+
+	// generate SBOM
+	if err := bc.GenerateSBOM(); err != nil {
+		return "", fmt.Errorf("generating SBOMs: %w", err)
 	}
 
 	return layerTarGZ, nil
@@ -205,6 +212,13 @@ func WithBuildDate(s string) Option {
 func WithSBOM(path string) Option {
 	return func(bc *Context) error {
 		bc.SBOMPath = path
+		return nil
+	}
+}
+
+func WithSBOMFormats(formats []string) Option {
+	return func(bc *Context) error {
+		bc.SBOMFormats = formats
 		return nil
 	}
 }

@@ -18,12 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
+	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/sbom/options"
-	"chainguard.dev/apko/pkg/sbom/purl"
+	purl "github.com/package-url/packageurl-go"
 )
 
 const NOASSERTION = "NOASSERTION"
@@ -51,7 +52,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		CreationInfo: CreationInfo{
 			Created: "1970-01-01T00:00:00Z",
 			Creators: []string{
-				"Tool: apko (v0.0.0)",
+				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
 			LicenseListVersion: "3.16",
@@ -62,21 +63,52 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Relationships: []Relationship{},
 	}
 
+	mainPkgID := "SPDXRef-Package-apko-os-layer-" + uuid.NewString()
+	if opts.ImageInfo.Reference != "" {
+		x := ""
+		if !strings.Contains(opts.ImageInfo.Reference, "/") {
+			x = "index.docker.io/library/"
+		}
+		mainPkgID = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
+	}
+
+	// Main ackage purl
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+
 	mainPackage := Package{
-		ID:               "SPDXRef-Package-apko-os-layer-" + uuid.NewString(),
+		ID:               mainPkgID,
 		Name:             "apko-OS-Layer",
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		LicenseConcluded: NOASSERTION,
 		LicenseDeclared:  NOASSERTION,
 		Description:      "",
-		DownloadLocation: NOASSERTION, // switch when https://gitlab.alpinelinux.org/alpine/go/-/merge_requests/4
+		DownloadLocation: NOASSERTION,
 		Originator:       "",
 		SourceInfo:       "",
 		CopyrightText:    NOASSERTION,
 		Checksums:        []Checksum{},
-		ExternalRefs:     []ExternalRef{},
+		ExternalRefs: []ExternalRef{
+			{
+				Category: "PACKAGE_MANAGER",
+				Type:     "purl",
+				Locator: purl.NewPackageURL(
+					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+					purl.QualifiersFromMap(mmMain), "",
+				).String(),
+			},
+		},
 	}
+	mm := map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()}
 
 	doc.Packages = append(doc.Packages, mainPackage)
 	doc.DocumentDescribes = []string{mainPackage.ID}
@@ -91,21 +123,23 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			LicenseConcluded: pkg.License,
 			LicenseDeclared:  NOASSERTION,
 			Description:      pkg.Description,
-			//DownloadLocation: pkg.,
-			Originator:    pkg.Maintainer,
-			SourceInfo:    "",
-			CopyrightText: NOASSERTION,
+			DownloadLocation: pkg.URL,
+			Originator:       pkg.Maintainer,
+			SourceInfo:       "Package info from apk database",
+			CopyrightText:    NOASSERTION,
 			Checksums: []Checksum{
 				{
 					Algorithm: "SHA1",
-					Value:     fmt.Sprintf("%x", pkg.Checksum[1:]),
+					Value:     fmt.Sprintf("%x", pkg.Checksum),
 				},
 			},
 			ExternalRefs: []ExternalRef{
 				{
 					Category: "PACKAGE_MANAGER",
-					Locator:  purl.Package(opts.OS.ID, pkg),
-					Type:     "purl",
+					Locator: purl.NewPackageURL(
+						"apk", opts.OS.ID, pkg.Name, pkg.Version,
+						purl.QualifiersFromMap(mm), "").String(),
+					Type: "purl",
 				},
 			},
 		}
@@ -120,7 +154,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 	}
 
-	out, err := os.Create(filepath.Join(path, fmt.Sprintf("%s.%s", opts.FileName, sx.Ext())))
+	out, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
 	}
