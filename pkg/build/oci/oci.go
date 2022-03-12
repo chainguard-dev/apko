@@ -43,37 +43,39 @@ var keychain = authn.NewMultiKeychain(
 	github.Keychain,
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
-	log.Printf("building OCI image from layer '%s'", layerTarGZ)
+func buildImageFromLayers(layerTarGZs []string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
+	log.Printf("building OCI image from layers '%+v'", layerTarGZs)
 
-	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
-	if err != nil {
-		return empty.Image, fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+	var adds []mutate.Addendum
+	for _, layerTarGZ := range layerTarGZs {
+		v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
+		if err != nil {
+			return empty.Image, fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+		}
+
+		digest, err := v1Layer.Digest()
+		if err != nil {
+			return empty.Image, fmt.Errorf("could not calculate layer digest: %w", err)
+		}
+
+		diffid, err := v1Layer.DiffID()
+		if err != nil {
+			return empty.Image, fmt.Errorf("could not calculate layer diff id: %w", err)
+		}
+
+		log.Printf("OCI layer digest: %v", digest)
+		log.Printf("OCI layer diffID: %v", diffid)
+
+		adds = append(adds, mutate.Addendum{
+			Layer: v1Layer,
+			History: v1.History{
+				Author:    "apko",
+				Comment:   "This is an apko single-layer image",
+				CreatedBy: "apko",
+				Created:   v1.Time{Time: created},
+			},
+		})
 	}
-
-	digest, err := v1Layer.Digest()
-	if err != nil {
-		return empty.Image, fmt.Errorf("could not calculate layer digest: %w", err)
-	}
-
-	diffid, err := v1Layer.DiffID()
-	if err != nil {
-		return empty.Image, fmt.Errorf("could not calculate layer diff id: %w", err)
-	}
-
-	log.Printf("OCI layer digest: %v", digest)
-	log.Printf("OCI layer diffID: %v", diffid)
-
-	adds := make([]mutate.Addendum, 0, 1)
-	adds = append(adds, mutate.Addendum{
-		Layer: v1Layer,
-		History: v1.History{
-			Author:    "apko",
-			Comment:   "This is an apko single-layer image",
-			CreatedBy: "apko",
-			Created:   v1.Time{Time: created},
-		},
-	})
 
 	v1Image, err := mutate.Append(empty.Image, adds...)
 	if err != nil {
@@ -108,8 +110,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	return v1Image, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) error {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
+func BuildImageTarballFromLayers(imageRef string, layerTarGZs []string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) error {
+	v1Image, err := buildImageFromLayers(layerTarGZs, ic, created, arch)
 	if err != nil {
 		return err
 	}
@@ -140,7 +142,7 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Di
 }
 
 func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, tags ...string) (name.Digest, v1.Image, error) {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
+	v1Image, err := buildImageFromLayers([]string{layerTarGZ}, ic, created, arch)
 	if err != nil {
 		return name.Digest{}, nil, err
 	}

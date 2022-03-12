@@ -36,6 +36,7 @@ func Build() *cobra.Command {
 	var sbomPath string
 	var sbomFormats []string
 	var extraKeys []string
+	var multilayer bool
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -64,6 +65,7 @@ bill of materials) describing the image contents.
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
+				build.WithMultilayer(multilayer),
 				build.WithTags(args[1]),
 			)
 		},
@@ -75,6 +77,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().BoolVar(&multilayer, "multilayer", false, "generate a multilayer image")
 
 	return cmd
 }
@@ -107,20 +110,41 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 
 	log.Printf("building image '%s'", imageRef)
 
-	layerTarGZ, err := bc.BuildLayer()
-	if err != nil {
-		return fmt.Errorf("failed to build layer image: %w", err)
-	}
-	defer os.Remove(layerTarGZ)
+	// TODO: integrate the multi and single layer code branches better
+	if bc.Multilayer {
+		layers, err := bc.BuildMultilayer()
+		if err != nil {
+			return fmt.Errorf("building multilayer image: %w", err)
+		}
+		defer func() {
+			for _, layer := range layers {
+				os.Remove(layer)
+			}
+		}()
 
-	if err := bc.GenerateSBOM(); err != nil {
-		return fmt.Errorf("generating SBOMs: %w", err)
-	}
+		// TODO: SBOM
 
-	if err := oci.BuildImageTarballFromLayer(
-		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch,
-	); err != nil {
-		return fmt.Errorf("failed to build OCI image: %w", err)
+		if err := oci.BuildImageTarballFromLayers(
+			imageRef, layers, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch,
+		); err != nil {
+			return fmt.Errorf("failed to build OCI image: %w", err)
+		}
+	} else {
+		layerTarGZ, err := bc.BuildLayer()
+		if err != nil {
+			return fmt.Errorf("failed to build layer image: %w", err)
+		}
+		defer os.Remove(layerTarGZ)
+
+		if err := bc.GenerateSBOM(); err != nil {
+			return fmt.Errorf("generating SBOMs: %w", err)
+		}
+
+		if err := oci.BuildImageTarballFromLayers(
+			imageRef, []string{layerTarGZ}, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch,
+		); err != nil {
+			return fmt.Errorf("failed to build OCI image: %w", err)
+		}
 	}
 
 	return nil

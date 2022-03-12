@@ -38,6 +38,7 @@ type Context struct {
 	SBOMFormats        []string
 	ExtraKeyFiles      []string
 	Arch               types.Architecture
+	Multilayer         bool
 }
 
 func (bc *Context) Summarize() {
@@ -48,6 +49,7 @@ func (bc *Context) Summarize() {
 	log.Printf("  source date: %s", bc.SourceDateEpoch)
 	log.Printf("  SBOM output path: %s", bc.SBOMPath)
 	log.Printf("  arch: %v", bc.Arch.ToAPK())
+	log.Printf("  multilayer: %t", bc.Multilayer)
 	bc.ImageConfiguration.Summarize()
 }
 
@@ -99,6 +101,21 @@ func (bc *Context) BuildLayer() (string, error) {
 	}
 
 	return layerTarGZ, nil
+}
+
+// TODO: integrate with BuildLayer
+func (bc *Context) BuildMultilayer() ([]string, error) {
+	bc.Summarize()
+
+	// build image filesystem
+	layers, err := bc.BuildMultilayerImage()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: support SBOM
+
+	return layers, nil
 }
 
 // New creates a build context.
@@ -244,6 +261,13 @@ func WithImageConfiguration(ic types.ImageConfiguration) Option {
 func WithArch(arch types.Architecture) Option {
 	return func(bc *Context) error {
 		bc.Arch = arch
+		return nil
+	}
+}
+
+func WithMultilayer(multilayer bool) Option {
+	return func(bc *Context) error {
+		bc.Multilayer = multilayer
 		return nil
 	}
 }
