@@ -22,31 +22,45 @@ import (
 )
 
 type MultiTar struct {
-	out io.Writer
+	out *gzip.Writer
 }
 
 func Out(dst io.Writer) *MultiTar {
 	return &MultiTar{
-		out: dst,
+		out: gzip.NewWriter(dst),
 	}
 }
 
 func (m *MultiTar) Append(ctx *Context, src fs.FS, extra ...io.Writer) error {
-	dst := io.MultiWriter(append([]io.Writer{m.out}, extra...)...)
+	all := make([]io.Writer, 0, len(extra)+1)
+	all = append(all, m.out)
 
-	gzw := gzip.NewWriter(dst)
-	defer gzw.Flush()
+	for _, w := range extra {
+		all = append(all, gzip.NewWriter(w))
+	}
 
-	tw := tar.NewWriter(gzw)
-	defer tw.Flush()
+	tw := tar.NewWriter(io.MultiWriter(all...))
 
-	return ctx.writeTar(tw, src)
+	if err := ctx.writeTar(tw, src); err != nil {
+		return err
+	}
+
+	tw.Flush()
+
+	if len(extra) != 0 {
+		// write tar and gzip footers to extra writers to make
+		// sure they get a valid archive.
+		for _, w := range all[1:] {
+			tar.NewWriter(w).Close()
+			w.(*gzip.Writer).Close()
+		}
+	}
+
+	return nil
 }
 
 func (m *MultiTar) Close() {
-	gzw := gzip.NewWriter(m.out)
-	defer gzw.Close()
-
-	tw := tar.NewWriter(gzw)
-	defer tw.Close()
+	// write tar and gzip footers to the main writer.
+	tar.NewWriter(m.out).Close()
+	m.out.Close()
 }
