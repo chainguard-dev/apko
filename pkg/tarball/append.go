@@ -49,14 +49,21 @@ func (m *MultiTar) Append(ctx *Context, src fs.FS, extra ...io.Writer) error {
 		return err
 	}
 
-	tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
 
 	if len(extra) != 0 {
 		// write tar and gzip footers to extra writers to make
 		// sure they get a valid archive.
 		for _, w := range all[1:] {
-			tar.NewWriter(w).Close()
-			w.(*gzip.Writer).Close()
+			if err := tar.NewWriter(w).Close(); err != nil {
+				return err
+			}
+
+			if err := w.(*gzip.Writer).Close(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -64,8 +71,15 @@ func (m *MultiTar) Append(ctx *Context, src fs.FS, extra ...io.Writer) error {
 }
 
 // Close flushes and closes the underlying writer.
-func (m *MultiTar) Close() {
+func (m *MultiTar) Close() error {
 	// write tar and gzip footers to the main writer.
-	tar.NewWriter(m.out).Close()
-	m.out.Close()
+	if err := tar.NewWriter(m.out).Close(); err != nil {
+		return err
+	}
+
+	if err := m.out.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
