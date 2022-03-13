@@ -23,7 +23,7 @@ import (
 	"strings"
 )
 
-// A GroupEntry describes a single line in /etc/group.
+// GroupEntry describes a single line in /etc/group.
 type GroupEntry struct {
 	GroupName string
 	Password  string
@@ -31,12 +31,13 @@ type GroupEntry struct {
 	Members   []string
 }
 
-// A GroupFile describes an entire /etc/group file's contents.
+// GroupFile describes an entire /etc/group file's contents.
 type GroupFile struct {
 	Entries []GroupEntry
 }
 
-// Parse an /etc/group file into a GroupFile.
+// ReadOrCreateGroupFile parses an /etc/group file into a GroupFile.
+// An empty file is created if /etc/group is missing.
 func ReadOrCreateGroupFile(filePath string) (GroupFile, error) {
 	gf := GroupFile{}
 
@@ -53,7 +54,7 @@ func ReadOrCreateGroupFile(filePath string) (GroupFile, error) {
 	return gf, nil
 }
 
-// Load an /etc/passwd file into a GroupFile from an io.Reader.
+// Load loads an /etc/passwd file into a GroupFile from an io.Reader.
 func (gf *GroupFile) Load(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -73,7 +74,7 @@ func (gf *GroupFile) Load(r io.Reader) error {
 	return nil
 }
 
-// Write an /etc/passwd file from a GroupFile.
+// WriteFile writes an /etc/passwd file from a GroupFile.
 func (gf *GroupFile) WriteFile(filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -84,7 +85,7 @@ func (gf *GroupFile) WriteFile(filePath string) error {
 	return gf.Write(file)
 }
 
-// Write an /etc/passwd file into an io.Writer.
+// Write writes an /etc/passwd file into an io.Writer.
 func (gf *GroupFile) Write(w io.Writer) error {
 	for _, ge := range gf.Entries {
 		if err := ge.Write(w); err != nil {
@@ -95,7 +96,7 @@ func (gf *GroupFile) Write(w io.Writer) error {
 	return nil
 }
 
-// Parse an /etc/group line into a GroupEntry.
+// Parse parses an /etc/group line into a GroupEntry.
 func (ge *GroupEntry) Parse(line string) error {
 	line = strings.TrimSpace(line)
 
@@ -118,7 +119,7 @@ func (ge *GroupEntry) Parse(line string) error {
 	return nil
 }
 
-// Write an /etc/group line into an io.Writer.
+// Write writes an /etc/group line into an io.Writer.
 func (ge *GroupEntry) Write(w io.Writer) error {
 	members := strings.Join(ge.Members, ",")
 	_, err := fmt.Fprintf(w, "%s:%s:%d:%s\n", ge.GroupName, ge.Password, ge.GID, members)
