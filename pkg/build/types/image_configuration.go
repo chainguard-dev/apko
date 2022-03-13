@@ -94,7 +94,13 @@ func (ic *ImageConfiguration) Summarize() {
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
 		log.Printf("  accounts:")
 		log.Printf("    runas:  %s", ic.Accounts.RunAs)
-		log.Printf("    users:  %v", ic.Accounts.Users)
-		log.Printf("    groups: %v", ic.Accounts.Groups)
+		log.Printf("    users:")
+		for _, u := range ic.Accounts.Users {
+			log.Printf("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
+		}
+		log.Printf("    groups:")
+		for _, g := range ic.Accounts.Groups {
+			log.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
+		}
 	}
 }
