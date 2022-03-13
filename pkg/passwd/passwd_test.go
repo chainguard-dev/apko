@@ -17,46 +17,38 @@ package passwd
 import (
 	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestParser(t *testing.T) {
 	uf, err := ReadOrCreateUserFile("testdata/passwd")
-	if err != nil {
-		t.Errorf("error while parsing; %v", err)
-	}
+	require.NoError(t, err)
 
 	for _, ue := range uf.Entries {
-		if ue.UID == 0 && ue.UserName != "root" {
-			t.Errorf("uid 0 is not root")
+		if ue.UID == 0 {
+			require.Equal(t, "root", ue.UserName, "uid 0 is not root")
 		}
 
-		if ue.UID == 65534 && ue.UserName != "nobody" {
-			t.Errorf("uid 65534 is not nobody")
+		if ue.UID == 65534 {
+			require.Equal(t, "nobody", ue.UserName, "uid 65534 is not nobody")
 		}
 	}
 }
 
 func TestWriter(t *testing.T) {
 	uf, err := ReadOrCreateUserFile("testdata/passwd")
-	if err != nil {
-		t.Errorf("error while parsing; %v", err)
-	}
+	require.NoError(t, err)
 
 	w := &bytes.Buffer{}
-	if err := uf.Write(w); err != nil {
-		t.Errorf("error while writing; %v", err)
-	}
+	require.NoError(t, uf.Write(w))
 
 	r := bytes.NewReader(w.Bytes())
 	uf2 := &UserFile{}
-	uf2.Load(r)
+	require.NoError(t, uf2.Load(r))
 
 	w2 := &bytes.Buffer{}
-	if err := uf2.Write(w2); err != nil {
-		t.Errorf("error while writing; %v", err)
-	}
+	require.NoError(t, uf2.Write(w2))
 
-	if !bytes.Equal(w.Bytes(), w2.Bytes()) {
-		t.Errorf("bytes are not equal %v %v", w.Bytes(), w2.Bytes())
-	}
+	require.Equal(t, w.Bytes(), w2.Bytes())
 }
