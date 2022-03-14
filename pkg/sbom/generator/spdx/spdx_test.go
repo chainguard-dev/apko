@@ -80,7 +80,7 @@ func TestReproducible(t *testing.T) {
 		d = append(d, data)
 	}
 	diff := cmp.Diff(d[0], d[1])
-	require.Empty(t, diff)
+	require.Empty(t, diff, fmt.Sprintf("difference in expected output %s", diff))
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools

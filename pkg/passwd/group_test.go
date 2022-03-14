@@ -17,46 +17,38 @@ package passwd
 import (
 	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestGroupParser(t *testing.T) {
 	gf, err := ReadOrCreateGroupFile("testdata/group")
-	if err != nil {
-		t.Errorf("error while parsing; %v", err)
-	}
+	require.NoError(t, err)
 
 	for _, ge := range gf.Entries {
-		if ge.GID == 0 && ge.GroupName != "root" {
-			t.Errorf("gid 0 is not root")
+		if ge.GID == 0 {
+			require.Equal(t, "root", ge.GroupName, "gid 0 is not root")
 		}
 
-		if ge.GID == 65534 && ge.GroupName != "nobody" {
-			t.Errorf("gid 65534 is not nobody")
+		if ge.GID == 65534 {
+			require.Equal(t, "nobody", ge.GroupName, "gid 65534 is not nobody")
 		}
 	}
 }
 
 func TestGroupWriter(t *testing.T) {
 	gf, err := ReadOrCreateGroupFile("testdata/group")
-	if err != nil {
-		t.Errorf("error while parsing; %v", err)
-	}
+	require.NoError(t, err)
 
 	w := &bytes.Buffer{}
-	if err := gf.Write(w); err != nil {
-		t.Errorf("error while writing; %v", err)
-	}
+	require.NoError(t, gf.Write(w))
 
 	r := bytes.NewReader(w.Bytes())
 	gf2 := &GroupFile{}
-	gf2.Load(r)
+	require.NoError(t, gf2.Load(r))
 
 	w2 := &bytes.Buffer{}
-	if err := gf2.Write(w2); err != nil {
-		t.Errorf("error while writing; %v", err)
-	}
+	require.NoError(t, gf2.Write(w2))
 
-	if !bytes.Equal(w.Bytes(), w2.Bytes()) {
-		t.Errorf("bytes are not equal %v %v", w.Bytes(), w2.Bytes())
-	}
+	require.Equal(t, w.Bytes(), w2.Bytes())
 }

@@ -17,7 +17,7 @@ package types
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseArchitectures(t *testing.T) {
@@ -44,9 +44,7 @@ func TestParseArchitectures(t *testing.T) {
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
 			got := ParseArchitectures(c.in)
-			if d := cmp.Diff(got, c.want); d != "" {
-				t.Fatal("Got diff (-got,+want):", d)
-			}
+			require.Equal(t, c.want, got)
 		})
 	}
 }
