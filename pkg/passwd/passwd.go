@@ -23,7 +23,7 @@ import (
 	"strings"
 )
 
-// An UserEntry contains the parsed data from an /etc/passwd entry.
+// UserEntry contains the parsed data from an /etc/passwd entry.
 type UserEntry struct {
 	UserName string
 	Password string
@@ -34,12 +34,13 @@ type UserEntry struct {
 	Shell    string
 }
 
-// A UserFile contains the entries from an /etc/passwd file.
+// UserFile contains the entries from an /etc/passwd file.
 type UserFile struct {
 	Entries []UserEntry
 }
 
-// Parse an /etc/passwd file into a UserFile.
+// ReadOrCreateUserFile parses an /etc/passwd file into a UserFile.
+// An empty file is created if /etc/passwd is missing.
 func ReadOrCreateUserFile(filePath string) (UserFile, error) {
 	uf := UserFile{}
 
@@ -56,7 +57,7 @@ func ReadOrCreateUserFile(filePath string) (UserFile, error) {
 	return uf, nil
 }
 
-// Load an /etc/passwd file into a UserFile from an io.Reader.
+// Load loads an /etc/passwd file into a UserFile from an io.Reader.
 func (uf *UserFile) Load(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -76,7 +77,7 @@ func (uf *UserFile) Load(r io.Reader) error {
 	return nil
 }
 
-// Write an /etc/passwd file from a UserFile.
+// WriteFile writes an /etc/passwd file from a UserFile.
 func (uf *UserFile) WriteFile(filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -87,7 +88,7 @@ func (uf *UserFile) WriteFile(filePath string) error {
 	return uf.Write(file)
 }
 
-// Write an /etc/passwd file into an io.Writer.
+// Write writes an /etc/passwd file into an io.Writer.
 func (uf *UserFile) Write(w io.Writer) error {
 	for _, ue := range uf.Entries {
 		if err := ue.Write(w); err != nil {
@@ -98,7 +99,7 @@ func (uf *UserFile) Write(w io.Writer) error {
 	return nil
 }
 
-// Parse an /etc/passwd line into a UserEntry.
+// Parse parses an /etc/passwd line into a UserEntry.
 func (ue *UserEntry) Parse(line string) error {
 	line = strings.TrimSpace(line)
 
@@ -129,7 +130,7 @@ func (ue *UserEntry) Parse(line string) error {
 	return nil
 }
 
-// Write an /etc/passwd line into an io.Writer.
+// Write writes an /etc/passwd line into an io.Writer.
 func (ue *UserEntry) Write(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "%s:%s:%d:%d:%s:%s:%s\n", ue.UserName, ue.Password, ue.UID, ue.GID, ue.Info, ue.HomeDir, ue.Shell)
 	return err
