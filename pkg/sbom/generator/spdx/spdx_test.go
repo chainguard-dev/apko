@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"chainguard.dev/apko/pkg/sbom/options"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/command"
@@ -78,7 +79,8 @@ func TestReproducible(t *testing.T) {
 		require.NoError(t, err)
 		d = append(d, data)
 	}
-	require.Equal(t, d[0], d[1])
+	diff := cmp.Diff(d[0], d[1])
+	require.Empty(t, diff, fmt.Sprintf("difference in expected output %s", diff))
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools

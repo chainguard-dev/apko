@@ -3,10 +3,8 @@ linters-settings:
     include-go-root: true
     packages:
       - io/ioutil
-      - github.com/google/go-cmp/cmp
     packages-with-error-message:
       - io/ioutil: 'ioutil was deprecated in 1.16 (https://go.dev/doc/go1.16#ioutil)'
-      - github.com/google/go-cmp/cmp: 'forbid go-cmp in favor of using testify'
   forbidigo:
     forbid:
       - ^print.*$
