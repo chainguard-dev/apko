@@ -32,7 +32,11 @@ func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
 	defer gzw.Close()
 
 	tw := tar.NewWriter(gzw)
-	defer tw.Close()
+	if !ctx.SkipClose {
+		defer tw.Close()
+	} else {
+		defer tw.Flush()
+	}
 
 	return ctx.writeTar(tw, fsys)
 }
