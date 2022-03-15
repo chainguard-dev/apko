@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/tarball"
 )
@@ -39,6 +40,7 @@ type Context struct {
 	SBOMFormats        []string
 	ExtraKeyFiles      []string
 	Arch               types.Architecture
+	executor           *exec.Executor
 }
 
 func (bc *Context) Summarize() {
@@ -130,6 +132,8 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 		bc.SourceDateEpoch = time.Unix(sec, 0)
 	}
+
+	bc.executor = exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
 
 	return &bc, nil
 }

@@ -40,7 +40,7 @@ import (
 func (bc *Context) InitApkDB() error {
 	log.Printf("initializing apk database")
 
-	return bc.Execute("apk", "add", "--initdb", "--arch", bc.Arch.ToAPK(), "--root", bc.WorkDir)
+	return bc.executor.Execute("apk", "add", "--initdb", "--arch", bc.Arch.ToAPK(), "--root", bc.WorkDir)
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
@@ -202,7 +202,7 @@ func (bc *Context) FixateApkWorld() error {
 
 	args := []string{"fix", "--root", bc.WorkDir, "--no-scripts", "--no-cache", "--update-cache", "--arch", bc.Arch.ToAPK()}
 
-	return bc.Execute("apk", args...)
+	return bc.executor.Execute("apk", args...)
 }
 
 func (bc *Context) normalizeApkScriptsTar() error {
