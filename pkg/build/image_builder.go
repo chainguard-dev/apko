@@ -132,7 +132,7 @@ func (bc *Context) InstallBusyboxSymlinks() error {
 	}
 
 	// use proot + qemu to run the installer
-	if err := bc.ExecuteChroot("/bin/busybox", "--install", "-s"); err != nil {
+	if err := bc.executor.ExecuteChroot("/bin/busybox", "--install", "-s"); err != nil {
 		return fmt.Errorf("failed to install busybox symlinks: %w", err)
 	}
 

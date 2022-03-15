@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package exec
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ import (
 	"os/exec"
 )
 
-func runCommand(cmd *exec.Cmd, logname string) error {
+func run(cmd *exec.Cmd, logname string) error {
 	log.Printf("running: %s", cmd)
 
 	output, err := cmd.CombinedOutput()
@@ -34,29 +34,32 @@ func runCommand(cmd *exec.Cmd, logname string) error {
 	return nil
 }
 
+// ExecuteChroot executes the named program with the given arguments
+// inside a chroot.
 // TODO(kaniini): Add support for using qemu-binfmt here for multiarch.
-func (bc *Context) ExecuteChroot(name string, arg ...string) error {
+func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 	var cmd *exec.Cmd
 
-	if bc.UseProot {
-		arg = append([]string{"-S", bc.WorkDir, name}, arg...)
+	if e.UseProot {
+		arg = append([]string{"-S", e.WorkDir, name}, arg...)
 		cmd = exec.Command("proot", arg...)
 	} else {
-		arg = append([]string{bc.WorkDir, name}, arg...)
+		arg = append([]string{e.WorkDir, name}, arg...)
 		cmd = exec.Command("chroot", arg...)
 	}
 
-	return runCommand(cmd, name)
+	return run(cmd, name)
 }
 
-func (bc *Context) Execute(name string, arg ...string) error {
+// Execute executes the named program with the given arguments.
+func (e *Executor) Execute(name string, arg ...string) error {
 	logname := name
 
-	if bc.UseProot {
+	if e.UseProot {
 		arg = append([]string{"-0", name}, arg...)
 		name = "proot"
 	}
 
 	cmd := exec.Command(name, arg...)
-	return runCommand(cmd, logname)
+	return run(cmd, logname)
 }
