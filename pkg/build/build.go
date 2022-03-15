@@ -25,10 +25,11 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 
+	"chainguard.dev/apko/pkg/build/image"
+	"chainguard.dev/apko/pkg/build/image/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
-	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/tarball"
 )
 
@@ -45,9 +46,8 @@ type Context struct {
 	SBOMFormats        []string
 	ExtraKeyFiles      []string
 	ExtraRepos         []string
+	imageBuilder       image.Builder
 	Arch               types.Architecture
-	executor           *exec.Executor
-	s6                 *s6.Context
 	Log                *log.Logger
 }
 
@@ -94,7 +94,7 @@ func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
 	// build image filesystem
-	if err := bc.BuildImage(); err != nil {
+	if err := bc.imageBuilder.BuildImage(); err != nil {
 		return "", err
 	}
 
@@ -184,9 +184,15 @@ func (bc *Context) Refresh() error {
 	if err != nil {
 		return err
 	}
-	bc.executor = executor
 
-	bc.s6 = s6.New(bc.WorkDir, bc.Log)
+	bc.imageBuilder = apk.New(bc.WorkDir, bc.Log,
+		apk.WithImageConfiguration(bc.ImageConfiguration),
+		apk.WithSourceDateEpoch(bc.SourceDateEpoch),
+		apk.WithArch(bc.Arch),
+		apk.WithKeyFiles(bc.ExtraKeyFiles...),
+		apk.WithExtraRepos(bc.ExtraRepos),
+		apk.WithExecutor(executor),
+	)
 
 	return nil
 }

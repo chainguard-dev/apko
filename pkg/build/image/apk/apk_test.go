@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package apk
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ import (
 func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
 
-	c := Context{
+	c := apkBuilder{
 		Log: log.Default(),
 	}
 	// Read the empty dir, passing only one empty location should err

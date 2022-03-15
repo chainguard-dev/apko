@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package apk
 
 import (
 	"log"
@@ -52,15 +52,15 @@ func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
 	return append(users, ue)
 }
 
-func (bc *Context) MutateAccounts() error {
-	ic := bc.ImageConfiguration
+func (ab *apkBuilder) MutateAccounts() error {
+	ic := ab.ImageConfiguration
 
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {
 		// Mutate the /etc/groups file
 		eg.Go(func() error {
-			path := filepath.Join(bc.WorkDir, "etc", "group")
+			path := filepath.Join(ab.WorkDir, "etc", "group")
 
 			gf, err := passwd.ReadOrCreateGroupFile(path)
 			if err != nil {
@@ -82,7 +82,7 @@ func (bc *Context) MutateAccounts() error {
 	if len(ic.Accounts.Users) != 0 {
 		// Mutate the /etc/passwd file
 		eg.Go(func() error {
-			path := filepath.Join(bc.WorkDir, "etc", "passwd")
+			path := filepath.Join(ab.WorkDir, "etc", "passwd")
 
 			uf, err := passwd.ReadOrCreateUserFile(path)
 			if err != nil {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package apk
 
 import (
 	"archive/tar"
@@ -36,27 +36,27 @@ import (
 // Initialize the APK database for a given build context.  It is assumed that
 // the build context itself is properly set up, and that `bc.WorkDir` is set
 // to the path of a working directory.
-func (bc *Context) InitApkDB() error {
-	bc.Log.Printf("initializing apk database")
+func (ab *apkBuilder) InitApkDB() error {
+	ab.Log.Printf("initializing apk database")
 
-	return bc.executor.Execute("apk", "add", "--initdb", "--arch", bc.Arch.ToAPK(), "--root", bc.WorkDir)
+	return ab.executor.Execute("apk", "add", "--initdb", "--arch", ab.Arch.ToAPK(), "--root", ab.WorkDir)
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
 // directory by trying some common locations. These can be overridden
 // by passing one or more directories as arguments.
-func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
+func (ab *apkBuilder) loadSystemKeyring(locations ...string) ([]string, error) {
 	var ring []string
 	if len(locations) == 0 {
 		locations = []string{
-			filepath.Join("/usr/share/apk/keys/", bc.Arch.ToAPK()),
+			filepath.Join("/usr/share/apk/keys/", ab.Arch.ToAPK()),
 		}
 	}
 	for _, d := range locations {
 		keyFiles, err := os.ReadDir(d)
 
 		if errors.Is(err, os.ErrNotExist) {
-			bc.Log.Printf("%s doesn't exist, skipping...", d)
+			ab.Log.Printf("%s doesn't exist, skipping...", d)
 			continue
 		}
 
@@ -71,7 +71,7 @@ func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 			if ext == ".pub" {
 				ring = append(ring, p)
 			} else {
-				bc.Log.Printf("%s has invalid extension (%s), skipping...", p, ext)
+				ab.Log.Printf("%s has invalid extension (%s), skipping...", p, ext)
 			}
 		}
 	}
@@ -83,26 +83,26 @@ func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 }
 
 // Installs the specified keys into the APK keyring inside the build context.
-func (bc *Context) InitApkKeyring() (err error) {
-	bc.Log.Printf("initializing apk keyring")
+func (ab *apkBuilder) InitApkKeyring() (err error) {
+	ab.Log.Printf("initializing apk keyring")
 
-	if err := os.MkdirAll(filepath.Join(bc.WorkDir, "etc", "apk", "keys"),
+	if err := os.MkdirAll(filepath.Join(ab.WorkDir, "etc", "apk", "keys"),
 		0755); err != nil {
 		return fmt.Errorf("failed to make keys dir: %w", err)
 	}
 
-	keyFiles := bc.ImageConfiguration.Contents.Keyring
+	keyFiles := ab.ImageConfiguration.Contents.Keyring
 
 	if len(keyFiles) == 0 {
-		keyFiles, err = bc.loadSystemKeyring()
+		keyFiles, err = ab.loadSystemKeyring()
 		if err != nil {
 			return fmt.Errorf("opening system keyring: %w", err)
 		}
 	}
 
-	if len(bc.ExtraKeyFiles) > 0 {
-		bc.Log.Printf("appending %d extra keys to keyring", len(bc.ExtraKeyFiles))
-		keyFiles = append(keyFiles, bc.ExtraKeyFiles...)
+	if len(ab.ExtraKeyFiles) > 0 {
+		ab.Log.Printf("appending %d extra keys to keyring", len(ab.ExtraKeyFiles))
+		keyFiles = append(keyFiles, ab.ExtraKeyFiles...)
 	}
 
 	var eg errgroup.Group
@@ -110,7 +110,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		element := element
 		eg.Go(func() error {
-			bc.Log.Printf("installing key %v", element)
+			ab.Log.Printf("installing key %v", element)
 
 			// Normalize the element as a URI, so that local paths
 			// are translated into file:// URLs, allowing them to be parsed
@@ -153,7 +153,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
-			if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "keys", filepath.Base(element)), data,
+			if err := os.WriteFile(filepath.Join(ab.WorkDir, "etc", "apk", "keys", filepath.Base(element)), data,
 				0644); err != nil {
 				return fmt.Errorf("failed to write apk key: %w", err)
 			}
@@ -166,19 +166,19 @@ func (bc *Context) InitApkKeyring() (err error) {
 }
 
 // Generates a specified /etc/apk/repositories file in the build context.
-func (bc *Context) InitApkRepositories() error {
-	bc.Log.Printf("initializing apk repositories")
+func (ab *apkBuilder) InitApkRepositories() error {
+	ab.Log.Printf("initializing apk repositories")
 
-	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
+	data := strings.Join(ab.ImageConfiguration.Contents.Repositories, "\n")
 
-	if len(bc.ExtraRepos) > 0 {
+	if len(ab.ExtraRepos) > 0 {
 		// TODO(kaniini): not sure if the extra newline is actually needed
 		data += "\n"
-		data += strings.Join(bc.ExtraRepos, "\n")
+		data += strings.Join(ab.ExtraRepos, "\n")
 	}
 
 	// #nosec G306 -- apk repositories must be publicly readable
-	if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "repositories"),
+	if err := os.WriteFile(filepath.Join(ab.WorkDir, "etc", "apk", "repositories"),
 		[]byte(data), 0644); err != nil {
 		return fmt.Errorf("failed to write apk repositories list: %w", err)
 	}
@@ -187,13 +187,13 @@ func (bc *Context) InitApkRepositories() error {
 }
 
 // Generates a specified /etc/apk/world file in the build context.
-func (bc *Context) InitApkWorld() error {
-	bc.Log.Printf("initializing apk world")
+func (ab *apkBuilder) InitApkWorld() error {
+	ab.Log.Printf("initializing apk world")
 
-	data := strings.Join(bc.ImageConfiguration.Contents.Packages, "\n")
+	data := strings.Join(ab.ImageConfiguration.Contents.Packages, "\n")
 
 	// #nosec G306 -- apk world must be publicly readable
-	if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "world"),
+	if err := os.WriteFile(filepath.Join(ab.WorkDir, "etc", "apk", "world"),
 		[]byte(data), 0644); err != nil {
 		return fmt.Errorf("failed to write apk world: %w", err)
 	}
@@ -202,16 +202,16 @@ func (bc *Context) InitApkWorld() error {
 }
 
 // Force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
-func (bc *Context) FixateApkWorld() error {
-	bc.Log.Printf("synchronizing with desired apk world")
+func (ab *apkBuilder) FixateApkWorld() error {
+	ab.Log.Printf("synchronizing with desired apk world")
 
-	args := []string{"fix", "--root", bc.WorkDir, "--no-scripts", "--no-cache", "--update-cache", "--arch", bc.Arch.ToAPK()}
+	args := []string{"fix", "--root", ab.WorkDir, "--no-scripts", "--no-cache", "--update-cache", "--arch", ab.Arch.ToAPK()}
 
-	return bc.executor.Execute("apk", args...)
+	return ab.executor.Execute("apk", args...)
 }
 
-func (bc *Context) normalizeApkScriptsTar() error {
-	scriptsTar := filepath.Join(bc.WorkDir, "lib", "apk", "db", "scripts.tar")
+func (ab *apkBuilder) normalizeApkScriptsTar() error {
+	scriptsTar := filepath.Join(ab.WorkDir, "lib", "apk", "db", "scripts.tar")
 
 	f, err := os.Open(scriptsTar)
 	if err != nil {
@@ -247,9 +247,9 @@ func (bc *Context) normalizeApkScriptsTar() error {
 		}
 
 		// zero out timestamps for reproducibility
-		header.AccessTime = bc.SourceDateEpoch
-		header.ModTime = bc.SourceDateEpoch
-		header.ChangeTime = bc.SourceDateEpoch
+		header.AccessTime = ab.SourceDateEpoch
+		header.ModTime = ab.SourceDateEpoch
+		header.ChangeTime = ab.SourceDateEpoch
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
