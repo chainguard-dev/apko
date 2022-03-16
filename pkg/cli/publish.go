@@ -25,6 +25,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/spf13/cobra"
@@ -35,7 +36,9 @@ func Publish() *cobra.Command {
 	var useProot bool
 	var buildDate string
 	var sbomPath string
+	var sbomFormats []string
 	var archstrs []string
+	var extraKeys []string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -53,7 +56,10 @@ in a keychain.`,
 				build.WithProot(useProot),
 				build.WithTags(args[1:]...),
 				build.WithBuildDate(buildDate),
+				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithSBOM(sbomPath),
+				build.WithSBOMFormats(sbomFormats),
+				build.WithExtraKeys(extraKeys),
 			); err != nil {
 				return err
 			}
@@ -66,6 +72,8 @@ in a keychain.`,
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
+	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 
 	return cmd
 }
