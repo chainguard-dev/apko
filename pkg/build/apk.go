@@ -172,6 +172,12 @@ func (bc *Context) InitApkRepositories() error {
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
 
+	if len(bc.ExtraRepos) > 0 {
+		// TODO(kaniini): not sure if the extra newline is actually needed
+		data += "\n"
+		data += strings.Join(bc.ExtraRepos, "\n")
+	}
+
 	// #nosec G306 -- apk repositories must be publicly readable
 	if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "repositories"),
 		[]byte(data), 0644); err != nil {

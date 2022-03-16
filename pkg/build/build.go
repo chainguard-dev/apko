@@ -39,6 +39,7 @@ type Context struct {
 	SBOMPath           string
 	SBOMFormats        []string
 	ExtraKeyFiles      []string
+	ExtraRepos         []string
 	Arch               types.Architecture
 	executor           *exec.Executor
 }
@@ -232,6 +233,13 @@ func WithSBOMFormats(formats []string) Option {
 func WithExtraKeys(keys []string) Option {
 	return func(bc *Context) error {
 		bc.ExtraKeyFiles = keys
+		return nil
+	}
+}
+
+func WithExtraRepos(repos []string) Option {
+	return func(bc *Context) error {
+		bc.ExtraRepos = repos
 		return nil
 	}
 }

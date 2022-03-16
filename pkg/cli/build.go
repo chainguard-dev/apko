@@ -36,6 +36,7 @@ func Build() *cobra.Command {
 	var sbomPath string
 	var sbomFormats []string
 	var extraKeys []string
+	var extraRepos []string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -65,6 +66,7 @@ bill of materials) describing the image contents.
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
 				build.WithTags(args[1]),
+				build.WithExtraRepos(extraRepos),
 			)
 		},
 	}
@@ -75,6 +77,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 
 	return cmd
 }

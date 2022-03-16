@@ -39,6 +39,7 @@ func Publish() *cobra.Command {
 	var sbomFormats []string
 	var archstrs []string
 	var extraKeys []string
+	var extraRepos []string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -60,6 +61,7 @@ in a keychain.`,
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
+				build.WithExtraRepos(extraRepos),
 			); err != nil {
 				return err
 			}
@@ -74,6 +76,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 
 	return cmd
 }
