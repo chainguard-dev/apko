@@ -26,6 +26,7 @@ import (
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/tarball"
+	"github.com/hashicorp/go-multierror"
 )
 
 type Context struct {
@@ -92,6 +93,10 @@ func (bc *Context) BuildLayer() (string, error) {
 		return "", err
 	}
 
+	if err := bc.runAssertions(); err != nil {
+		return "", err
+	}
+
 	// build layer tarball
 	layerTarGZ, err := bc.BuildTarball()
 	if err != nil {
@@ -104,6 +109,17 @@ func (bc *Context) BuildLayer() (string, error) {
 	}
 
 	return layerTarGZ, nil
+}
+
+func (bc *Context) runAssertions() error {
+	var eg multierror.Group
+
+	for _, a := range bc.Assertions {
+		a := a
+		eg.Go(func() error { return a(bc) })
+	}
+
+	return eg.Wait().ErrorOrNil()
 }
 
 // New creates a build context.
