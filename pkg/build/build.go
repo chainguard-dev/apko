@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -132,6 +133,11 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		}
 
 		bc.SourceDateEpoch = time.Unix(sec, 0)
+	}
+
+	// if arch is missing default to the running program's arch
+	if bc.Arch == "" {
+		bc.Arch = types.Architecture(runtime.GOARCH)
 	}
 
 	bc.executor = exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
