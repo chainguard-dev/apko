@@ -25,6 +25,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
+	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/tarball"
 	"github.com/hashicorp/go-multierror"
 )
@@ -44,6 +45,7 @@ type Context struct {
 	ExtraRepos         []string
 	Arch               types.Architecture
 	executor           *exec.Executor
+	s6                 *s6.Context
 }
 
 func (bc *Context) Summarize() {
@@ -157,6 +159,8 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	}
 
 	bc.executor = exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
+
+	bc.s6 = s6.New(bc.WorkDir)
 
 	return &bc, nil
 }
