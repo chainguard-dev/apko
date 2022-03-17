@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package s6
 
 import (
 	"errors"
@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 )
 
-func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
-	svcdir := filepath.Join(bc.WorkDir, "sv", name)
+func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
+	svcdir := filepath.Join(sc.WorkDir, "sv", name)
 	log.Printf("  supervision dir: %s", svcdir)
 
 	if err := os.MkdirAll(svcdir, 0755); err != nil {
@@ -33,7 +33,7 @@ func (bc *Context) CreateSupervisionDirectory(name string) (string, error) {
 	return svcdir, nil
 }
 
-func (bc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
+func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
 	file, err := os.Create(filepath.Join(svcdir, "run"))
 	if err != nil {
 		return fmt.Errorf("could not create runfile: %w", err)
@@ -49,33 +49,33 @@ func (bc *Context) WriteSupervisionTemplate(svcdir string, command string) error
 	return nil
 }
 
-func (bc *Context) WriteSupervisionServiceSimple(name string, command string) error {
+func (sc *Context) WriteSupervisionServiceSimple(name string, command string) error {
 	log.Printf("simple service: %s => %s", name, command)
 
-	svcdir, err := bc.CreateSupervisionDirectory(name)
+	svcdir, err := sc.CreateSupervisionDirectory(name)
 	if err != nil {
 		return err
 	}
 
-	if err := bc.WriteSupervisionTemplate(svcdir, command); err != nil {
+	if err := sc.WriteSupervisionTemplate(svcdir, command); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (bc *Context) WriteSupervisionTree() error {
+func (sc *Context) WriteSupervisionTree(services Services) error {
 	log.Printf("generating supervision tree")
 
 	// generate the leaves
-	for service, descriptor := range bc.ImageConfiguration.Entrypoint.Services {
+	for service, descriptor := range services {
 		service, ok := service.(string)
 		if !ok {
 			return errors.New("service name is not string")
 		}
 
 		if svccmd, ok := descriptor.(string); ok {
-			if err := bc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
+			if err := sc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
 				return err
 			}
 		} else {

@@ -94,7 +94,7 @@ func (bc *Context) BuildImage() error {
 	}
 
 	// write service supervision tree
-	if err := bc.WriteSupervisionTree(); err != nil {
+	if err := bc.s6.WriteSupervisionTree(bc.ImageConfiguration.Entrypoint.Services); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
