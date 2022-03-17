@@ -162,6 +162,10 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
+	return &bc, nil
+}
+
+func (bc *Context) Refresh() error {
 	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
 	if bc.UseProot && bc.Arch != types.ParseArchitecture(runtime.GOARCH) {
 		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
@@ -169,7 +173,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 	executor, err := exec.New(bc.WorkDir, bc.Log, execOpts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bc.executor = executor
 
@@ -177,7 +181,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 	bc.UpdatePrefix()
 
-	return &bc, nil
+	return nil
 }
 
 func (bc *Context) UpdatePrefix() {

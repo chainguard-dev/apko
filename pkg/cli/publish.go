@@ -109,6 +109,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return errors.New("no archs requested")
 	case 1:
 		bc.Arch = bc.ImageConfiguration.Archs[0]
+
+		if err := bc.Refresh(); err != nil {
+			return fmt.Errorf("failed to update build context for %q: %w", bc.Arch, err)
+		}
+
 		layerTarGZ, err := bc.BuildLayer()
 		if err != nil {
 			return fmt.Errorf("failed to build layer image: %w", err)
@@ -125,7 +130,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		for _, arch := range archs {
 			bc.Arch = arch
 			bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
-			bc.UpdatePrefix()
+
+			if err := bc.Refresh(); err != nil {
+				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
+			}
+
 			layerTarGZ, err := bc.BuildLayer()
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
