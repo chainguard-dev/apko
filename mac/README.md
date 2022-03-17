@@ -35,7 +35,7 @@ directory of the repository, and require `limactl`.
 ### Start environment
 
 ```
-limactl start --tty=false apko-playground.yaml
+limactl start --tty=false lima/apko-playground.yaml
 ```
 
 ### Obtain a shell
