@@ -41,7 +41,12 @@ func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 	var cmd *exec.Cmd
 
 	if e.UseProot {
-		arg = append([]string{"-S", e.WorkDir, name}, arg...)
+		baseargs := []string{"-S", e.WorkDir}
+		if e.UseQemu != "" {
+			baseargs = append(baseargs, "-q", e.UseQemu)
+		}
+		baseargs = append(baseargs, name)
+		arg = append(baseargs, arg...)
 		cmd = exec.Command("proot", arg...)
 	} else {
 		arg = append([]string{e.WorkDir, name}, arg...)

@@ -159,7 +159,12 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.Arch = types.Architecture(runtime.GOARCH)
 	}
 
-	executor, err := exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
+	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
+	if bc.UseProot && bc.Arch != types.Architecture(runtime.GOARCH) {
+		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
+	}
+
+	executor, err := exec.New(bc.WorkDir, execOpts...)
 	if err != nil {
 		return nil, err
 	}

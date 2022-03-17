@@ -33,6 +33,7 @@ import (
 func Build() *cobra.Command {
 	var useProot bool
 	var buildDate string
+	var buildArch string
 	var writeSBOM bool
 	var sbomPath string
 	var sbomFormats []string
@@ -68,6 +69,7 @@ bill of materials) describing the image contents.
 				build.WithExtraKeys(extraKeys),
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
+				build.WithArch(types.Architecture(buildArch)),
 			)
 		},
 	}
@@ -76,6 +78,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
+	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
@@ -89,9 +92,6 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
-
-	// ignore arch config
-	opts = append(opts, build.WithArch(types.Architecture(runtime.GOARCH)))
 
 	bc, err := build.New(wd, opts...)
 	if err != nil {
