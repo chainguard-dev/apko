@@ -14,27 +14,48 @@
 
 package exec
 
+import (
+	"fmt"
+	"os/exec"
+)
+
 type Executor struct {
 	WorkDir  string
 	UseProot bool
+	UseQemu  string
 }
 
-type Option func(*Executor)
+type Option func(*Executor) error
 
-func New(workDir string, opts ...Option) *Executor {
+func New(workDir string, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		WorkDir: workDir,
 	}
 
 	for _, opt := range opts {
-		opt(e)
+		if err := opt(e); err != nil {
+			return nil, err
+		}
 	}
 
-	return e
+	return e, nil
 }
 
 func WithProot(proot bool) Option {
-	return func(e *Executor) {
+	return func(e *Executor) error {
 		e.UseProot = proot
+		return nil
+	}
+}
+
+func WithQemu(qemuArch string) Option {
+	return func(e *Executor) error {
+		emu, err := exec.LookPath(fmt.Sprintf("qemu-%s", qemuArch))
+		if err != nil {
+			return fmt.Errorf("unable to find qemu emulator for %s: %w", qemuArch, err)
+		}
+
+		e.UseQemu = emu
+		return nil
 	}
 }
