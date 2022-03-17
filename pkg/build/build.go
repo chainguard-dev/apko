@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -166,6 +167,10 @@ func New(workDir string, opts ...Option) (*Context, error) {
 }
 
 func (bc *Context) Refresh() error {
+	if strings.HasPrefix(bc.TarballPath, "/tmp/apko") {
+		bc.TarballPath = ""
+	}
+
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
 
 	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
