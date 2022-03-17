@@ -125,6 +125,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		for _, arch := range archs {
 			bc.Arch = arch
 			bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
+			bc.UpdatePrefix()
 			layerTarGZ, err := bc.BuildLayer()
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
