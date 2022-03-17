@@ -17,7 +17,6 @@ package build
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -26,12 +25,12 @@ import (
 
 // Builds the image in Context.WorkDir.
 func (bc *Context) BuildImage() error {
-	log.Printf("doing pre-flight checks")
+	bc.Log.Printf("doing pre-flight checks")
 	if err := bc.ImageConfiguration.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	log.Printf("building image fileystem in %s", bc.WorkDir)
+	bc.Log.Printf("building image fileystem in %s", bc.WorkDir)
 
 	// initialize apk
 	if err := bc.InitApkDB(); err != nil {
@@ -98,7 +97,7 @@ func (bc *Context) BuildImage() error {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
-	log.Printf("finished building filesystem in %s", bc.WorkDir)
+	bc.Log.Printf("finished building filesystem in %s", bc.WorkDir)
 	return nil
 }
 

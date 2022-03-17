@@ -44,8 +44,8 @@ var keychain = authn.NewMultiKeychain(
 	github.Keychain,
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
-	log.Printf("building OCI image from layer '%s'", layerTarGZ)
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) (v1.Image, error) {
+	logger.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
 	if err != nil {
@@ -62,8 +62,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 		return empty.Image, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
-	log.Printf("OCI layer digest: %v", digest)
-	log.Printf("OCI layer diffID: %v", diffid)
+	logger.Printf("OCI layer digest: %v", digest)
+	logger.Printf("OCI layer diffID: %v", diffid)
 
 	adds := make([]mutate.Addendum, 0, 1)
 	adds = append(adds, mutate.Addendum{
@@ -109,8 +109,8 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	return v1Image, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture) error {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 		return fmt.Errorf("unable to write OCI image to disk: %w", err)
 	}
 
-	log.Printf("output OCI image file to %s", outputTarGZ)
+	logger.Printf("output OCI image file to %s", outputTarGZ)
 	return nil
 }
 
@@ -140,8 +140,8 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Di
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, tags ...string) (name.Digest, v1.Image, error) {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, tags ...string) (name.Digest, v1.Image, error) {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger)
 	if err != nil {
 		return name.Digest{}, nil, err
 	}
@@ -153,7 +153,7 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 
 	digest := name.Digest{}
 	for _, tag := range tags {
-		log.Printf("publishing tag %v", tag)
+		logger.Printf("publishing tag %v", tag)
 		digest, err = publishTagFromImage(v1Image, tag, h)
 		if err != nil {
 			return name.Digest{}, nil, err
@@ -163,7 +163,7 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs map[types.Architecture]v1.Image, tags ...string) (name.Digest, error) {
+func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags ...string) (name.Digest, error) {
 	var idx v1.ImageIndex = empty.Index
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -207,7 +207,7 @@ func PublishIndex(imgs map[types.Architecture]v1.Image, tags ...string) (name.Di
 
 	digest := name.Digest{}
 	for _, tag := range tags {
-		log.Printf("publishing tag %v", tag)
+		logger.Printf("publishing tag %v", tag)
 		digest, err = publishTagFromIndex(idx, tag, h)
 		if err != nil {
 			return name.Digest{}, err

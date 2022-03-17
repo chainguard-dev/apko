@@ -110,7 +110,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Arch)
 	}
 
-	log.Printf("building image '%s'", imageRef)
+	bc.Log.Printf("building image '%s'", imageRef)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
@@ -124,6 +124,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 
 	if err := oci.BuildImageTarballFromLayer(
 		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch,
+		bc.Log,
 	); err != nil {
 		return fmt.Errorf("failed to build OCI image: %w", err)
 	}

@@ -115,7 +115,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 		defer os.Remove(layerTarGZ)
 
-		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch, bc.Tags...)
+		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch, bc.Log, bc.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
@@ -131,13 +131,13 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 			defer os.Remove(layerTarGZ)
 
-			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch)
+			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch, bc.Log)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
 			imgs[arch] = img
 		}
-		digest, err = oci.PublishIndex(imgs, bc.Tags...)
+		digest, err = oci.PublishIndex(imgs, bc.Log, bc.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI index: %w", err)
 		}
