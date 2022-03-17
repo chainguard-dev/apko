@@ -166,9 +166,12 @@ func New(workDir string, opts ...Option) (*Context, error) {
 }
 
 func (bc *Context) Refresh() error {
+	hostArch := types.ParseArchitecture(runtime.GOARCH)
+
 	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
-	if bc.UseProot && bc.Arch != types.ParseArchitecture(runtime.GOARCH) {
-		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
+	if bc.UseProot && !bc.Arch.Compatible(hostArch) {
+		bc.Log.Printf("%q requires QEMU (not compatible with %q)", bc.Arch, hostArch)
+		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToQEmu()))
 	}
 
 	executor, err := exec.New(bc.WorkDir, bc.Log, execOpts...)

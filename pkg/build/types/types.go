@@ -132,6 +132,23 @@ func (a Architecture) ToQEmu() string {
 	}
 }
 
+func (a Architecture) Compatible(b Architecture) bool {
+	switch b {
+	case _386:
+		return a == b
+	case amd64:
+		return a == _386 || a == b
+	case arm64:
+		return a == armv6 || a == armv7 || a == b
+	case armv6:
+		return a == b
+	case armv7:
+		return a == armv6 || a == b
+	default:
+		return false
+	}
+}
+
 // ParseArchitecture parses a single architecture in string form, and returns
 // the equivalent Architecture value.
 //
