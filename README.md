@@ -41,6 +41,8 @@ with apko, due to apk-tools' use of chroot(2).
 Some example configurations are available in the examples
 directory.
 
+Want to run `apko` on a mac? See [here](./mac/README.md).
+
 ## Features
 
 ### Sub-second image build times
