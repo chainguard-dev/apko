@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
@@ -109,6 +110,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return errors.New("no archs requested")
 	case 1:
 		bc.Arch = bc.ImageConfiguration.Archs[0]
+
+		if err := bc.Refresh(); err != nil {
+			return fmt.Errorf("failed to update build context for %q: %w", bc.Arch, err)
+		}
+
 		layerTarGZ, err := bc.BuildLayer()
 		if err != nil {
 			return fmt.Errorf("failed to build layer image: %w", err)
@@ -120,24 +126,42 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
 	default:
+		var errg errgroup.Group
 		imgs := map[types.Architecture]v1.Image{}
 		workDir := bc.WorkDir
-		for _, arch := range archs {
-			bc.Arch = arch
-			bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
-			layerTarGZ, err := bc.BuildLayer()
-			if err != nil {
-				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
-			}
-			defer os.Remove(layerTarGZ)
 
-			_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch, bc.Log)
-			if err != nil {
-				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
-			}
-			imgs[arch] = img
+		for _, arch := range archs {
+			arch := arch
+			bc := *bc
+
+			errg.Go(func() error {
+				bc.Arch = arch
+				bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
+
+				if err := bc.Refresh(); err != nil {
+					return fmt.Errorf("failed to update build context for %q: %w", arch, err)
+				}
+
+				layerTarGZ, err := bc.BuildLayer()
+				if err != nil {
+					return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
+				}
+				defer os.Remove(layerTarGZ)
+
+				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch, bc.Log)
+				if err != nil {
+					return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
+				}
+				imgs[arch] = img
+				return nil
+			})
 		}
-		digest, err = oci.PublishIndex(imgs, bc.Log, bc.Tags...)
+
+		if err := errg.Wait(); err != nil {
+			return err
+		}
+
+		digest, err = oci.PublishIndex(imgs, log.Default(), bc.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI index: %w", err)
 		}

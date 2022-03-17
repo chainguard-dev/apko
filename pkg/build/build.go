@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -132,7 +133,6 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		WorkDir: workDir,
-		Log:     log.New(log.Writer(), "apko", log.LstdFlags|log.Lmsgprefix),
 	}
 
 	for _, opt := range opts {
@@ -162,22 +162,37 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
+	return &bc, nil
+}
+
+func (bc *Context) Refresh() error {
+	bc.UpdatePrefix()
+
+	if strings.HasPrefix(bc.TarballPath, "/tmp/apko") {
+		bc.TarballPath = ""
+	}
+
+	hostArch := types.ParseArchitecture(runtime.GOARCH)
+
 	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
-	if bc.UseProot && bc.Arch != types.ParseArchitecture(runtime.GOARCH) {
-		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
+	if bc.UseProot && !bc.Arch.Compatible(hostArch) {
+		bc.Log.Printf("%q requires QEMU (not compatible with %q)", bc.Arch, hostArch)
+		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToQEmu()))
 	}
 
 	executor, err := exec.New(bc.WorkDir, bc.Log, execOpts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bc.executor = executor
 
 	bc.s6 = s6.New(bc.WorkDir, bc.Log)
 
-	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
+	return nil
+}
 
-	return &bc, nil
+func (bc *Context) UpdatePrefix() {
+	bc.Log = log.New(log.Writer(), fmt.Sprintf("%s: ", bc.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
 }
 
 // Option is an option for the build context.
@@ -187,7 +202,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		bc.Log.Printf("loading config file: %s", configFile)
+		log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {
