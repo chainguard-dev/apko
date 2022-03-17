@@ -15,8 +15,8 @@
 package exec
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"os/exec"
 )
 
@@ -32,7 +32,7 @@ type Option func(*Executor) error
 func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		WorkDir: workDir,
-		Log: logger,
+		Log:     logger,
 	}
 
 	for _, opt := range opts {

@@ -28,6 +28,6 @@ type Context struct {
 func New(wd string, logger *log.Logger) *Context {
 	return &Context{
 		WorkDir: wd,
-		Log: logger,
+		Log:     logger,
 	}
 }

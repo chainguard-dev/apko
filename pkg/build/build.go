@@ -132,7 +132,7 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		WorkDir: workDir,
-		Log: log.New(log.Writer(), "apko", log.LstdFlags | log.Lmsgprefix),
+		Log:     log.New(log.Writer(), "apko", log.LstdFlags|log.Lmsgprefix),
 	}
 
 	for _, opt := range opts {
