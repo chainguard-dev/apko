@@ -12,6 +12,8 @@ linters-settings:
       - '^t\.Fatal.*$(# forbid t\.Fatal in favor of using testify\.)?'
   goheader:
     template-path: header.tmpl
+  goimports:
+    local-prefixes: chainguard.dev/apko
 
 linters:
   enable:
