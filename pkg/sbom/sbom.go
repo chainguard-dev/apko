@@ -27,9 +27,9 @@ import (
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 )
 
-const (
-	osReleasePath    = "/etc/os-release"
-	packageIndexPath = "/lib/apk/db/installed"
+var (
+	osReleasePath    = filepath.Join("etc", "os-release")
+	packageIndexPath = filepath.Join("lib", "apk", "db", "installed")
 )
 
 var DefaultOptions = options.Options{

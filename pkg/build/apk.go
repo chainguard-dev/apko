@@ -154,7 +154,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
-			if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc/apk/keys", filepath.Base(element)), data,
+			if err := os.WriteFile(filepath.Join(bc.WorkDir, "etc", "apk", "keys", filepath.Base(element)), data,
 				0644); err != nil {
 				return fmt.Errorf("failed to write apk key: %w", err)
 			}
