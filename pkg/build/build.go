@@ -175,9 +175,13 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 	bc.s6 = s6.New(bc.WorkDir, bc.Log)
 
-	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
+	bc.UpdatePrefix()
 
 	return &bc, nil
+}
+
+func (bc *Context) UpdatePrefix() {
+	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
 }
 
 // Option is an option for the build context.
