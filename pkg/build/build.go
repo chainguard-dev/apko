@@ -159,7 +159,11 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.Arch = types.Architecture(runtime.GOARCH)
 	}
 
-	bc.executor = exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
+	executor, err := exec.New(bc.WorkDir, exec.WithProot(bc.UseProot))
+	if err != nil {
+		return nil, err
+	}
+	bc.executor = executor
 
 	bc.s6 = s6.New(bc.WorkDir)
 
