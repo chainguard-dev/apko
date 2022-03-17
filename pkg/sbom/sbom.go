@@ -24,6 +24,7 @@ import (
 	osr "github.com/dominodatalab/os-release"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
+	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -59,9 +60,10 @@ func New() *SBOM {
 }
 
 // NewWithWorkDir returns a new sbom object with a working dir preset
-func NewWithWorkDir(path string) *SBOM {
+func NewWithWorkDir(path string, a types.Architecture) *SBOM {
 	s := New()
 	s.Options.WorkDir = path
+	s.Options.FileName = fmt.Sprintf("sbom-%s", a.ToAPK())
 	return s
 }
 

@@ -32,7 +32,7 @@ func (bc *Context) GenerateSBOM() error {
 	bc.Log.Printf("generating SBOM")
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
-	s := sbom.NewWithWorkDir(bc.WorkDir)
+	s := sbom.NewWithWorkDir(bc.WorkDir, bc.Arch)
 
 	v1Layer, err := v1tar.LayerFromFile(bc.TarballPath)
 	if err != nil {
