@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,7 +37,7 @@ import (
 // the build context itself is properly set up, and that `bc.WorkDir` is set
 // to the path of a working directory.
 func (bc *Context) InitApkDB() error {
-	log.Printf("initializing apk database")
+	bc.Log.Printf("initializing apk database")
 
 	return bc.executor.Execute("apk", "add", "--initdb", "--arch", bc.Arch.ToAPK(), "--root", bc.WorkDir)
 }
@@ -57,7 +56,7 @@ func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 		keyFiles, err := os.ReadDir(d)
 
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("%s doesn't exist, skipping...", d)
+			bc.Log.Printf("%s doesn't exist, skipping...", d)
 			continue
 		}
 
@@ -72,7 +71,7 @@ func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 			if ext == ".pub" {
 				ring = append(ring, p)
 			} else {
-				log.Printf("%s has invalid extension (%s), skipping...", p, ext)
+				bc.Log.Printf("%s has invalid extension (%s), skipping...", p, ext)
 			}
 		}
 	}
@@ -85,7 +84,7 @@ func (bc *Context) loadSystemKeyring(locations ...string) ([]string, error) {
 
 // Installs the specified keys into the APK keyring inside the build context.
 func (bc *Context) InitApkKeyring() (err error) {
-	log.Printf("initializing apk keyring")
+	bc.Log.Printf("initializing apk keyring")
 
 	if err := os.MkdirAll(filepath.Join(bc.WorkDir, "etc", "apk", "keys"),
 		0755); err != nil {
@@ -102,7 +101,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 	}
 
 	if len(bc.ExtraKeyFiles) > 0 {
-		log.Printf("appending %d extra keys to keyring", len(bc.ExtraKeyFiles))
+		bc.Log.Printf("appending %d extra keys to keyring", len(bc.ExtraKeyFiles))
 		keyFiles = append(keyFiles, bc.ExtraKeyFiles...)
 	}
 
@@ -111,7 +110,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 	for _, element := range keyFiles {
 		element := element
 		eg.Go(func() error {
-			log.Printf("installing key %v", element)
+			bc.Log.Printf("installing key %v", element)
 
 			// Normalize the element as a URI, so that local paths
 			// are translated into file:// URLs, allowing them to be parsed
@@ -168,7 +167,7 @@ func (bc *Context) InitApkKeyring() (err error) {
 
 // Generates a specified /etc/apk/repositories file in the build context.
 func (bc *Context) InitApkRepositories() error {
-	log.Printf("initializing apk repositories")
+	bc.Log.Printf("initializing apk repositories")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Repositories, "\n")
 
@@ -189,7 +188,7 @@ func (bc *Context) InitApkRepositories() error {
 
 // Generates a specified /etc/apk/world file in the build context.
 func (bc *Context) InitApkWorld() error {
-	log.Printf("initializing apk world")
+	bc.Log.Printf("initializing apk world")
 
 	data := strings.Join(bc.ImageConfiguration.Contents.Packages, "\n")
 
@@ -204,7 +203,7 @@ func (bc *Context) InitApkWorld() error {
 
 // Force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
 func (bc *Context) FixateApkWorld() error {
-	log.Printf("synchronizing with desired apk world")
+	bc.Log.Printf("synchronizing with desired apk world")
 
 	args := []string{"fix", "--root", bc.WorkDir, "--no-scripts", "--no-cache", "--update-cache", "--arch", bc.Arch.ToAPK()}
 

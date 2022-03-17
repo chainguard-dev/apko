@@ -17,14 +17,13 @@ package s6
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
 
 func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
 	svcdir := filepath.Join(sc.WorkDir, "sv", name)
-	log.Printf("  supervision dir: %s", svcdir)
+	sc.Log.Printf("  supervision dir: %s", svcdir)
 
 	if err := os.MkdirAll(svcdir, 0755); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
@@ -50,7 +49,7 @@ func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error
 }
 
 func (sc *Context) WriteSupervisionServiceSimple(name string, command string) error {
-	log.Printf("simple service: %s => %s", name, command)
+	sc.Log.Printf("simple service: %s => %s", name, command)
 
 	svcdir, err := sc.CreateSupervisionDirectory(name)
 	if err != nil {
@@ -65,7 +64,7 @@ func (sc *Context) WriteSupervisionServiceSimple(name string, command string) er
 }
 
 func (sc *Context) WriteSupervisionTree(services Services) error {
-	log.Printf("generating supervision tree")
+	sc.Log.Printf("generating supervision tree")
 
 	// generate the leaves
 	for service, descriptor := range services {

@@ -15,20 +15,43 @@
 package exec
 
 import (
-	"fmt"
+	"bufio"
+	"io"
 	"log"
 	"os/exec"
 )
 
-func run(cmd *exec.Cmd, logname string) error {
-	log.Printf("running: %s", cmd)
+func monitorPipe(p io.ReadCloser, prefix string, logger *log.Logger) {
+	defer p.Close()
 
-	output, err := cmd.CombinedOutput()
-	if output != nil {
-		log.Printf("[%s] %s", logname, output)
+	scanner := bufio.NewScanner(p)
+	for scanner.Scan() {
+		logger.Printf("%s: %s", prefix, scanner.Text())
 	}
+}
+
+func run(cmd *exec.Cmd, logname string, logger *log.Logger) error {
+	logger.Printf("running: %s", cmd)
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("failed to run %s: %w", cmd, err)
+		return err
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	go monitorPipe(stdout, logname, logger)
+	go monitorPipe(stderr, logname, logger)
+
+	if err := cmd.Wait(); err != nil {
+		return err
 	}
 
 	return nil
@@ -53,7 +76,7 @@ func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 		cmd = exec.Command("chroot", arg...)
 	}
 
-	return run(cmd, name)
+	return run(cmd, name, e.Log)
 }
 
 // Execute executes the named program with the given arguments.
@@ -66,5 +89,5 @@ func (e *Executor) Execute(name string, arg ...string) error {
 	}
 
 	cmd := exec.Command(name, arg...)
-	return run(cmd, logname)
+	return run(cmd, logname, e.Log)
 }

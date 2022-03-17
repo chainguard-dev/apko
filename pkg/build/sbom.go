@@ -16,7 +16,6 @@ package build
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -27,10 +26,10 @@ import (
 // GenerateSBOM runs the sbom generation
 func (bc *Context) GenerateSBOM() error {
 	if len(bc.SBOMFormats) == 0 {
-		log.Printf("skipping SBOM generation")
+		bc.Log.Printf("skipping SBOM generation")
 		return nil
 	}
-	log.Printf("generating SBOM")
+	bc.Log.Printf("generating SBOM")
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
 	s := sbom.NewWithWorkDir(bc.WorkDir)

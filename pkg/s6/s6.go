@@ -14,14 +14,20 @@
 
 package s6
 
+import (
+	"log"
+)
+
 type Services map[interface{}]interface{}
 
 type Context struct {
 	WorkDir string
+	Log     *log.Logger
 }
 
-func New(wd string) *Context {
+func New(wd string, logger *log.Logger) *Context {
 	return &Context{
 		WorkDir: wd,
+		Log:     logger,
 	}
 }

@@ -16,6 +16,7 @@ package build
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,9 @@ import (
 func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
 
-	c := Context{}
+	c := Context{
+		Log: log.Default(),
+	}
 	// Read the empty dir, passing only one empty location should err
 	_, err := c.loadSystemKeyring(dir)
 	require.Error(t, err)

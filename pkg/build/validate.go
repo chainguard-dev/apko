@@ -16,7 +16,6 @@ package build
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -30,7 +29,7 @@ func RequirePasswdFile(optional bool) Assertion {
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				log.Printf("warning: %s is missing", path)
+				bc.Log.Printf("warning: %s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/passwd file is missing: %w", err)
@@ -46,7 +45,7 @@ func RequireGroupFile(optional bool) Assertion {
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				log.Printf("warning: %s is missing", path)
+				bc.Log.Printf("warning: %s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/group file is missing: %w", err)
