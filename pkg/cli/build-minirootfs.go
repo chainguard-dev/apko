@@ -30,6 +30,7 @@ import (
 func BuildMinirootFS() *cobra.Command {
 	var useProot bool
 	var buildDate string
+	var buildArch string
 	var sbomPath string
 
 	cmd := &cobra.Command{
@@ -45,12 +46,14 @@ func BuildMinirootFS() *cobra.Command {
 				build.WithProot(useProot),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
+				build.WithArch(types.Architecture(buildArch)),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
+	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 
 	return cmd
@@ -62,9 +65,6 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
-
-	// ignore arch config
-	opts = append(opts, build.WithArch(types.Architecture(runtime.GOARCH)))
 
 	bc, err := build.New(wd, opts...)
 	if err != nil {
