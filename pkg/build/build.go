@@ -58,7 +58,7 @@ func (bc *Context) Summarize() {
 	bc.Log.Printf("  source date: %s", bc.SourceDateEpoch)
 	bc.Log.Printf("  SBOM output path: %s", bc.SBOMPath)
 	bc.Log.Printf("  arch: %v", bc.Arch.ToAPK())
-	bc.ImageConfiguration.Summarize()
+	bc.ImageConfiguration.Summarize(bc.Log)
 }
 
 func (bc *Context) BuildTarball() (string, error) {
@@ -172,7 +172,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	}
 	bc.executor = executor
 
-	bc.s6 = s6.New(bc.WorkDir)
+	bc.s6 = s6.New(bc.WorkDir, bc.Log)
 
 	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
 

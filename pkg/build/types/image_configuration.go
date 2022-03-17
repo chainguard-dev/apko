@@ -79,28 +79,28 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize() {
-	log.Printf("image configuration:")
-	log.Printf("  contents:")
-	log.Printf("    repositories: %v", ic.Contents.Repositories)
-	log.Printf("    keyring:      %v", ic.Contents.Keyring)
-	log.Printf("    packages:     %v", ic.Contents.Packages)
+func (ic *ImageConfiguration) Summarize(logger *log.Logger) {
+	logger.Printf("image configuration:")
+	logger.Printf("  contents:")
+	logger.Printf("    repositories: %v", ic.Contents.Repositories)
+	logger.Printf("    keyring:      %v", ic.Contents.Keyring)
+	logger.Printf("    packages:     %v", ic.Contents.Packages)
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
-		log.Printf("  entrypoint:")
-		log.Printf("    type:    %s", ic.Entrypoint.Type)
-		log.Printf("    cmd:     %s", ic.Entrypoint.Command)
-		log.Printf("    service: %v", ic.Entrypoint.Services)
+		logger.Printf("  entrypoint:")
+		logger.Printf("    type:    %s", ic.Entrypoint.Type)
+		logger.Printf("    cmd:     %s", ic.Entrypoint.Command)
+		logger.Printf("    service: %v", ic.Entrypoint.Services)
 	}
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
-		log.Printf("  accounts:")
-		log.Printf("    runas:  %s", ic.Accounts.RunAs)
-		log.Printf("    users:")
+		logger.Printf("  accounts:")
+		logger.Printf("    runas:  %s", ic.Accounts.RunAs)
+		logger.Printf("    users:")
 		for _, u := range ic.Accounts.Users {
-			log.Printf("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
+			logger.Printf("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
 		}
-		log.Printf("    groups:")
+		logger.Printf("    groups:")
 		for _, g := range ic.Accounts.Groups {
-			log.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
+			logger.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
 		}
 	}
 }
