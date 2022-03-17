@@ -69,7 +69,7 @@ bill of materials) describing the image contents.
 				build.WithExtraKeys(extraKeys),
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
-				build.WithArch(types.Architecture(buildArch)),
+				build.WithArch(types.ParseArchitecture(buildArch)),
 			)
 		},
 	}

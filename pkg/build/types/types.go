@@ -54,17 +54,19 @@ type ImageConfiguration struct {
 }
 
 // Architecture represents a CPU architecture for the container image.
-type Architecture string
+type Architecture struct{ s string }
 
-const (
-	_386    Architecture = "386"
-	amd64   Architecture = "amd64"
-	arm64   Architecture = "arm64"
-	armv6   Architecture = "arm/v6"
-	armv7   Architecture = "arm/v7"
-	ppc64le Architecture = "ppc64le"
-	riscv64 Architecture = "riscv64"
-	s390x   Architecture = "s390x"
+func (a Architecture) String() string { return a.s }
+
+var (
+	_386    = Architecture{"386"}
+	amd64   = Architecture{"amd64"}
+	arm64   = Architecture{"arm64"}
+	armv6   = Architecture{"arm/v6"}
+	armv7   = Architecture{"arm/v7"}
+	ppc64le = Architecture{"ppc64le"}
+	riscv64 = Architecture{"riscv64"}
+	s390x   = Architecture{"s390x"}
 )
 
 // AllArchs contains the standard set of supported architectures, which are
@@ -94,7 +96,7 @@ func (a Architecture) ToAPK() string {
 	case armv7:
 		return "armv7"
 	default:
-		return string(a)
+		return a.s
 	}
 }
 
@@ -108,9 +110,30 @@ func (a Architecture) ToOCIPlatform() *v1.Platform {
 		plat.Architecture = "arm"
 		plat.Variant = "v7"
 	default:
-		plat.Architecture = string(a)
+		plat.Architecture = a.s
 	}
 	return &plat
+}
+
+// ParseArchitecture parses a single architecture in string form, and returns
+// the equivalent Architecture value.
+//
+// Any apk-style arch string (e.g., "x86_64") is converted to the OCI-style
+// equivalent ("amd64").
+func ParseArchitecture(s string) Architecture {
+	switch s {
+	case "x86":
+		return _386
+	case "x86_64":
+		return amd64
+	case "aarch64":
+		return arm64
+	case "armhf":
+		return armv6
+	case "armv7":
+		return armv7
+	}
+	return Architecture{s}
 }
 
 // ParseArchitectures parses architecture values in string form, and returns
@@ -122,19 +145,7 @@ func (a Architecture) ToOCIPlatform() *v1.Platform {
 func ParseArchitectures(in []string) []Architecture {
 	uniq := map[Architecture]struct{}{}
 	for _, s := range in {
-		a := Architecture(s)
-		switch s {
-		case "x86":
-			a = _386
-		case "x86_64":
-			a = amd64
-		case "aarch64":
-			a = arm64
-		case "armhf":
-			a = armv6
-		case "armv7":
-			a = armv7
-		}
+		a := ParseArchitecture(s)
 		uniq[a] = struct{}{}
 	}
 	archs := make([]Architecture, 0, len(uniq))
@@ -142,7 +153,7 @@ func ParseArchitectures(in []string) []Architecture {
 		archs = append(archs, k)
 	}
 	sort.Slice(archs, func(i, j int) bool {
-		return archs[i] < archs[j]
+		return archs[i].s < archs[j].s
 	})
 	return archs
 }

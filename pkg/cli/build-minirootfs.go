@@ -46,7 +46,7 @@ func BuildMinirootFS() *cobra.Command {
 				build.WithProot(useProot),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
-				build.WithArch(types.Architecture(buildArch)),
+				build.WithArch(types.ParseArchitecture(buildArch)),
 			)
 		},
 	}

@@ -88,7 +88,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	cfg = cfg.DeepCopy()
 	cfg.Author = "github.com/chainguard-dev/apko"
-	cfg.Architecture = string(arch)
+	cfg.Architecture = arch.String()
 	cfg.OS = "linux"
 
 	if ic.Entrypoint.Command != "" {
@@ -170,7 +170,7 @@ func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags
 		archs = append(archs, arch)
 	}
 	sort.Slice(archs, func(i, j int) bool {
-		return archs[i] < archs[j]
+		return archs[i].String() < archs[j].String()
 	})
 	for _, arch := range archs {
 		img := imgs[arch]
