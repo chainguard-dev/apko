@@ -115,8 +115,8 @@ fmt: ## Format all go files
 checkfmt: SHELL := /usr/bin/env bash
 checkfmt: ## Check formatting of all go files
 	@ $(MAKE) --no-print-directory log-$@
- 	$(shell test -z "$(shell gofmt -l $(GOFILES) | tee /dev/stderr)")
- 	$(shell test -z "$(shell goimports -l $(GOFILES) | tee /dev/stderr)")
+	$(shell test -z "$(shell gofmt -l $(GOFILES) | tee /dev/stderr)")
+	$(shell test -z "$(shell goimports -l $(GOFILES) | tee /dev/stderr)")
 
 log-%:
 	@grep -h -E '^$*:.*?## .*$$' $(MAKEFILE_LIST) | \
