@@ -24,8 +24,9 @@ import (
 
 	"sigs.k8s.io/release-utils/version"
 
-	"chainguard.dev/apko/pkg/sbom/options"
 	purl "github.com/package-url/packageurl-go"
+
+	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier

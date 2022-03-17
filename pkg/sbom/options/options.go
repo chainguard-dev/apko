@@ -15,8 +15,9 @@
 package options
 
 import (
-	"chainguard.dev/apko/pkg/build/types"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 type Options struct {

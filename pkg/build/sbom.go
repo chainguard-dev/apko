@@ -18,9 +18,10 @@ import (
 	"fmt"
 	"log"
 
-	"chainguard.dev/apko/pkg/sbom"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+
+	"chainguard.dev/apko/pkg/sbom"
 )
 
 // GenerateSBOM runs the sbom generation

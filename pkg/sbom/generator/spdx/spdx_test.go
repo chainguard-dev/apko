@@ -21,11 +21,12 @@ import (
 	"regexp"
 	"testing"
 
-	"chainguard.dev/apko/pkg/sbom/options"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/command"
+
+	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 var testOpts = &options.Options{

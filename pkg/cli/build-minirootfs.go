@@ -21,9 +21,10 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/spf13/cobra"
+
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"github.com/spf13/cobra"
 )
 
 func BuildMinirootFS() *cobra.Command {

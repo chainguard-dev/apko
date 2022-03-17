@@ -23,8 +23,9 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
 
-	"chainguard.dev/apko/pkg/sbom/options"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 var errFake = fmt.Errorf("synthetic error")
