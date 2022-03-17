@@ -166,7 +166,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
 	}
 
-	executor, err := exec.New(bc.WorkDir, execOpts...)
+	executor, err := exec.New(bc.WorkDir, bc.Log, execOpts...)
 	if err != nil {
 		return nil, err
 	}

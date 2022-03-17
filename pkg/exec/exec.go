@@ -15,6 +15,7 @@
 package exec
 
 import (
+	"log"
 	"fmt"
 	"os/exec"
 )
@@ -23,13 +24,15 @@ type Executor struct {
 	WorkDir  string
 	UseProot bool
 	UseQemu  string
+	Log      *log.Logger
 }
 
 type Option func(*Executor) error
 
-func New(workDir string, opts ...Option) (*Executor, error) {
+func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		WorkDir: workDir,
+		Log: logger,
 	}
 
 	for _, opt := range opts {
