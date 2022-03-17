@@ -106,7 +106,7 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	if opts.ImageInfo.Repository != "" {
 		mmMain["repository_url"] = opts.ImageInfo.Repository
 	}
-	if opts.ImageInfo.Arch != "" {
+	if opts.ImageInfo.Arch.String() != "" {
 		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
 	}
 	rootComponent := Component{

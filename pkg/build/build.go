@@ -155,12 +155,13 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	}
 
 	// if arch is missing default to the running program's arch
-	if bc.Arch == "" {
-		bc.Arch = types.Architecture(runtime.GOARCH)
+	zeroArch := types.Architecture{}
+	if bc.Arch == zeroArch {
+		bc.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
 	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
-	if bc.UseProot && bc.Arch != types.Architecture(runtime.GOARCH) {
+	if bc.UseProot && bc.Arch != types.ParseArchitecture(runtime.GOARCH) {
 		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToAPK()))
 	}
 
