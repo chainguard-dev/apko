@@ -47,16 +47,17 @@ type Context struct {
 	Arch               types.Architecture
 	executor           *exec.Executor
 	s6                 *s6.Context
+	Log                *log.Logger
 }
 
 func (bc *Context) Summarize() {
-	log.Printf("build context:")
-	log.Printf("  working directory: %s", bc.WorkDir)
-	log.Printf("  tarball path: %s", bc.TarballPath)
-	log.Printf("  use proot: %t", bc.UseProot)
-	log.Printf("  source date: %s", bc.SourceDateEpoch)
-	log.Printf("  SBOM output path: %s", bc.SBOMPath)
-	log.Printf("  arch: %v", bc.Arch.ToAPK())
+	bc.Log.Printf("build context:")
+	bc.Log.Printf("  working directory: %s", bc.WorkDir)
+	bc.Log.Printf("  tarball path: %s", bc.TarballPath)
+	bc.Log.Printf("  use proot: %t", bc.UseProot)
+	bc.Log.Printf("  source date: %s", bc.SourceDateEpoch)
+	bc.Log.Printf("  SBOM output path: %s", bc.SBOMPath)
+	bc.Log.Printf("  arch: %v", bc.Arch.ToAPK())
 	bc.ImageConfiguration.Summarize()
 }
 
@@ -84,7 +85,7 @@ func (bc *Context) BuildTarball() (string, error) {
 		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
-	log.Printf("built image layer tarball as %s", outfile.Name())
+	bc.Log.Printf("built image layer tarball as %s", outfile.Name())
 	return outfile.Name(), nil
 }
 
@@ -131,6 +132,7 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		WorkDir: workDir,
+		Log: log.New(log.Writer(), "apko", log.LstdFlags | log.Lmsgprefix),
 	}
 
 	for _, opt := range opts {
@@ -172,6 +174,8 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 	bc.s6 = s6.New(bc.WorkDir)
 
+	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
+
 	return &bc, nil
 }
 
@@ -182,7 +186,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		log.Printf("loading config file: %s", configFile)
+		bc.Log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {
