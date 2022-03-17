@@ -133,7 +133,6 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		WorkDir: workDir,
-		Log:     log.New(log.Writer(), "apko", log.LstdFlags|log.Lmsgprefix),
 	}
 
 	for _, opt := range opts {
@@ -167,6 +166,8 @@ func New(workDir string, opts ...Option) (*Context, error) {
 }
 
 func (bc *Context) Refresh() error {
+	bc.UpdatePrefix()
+
 	if strings.HasPrefix(bc.TarballPath, "/tmp/apko") {
 		bc.TarballPath = ""
 	}
@@ -187,13 +188,11 @@ func (bc *Context) Refresh() error {
 
 	bc.s6 = s6.New(bc.WorkDir, bc.Log)
 
-	bc.UpdatePrefix()
-
 	return nil
 }
 
 func (bc *Context) UpdatePrefix() {
-	bc.Log.SetPrefix(fmt.Sprintf("%s: ", bc.Arch.ToAPK()))
+	bc.Log = log.New(log.Writer(), fmt.Sprintf("%s: ", bc.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
 }
 
 // Option is an option for the build context.
@@ -203,7 +202,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		bc.Log.Printf("loading config file: %s", configFile)
+		log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {

@@ -124,7 +124,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 
 	if err := oci.BuildImageTarballFromLayer(
 		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch,
-		bc.Log,
+		log.Default(),
 	); err != nil {
 		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
