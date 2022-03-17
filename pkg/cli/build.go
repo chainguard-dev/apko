@@ -22,11 +22,12 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/spf13/cobra"
+
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
-	"github.com/spf13/cobra"
 )
 
 func Build() *cobra.Command {

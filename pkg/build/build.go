@@ -22,12 +22,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
+
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/tarball"
-	"github.com/hashicorp/go-multierror"
 )
 
 type Context struct {

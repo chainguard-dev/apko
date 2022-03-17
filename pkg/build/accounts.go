@@ -18,9 +18,10 @@ import (
 	"log"
 	"path/filepath"
 
+	"golang.org/x/sync/errgroup"
+
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/passwd"
-	"golang.org/x/sync/errgroup"
 )
 
 func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {

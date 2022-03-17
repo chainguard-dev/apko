@@ -21,7 +21,6 @@ import (
 	"sort"
 	"time"
 
-	"chainguard.dev/apko/pkg/build/types"
 	ecr "github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -33,6 +32,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 var keychain = authn.NewMultiKeychain(

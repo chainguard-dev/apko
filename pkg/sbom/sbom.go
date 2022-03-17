@@ -21,10 +21,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"chainguard.dev/apko/pkg/sbom/generator"
-	"chainguard.dev/apko/pkg/sbom/options"
 	osr "github.com/dominodatalab/os-release"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+
+	"chainguard.dev/apko/pkg/sbom/generator"
+	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 var (

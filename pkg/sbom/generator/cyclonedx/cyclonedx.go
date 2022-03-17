@@ -20,8 +20,9 @@ import (
 	"os"
 	"strings"
 
-	"chainguard.dev/apko/pkg/sbom/options"
 	purl "github.com/package-url/packageurl-go"
+
+	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 type CycloneDX struct{}

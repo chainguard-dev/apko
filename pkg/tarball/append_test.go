@@ -20,8 +20,9 @@ import (
 	"io"
 	"testing"
 
-	"chainguard.dev/apko/pkg/tarball"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/tarball"
 )
 
 //go:embed testdata

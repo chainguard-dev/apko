@@ -18,10 +18,11 @@ import (
 	"fmt"
 	"testing"
 
-	"chainguard.dev/apko/pkg/sbom"
-	"chainguard.dev/apko/pkg/sbom/sbomfakes"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+
+	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/sbomfakes"
 )
 
 var errFake = fmt.Errorf("synthetic error")
