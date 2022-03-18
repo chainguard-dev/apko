@@ -146,7 +146,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				if err != nil {
 					return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 				}
-				defer os.Remove(layerTarGZ)
+				// TODO(kaniini): clean up everything correctly for multitag scenario
+				// defer os.Remove(layerTarGZ)
 
 				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch, bc.Log)
 				if err != nil {
