@@ -1,6 +1,19 @@
-# Changes from 0.1.2 to ???
+# Changes from 0.1.2 to 0.2.0
 
 * New option `--use-proot` for rootless image builds.
+
+* Support for multi-arch builds in `apko publish`, this requires
+  the qemu emulators to be installed.  If you do not want to use
+  qemu emulation, then use the `--arch` option to do a single
+  architecture build.
+
+* Added `--keyring-append` and `--repositories-append` options.
+
+* Added management of UIDs and GIDs, for an example of how to use
+  this functionality, see the `examples/alpine-base-rootless.yaml`
+  file.
+
+* Added support for multiple tags in `apko publish`.
 
 # Changes from 0.1.1 to 0.1.2
 
