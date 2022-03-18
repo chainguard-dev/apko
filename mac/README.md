@@ -10,7 +10,7 @@ This page documents workarounds to run
 
 We maintain an example configuration file for
 [Lima](https://github.com/lima-vm/lima)
-(see [`lima/ako-playground.yaml`](./lima/apko-playground.yaml)).
+(see [`lima/apko-playground.yaml`](./lima/apko-playground.yaml)).
 
 This provides a VM with the following:
 
