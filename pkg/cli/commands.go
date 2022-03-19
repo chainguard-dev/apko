@@ -15,6 +15,7 @@
 package cli
 
 import (
+	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/release-utils/version"
 )
@@ -26,6 +27,7 @@ func New() *cobra.Command {
 		SilenceUsage:      true,
 	}
 
+	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
 	cmd.AddCommand(Build())
 	cmd.AddCommand(BuildMinirootFS())
 	cmd.AddCommand(Publish())
