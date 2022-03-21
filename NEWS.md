@@ -1,3 +1,15 @@
+# Changes from 0.2.1 to 0.2.2
+
+* Added `apko login` as alternative to `docker login`.
+
+* Fixes for logging in "early" build contexts for paths outside
+  `apko publish`.
+
+* Provide a default environment for the image configuration.
+
+* Set the `mediaType` on OCI indexes when publishing so that
+  `ko` can use them correctly.
+
 # Changes from 0.2.0 to 0.2.1
 
 * Minor brown-paper-bag fix for multitagging.
