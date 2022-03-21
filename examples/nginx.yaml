@@ -9,3 +9,7 @@ entrypoint:
   type: service-bundle
   services:
     nginx: /usr/sbin/nginx -c /etc/nginx/nginx.conf -g "daemon off;"
+
+# optional environment configuration
+environment:
+  PATH: /usr/sbin:/sbin:/usr/bin:/bin

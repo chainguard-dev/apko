@@ -18,3 +18,7 @@ accounts:
     - username: nginx
       uid: 10000
   run-as: nginx
+
+# optional environment configuration
+environment:
+  PATH: /usr/sbin:/sbin:/usr/bin:/bin
