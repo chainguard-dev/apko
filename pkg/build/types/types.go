@@ -50,7 +50,8 @@ type ImageConfiguration struct {
 		Users  []User
 		Groups []Group
 	}
-	Archs []Architecture
+	Archs       []Architecture
+	Environment map[string]string
 }
 
 // Architecture represents a CPU architecture for the container image.

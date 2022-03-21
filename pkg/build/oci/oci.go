@@ -98,6 +98,21 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
 	}
 
+	if len(ic.Environment) > 0 {
+		envs := []string{}
+
+		for k, v := range ic.Environment {
+			envs = append(envs, fmt.Sprintf("%s=%s", k, v))
+		}
+
+		cfg.Config.Env = envs
+	} else {
+		cfg.Config.Env = []string{
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+		}
+	}
+
 	if ic.Accounts.RunAs != "" {
 		cfg.Config.User = ic.Accounts.RunAs
 	}
