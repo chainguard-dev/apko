@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -164,7 +165,7 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 }
 
 func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags ...string) (name.Digest, error) {
-	var idx v1.ImageIndex = empty.Index
+	idx := mutate.IndexMediaType(empty.Index, ggcrtypes.DockerManifestList)
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
