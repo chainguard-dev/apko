@@ -25,7 +25,7 @@ spec:
       description: Where to publish an image.
     - name: path
       description: The bundle-relative path to the config file to build.
-      default: ./config.yaml
+      default: .apko.yaml
 
   results:
     - name: IMAGES
