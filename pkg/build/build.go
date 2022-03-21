@@ -133,6 +133,7 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		WorkDir: workDir,
+		Log:     log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
 	}
 
 	for _, opt := range opts {
@@ -192,7 +193,7 @@ func (bc *Context) Refresh() error {
 }
 
 func (bc *Context) UpdatePrefix() {
-	bc.Log = log.New(log.Writer(), fmt.Sprintf("%s: ", bc.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
+	bc.Log = log.New(log.Writer(), fmt.Sprintf("apko (%s): ", bc.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
 }
 
 // Option is an option for the build context.
