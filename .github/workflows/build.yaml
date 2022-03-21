@@ -26,7 +26,7 @@ jobs:
 
       - uses: goreleaser/goreleaser-action@b953231f81b8dfd023c58e0854a721e35037f28b # v2.8.1
         with:
-          version: v1.5.0
+          version: v1.7.0
           install-only: true
 
       - name: snapshot
