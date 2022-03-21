@@ -15,7 +15,7 @@
 package build
 
 import (
-	"log"
+	"os"
 	"path/filepath"
 
 	"golang.org/x/sync/errgroup"
@@ -24,19 +24,24 @@ import (
 	"chainguard.dev/apko/pkg/passwd"
 )
 
-func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
+func (bc *Context) appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
+	bc.Log.Printf("creating group %d(%s)", group.GID, group.GroupName)
+
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
 		GID:       group.GID,
 		Members:   group.Members,
 		Password:  "x",
 	}
+
 	return append(groups, ge)
 }
 
-func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
+func (bc *Context) appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
+	bc.Log.Printf("creating user %d(%s)", user.UID, user.UserName)
+
 	if user.GID == 0 {
-		log.Printf("guessing unset GID for user %v", user)
+		bc.Log.Printf("warning: guessing unset GID for user %v", user)
 		user.GID = user.UID
 	}
 
@@ -49,6 +54,13 @@ func appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
 		Info:     "Account created by apko",
 		Shell:    "/bin/sh",
 	}
+
+	bc.Log.Printf("creating home directory for user %s", ue.UserName)
+	targetHomedir := filepath.Join(bc.WorkDir, ue.HomeDir)
+	if err := os.MkdirAll(targetHomedir, 0755); err != nil {
+		bc.Log.Printf("warning: unable to make home directory (%q) for user %s: %v", targetHomedir, ue.UserName, err)
+	}
+
 	return append(users, ue)
 }
 
@@ -68,7 +80,7 @@ func (bc *Context) MutateAccounts() error {
 			}
 
 			for _, g := range ic.Accounts.Groups {
-				gf.Entries = appendGroup(gf.Entries, g)
+				gf.Entries = bc.appendGroup(gf.Entries, g)
 			}
 
 			if err := gf.WriteFile(path); err != nil {
@@ -90,7 +102,7 @@ func (bc *Context) MutateAccounts() error {
 			}
 
 			for _, u := range ic.Accounts.Users {
-				uf.Entries = appendUser(uf.Entries, u)
+				uf.Entries = bc.appendUser(uf.Entries, u)
 			}
 
 			if err := uf.WriteFile(path); err != nil {
