@@ -71,6 +71,10 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 		return err
 	}
 
+	if err := bc.Refresh(); err != nil {
+		return err
+	}
+
 	if len(bc.ImageConfiguration.Archs) != 0 {
 		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Arch)
 	}

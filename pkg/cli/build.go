@@ -98,6 +98,10 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		return err
 	}
 
+	if err := bc.Refresh(); err != nil {
+		return err
+	}
+
 	if bc.SBOMPath == "" {
 		dir, err := filepath.Abs(outputTarGZ)
 		if err != nil {
