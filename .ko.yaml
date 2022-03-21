@@ -13,8 +13,8 @@
 # limitations under the License.
 
 baseImageOverrides:
-  # TODO(mattmoor): Talk to kaniini about the best image to use here.
-  chainguard.dev/apko: docker.io/alpine:latest
+  # This self-hosts our own Alpine base image.
+  chainguard.dev/apko: ghcr.io/distroless/alpine-base:latest
 
 builds:
 - id: apko
