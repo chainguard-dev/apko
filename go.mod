@@ -12,7 +12,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.4.1
 	github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a
 	github.com/spf13/cobra v1.4.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	gitlab.alpinelinux.org/alpine/go v0.3.1
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
