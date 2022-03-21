@@ -44,7 +44,6 @@ spec:
       args:
       - publish
       - --image-refs=/tekton/results/IMAGES
-      - --arch=x86_64
       - $(params["path"])
       - $(params["dev.mink.images.target"])
 
