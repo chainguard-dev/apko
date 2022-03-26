@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"syscall"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
 )
@@ -39,6 +40,10 @@ func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
 	}
 
 	return ctx.writeTar(tw, fsys)
+}
+
+func hasHardlinks(fi fs.FileInfo) bool {
+	return fi.Sys().(*syscall.Stat_t).Nlink > 1
 }
 
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
