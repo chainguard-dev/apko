@@ -46,7 +46,17 @@ func hasHardlinks(fi fs.FileInfo) bool {
 	return fi.Sys().(*syscall.Stat_t).Nlink > 1
 }
 
+func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
+	stat := fi.Sys().(*syscall.Stat_t)
+	if stat == nil {
+		return 0, fmt.Errorf("unable to stat underlying file")
+	}
+	return stat.Ino, nil
+}
+
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
+	seenFiles := map[uint64]string{}
+
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		// skip the root path, superfluous
 		if path == "." {
@@ -99,6 +109,21 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Gname = ctx.OverrideGname
 		}
 
+		if !info.IsDir() && hasHardlinks(info) {
+			inode, err := getInodeFromFileInfo(info)
+			if err != nil {
+				return err
+			}
+
+			if oldpath, ok := seenFiles[inode]; ok {
+				header.Typeflag = tar.TypeLink
+				header.Linkname = oldpath
+				header.Size = 0
+			} else {
+				seenFiles[inode] = header.Name
+			}
+		}
+
 		if ctx.UseChecksums {
 			header.PAXRecords = map[string]string{}
 
@@ -127,7 +152,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			return err
 		}
 
-		if info.Mode().IsRegular() {
+		if info.Mode().IsRegular() && header.Size > 0 {
 			data, err := fsys.Open(path)
 			if err != nil {
 				return err
