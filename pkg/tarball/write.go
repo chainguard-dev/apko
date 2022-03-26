@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"syscall"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
 )
@@ -41,7 +42,41 @@ func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
 	return ctx.writeTar(tw, fsys)
 }
 
+func hasHardlinks(fi fs.FileInfo) bool {
+	if stat := fi.Sys(); stat != nil {
+		si := stat.(*syscall.Stat_t)
+
+		// if we don't have inodes, we just assume the filesystem
+		// does not support hardlinks
+		if si == nil {
+			return false
+		}
+
+		return si.Nlink > 1
+	}
+
+	return false
+}
+
+func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
+	if stat := fi.Sys(); stat != nil {
+		si := stat.(*syscall.Stat_t)
+
+		// if we don't have inodes, we just assume the filesystem
+		// does not support hardlinks
+		if si == nil {
+			return 0, fmt.Errorf("unable to stat underlying file")
+		}
+
+		return si.Ino, nil
+	}
+
+	return 0, fmt.Errorf("unable to stat underlying file")
+}
+
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
+	seenFiles := map[uint64]string{}
+
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		// skip the root path, superfluous
 		if path == "." {
@@ -94,6 +129,21 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Gname = ctx.OverrideGname
 		}
 
+		if !info.IsDir() && hasHardlinks(info) {
+			inode, err := getInodeFromFileInfo(info)
+			if err != nil {
+				return err
+			}
+
+			if oldpath, ok := seenFiles[inode]; ok {
+				header.Typeflag = tar.TypeLink
+				header.Linkname = oldpath
+				header.Size = 0
+			} else {
+				seenFiles[inode] = header.Name
+			}
+		}
+
 		if ctx.UseChecksums {
 			header.PAXRecords = map[string]string{}
 
@@ -122,7 +172,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			return err
 		}
 
-		if info.Mode().IsRegular() {
+		if info.Mode().IsRegular() && header.Size > 0 {
 			data, err := fsys.Open(path)
 			if err != nil {
 				return err
