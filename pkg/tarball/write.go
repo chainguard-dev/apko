@@ -43,15 +43,35 @@ func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
 }
 
 func hasHardlinks(fi fs.FileInfo) bool {
-	return fi.Sys().(*syscall.Stat_t).Nlink > 1
+	if stat := fi.Sys(); stat != nil {
+		si := stat.(*syscall.Stat_t)
+
+		// if we don't have inodes, we just assume the filesystem
+		// does not support hardlinks
+		if si == nil {
+			return false
+		}
+
+		return si.Nlink > 1
+	}
+
+	return false
 }
 
 func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
-	stat := fi.Sys().(*syscall.Stat_t)
-	if stat == nil {
-		return 0, fmt.Errorf("unable to stat underlying file")
+	if stat := fi.Sys(); stat != nil {
+		si := stat.(*syscall.Stat_t)
+
+		// if we don't have inodes, we just assume the filesystem
+		// does not support hardlinks
+		if si == nil {
+			return 0, fmt.Errorf("unable to stat underlying file")
+		}
+
+		return si.Ino, nil
 	}
-	return stat.Ino, nil
+
+	return 0, fmt.Errorf("unable to stat underlying file")
 }
 
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
