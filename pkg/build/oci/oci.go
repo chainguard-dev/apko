@@ -33,6 +33,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/sigstore/cosign/pkg/oci"
+	ocimutate "github.com/sigstore/cosign/pkg/oci/mutate"
+	"github.com/sigstore/cosign/pkg/oci/signed"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -45,22 +48,22 @@ var keychain = authn.NewMultiKeychain(
 	github.Keychain,
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) (v1.Image, error) {
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) (oci.SignedImage, error) {
 	logger.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
 	if err != nil {
-		return empty.Image, fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+		return nil, fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
 	}
 
 	digest, err := v1Layer.Digest()
 	if err != nil {
-		return empty.Image, fmt.Errorf("could not calculate layer digest: %w", err)
+		return nil, fmt.Errorf("could not calculate layer digest: %w", err)
 	}
 
 	diffid, err := v1Layer.DiffID()
 	if err != nil {
-		return empty.Image, fmt.Errorf("could not calculate layer diff id: %w", err)
+		return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
 	logger.Printf("OCI layer digest: %v", digest)
@@ -79,12 +82,12 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	v1Image, err := mutate.Append(empty.Image, adds...)
 	if err != nil {
-		return empty.Image, fmt.Errorf("unable to append OCI layer to empty image: %w", err)
+		return nil, fmt.Errorf("unable to append OCI layer to empty image: %w", err)
 	}
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return empty.Image, fmt.Errorf("unable to get OCI config file: %w", err)
+		return nil, fmt.Errorf("unable to get OCI config file: %w", err)
 	}
 
 	cfg = cfg.DeepCopy()
@@ -119,10 +122,22 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
-		return empty.Image, fmt.Errorf("unable to update OCI config file: %w", err)
+		return nil, fmt.Errorf("unable to update OCI config file: %w", err)
 	}
 
-	return v1Image, nil
+	si := signed.Image(v1Image)
+
+	// TODO(#145): Attach the SBOM, e.g.
+	// f, err := static.NewFile(sbom, static.WithLayerMediaType(mt))
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// si, err = ocimutate.AttachFileToImage(si, "sbom", f)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	return si, nil
 }
 
 func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
@@ -144,11 +159,13 @@ func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ 
 	return nil
 }
 
-func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Digest, error) {
+func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
+
+	// TODO(#145): write any attached SBOMs/signatures.
 
 	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
@@ -156,7 +173,7 @@ func publishTagFromImage(image v1.Image, imageRef string, hash v1.Hash) (name.Di
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, tags ...string) (name.Digest, v1.Image, error) {
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, tags ...string) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -179,8 +196,8 @@ func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, creat
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags ...string) (name.Digest, error) {
-	idx := mutate.IndexMediaType(empty.Index, ggcrtypes.DockerManifestList)
+func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
+	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, ggcrtypes.DockerManifestList))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
@@ -205,7 +222,7 @@ func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags
 			return name.Digest{}, fmt.Errorf("failed to compute size: %w", err)
 		}
 
-		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
+		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
 				MediaType: mt,
@@ -233,11 +250,13 @@ func PublishIndex(imgs map[types.Architecture]v1.Image, logger *log.Logger, tags
 	return digest, nil
 }
 
-func publishTagFromIndex(index v1.ImageIndex, imageRef string, hash v1.Hash) (name.Digest, error) {
+func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Hash) (name.Digest, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
+
+	// TODO(#145): write any attached SBOMs/signatures (recursively)
 
 	err = remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
 	if err != nil {
