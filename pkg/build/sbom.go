@@ -25,16 +25,16 @@ import (
 
 // GenerateSBOM runs the sbom generation
 func (bc *Context) GenerateSBOM() error {
-	if len(bc.SBOMFormats) == 0 {
-		bc.Log.Printf("skipping SBOM generation")
+	if len(bc.Options.SBOMFormats) == 0 {
+		bc.Options.Log.Printf("skipping SBOM generation")
 		return nil
 	}
-	bc.Log.Printf("generating SBOM")
+	bc.Options.Log.Printf("generating SBOM")
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
-	s := sbom.NewWithWorkDir(bc.WorkDir, bc.Arch)
+	s := sbom.NewWithWorkDir(bc.Options.WorkDir, bc.Options.Arch)
 
-	v1Layer, err := v1tar.LayerFromFile(bc.TarballPath)
+	v1Layer, err := v1tar.LayerFromFile(bc.Options.TarballPath)
 	if err != nil {
 		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
 	}
@@ -45,10 +45,10 @@ func (bc *Context) GenerateSBOM() error {
 	}
 
 	// Parse the image reference
-	if len(bc.Tags) > 0 {
-		tag, err := name.NewTag(bc.Tags[0])
+	if len(bc.Options.Tags) > 0 {
+		tag, err := name.NewTag(bc.Options.Tags[0])
 		if err != nil {
-			return fmt.Errorf("parsing tag %s: %w", bc.Tags[0], err)
+			return fmt.Errorf("parsing tag %s: %w", bc.Options.Tags[0], err)
 		}
 		s.Options.ImageInfo.Tag = tag.TagStr()
 		s.Options.ImageInfo.Name = tag.String()
@@ -60,11 +60,11 @@ func (bc *Context) GenerateSBOM() error {
 	if err != nil {
 		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
-	s.Options.ImageInfo.Arch = bc.Arch
+	s.Options.ImageInfo.Arch = bc.Options.Arch
 	s.Options.ImageInfo.Digest = digest.String()
-	s.Options.OutputDir = bc.SBOMPath
+	s.Options.OutputDir = bc.Options.SBOMPath
 	s.Options.Packages = packages
-	s.Options.Formats = bc.SBOMFormats
+	s.Options.Formats = bc.Options.SBOMFormats
 
 	if _, err := s.Generate(); err != nil {
 		return fmt.Errorf("generating SBOMs: %w", err)

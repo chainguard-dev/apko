@@ -24,12 +24,12 @@ type Assertion func(*Context) error
 
 func RequirePasswdFile(optional bool) Assertion {
 	return func(bc *Context) error {
-		path := filepath.Join(bc.WorkDir, "etc", "passwd")
+		path := filepath.Join(bc.Options.WorkDir, "etc", "passwd")
 
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Log.Printf("warning: %s is missing", path)
+				bc.Options.Log.Printf("warning: %s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/passwd file is missing: %w", err)
@@ -40,12 +40,12 @@ func RequirePasswdFile(optional bool) Assertion {
 
 func RequireGroupFile(optional bool) Assertion {
 	return func(bc *Context) error {
-		path := filepath.Join(bc.WorkDir, "etc", "group")
+		path := filepath.Join(bc.Options.WorkDir, "etc", "group")
 
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Log.Printf("warning: %s is missing", path)
+				bc.Options.Log.Printf("warning: %s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/group file is missing: %w", err)

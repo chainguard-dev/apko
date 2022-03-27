@@ -28,7 +28,9 @@ func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
 
 	c := Context{
-		Log: log.Default(),
+		Options: Options{
+			Log: log.Default(),
+		},
 	}
 	// Read the empty dir, passing only one empty location should err
 	_, err := c.loadSystemKeyring(dir)

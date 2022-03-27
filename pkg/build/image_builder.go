@@ -25,12 +25,12 @@ import (
 
 // Builds the image in Context.WorkDir.
 func (bc *Context) BuildImage() error {
-	bc.Log.Printf("doing pre-flight checks")
+	bc.Options.Log.Printf("doing pre-flight checks")
 	if err := bc.ImageConfiguration.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	bc.Log.Printf("building image fileystem in %s", bc.WorkDir)
+	bc.Options.Log.Printf("building image fileystem in %s", bc.Options.WorkDir)
 
 	// initialize apk
 	if err := bc.InitApkDB(); err != nil {
@@ -97,13 +97,13 @@ func (bc *Context) BuildImage() error {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
-	bc.Log.Printf("finished building filesystem in %s", bc.WorkDir)
+	bc.Options.Log.Printf("finished building filesystem in %s", bc.Options.WorkDir)
 	return nil
 }
 
 // Installs the BusyBox symlinks, if appropriate.
 func (bc *Context) InstallBusyboxSymlinks() error {
-	path := filepath.Join(bc.WorkDir, "bin", "busybox")
+	path := filepath.Join(bc.Options.WorkDir, "bin", "busybox")
 
 	_, err := os.Stat(path)
 	if err != nil {

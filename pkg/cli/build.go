@@ -102,19 +102,19 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		return err
 	}
 
-	if bc.SBOMPath == "" {
+	if bc.Options.SBOMPath == "" {
 		dir, err := filepath.Abs(outputTarGZ)
 		if err != nil {
 			return fmt.Errorf("resolving output file path: %w", err)
 		}
-		bc.SBOMPath = filepath.Dir(dir)
+		bc.Options.SBOMPath = filepath.Dir(dir)
 	}
 
 	if len(bc.ImageConfiguration.Archs) != 0 {
-		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Arch)
+		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
 	}
 
-	bc.Log.Printf("building image '%s'", imageRef)
+	bc.Options.Log.Printf("building image '%s'", imageRef)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
@@ -127,7 +127,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 	}
 
 	if err := oci.BuildImageTarballFromLayer(
-		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch,
+		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
 		log.Default(),
 	); err != nil {
 		return fmt.Errorf("failed to build OCI image: %w", err)
