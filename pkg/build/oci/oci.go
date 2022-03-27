@@ -15,6 +15,7 @@
 package oci
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -35,7 +36,9 @@ import (
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sigstore/cosign/pkg/oci"
 	ocimutate "github.com/sigstore/cosign/pkg/oci/mutate"
+	ociremote "github.com/sigstore/cosign/pkg/oci/remote"
 	"github.com/sigstore/cosign/pkg/oci/signed"
+	"github.com/sigstore/cosign/pkg/oci/walk"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -165,7 +168,11 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
-	// TODO(#145): write any attached SBOMs/signatures.
+	// Write any attached SBOMs/signatures.
+	wp := writePeripherals(imgRef, remote.WithAuthFromKeychain(keychain))
+	if err := wp(context.Background(), image); err != nil {
+		return name.Digest{}, err
+	}
 
 	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
@@ -256,11 +263,62 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
-	// TODO(#145): write any attached SBOMs/signatures (recursively)
+	// Write any attached SBOMs/signatures (recursively)
+	wp := writePeripherals(ref, remote.WithAuthFromKeychain(keychain))
+	if err := walk.SignedEntity(context.Background(), index, wp); err != nil {
+		return name.Digest{}, err
+	}
 
 	err = remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return ref.Context().Digest(hash.String()), nil
+}
+
+func writePeripherals(tag name.Reference, opt ...remote.Option) walk.Fn {
+	ociOpts := []ociremote.Option{ociremote.WithRemoteOptions(opt...)}
+
+	// Respect COSIGN_REPOSITORY
+	targetRepoOverride, err := ociremote.GetEnvTargetRepository()
+	if err != nil {
+		return func(ctx context.Context, se oci.SignedEntity) error { return err }
+	}
+	if (targetRepoOverride != name.Repository{}) {
+		ociOpts = append(ociOpts, ociremote.WithTargetRepository(targetRepoOverride))
+	}
+
+	return func(ctx context.Context, se oci.SignedEntity) error {
+		h, err := se.(interface{ Digest() (v1.Hash, error) }).Digest()
+		if err != nil {
+			return err
+		}
+
+		// TODO(mattmoor): We should have a WriteSBOM helper upstream.
+		digest := tag.Context().Digest(h.String()) // Don't *get* the tag, we know the digest
+		ref, err := ociremote.SBOMTag(digest, ociOpts...)
+		if err != nil {
+			return err
+		}
+		if f, err := se.Attachment("sbom"); err != nil {
+			// Some levels (e.g. the index) may not have an SBOM,
+			// just like some levels may not have signatures/attestations.
+		} else if err := remote.Write(ref, f, opt...); err != nil {
+			return fmt.Errorf("writing sbom: %w", err)
+		} else {
+			log.Printf("Published SBOM %v", ref)
+		}
+
+		// TODO(mattmoor): Don't enable this until we start signing or it
+		// will publish empty signatures!
+		// if err := ociremote.WriteSignatures(tag.Context(), se, ociOpts...); err != nil {
+		// 	return err
+		// }
+
+		// TODO(mattmoor): Are there any attestations we want to write?
+		// if err := ociremote.WriteAttestations(tag.Context(), se, ociOpts...); err != nil {
+		// 	return err
+		// }
+		return nil
+	}
 }
