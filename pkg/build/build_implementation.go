@@ -30,7 +30,9 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-type BuildImplementation interface {
+//counterfeiter:generate . buildImplementation
+
+type buildImplementation interface {
 	Refresh(*Options) (*s6.Context, *exec.Executor, error)
 	BuildTarball(o *Options) (string, error)
 	GenerateSBOM(o *Options) error

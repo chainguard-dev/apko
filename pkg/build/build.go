@@ -14,6 +14,8 @@
 
 package build
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"fmt"
 	"log"
@@ -30,7 +32,7 @@ import (
 )
 
 type Context struct {
-	impl               BuildImplementation
+	impl               buildImplementation
 	ImageConfiguration types.ImageConfiguration
 	executor           *exec.Executor
 	s6                 *s6.Context
@@ -99,6 +101,7 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
 		Options: DefaultOptions,
+		impl:    &defaultBuildImplementation{},
 	}
 	bc.Options.WorkDir = workDir
 
