@@ -20,19 +20,17 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
-	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/s6"
-	"chainguard.dev/apko/pkg/tarball"
 )
 
 type Context struct {
+	impl               BuildImplementation
 	ImageConfiguration types.ImageConfiguration
 	executor           *exec.Executor
 	s6                 *s6.Context
@@ -40,60 +38,22 @@ type Context struct {
 	Options            Options
 }
 
-type Options struct {
-	WantSBOM        bool
-	UseProot        bool
-	WorkDir         string
-	TarballPath     string
-	Tags            []string
-	SourceDateEpoch time.Time
-	SBOMPath        string
-	SBOMFormats     []string
-	ExtraKeyFiles   []string
-	ExtraRepos      []string
-	Arch            types.Architecture
-	Log             *log.Logger
+var DefaultOptions = Options{
+	Log: log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
 }
-
-var DefaultOptions Options
 
 func (bc *Context) Summarize() {
 	bc.Options.Log.Printf("build context:")
-	bc.Options.Log.Printf("  working directory: %s", bc.Options.WorkDir)
-	bc.Options.Log.Printf("  tarball path: %s", bc.Options.TarballPath)
-	bc.Options.Log.Printf("  use proot: %t", bc.Options.UseProot)
-	bc.Options.Log.Printf("  source date: %s", bc.Options.SourceDateEpoch)
-	bc.Options.Log.Printf("  SBOM output path: %s", bc.Options.SBOMPath)
-	bc.Options.Log.Printf("  arch: %v", bc.Options.Arch.ToAPK())
+	bc.Options.Summarize()
 	bc.ImageConfiguration.Summarize(bc.Options.Log)
 }
 
 func (bc *Context) BuildTarball() (string, error) {
-	var outfile *os.File
-	var err error
+	return bc.impl.BuildTarball(&bc.Options)
+}
 
-	if bc.Options.TarballPath != "" {
-		outfile, err = os.Create(bc.Options.TarballPath)
-	} else {
-		outfile, err = os.CreateTemp("", "apko-*.tar.gz")
-	}
-	if err != nil {
-		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
-	}
-	bc.Options.TarballPath = outfile.Name()
-	defer outfile.Close()
-
-	tw, err := tarball.NewContext(tarball.WithSourceDateEpoch(bc.Options.SourceDateEpoch))
-	if err != nil {
-		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
-	}
-
-	if err := tw.WriteArchive(outfile, apkofs.DirFS(bc.Options.WorkDir)); err != nil {
-		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
-	}
-
-	bc.Options.Log.Printf("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), nil
+func (bc *Context) GenerateSBOM() error {
+	return bc.impl.GenerateSBOM(&bc.Options)
 }
 
 func (bc *Context) BuildLayer() (string, error) {
@@ -141,7 +101,6 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		Options: DefaultOptions,
 	}
 	bc.Options.WorkDir = workDir
-	bc.Options.Log = log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix)
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -176,29 +135,21 @@ func New(workDir string, opts ...Option) (*Context, error) {
 func (bc *Context) Refresh() error {
 	bc.UpdatePrefix()
 
-	if strings.HasPrefix(bc.Options.TarballPath, "/tmp/apko") {
-		bc.Options.TarballPath = ""
-	}
-
-	hostArch := types.ParseArchitecture(runtime.GOARCH)
-
-	execOpts := []exec.Option{exec.WithProot(bc.Options.UseProot)}
-	if bc.Options.UseProot && !bc.Options.Arch.Compatible(hostArch) {
-		bc.Options.Log.Printf("%q requires QEMU (not compatible with %q)", bc.Options.Arch, hostArch)
-		execOpts = append(execOpts, exec.WithQemu(bc.Options.Arch.ToQEmu()))
-	}
-
-	executor, err := exec.New(bc.Options.WorkDir, bc.Options.Log, execOpts...)
+	s6, executor, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
 		return err
 	}
-	bc.executor = executor
 
-	bc.s6 = s6.New(bc.Options.WorkDir, bc.Options.Log)
+	bc.executor = executor
+	bc.s6 = s6
 
 	return nil
 }
 
 func (bc *Context) UpdatePrefix() {
-	bc.Options.Log = log.New(log.Writer(), fmt.Sprintf("apko (%s): ", bc.Options.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
+	bc.Options.Log = log.New(
+		log.Writer(),
+		fmt.Sprintf("apko (%s): ", bc.Options.Arch.ToAPK()),
+		log.LstdFlags|log.Lmsgprefix,
+	)
 }
