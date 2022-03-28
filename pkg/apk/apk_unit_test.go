@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package build
+package apk
 
 import (
 	"fmt"
@@ -22,17 +22,19 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/options"
 )
 
 func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
-	di := &defaultBuildImplementation{}
-	o := &Options{
+	di := apkDefaultImplementation{}
+	o := &options.Options{
 		Log: log.Default(),
 	}
 
 	// Read the empty dir, passing only one empty location should err
-	_, err := di.loadSystemKeyring(o, dir)
+	_, err := di.LoadSystemKeyring(o, dir)
 	require.Error(t, err)
 
 	// Write some dummy keyfiles
@@ -49,7 +51,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 	))
 
 	// Successful read
-	keyFiles, err := di.loadSystemKeyring(o, dir)
+	keyFiles, err := di.LoadSystemKeyring(o, dir)
 	require.NoError(t, err)
 	require.Len(t, keyFiles, 5)
 	// should not take into account extraneous files
@@ -57,7 +59,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 
 	// Unreadable directory should return error
 	require.NoError(t, os.Chmod(dir, 0o000))
-	_, err = di.loadSystemKeyring(o, dir)
+	_, err = di.LoadSystemKeyring(o, dir)
 	require.Error(t, err)
 
 	// reset permissions back to 0700 or the tmpdir won't be removed
