@@ -28,6 +28,8 @@ jobs:
     - uses: imjasonh/setup-ko@2c3450ca27f6e6f2b02e72a40f2163c281a1f675 # v0.4
       with:
         version: v0.11.1
+    - uses: imjasonh/setup-crane@v0.1
+    - uses: sigstore/cosign-installer@main
 
     - uses: chainguard-dev/actions/setup-kind@main
       with:
@@ -56,9 +58,16 @@ jobs:
     - name: Build examples
       run: |
         for cfg in $(find ./examples/ -name '*.yaml'); do
+          echo "::group:: $cfg"
           DIGEST=$(mink run task apko -- --path=$cfg)
 
           echo $cfg produced: $DIGEST
+
+          # Each of the per-architecture images produced should have an SBOM attached to it.
+          for d in $(crane manifest "${DIGEST}" | jq -r '.manifests[].digest'); do
+            cosign download sbom ${KO_DOCKER_REPO}/image@${d}
+          done
+          echo ::endgroup::
         done
 
     - uses: chainguard-dev/actions/kind-diag@main

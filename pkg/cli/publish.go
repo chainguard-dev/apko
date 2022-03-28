@@ -121,7 +121,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 		defer os.Remove(layerTarGZ)
 
-		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.Tags...)
+		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
@@ -149,7 +149,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				// TODO(kaniini): clean up everything correctly for multitag scenario
 				// defer os.Remove(layerTarGZ)
 
-				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log)
+				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats)
 				if err != nil {
 					return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 				}

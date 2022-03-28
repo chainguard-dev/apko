@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -38,7 +40,9 @@ import (
 	ocimutate "github.com/sigstore/cosign/pkg/oci/mutate"
 	ociremote "github.com/sigstore/cosign/pkg/oci/remote"
 	"github.com/sigstore/cosign/pkg/oci/signed"
+	"github.com/sigstore/cosign/pkg/oci/static"
 	"github.com/sigstore/cosign/pkg/oci/walk"
+	ctypes "github.com/sigstore/cosign/pkg/types"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -46,12 +50,12 @@ import (
 var keychain = authn.NewMultiKeychain(
 	authn.DefaultKeychain,
 	google.Keychain,
-	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogOutput(io.Discard))),
+	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogger(io.Discard))),
 	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
 	github.Keychain,
 )
 
-func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) (oci.SignedImage, error) {
+func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
 	logger.Printf("building OCI image from layer '%s'", layerTarGZ)
 
 	v1Layer, err := v1tar.LayerFromFile(layerTarGZ)
@@ -131,21 +135,45 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 
 	si := signed.Image(v1Image)
 
-	// TODO(#145): Attach the SBOM, e.g.
-	// f, err := static.NewFile(sbom, static.WithLayerMediaType(mt))
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// si, err = ocimutate.AttachFileToImage(si, "sbom", f)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Attach the SBOM, e.g.
+	if len(sbomFormats) > 0 {
+		var mt ggcrtypes.MediaType
+		var path string
+		switch sbomFormats[0] {
+		case "spdx":
+			mt = ctypes.SPDXJSONMediaType
+			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", arch.ToAPK()))
+		case "cyclonedx":
+			mt = ctypes.CycloneDXJSONMediaType
+			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", arch.ToAPK()))
+		default:
+			return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
+		}
+		if len(sbomFormats) > 1 {
+			// When we have multiple formats, warn that we're picking the first.
+			logger.Printf("WARNING: multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
+		}
+
+		sbom, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading sbom: %w", err)
+		}
+
+		f, err := static.NewFile(sbom, static.WithLayerMediaType(mt))
+		if err != nil {
+			return nil, err
+		}
+		si, err = ocimutate.AttachFileToImage(si, "sbom", f)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return si, nil
 }
 
 func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger)
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger, "", nil)
 	if err != nil {
 		return err
 	}
@@ -181,8 +209,8 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, tags ...string) (name.Digest, oci.SignedImage, error) {
-	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+	v1Image, err := buildImageFromLayer(layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
 	}
