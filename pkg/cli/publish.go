@@ -102,17 +102,17 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		bc.ImageConfiguration.Archs = archs
 	}
 
-	log.Printf("building tags %v", bc.Tags)
+	log.Printf("building tags %v", bc.Options.Tags)
 
 	var digest name.Digest
 	switch len(bc.ImageConfiguration.Archs) {
 	case 0:
 		return errors.New("no archs requested")
 	case 1:
-		bc.Arch = bc.ImageConfiguration.Archs[0]
+		bc.Options.Arch = bc.ImageConfiguration.Archs[0]
 
 		if err := bc.Refresh(); err != nil {
-			return fmt.Errorf("failed to update build context for %q: %w", bc.Arch, err)
+			return fmt.Errorf("failed to update build context for %q: %w", bc.Options.Arch, err)
 		}
 
 		layerTarGZ, err := bc.BuildLayer()
@@ -121,22 +121,22 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 		defer os.Remove(layerTarGZ)
 
-		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, bc.Arch, bc.Log, bc.Tags...)
+		digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}
 	default:
 		var errg errgroup.Group
+		workDir := bc.Options.WorkDir
 		imgs := map[types.Architecture]coci.SignedImage{}
-		workDir := bc.WorkDir
 
 		for _, arch := range archs {
 			arch := arch
 			bc := *bc
 
 			errg.Go(func() error {
-				bc.Arch = arch
-				bc.WorkDir = filepath.Join(workDir, arch.ToAPK())
+				bc.Options.Arch = arch
+				bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
 
 				if err := bc.Refresh(); err != nil {
 					return fmt.Errorf("failed to update build context for %q: %w", arch, err)
@@ -149,7 +149,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				// TODO(kaniini): clean up everything correctly for multitag scenario
 				// defer os.Remove(layerTarGZ)
 
-				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.SourceDateEpoch, arch, bc.Log)
+				_, img, err := oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log)
 				if err != nil {
 					return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 				}
@@ -162,7 +162,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return err
 		}
 
-		digest, err = oci.PublishIndex(imgs, log.Default(), bc.Tags...)
+		digest, err = oci.PublishIndex(imgs, log.Default(), bc.Options.Tags...)
 		if err != nil {
 			return fmt.Errorf("failed to build OCI index: %w", err)
 		}

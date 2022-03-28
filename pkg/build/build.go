@@ -14,80 +14,50 @@
 
 package build
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
-	apkofs "chainguard.dev/apko/pkg/fs"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
-	"chainguard.dev/apko/pkg/tarball"
 )
 
 type Context struct {
+	impl               buildImplementation
 	ImageConfiguration types.ImageConfiguration
-	WorkDir            string
-	TarballPath        string
-	UseProot           bool
-	Tags               []string
-	SourceDateEpoch    time.Time
-	Assertions         []Assertion
-	WantSBOM           bool
-	SBOMPath           string
-	SBOMFormats        []string
-	ExtraKeyFiles      []string
-	ExtraRepos         []string
-	Arch               types.Architecture
 	executor           *exec.Executor
 	s6                 *s6.Context
-	Log                *log.Logger
+	Assertions         []Assertion
+	Options            options.Options
 }
 
 func (bc *Context) Summarize() {
-	bc.Log.Printf("build context:")
-	bc.Log.Printf("  working directory: %s", bc.WorkDir)
-	bc.Log.Printf("  tarball path: %s", bc.TarballPath)
-	bc.Log.Printf("  use proot: %t", bc.UseProot)
-	bc.Log.Printf("  source date: %s", bc.SourceDateEpoch)
-	bc.Log.Printf("  SBOM output path: %s", bc.SBOMPath)
-	bc.Log.Printf("  arch: %v", bc.Arch.ToAPK())
-	bc.ImageConfiguration.Summarize(bc.Log)
+	bc.Options.Log.Printf("build context:")
+	bc.Options.Summarize()
+	bc.ImageConfiguration.Summarize(bc.Options.Log)
 }
 
 func (bc *Context) BuildTarball() (string, error) {
-	var outfile *os.File
-	var err error
+	return bc.impl.BuildTarball(&bc.Options)
+}
 
-	if bc.TarballPath != "" {
-		outfile, err = os.Create(bc.TarballPath)
-	} else {
-		outfile, err = os.CreateTemp("", "apko-*.tar.gz")
-	}
-	if err != nil {
-		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
-	}
-	bc.TarballPath = outfile.Name()
-	defer outfile.Close()
+func (bc *Context) GenerateSBOM() error {
+	return bc.impl.GenerateSBOM(&bc.Options)
+}
 
-	tw, err := tarball.NewContext(tarball.WithSourceDateEpoch(bc.SourceDateEpoch))
-	if err != nil {
-		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
-	}
-
-	if err := tw.WriteArchive(outfile, apkofs.DirFS(bc.WorkDir)); err != nil {
-		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
-	}
-
-	bc.Log.Printf("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), nil
+func (bc *Context) BuildImage() error {
+	// TODO(puerco): Point to final interface (see comment on buildImage fn)
+	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
 func (bc *Context) BuildLayer() (string, error) {
@@ -98,6 +68,7 @@ func (bc *Context) BuildLayer() (string, error) {
 		return "", err
 	}
 
+	// run any assertions defined
 	if err := bc.runAssertions(); err != nil {
 		return "", err
 	}
@@ -132,9 +103,10 @@ func (bc *Context) runAssertions() error {
 // overwrite the provided timestamp if present.
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
-		WorkDir: workDir,
-		Log:     log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
+		Options: options.Default,
+		impl:    &defaultBuildImplementation{},
 	}
+	bc.Options.WorkDir = workDir
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -154,13 +126,13 @@ func New(workDir string, opts ...Option) (*Context, error) {
 			return nil, fmt.Errorf("failed to parse SOURCE_DATE_EPOCH: %w", err)
 		}
 
-		bc.SourceDateEpoch = time.Unix(sec, 0)
+		bc.Options.SourceDateEpoch = time.Unix(sec, 0)
 	}
 
 	// if arch is missing default to the running program's arch
 	zeroArch := types.Architecture{}
-	if bc.Arch == zeroArch {
-		bc.Arch = types.ParseArchitecture(runtime.GOARCH)
+	if bc.Options.Arch == zeroArch {
+		bc.Options.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
 	return &bc, nil
@@ -169,151 +141,25 @@ func New(workDir string, opts ...Option) (*Context, error) {
 func (bc *Context) Refresh() error {
 	bc.UpdatePrefix()
 
-	if strings.HasPrefix(bc.TarballPath, "/tmp/apko") {
-		bc.TarballPath = ""
-	}
-
-	hostArch := types.ParseArchitecture(runtime.GOARCH)
-
-	execOpts := []exec.Option{exec.WithProot(bc.UseProot)}
-	if bc.UseProot && !bc.Arch.Compatible(hostArch) {
-		bc.Log.Printf("%q requires QEMU (not compatible with %q)", bc.Arch, hostArch)
-		execOpts = append(execOpts, exec.WithQemu(bc.Arch.ToQEmu()))
-	}
-
-	executor, err := exec.New(bc.WorkDir, bc.Log, execOpts...)
+	s6, executor, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
 		return err
 	}
-	bc.executor = executor
 
-	bc.s6 = s6.New(bc.WorkDir, bc.Log)
+	bc.executor = executor
+	bc.s6 = s6
 
 	return nil
 }
 
 func (bc *Context) UpdatePrefix() {
-	bc.Log = log.New(log.Writer(), fmt.Sprintf("apko (%s): ", bc.Arch.ToAPK()), log.LstdFlags|log.Lmsgprefix)
+	bc.Options.Log = log.New(
+		log.Writer(),
+		fmt.Sprintf("apko (%s): ", bc.Options.Arch.ToAPK()),
+		log.LstdFlags|log.Lmsgprefix,
+	)
 }
 
-// Option is an option for the build context.
-type Option func(*Context) error
-
-// WithConfig sets the image configuration for the build context.
-// The image configuration is parsed from given config file.
-func WithConfig(configFile string) Option {
-	return func(bc *Context) error {
-		log.Printf("loading config file: %s", configFile)
-
-		var ic types.ImageConfiguration
-		if err := ic.Load(configFile); err != nil {
-			return fmt.Errorf("failed to load image configuration: %w", err)
-		}
-
-		bc.ImageConfiguration = ic
-		return nil
-	}
-}
-
-// WithProot enables proot for rootless image builds.
-func WithProot(enable bool) Option {
-	return func(bc *Context) error {
-		bc.UseProot = enable
-		return nil
-	}
-}
-
-// WithTags sets the tags for the build context.
-func WithTags(tags ...string) Option {
-	return func(bc *Context) error {
-		bc.Tags = tags
-		return nil
-	}
-}
-
-// WithTarball sets the output path of the layer tarball.
-func WithTarball(path string) Option {
-	return func(bc *Context) error {
-		bc.TarballPath = path
-		return nil
-	}
-}
-
-// WithAssertions adds assertions to validate the result
-// of this build context.
-// Assertions are checked in parallel at the end of the
-// build process.
-func WithAssertions(a ...Assertion) Option {
-	return func(bc *Context) error {
-		bc.Assertions = append(bc.Assertions, a...)
-		return nil
-	}
-}
-
-// WithBuildDate sets the timestamps for the build context.
-// The string is parsed according to RFC3339.
-// An empty string is a special case and will default to
-// the unix epoch.
-func WithBuildDate(s string) Option {
-	return func(bc *Context) error {
-		// default to 0 for reproducibility
-		if s == "" {
-			bc.SourceDateEpoch = time.Unix(0, 0)
-			return nil
-		}
-
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			return err
-		}
-
-		bc.SourceDateEpoch = t
-
-		return nil
-	}
-}
-
-func WithSBOM(path string) Option {
-	return func(bc *Context) error {
-		bc.SBOMPath = path
-		return nil
-	}
-}
-
-func WithSBOMFormats(formats []string) Option {
-	return func(bc *Context) error {
-		bc.SBOMFormats = formats
-		return nil
-	}
-}
-
-func WithExtraKeys(keys []string) Option {
-	return func(bc *Context) error {
-		bc.ExtraKeyFiles = keys
-		return nil
-	}
-}
-
-func WithExtraRepos(repos []string) Option {
-	return func(bc *Context) error {
-		bc.ExtraRepos = repos
-		return nil
-	}
-}
-
-// WithImageConfiguration sets the ImageConfiguration object
-// to use when building.
-func WithImageConfiguration(ic types.ImageConfiguration) Option {
-	return func(bc *Context) error {
-		bc.ImageConfiguration = ic
-		return nil
-	}
-}
-
-// WithArch sets the architecture for the build context.
-func WithArch(arch types.Architecture) Option {
-	return func(bc *Context) error {
-		bc.Arch = arch
-		return nil
-	}
+func (bc *Context) SetImplementation(i buildImplementation) {
+	bc.impl = i
 }
