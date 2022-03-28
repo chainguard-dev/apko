@@ -14,7 +14,7 @@ require (
 	github.com/sigstore/cosign v1.6.0
 	github.com/spf13/cobra v1.4.0
 	github.com/stretchr/testify v1.7.1
-	gitlab.alpinelinux.org/alpine/go v0.3.1
+	gitlab.alpinelinux.org/alpine/go v0.4.0
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b

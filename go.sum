@@ -1947,8 +1947,8 @@ github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f/go
 github.com/zalando/go-keyring v0.1.0/go.mod h1:RaxNwUITJaHVdQ0VC7pELPZ3tOWn13nr0gZMZEhpVU0=
 github.com/zalando/go-keyring v0.1.1/go.mod h1:OIC+OZ28XbmwFxU/Rp9V7eKzZjamBJwRzC8UFJH9+L8=
 github.com/zeebo/errs v1.2.2/go.mod h1:sgbWHsvVuTPHcqJJGQ1WhI5KbWlHYz+2+2C/LSEtCw4=
-gitlab.alpinelinux.org/alpine/go v0.3.1 h1:mZEtxIt4YAS2xqbtfQL7YqCvzbjV/8tRHasuHSC2Vho=
-gitlab.alpinelinux.org/alpine/go v0.3.1/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
+gitlab.alpinelinux.org/alpine/go v0.4.0 h1:Z90vSQQKr9DcaclnVjRicYtqwshwxlszcwRmq9PKNfM=
+gitlab.alpinelinux.org/alpine/go v0.4.0/go.mod h1:auOw3SnxDQBo1vzPh8q6gjvKsYgKxYet03lgSKtA3Q4=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.4/go.mod h1:G5EMThwa9y8QZGBClrRx5EY+Yw9kAhnjy3bSjsnlVTQ=
