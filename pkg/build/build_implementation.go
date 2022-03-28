@@ -20,22 +20,34 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
 	"chainguard.dev/apko/pkg/tarball"
-	"github.com/google/go-containerregistry/pkg/name"
-	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
 //counterfeiter:generate . buildImplementation
 
 type buildImplementation interface {
 	Refresh(*Options) (*s6.Context, *exec.Executor, error)
-	BuildTarball(o *Options) (string, error)
-	GenerateSBOM(o *Options) error
+	BuildTarball(*Options) (string, error)
+	GenerateSBOM(*Options) error
+	InstallBusyboxSymlinks(*Options, *exec.Executor) error
+	InitializeApk(*Options, *types.ImageConfiguration, *exec.Executor) error
+	MutateAccounts(*Options, *types.ImageConfiguration) error
+	ValidateImageConfiguration(*types.ImageConfiguration) error
+	BuildImage(*Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
+	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
+	InitApkDB(*Options, *exec.Executor) error
+	InitApkKeyring(*Options, *types.ImageConfiguration) error
+	InitApkWorld(*Options, *types.ImageConfiguration) error
+	NormalizeApkScriptsTar(*Options) error
+	FixateApkWorld(*Options, *exec.Executor) error
 }
 
 type defaultBuildImplementation struct{}

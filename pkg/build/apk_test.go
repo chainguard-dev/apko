@@ -26,14 +26,13 @@ import (
 
 func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
-
-	c := Context{
-		Options: Options{
-			Log: log.Default(),
-		},
+	di := &defaultBuildImplementation{}
+	o := &Options{
+		Log: log.Default(),
 	}
+
 	// Read the empty dir, passing only one empty location should err
-	_, err := c.loadSystemKeyring(dir)
+	_, err := di.loadSystemKeyring(o, dir)
 	require.Error(t, err)
 
 	// Write some dummy keyfiles
@@ -50,7 +49,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 	))
 
 	// Successful read
-	keyFiles, err := c.loadSystemKeyring(dir)
+	keyFiles, err := di.loadSystemKeyring(o, dir)
 	require.NoError(t, err)
 	require.Len(t, keyFiles, 5)
 	// should not take into account extraneous files
@@ -58,7 +57,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 
 	// Unreadable directory should return error
 	require.NoError(t, os.Chmod(dir, 0o000))
-	_, err = c.loadSystemKeyring(dir)
+	_, err = di.loadSystemKeyring(o, dir)
 	require.Error(t, err)
 
 	// reset permissions back to 0700 or the tmpdir won't be removed

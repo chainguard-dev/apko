@@ -21,40 +21,44 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sync/errgroup"
+
+	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/exec"
+	"chainguard.dev/apko/pkg/s6"
 )
 
-// Builds the image in Context.WorkDir.
-func (bc *Context) BuildImage() error {
-	bc.Options.Log.Printf("doing pre-flight checks")
-	if err := bc.ImageConfiguration.Validate(); err != nil {
+func (di *defaultBuildImplementation) ValidateImageConfiguration(ic *types.ImageConfiguration) error {
+	if err := ic.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
+	return nil
+}
 
-	bc.Options.Log.Printf("building image fileystem in %s", bc.Options.WorkDir)
-
+// Builds the image in Context.WorkDir.
+func (di *defaultBuildImplementation) InitializeApk(o *Options, ic *types.ImageConfiguration, e *exec.Executor) error {
 	// initialize apk
-	if err := bc.InitApkDB(); err != nil {
+	if err := di.InitApkDB(o, e); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		if err := bc.InitApkKeyring(); err != nil {
+		if err := di.InitApkKeyring(o, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := bc.InitApkRepositories(); err != nil {
+		if err := di.InitApkRepositories(o, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := bc.InitApkWorld(); err != nil {
+		if err := di.InitApkWorld(o, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
@@ -65,20 +69,13 @@ func (bc *Context) BuildImage() error {
 	}
 
 	// sync reality with desired apk world
-	if err := bc.FixateApkWorld(); err != nil {
+	if err := di.FixateApkWorld(o, e); err != nil {
 		return fmt.Errorf("failed to fixate apk world: %w", err)
 	}
 
 	eg.Go(func() error {
-		if err := bc.normalizeApkScriptsTar(); err != nil {
+		if err := di.NormalizeApkScriptsTar(o); err != nil {
 			return fmt.Errorf("failed to normalize scripts.tar: %w", err)
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		if err := bc.MutateAccounts(); err != nil {
-			return fmt.Errorf("failed to mutate accounts: %w", err)
 		}
 		return nil
 	})
@@ -87,23 +84,22 @@ func (bc *Context) BuildImage() error {
 		return err
 	}
 
-	// maybe install busybox symlinks
-	if err := bc.InstallBusyboxSymlinks(); err != nil {
-		return fmt.Errorf("failed to install busybox symlinks: %w", err)
-	}
+	return nil
+}
 
+func (di *defaultBuildImplementation) WriteSupervisionTree(
+	s6context *s6.Context, imageConfig *types.ImageConfiguration,
+) error {
 	// write service supervision tree
-	if err := bc.s6.WriteSupervisionTree(bc.ImageConfiguration.Entrypoint.Services); err != nil {
+	if err := s6context.WriteSupervisionTree(imageConfig.Entrypoint.Services); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
-
-	bc.Options.Log.Printf("finished building filesystem in %s", bc.Options.WorkDir)
 	return nil
 }
 
 // Installs the BusyBox symlinks, if appropriate.
-func (bc *Context) InstallBusyboxSymlinks() error {
-	path := filepath.Join(bc.Options.WorkDir, "bin", "busybox")
+func (di *defaultBuildImplementation) InstallBusyboxSymlinks(o *Options, e *exec.Executor) error {
+	path := filepath.Join(o.WorkDir, "bin", "busybox")
 
 	_, err := os.Stat(path)
 	if err != nil {
@@ -115,7 +111,7 @@ func (bc *Context) InstallBusyboxSymlinks() error {
 	}
 
 	// use proot + qemu to run the installer
-	if err := bc.executor.ExecuteChroot("/bin/busybox", "--install", "-s"); err != nil {
+	if err := e.ExecuteChroot("/bin/busybox", "--install", "-s"); err != nil {
 		return fmt.Errorf("failed to install busybox symlinks: %w", err)
 	}
 

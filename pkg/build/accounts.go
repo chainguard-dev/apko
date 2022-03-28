@@ -24,8 +24,10 @@ import (
 	"chainguard.dev/apko/pkg/passwd"
 )
 
-func (bc *Context) appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
-	bc.Options.Log.Printf("creating group %d(%s)", group.GID, group.GroupName)
+func (di *defaultBuildImplementation) appendGroup(
+	o *Options, groups []passwd.GroupEntry, group types.Group,
+) []passwd.GroupEntry {
+	o.Log.Printf("creating group %d(%s)", group.GID, group.GroupName)
 
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
@@ -37,11 +39,13 @@ func (bc *Context) appendGroup(groups []passwd.GroupEntry, group types.Group) []
 	return append(groups, ge)
 }
 
-func (bc *Context) appendUser(users []passwd.UserEntry, user types.User) []passwd.UserEntry {
-	bc.Options.Log.Printf("creating user %d(%s)", user.UID, user.UserName)
+func (di *defaultBuildImplementation) appendUser(
+	o *Options, users []passwd.UserEntry, user types.User,
+) []passwd.UserEntry {
+	o.Log.Printf("creating user %d(%s)", user.UID, user.UserName)
 
 	if user.GID == 0 {
-		bc.Options.Log.Printf("warning: guessing unset GID for user %v", user)
+		o.Log.Printf("warning: guessing unset GID for user %v", user)
 		user.GID = user.UID
 	}
 
@@ -55,24 +59,22 @@ func (bc *Context) appendUser(users []passwd.UserEntry, user types.User) []passw
 		Shell:    "/bin/sh",
 	}
 
-	bc.Options.Log.Printf("creating home directory for user %s", ue.UserName)
-	targetHomedir := filepath.Join(bc.Options.WorkDir, ue.HomeDir)
+	o.Log.Printf("creating home directory for user %s", ue.UserName)
+	targetHomedir := filepath.Join(o.WorkDir, ue.HomeDir)
 	if err := os.MkdirAll(targetHomedir, 0755); err != nil {
-		bc.Options.Log.Printf("warning: unable to make home directory (%q) for user %s: %v", targetHomedir, ue.UserName, err)
+		o.Log.Printf("warning: unable to make home directory (%q) for user %s: %v", targetHomedir, ue.UserName, err)
 	}
 
 	return append(users, ue)
 }
 
-func (bc *Context) MutateAccounts() error {
-	ic := bc.ImageConfiguration
-
+func (di *defaultBuildImplementation) MutateAccounts(o *Options, ic *types.ImageConfiguration) error {
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {
 		// Mutate the /etc/groups file
 		eg.Go(func() error {
-			path := filepath.Join(bc.Options.WorkDir, "etc", "group")
+			path := filepath.Join(o.WorkDir, "etc", "group")
 
 			gf, err := passwd.ReadOrCreateGroupFile(path)
 			if err != nil {
@@ -80,7 +82,7 @@ func (bc *Context) MutateAccounts() error {
 			}
 
 			for _, g := range ic.Accounts.Groups {
-				gf.Entries = bc.appendGroup(gf.Entries, g)
+				gf.Entries = di.appendGroup(o, gf.Entries, g)
 			}
 
 			if err := gf.WriteFile(path); err != nil {
@@ -94,7 +96,7 @@ func (bc *Context) MutateAccounts() error {
 	if len(ic.Accounts.Users) != 0 {
 		// Mutate the /etc/passwd file
 		eg.Go(func() error {
-			path := filepath.Join(bc.Options.WorkDir, "etc", "passwd")
+			path := filepath.Join(o.WorkDir, "etc", "passwd")
 
 			uf, err := passwd.ReadOrCreateUserFile(path)
 			if err != nil {
@@ -102,7 +104,7 @@ func (bc *Context) MutateAccounts() error {
 			}
 
 			for _, u := range ic.Accounts.Users {
-				uf.Entries = bc.appendUser(uf.Entries, u)
+				uf.Entries = di.appendUser(o, uf.Entries, u)
 			}
 
 			if err := uf.WriteFile(path); err != nil {
