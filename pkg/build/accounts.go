@@ -21,11 +21,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/passwd"
 )
 
 func (di *defaultBuildImplementation) appendGroup(
-	o *Options, groups []passwd.GroupEntry, group types.Group,
+	o *options.Options, groups []passwd.GroupEntry, group types.Group,
 ) []passwd.GroupEntry {
 	o.Log.Printf("creating group %d(%s)", group.GID, group.GroupName)
 
@@ -40,7 +41,7 @@ func (di *defaultBuildImplementation) appendGroup(
 }
 
 func (di *defaultBuildImplementation) appendUser(
-	o *Options, users []passwd.UserEntry, user types.User,
+	o *options.Options, users []passwd.UserEntry, user types.User,
 ) []passwd.UserEntry {
 	o.Log.Printf("creating user %d(%s)", user.UID, user.UserName)
 
@@ -68,7 +69,9 @@ func (di *defaultBuildImplementation) appendUser(
 	return append(users, ue)
 }
 
-func (di *defaultBuildImplementation) MutateAccounts(o *Options, ic *types.ImageConfiguration) error {
+func (di *defaultBuildImplementation) MutateAccounts(
+	o *options.Options, ic *types.ImageConfiguration,
+) error {
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {

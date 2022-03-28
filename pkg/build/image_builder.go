@@ -20,10 +20,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sync/errgroup"
-
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
 
@@ -31,59 +30,6 @@ func (di *defaultBuildImplementation) ValidateImageConfiguration(ic *types.Image
 	if err := ic.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
-	return nil
-}
-
-// Builds the image in Context.WorkDir.
-func (di *defaultBuildImplementation) InitializeApk(o *Options, ic *types.ImageConfiguration, e *exec.Executor) error {
-	// initialize apk
-	if err := di.InitApkDB(o, e); err != nil {
-		return fmt.Errorf("failed to initialize apk database: %w", err)
-	}
-
-	var eg errgroup.Group
-
-	eg.Go(func() error {
-		if err := di.InitApkKeyring(o, ic); err != nil {
-			return fmt.Errorf("failed to initialize apk keyring: %w", err)
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		if err := di.InitApkRepositories(o, ic); err != nil {
-			return fmt.Errorf("failed to initialize apk repositories: %w", err)
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		if err := di.InitApkWorld(o, ic); err != nil {
-			return fmt.Errorf("failed to initialize apk world: %w", err)
-		}
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	// sync reality with desired apk world
-	if err := di.FixateApkWorld(o, e); err != nil {
-		return fmt.Errorf("failed to fixate apk world: %w", err)
-	}
-
-	eg.Go(func() error {
-		if err := di.NormalizeApkScriptsTar(o); err != nil {
-			return fmt.Errorf("failed to normalize scripts.tar: %w", err)
-		}
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -98,7 +44,7 @@ func (di *defaultBuildImplementation) WriteSupervisionTree(
 }
 
 // Installs the BusyBox symlinks, if appropriate.
-func (di *defaultBuildImplementation) InstallBusyboxSymlinks(o *Options, e *exec.Executor) error {
+func (di *defaultBuildImplementation) InstallBusyboxSymlinks(o *options.Options, e *exec.Executor) error {
 	path := filepath.Join(o.WorkDir, "bin", "busybox")
 
 	_, err := os.Stat(path)

@@ -23,9 +23,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 
+	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	apkofs "chainguard.dev/apko/pkg/fs"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
 	"chainguard.dev/apko/pkg/tarball"
@@ -34,25 +36,20 @@ import (
 //counterfeiter:generate . buildImplementation
 
 type buildImplementation interface {
-	Refresh(*Options) (*s6.Context, *exec.Executor, error)
-	BuildTarball(*Options) (string, error)
-	GenerateSBOM(*Options) error
-	InstallBusyboxSymlinks(*Options, *exec.Executor) error
-	InitializeApk(*Options, *types.ImageConfiguration, *exec.Executor) error
-	MutateAccounts(*Options, *types.ImageConfiguration) error
+	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
+	BuildTarball(*options.Options) (string, error)
+	GenerateSBOM(*options.Options) error
+	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
+	InitializeApk(*options.Options, *types.ImageConfiguration) error
+	MutateAccounts(*options.Options, *types.ImageConfiguration) error
 	ValidateImageConfiguration(*types.ImageConfiguration) error
-	BuildImage(*Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
+	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
-	InitApkDB(*Options, *exec.Executor) error
-	InitApkKeyring(*Options, *types.ImageConfiguration) error
-	InitApkWorld(*Options, *types.ImageConfiguration) error
-	NormalizeApkScriptsTar(*Options) error
-	FixateApkWorld(*Options, *exec.Executor) error
 }
 
 type defaultBuildImplementation struct{}
 
-func (di *defaultBuildImplementation) Refresh(o *Options) (*s6.Context, *exec.Executor, error) {
+func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.Executor, error) {
 	if strings.HasPrefix(o.TarballPath, "/tmp/apko") {
 		o.TarballPath = ""
 	}
@@ -73,7 +70,7 @@ func (di *defaultBuildImplementation) Refresh(o *Options) (*s6.Context, *exec.Ex
 	return s6.New(o.WorkDir, o.Log), executor, nil
 }
 
-func (di *defaultBuildImplementation) BuildTarball(o *Options) (string, error) {
+func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, error) {
 	var outfile *os.File
 	var err error
 
@@ -102,7 +99,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *Options) (string, error) {
 }
 
 // GenerateSBOM runs the sbom generation
-func (di *defaultBuildImplementation) GenerateSBOM(o *Options) error {
+func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Log.Printf("skipping SBOM generation")
 		return nil
@@ -147,6 +144,53 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *Options) error {
 	if _, err := s.Generate(); err != nil {
 		return fmt.Errorf("generating SBOMs: %w", err)
 	}
+
+	return nil
+}
+
+func (di *defaultBuildImplementation) InitializeApk(o *options.Options, ic *types.ImageConfiguration) error {
+	apk := chainguardAPK.NewWithOptions(*o)
+	return apk.Initialize(ic)
+}
+
+func (di *defaultBuildImplementation) BuildImage(
+	o *options.Options, ic *types.ImageConfiguration, e *exec.Executor, s6context *s6.Context,
+) error {
+	return buildImage(di, o, ic, e, s6context)
+}
+
+// buildImage is a temporary function to make the fakes work.
+// TODO(puerco): In order to have a structure we can mock, we need to split
+// image building to its own interface or split out to its own package.
+func buildImage(
+	di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
+	e *exec.Executor, s6context *s6.Context,
+) error {
+	o.Log.Printf("doing pre-flight checks")
+	if err := di.ValidateImageConfiguration(ic); err != nil {
+		return fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	o.Log.Printf("building image fileystem in %s", o.WorkDir)
+
+	if err := di.InitializeApk(o, ic); err != nil {
+		return fmt.Errorf("initializing apk: %w", err)
+	}
+
+	if err := di.MutateAccounts(o, ic); err != nil {
+		return fmt.Errorf("failed to mutate accounts: %w", err)
+	}
+
+	// maybe install busybox symlinks
+	if err := di.InstallBusyboxSymlinks(o, e); err != nil {
+		return fmt.Errorf("failed to install busybox symlinks: %w", err)
+	}
+
+	if err := di.WriteSupervisionTree(s6context, ic); err != nil {
+		return fmt.Errorf("failed to write supervision tree: %w", err)
+	}
+
+	o.Log.Printf("finished building filesystem in %s", o.WorkDir)
 
 	return nil
 }

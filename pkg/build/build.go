@@ -28,6 +28,7 @@ import (
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
 
@@ -37,11 +38,7 @@ type Context struct {
 	executor           *exec.Executor
 	s6                 *s6.Context
 	Assertions         []Assertion
-	Options            Options
-}
-
-var DefaultOptions = Options{
-	Log: log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
+	Options            options.Options
 }
 
 func (bc *Context) Summarize() {
@@ -59,41 +56,8 @@ func (bc *Context) GenerateSBOM() error {
 }
 
 func (bc *Context) BuildImage() error {
-	return bc.impl.BuildImage(
-		&bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6,
-	)
-}
-
-func (di *defaultBuildImplementation) BuildImage(
-	o *Options, ic *types.ImageConfiguration, e *exec.Executor, s6context *s6.Context,
-) error {
-	o.Log.Printf("doing pre-flight checks")
-	if err := ic.Validate(); err != nil {
-		return fmt.Errorf("failed to validate configuration: %w", err)
-	}
-
-	o.Log.Printf("building image fileystem in %s", o.WorkDir)
-
-	if err := di.InitializeApk(o, ic, e); err != nil {
-		return fmt.Errorf("initializing apk: %w", err)
-	}
-
-	if err := di.MutateAccounts(o, ic); err != nil {
-		return fmt.Errorf("failed to mutate accounts: %w", err)
-	}
-
-	// maybe install busybox symlinks
-	if err := di.InstallBusyboxSymlinks(o, e); err != nil {
-		return fmt.Errorf("failed to install busybox symlinks: %w", err)
-	}
-
-	if err := di.WriteSupervisionTree(s6context, ic); err != nil {
-		return fmt.Errorf("failed to write supervision tree: %w", err)
-	}
-
-	o.Log.Printf("finished building filesystem in %s", o.WorkDir)
-
-	return nil
+	// TODO(puerco): Point to final interface (see comment on buildImage fn)
+	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
 func (bc *Context) BuildLayer() (string, error) {
@@ -104,6 +68,7 @@ func (bc *Context) BuildLayer() (string, error) {
 		return "", err
 	}
 
+	// run any assertions defined
 	if err := bc.runAssertions(); err != nil {
 		return "", err
 	}
@@ -138,7 +103,7 @@ func (bc *Context) runAssertions() error {
 // overwrite the provided timestamp if present.
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
-		Options: DefaultOptions,
+		Options: options.Default,
 		impl:    &defaultBuildImplementation{},
 	}
 	bc.Options.WorkDir = workDir
