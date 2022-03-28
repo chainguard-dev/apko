@@ -16,7 +16,6 @@ package tarball
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"crypto/sha1" // nolint:gosec
 	"encoding/hex"
 	"fmt"
@@ -24,6 +23,8 @@ import (
 	"io/fs"
 	"os"
 	"syscall"
+
+	gzip "golang.org/x/build/pargzip"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
 )
