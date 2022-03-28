@@ -18,33 +18,38 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/buildfakes"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBuildLayer(t *testing.T) {
 	fakeErr := fmt.Errorf("synthetic error")
 	for _, tc := range []struct {
 		prepare     func(*buildfakes.FakeBuildImplementation)
+		msg         string
 		shouldError bool
 	}{
 		{ // success
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
 				// noop.
 			},
+			msg:         "success",
 			shouldError: false,
 		},
 		{ // Build Image fails
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
-				fbi.BuildImageReturns(fakeErr)
+				fbi.ValidateImageConfigurationReturns(fakeErr)
 			},
+			msg:         "BuildImage should fail",
 			shouldError: true,
 		},
 		{ // BuildTarball fails
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
 				fbi.BuildTarballReturns("", fakeErr)
 			},
+			msg:         "buildtarball fails",
 			shouldError: true,
 		},
 		{
@@ -52,6 +57,7 @@ func TestBuildLayer(t *testing.T) {
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
 				fbi.GenerateSBOMReturns(fakeErr)
 			},
+			msg:         "generate sbom should fail",
 			shouldError: true,
 		},
 	} {
@@ -62,9 +68,79 @@ func TestBuildLayer(t *testing.T) {
 		sut.SetImplementation(&mock)
 		_, err = sut.BuildLayer()
 		if tc.shouldError {
-			require.Error(t, err)
+			require.Error(t, err, tc.msg)
 		} else {
-			require.NoError(t, err)
+			require.NoError(t, err, tc.msg)
+		}
+	}
+}
+
+func TestBuildImage(t *testing.T) {
+	fakeErr := fmt.Errorf("synthetic error")
+	for _, tc := range []struct {
+		prepare     func(*buildfakes.FakeBuildImplementation)
+		msg         string
+		shouldError bool
+	}{
+		{ // success
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+
+			},
+			msg:         "build image succeeds",
+			shouldError: false,
+		},
+		{
+			// ValidateImageConfiguration fails
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+				fbi.ValidateImageConfigurationReturns(fakeErr)
+			},
+			msg:         "ValidateImageConfiguration fails",
+			shouldError: true,
+		},
+		{
+			// InitializeApk fails
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+				fbi.InitializeApkReturns(fakeErr)
+			},
+			msg:         "InitializeApk fails",
+			shouldError: true,
+		},
+		{
+			// MutateAccounts fails
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+				fbi.MutateAccountsReturns(fakeErr)
+			},
+			msg:         "MutateAccounts fails",
+			shouldError: true,
+		},
+		{
+			// InstallBusyboxSymlinks fails
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+				fbi.InstallBusyboxSymlinksReturns(fakeErr)
+			},
+			msg:         "InstallBusyboxSymlinks fails",
+			shouldError: true,
+		},
+		{
+			// WriteSupervisionTree fails
+			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
+				fbi.WriteSupervisionTreeReturns(fakeErr)
+			},
+			msg:         "WriteSupervisionTree fails",
+			shouldError: true,
+		},
+	} {
+		mock := &buildfakes.FakeBuildImplementation{}
+		tc.prepare(mock)
+
+		sut, err := build.New("/mock")
+		require.NoError(t, err)
+		sut.SetImplementation(mock)
+		err = sut.BuildImage()
+		if tc.shouldError {
+			require.Error(t, err, tc.msg)
+		} else {
+			require.NoError(t, err, tc.msg, err)
 		}
 	}
 }

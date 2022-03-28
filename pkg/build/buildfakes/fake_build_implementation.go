@@ -4,17 +4,17 @@ package buildfakes
 import (
 	"sync"
 
-	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
 
 type FakeBuildImplementation struct {
-	BuildImageStub        func(*build.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
+	BuildImageStub        func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	buildImageMutex       sync.RWMutex
 	buildImageArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
 		arg3 *exec.Executor
 		arg4 *s6.Context
@@ -25,10 +25,10 @@ type FakeBuildImplementation struct {
 	buildImageReturnsOnCall map[int]struct {
 		result1 error
 	}
-	BuildTarballStub        func(*build.Options) (string, error)
+	BuildTarballStub        func(*options.Options) (string, error)
 	buildTarballMutex       sync.RWMutex
 	buildTarballArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}
 	buildTarballReturns struct {
 		result1 string
@@ -38,22 +38,10 @@ type FakeBuildImplementation struct {
 		result1 string
 		result2 error
 	}
-	FixateApkWorldStub        func(*build.Options, *exec.Executor) error
-	fixateApkWorldMutex       sync.RWMutex
-	fixateApkWorldArgsForCall []struct {
-		arg1 *build.Options
-		arg2 *exec.Executor
-	}
-	fixateApkWorldReturns struct {
-		result1 error
-	}
-	fixateApkWorldReturnsOnCall map[int]struct {
-		result1 error
-	}
-	GenerateSBOMStub        func(*build.Options) error
+	GenerateSBOMStub        func(*options.Options) error
 	generateSBOMMutex       sync.RWMutex
 	generateSBOMArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}
 	generateSBOMReturns struct {
 		result1 error
@@ -61,48 +49,11 @@ type FakeBuildImplementation struct {
 	generateSBOMReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitApkDBStub        func(*build.Options, *exec.Executor) error
-	initApkDBMutex       sync.RWMutex
-	initApkDBArgsForCall []struct {
-		arg1 *build.Options
-		arg2 *exec.Executor
-	}
-	initApkDBReturns struct {
-		result1 error
-	}
-	initApkDBReturnsOnCall map[int]struct {
-		result1 error
-	}
-	InitApkKeyringStub        func(*build.Options, *types.ImageConfiguration) error
-	initApkKeyringMutex       sync.RWMutex
-	initApkKeyringArgsForCall []struct {
-		arg1 *build.Options
-		arg2 *types.ImageConfiguration
-	}
-	initApkKeyringReturns struct {
-		result1 error
-	}
-	initApkKeyringReturnsOnCall map[int]struct {
-		result1 error
-	}
-	InitApkWorldStub        func(*build.Options, *types.ImageConfiguration) error
-	initApkWorldMutex       sync.RWMutex
-	initApkWorldArgsForCall []struct {
-		arg1 *build.Options
-		arg2 *types.ImageConfiguration
-	}
-	initApkWorldReturns struct {
-		result1 error
-	}
-	initApkWorldReturnsOnCall map[int]struct {
-		result1 error
-	}
-	InitializeApkStub        func(*build.Options, *types.ImageConfiguration, *exec.Executor) error
+	InitializeApkStub        func(*options.Options, *types.ImageConfiguration) error
 	initializeApkMutex       sync.RWMutex
 	initializeApkArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
-		arg3 *exec.Executor
 	}
 	initializeApkReturns struct {
 		result1 error
@@ -110,10 +61,10 @@ type FakeBuildImplementation struct {
 	initializeApkReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InstallBusyboxSymlinksStub        func(*build.Options, *exec.Executor) error
+	InstallBusyboxSymlinksStub        func(*options.Options, *exec.Executor) error
 	installBusyboxSymlinksMutex       sync.RWMutex
 	installBusyboxSymlinksArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *exec.Executor
 	}
 	installBusyboxSymlinksReturns struct {
@@ -122,10 +73,10 @@ type FakeBuildImplementation struct {
 	installBusyboxSymlinksReturnsOnCall map[int]struct {
 		result1 error
 	}
-	MutateAccountsStub        func(*build.Options, *types.ImageConfiguration) error
+	MutateAccountsStub        func(*options.Options, *types.ImageConfiguration) error
 	mutateAccountsMutex       sync.RWMutex
 	mutateAccountsArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
 	}
 	mutateAccountsReturns struct {
@@ -134,21 +85,10 @@ type FakeBuildImplementation struct {
 	mutateAccountsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	NormalizeApkScriptsTarStub        func(*build.Options) error
-	normalizeApkScriptsTarMutex       sync.RWMutex
-	normalizeApkScriptsTarArgsForCall []struct {
-		arg1 *build.Options
-	}
-	normalizeApkScriptsTarReturns struct {
-		result1 error
-	}
-	normalizeApkScriptsTarReturnsOnCall map[int]struct {
-		result1 error
-	}
-	RefreshStub        func(*build.Options) (*s6.Context, *exec.Executor, error)
+	RefreshStub        func(*options.Options) (*s6.Context, *exec.Executor, error)
 	refreshMutex       sync.RWMutex
 	refreshArgsForCall []struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}
 	refreshReturns struct {
 		result1 *s6.Context
@@ -187,11 +127,11 @@ type FakeBuildImplementation struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeBuildImplementation) BuildImage(arg1 *build.Options, arg2 *types.ImageConfiguration, arg3 *exec.Executor, arg4 *s6.Context) error {
+func (fake *FakeBuildImplementation) BuildImage(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 *exec.Executor, arg4 *s6.Context) error {
 	fake.buildImageMutex.Lock()
 	ret, specificReturn := fake.buildImageReturnsOnCall[len(fake.buildImageArgsForCall)]
 	fake.buildImageArgsForCall = append(fake.buildImageArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
 		arg3 *exec.Executor
 		arg4 *s6.Context
@@ -215,13 +155,13 @@ func (fake *FakeBuildImplementation) BuildImageCallCount() int {
 	return len(fake.buildImageArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) BuildImageCalls(stub func(*build.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error) {
+func (fake *FakeBuildImplementation) BuildImageCalls(stub func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error) {
 	fake.buildImageMutex.Lock()
 	defer fake.buildImageMutex.Unlock()
 	fake.BuildImageStub = stub
 }
 
-func (fake *FakeBuildImplementation) BuildImageArgsForCall(i int) (*build.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) {
+func (fake *FakeBuildImplementation) BuildImageArgsForCall(i int) (*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) {
 	fake.buildImageMutex.RLock()
 	defer fake.buildImageMutex.RUnlock()
 	argsForCall := fake.buildImageArgsForCall[i]
@@ -251,11 +191,11 @@ func (fake *FakeBuildImplementation) BuildImageReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) BuildTarball(arg1 *build.Options) (string, error) {
+func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options) (string, error) {
 	fake.buildTarballMutex.Lock()
 	ret, specificReturn := fake.buildTarballReturnsOnCall[len(fake.buildTarballArgsForCall)]
 	fake.buildTarballArgsForCall = append(fake.buildTarballArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}{arg1})
 	stub := fake.BuildTarballStub
 	fakeReturns := fake.buildTarballReturns
@@ -276,13 +216,13 @@ func (fake *FakeBuildImplementation) BuildTarballCallCount() int {
 	return len(fake.buildTarballArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*build.Options) (string, error)) {
+func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*options.Options) (string, error)) {
 	fake.buildTarballMutex.Lock()
 	defer fake.buildTarballMutex.Unlock()
 	fake.BuildTarballStub = stub
 }
 
-func (fake *FakeBuildImplementation) BuildTarballArgsForCall(i int) *build.Options {
+func (fake *FakeBuildImplementation) BuildTarballArgsForCall(i int) *options.Options {
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
 	argsForCall := fake.buildTarballArgsForCall[i]
@@ -315,73 +255,11 @@ func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 st
 	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) FixateApkWorld(arg1 *build.Options, arg2 *exec.Executor) error {
-	fake.fixateApkWorldMutex.Lock()
-	ret, specificReturn := fake.fixateApkWorldReturnsOnCall[len(fake.fixateApkWorldArgsForCall)]
-	fake.fixateApkWorldArgsForCall = append(fake.fixateApkWorldArgsForCall, struct {
-		arg1 *build.Options
-		arg2 *exec.Executor
-	}{arg1, arg2})
-	stub := fake.FixateApkWorldStub
-	fakeReturns := fake.fixateApkWorldReturns
-	fake.recordInvocation("FixateApkWorld", []interface{}{arg1, arg2})
-	fake.fixateApkWorldMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeBuildImplementation) FixateApkWorldCallCount() int {
-	fake.fixateApkWorldMutex.RLock()
-	defer fake.fixateApkWorldMutex.RUnlock()
-	return len(fake.fixateApkWorldArgsForCall)
-}
-
-func (fake *FakeBuildImplementation) FixateApkWorldCalls(stub func(*build.Options, *exec.Executor) error) {
-	fake.fixateApkWorldMutex.Lock()
-	defer fake.fixateApkWorldMutex.Unlock()
-	fake.FixateApkWorldStub = stub
-}
-
-func (fake *FakeBuildImplementation) FixateApkWorldArgsForCall(i int) (*build.Options, *exec.Executor) {
-	fake.fixateApkWorldMutex.RLock()
-	defer fake.fixateApkWorldMutex.RUnlock()
-	argsForCall := fake.fixateApkWorldArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeBuildImplementation) FixateApkWorldReturns(result1 error) {
-	fake.fixateApkWorldMutex.Lock()
-	defer fake.fixateApkWorldMutex.Unlock()
-	fake.FixateApkWorldStub = nil
-	fake.fixateApkWorldReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) FixateApkWorldReturnsOnCall(i int, result1 error) {
-	fake.fixateApkWorldMutex.Lock()
-	defer fake.fixateApkWorldMutex.Unlock()
-	fake.FixateApkWorldStub = nil
-	if fake.fixateApkWorldReturnsOnCall == nil {
-		fake.fixateApkWorldReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.fixateApkWorldReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) GenerateSBOM(arg1 *build.Options) error {
+func (fake *FakeBuildImplementation) GenerateSBOM(arg1 *options.Options) error {
 	fake.generateSBOMMutex.Lock()
 	ret, specificReturn := fake.generateSBOMReturnsOnCall[len(fake.generateSBOMArgsForCall)]
 	fake.generateSBOMArgsForCall = append(fake.generateSBOMArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}{arg1})
 	stub := fake.GenerateSBOMStub
 	fakeReturns := fake.generateSBOMReturns
@@ -402,13 +280,13 @@ func (fake *FakeBuildImplementation) GenerateSBOMCallCount() int {
 	return len(fake.generateSBOMArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) GenerateSBOMCalls(stub func(*build.Options) error) {
+func (fake *FakeBuildImplementation) GenerateSBOMCalls(stub func(*options.Options) error) {
 	fake.generateSBOMMutex.Lock()
 	defer fake.generateSBOMMutex.Unlock()
 	fake.GenerateSBOMStub = stub
 }
 
-func (fake *FakeBuildImplementation) GenerateSBOMArgsForCall(i int) *build.Options {
+func (fake *FakeBuildImplementation) GenerateSBOMArgsForCall(i int) *options.Options {
 	fake.generateSBOMMutex.RLock()
 	defer fake.generateSBOMMutex.RUnlock()
 	argsForCall := fake.generateSBOMArgsForCall[i]
@@ -438,206 +316,19 @@ func (fake *FakeBuildImplementation) GenerateSBOMReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) InitApkDB(arg1 *build.Options, arg2 *exec.Executor) error {
-	fake.initApkDBMutex.Lock()
-	ret, specificReturn := fake.initApkDBReturnsOnCall[len(fake.initApkDBArgsForCall)]
-	fake.initApkDBArgsForCall = append(fake.initApkDBArgsForCall, struct {
-		arg1 *build.Options
-		arg2 *exec.Executor
-	}{arg1, arg2})
-	stub := fake.InitApkDBStub
-	fakeReturns := fake.initApkDBReturns
-	fake.recordInvocation("InitApkDB", []interface{}{arg1, arg2})
-	fake.initApkDBMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeBuildImplementation) InitApkDBCallCount() int {
-	fake.initApkDBMutex.RLock()
-	defer fake.initApkDBMutex.RUnlock()
-	return len(fake.initApkDBArgsForCall)
-}
-
-func (fake *FakeBuildImplementation) InitApkDBCalls(stub func(*build.Options, *exec.Executor) error) {
-	fake.initApkDBMutex.Lock()
-	defer fake.initApkDBMutex.Unlock()
-	fake.InitApkDBStub = stub
-}
-
-func (fake *FakeBuildImplementation) InitApkDBArgsForCall(i int) (*build.Options, *exec.Executor) {
-	fake.initApkDBMutex.RLock()
-	defer fake.initApkDBMutex.RUnlock()
-	argsForCall := fake.initApkDBArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeBuildImplementation) InitApkDBReturns(result1 error) {
-	fake.initApkDBMutex.Lock()
-	defer fake.initApkDBMutex.Unlock()
-	fake.InitApkDBStub = nil
-	fake.initApkDBReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitApkDBReturnsOnCall(i int, result1 error) {
-	fake.initApkDBMutex.Lock()
-	defer fake.initApkDBMutex.Unlock()
-	fake.InitApkDBStub = nil
-	if fake.initApkDBReturnsOnCall == nil {
-		fake.initApkDBReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.initApkDBReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyring(arg1 *build.Options, arg2 *types.ImageConfiguration) error {
-	fake.initApkKeyringMutex.Lock()
-	ret, specificReturn := fake.initApkKeyringReturnsOnCall[len(fake.initApkKeyringArgsForCall)]
-	fake.initApkKeyringArgsForCall = append(fake.initApkKeyringArgsForCall, struct {
-		arg1 *build.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
-	stub := fake.InitApkKeyringStub
-	fakeReturns := fake.initApkKeyringReturns
-	fake.recordInvocation("InitApkKeyring", []interface{}{arg1, arg2})
-	fake.initApkKeyringMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyringCallCount() int {
-	fake.initApkKeyringMutex.RLock()
-	defer fake.initApkKeyringMutex.RUnlock()
-	return len(fake.initApkKeyringArgsForCall)
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyringCalls(stub func(*build.Options, *types.ImageConfiguration) error) {
-	fake.initApkKeyringMutex.Lock()
-	defer fake.initApkKeyringMutex.Unlock()
-	fake.InitApkKeyringStub = stub
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyringArgsForCall(i int) (*build.Options, *types.ImageConfiguration) {
-	fake.initApkKeyringMutex.RLock()
-	defer fake.initApkKeyringMutex.RUnlock()
-	argsForCall := fake.initApkKeyringArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyringReturns(result1 error) {
-	fake.initApkKeyringMutex.Lock()
-	defer fake.initApkKeyringMutex.Unlock()
-	fake.InitApkKeyringStub = nil
-	fake.initApkKeyringReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitApkKeyringReturnsOnCall(i int, result1 error) {
-	fake.initApkKeyringMutex.Lock()
-	defer fake.initApkKeyringMutex.Unlock()
-	fake.InitApkKeyringStub = nil
-	if fake.initApkKeyringReturnsOnCall == nil {
-		fake.initApkKeyringReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.initApkKeyringReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitApkWorld(arg1 *build.Options, arg2 *types.ImageConfiguration) error {
-	fake.initApkWorldMutex.Lock()
-	ret, specificReturn := fake.initApkWorldReturnsOnCall[len(fake.initApkWorldArgsForCall)]
-	fake.initApkWorldArgsForCall = append(fake.initApkWorldArgsForCall, struct {
-		arg1 *build.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
-	stub := fake.InitApkWorldStub
-	fakeReturns := fake.initApkWorldReturns
-	fake.recordInvocation("InitApkWorld", []interface{}{arg1, arg2})
-	fake.initApkWorldMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeBuildImplementation) InitApkWorldCallCount() int {
-	fake.initApkWorldMutex.RLock()
-	defer fake.initApkWorldMutex.RUnlock()
-	return len(fake.initApkWorldArgsForCall)
-}
-
-func (fake *FakeBuildImplementation) InitApkWorldCalls(stub func(*build.Options, *types.ImageConfiguration) error) {
-	fake.initApkWorldMutex.Lock()
-	defer fake.initApkWorldMutex.Unlock()
-	fake.InitApkWorldStub = stub
-}
-
-func (fake *FakeBuildImplementation) InitApkWorldArgsForCall(i int) (*build.Options, *types.ImageConfiguration) {
-	fake.initApkWorldMutex.RLock()
-	defer fake.initApkWorldMutex.RUnlock()
-	argsForCall := fake.initApkWorldArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeBuildImplementation) InitApkWorldReturns(result1 error) {
-	fake.initApkWorldMutex.Lock()
-	defer fake.initApkWorldMutex.Unlock()
-	fake.InitApkWorldStub = nil
-	fake.initApkWorldReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitApkWorldReturnsOnCall(i int, result1 error) {
-	fake.initApkWorldMutex.Lock()
-	defer fake.initApkWorldMutex.Unlock()
-	fake.InitApkWorldStub = nil
-	if fake.initApkWorldReturnsOnCall == nil {
-		fake.initApkWorldReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.initApkWorldReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) InitializeApk(arg1 *build.Options, arg2 *types.ImageConfiguration, arg3 *exec.Executor) error {
+func (fake *FakeBuildImplementation) InitializeApk(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
 	fake.initializeApkMutex.Lock()
 	ret, specificReturn := fake.initializeApkReturnsOnCall[len(fake.initializeApkArgsForCall)]
 	fake.initializeApkArgsForCall = append(fake.initializeApkArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
-		arg3 *exec.Executor
-	}{arg1, arg2, arg3})
+	}{arg1, arg2})
 	stub := fake.InitializeApkStub
 	fakeReturns := fake.initializeApkReturns
-	fake.recordInvocation("InitializeApk", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("InitializeApk", []interface{}{arg1, arg2})
 	fake.initializeApkMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -651,17 +342,17 @@ func (fake *FakeBuildImplementation) InitializeApkCallCount() int {
 	return len(fake.initializeApkArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) InitializeApkCalls(stub func(*build.Options, *types.ImageConfiguration, *exec.Executor) error) {
+func (fake *FakeBuildImplementation) InitializeApkCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
 	fake.initializeApkMutex.Lock()
 	defer fake.initializeApkMutex.Unlock()
 	fake.InitializeApkStub = stub
 }
 
-func (fake *FakeBuildImplementation) InitializeApkArgsForCall(i int) (*build.Options, *types.ImageConfiguration, *exec.Executor) {
+func (fake *FakeBuildImplementation) InitializeApkArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
 	fake.initializeApkMutex.RLock()
 	defer fake.initializeApkMutex.RUnlock()
 	argsForCall := fake.initializeApkArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeBuildImplementation) InitializeApkReturns(result1 error) {
@@ -687,11 +378,11 @@ func (fake *FakeBuildImplementation) InitializeApkReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxSymlinks(arg1 *build.Options, arg2 *exec.Executor) error {
+func (fake *FakeBuildImplementation) InstallBusyboxSymlinks(arg1 *options.Options, arg2 *exec.Executor) error {
 	fake.installBusyboxSymlinksMutex.Lock()
 	ret, specificReturn := fake.installBusyboxSymlinksReturnsOnCall[len(fake.installBusyboxSymlinksArgsForCall)]
 	fake.installBusyboxSymlinksArgsForCall = append(fake.installBusyboxSymlinksArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *exec.Executor
 	}{arg1, arg2})
 	stub := fake.InstallBusyboxSymlinksStub
@@ -713,13 +404,13 @@ func (fake *FakeBuildImplementation) InstallBusyboxSymlinksCallCount() int {
 	return len(fake.installBusyboxSymlinksArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxSymlinksCalls(stub func(*build.Options, *exec.Executor) error) {
+func (fake *FakeBuildImplementation) InstallBusyboxSymlinksCalls(stub func(*options.Options, *exec.Executor) error) {
 	fake.installBusyboxSymlinksMutex.Lock()
 	defer fake.installBusyboxSymlinksMutex.Unlock()
 	fake.InstallBusyboxSymlinksStub = stub
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxSymlinksArgsForCall(i int) (*build.Options, *exec.Executor) {
+func (fake *FakeBuildImplementation) InstallBusyboxSymlinksArgsForCall(i int) (*options.Options, *exec.Executor) {
 	fake.installBusyboxSymlinksMutex.RLock()
 	defer fake.installBusyboxSymlinksMutex.RUnlock()
 	argsForCall := fake.installBusyboxSymlinksArgsForCall[i]
@@ -749,11 +440,11 @@ func (fake *FakeBuildImplementation) InstallBusyboxSymlinksReturnsOnCall(i int, 
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) MutateAccounts(arg1 *build.Options, arg2 *types.ImageConfiguration) error {
+func (fake *FakeBuildImplementation) MutateAccounts(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
 	fake.mutateAccountsMutex.Lock()
 	ret, specificReturn := fake.mutateAccountsReturnsOnCall[len(fake.mutateAccountsArgsForCall)]
 	fake.mutateAccountsArgsForCall = append(fake.mutateAccountsArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 		arg2 *types.ImageConfiguration
 	}{arg1, arg2})
 	stub := fake.MutateAccountsStub
@@ -775,13 +466,13 @@ func (fake *FakeBuildImplementation) MutateAccountsCallCount() int {
 	return len(fake.mutateAccountsArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) MutateAccountsCalls(stub func(*build.Options, *types.ImageConfiguration) error) {
+func (fake *FakeBuildImplementation) MutateAccountsCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
 	fake.mutateAccountsMutex.Lock()
 	defer fake.mutateAccountsMutex.Unlock()
 	fake.MutateAccountsStub = stub
 }
 
-func (fake *FakeBuildImplementation) MutateAccountsArgsForCall(i int) (*build.Options, *types.ImageConfiguration) {
+func (fake *FakeBuildImplementation) MutateAccountsArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
 	argsForCall := fake.mutateAccountsArgsForCall[i]
@@ -811,72 +502,11 @@ func (fake *FakeBuildImplementation) MutateAccountsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTar(arg1 *build.Options) error {
-	fake.normalizeApkScriptsTarMutex.Lock()
-	ret, specificReturn := fake.normalizeApkScriptsTarReturnsOnCall[len(fake.normalizeApkScriptsTarArgsForCall)]
-	fake.normalizeApkScriptsTarArgsForCall = append(fake.normalizeApkScriptsTarArgsForCall, struct {
-		arg1 *build.Options
-	}{arg1})
-	stub := fake.NormalizeApkScriptsTarStub
-	fakeReturns := fake.normalizeApkScriptsTarReturns
-	fake.recordInvocation("NormalizeApkScriptsTar", []interface{}{arg1})
-	fake.normalizeApkScriptsTarMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTarCallCount() int {
-	fake.normalizeApkScriptsTarMutex.RLock()
-	defer fake.normalizeApkScriptsTarMutex.RUnlock()
-	return len(fake.normalizeApkScriptsTarArgsForCall)
-}
-
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTarCalls(stub func(*build.Options) error) {
-	fake.normalizeApkScriptsTarMutex.Lock()
-	defer fake.normalizeApkScriptsTarMutex.Unlock()
-	fake.NormalizeApkScriptsTarStub = stub
-}
-
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTarArgsForCall(i int) *build.Options {
-	fake.normalizeApkScriptsTarMutex.RLock()
-	defer fake.normalizeApkScriptsTarMutex.RUnlock()
-	argsForCall := fake.normalizeApkScriptsTarArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTarReturns(result1 error) {
-	fake.normalizeApkScriptsTarMutex.Lock()
-	defer fake.normalizeApkScriptsTarMutex.Unlock()
-	fake.NormalizeApkScriptsTarStub = nil
-	fake.normalizeApkScriptsTarReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) NormalizeApkScriptsTarReturnsOnCall(i int, result1 error) {
-	fake.normalizeApkScriptsTarMutex.Lock()
-	defer fake.normalizeApkScriptsTarMutex.Unlock()
-	fake.NormalizeApkScriptsTarStub = nil
-	if fake.normalizeApkScriptsTarReturnsOnCall == nil {
-		fake.normalizeApkScriptsTarReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.normalizeApkScriptsTarReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeBuildImplementation) Refresh(arg1 *build.Options) (*s6.Context, *exec.Executor, error) {
+func (fake *FakeBuildImplementation) Refresh(arg1 *options.Options) (*s6.Context, *exec.Executor, error) {
 	fake.refreshMutex.Lock()
 	ret, specificReturn := fake.refreshReturnsOnCall[len(fake.refreshArgsForCall)]
 	fake.refreshArgsForCall = append(fake.refreshArgsForCall, struct {
-		arg1 *build.Options
+		arg1 *options.Options
 	}{arg1})
 	stub := fake.RefreshStub
 	fakeReturns := fake.refreshReturns
@@ -897,13 +527,13 @@ func (fake *FakeBuildImplementation) RefreshCallCount() int {
 	return len(fake.refreshArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) RefreshCalls(stub func(*build.Options) (*s6.Context, *exec.Executor, error)) {
+func (fake *FakeBuildImplementation) RefreshCalls(stub func(*options.Options) (*s6.Context, *exec.Executor, error)) {
 	fake.refreshMutex.Lock()
 	defer fake.refreshMutex.Unlock()
 	fake.RefreshStub = stub
 }
 
-func (fake *FakeBuildImplementation) RefreshArgsForCall(i int) *build.Options {
+func (fake *FakeBuildImplementation) RefreshArgsForCall(i int) *options.Options {
 	fake.refreshMutex.RLock()
 	defer fake.refreshMutex.RUnlock()
 	argsForCall := fake.refreshArgsForCall[i]
@@ -1069,24 +699,14 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.buildImageMutex.RUnlock()
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
-	fake.fixateApkWorldMutex.RLock()
-	defer fake.fixateApkWorldMutex.RUnlock()
 	fake.generateSBOMMutex.RLock()
 	defer fake.generateSBOMMutex.RUnlock()
-	fake.initApkDBMutex.RLock()
-	defer fake.initApkDBMutex.RUnlock()
-	fake.initApkKeyringMutex.RLock()
-	defer fake.initApkKeyringMutex.RUnlock()
-	fake.initApkWorldMutex.RLock()
-	defer fake.initApkWorldMutex.RUnlock()
 	fake.initializeApkMutex.RLock()
 	defer fake.initializeApkMutex.RUnlock()
 	fake.installBusyboxSymlinksMutex.RLock()
 	defer fake.installBusyboxSymlinksMutex.RUnlock()
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
-	fake.normalizeApkScriptsTarMutex.RLock()
-	defer fake.normalizeApkScriptsTarMutex.RUnlock()
 	fake.refreshMutex.RLock()
 	defer fake.refreshMutex.RUnlock()
 	fake.validateImageConfigurationMutex.RLock()
