@@ -402,6 +402,7 @@ github.com/c2h5oh/datasize v0.0.0-20171227191756-4eba002a5eae/go.mod h1:S/7n9cop
 github.com/caarlos0/ctrlc v1.0.0/go.mod h1:CdXpj4rmq0q/1Eb44M9zi2nKB0QraNKuRGYGrrHhcQw=
 github.com/campoy/unique v0.0.0-20180121183637-88950e537e7e/go.mod h1:9IOqJGCPMSc6E5ydlp5NIonxObaeu/Iub/X03EKPVYo=
 github.com/carolynvs/magex v0.6.0/go.mod h1:hqaEkr9TAv+kFb/5wgDiTdszF13rpe0Q+bWHmTe6N74=
+github.com/carolynvs/magex v0.7.0/go.mod h1:vZB3BkRfkd5ZMtkxJkCGbdFyWGoZiuNPKhx6uEQARmY=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cavaliercoder/badio v0.0.0-20160213150051-ce5280129e9e/go.mod h1:V284PjgVwSk4ETmz84rpu9ehpGg7swlIH8npP9k2bGw=
 github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e/go.mod h1:oDpT4efm8tSYHXV5tHSdRvBet/b/QzxZ+XyyPehvm3A=
@@ -2936,8 +2937,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.22/go.mod h1:LEScyz
 sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6/go.mod h1:p4QtZmO4uMYipTQNzagwnNoseA6OxSUutVw05NhYDRs=
 sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2/go.mod h1:B+TnT182UBxE84DiCz4CVE26eOSDAeYCpfDnC2kdKMY=
 sigs.k8s.io/release-utils v0.4.1-0.20220207182343-6dadf2228617/go.mod h1:t9pL38kZkTBVDcjL1y7ajrkNQFLiArVAjOVO0sxzFF0=
-sigs.k8s.io/release-utils v0.5.0 h1:TVJUoFLjfYYdJ11+mIw6eb44XIOC5BI3QQKiKYCtk/8=
-sigs.k8s.io/release-utils v0.5.0/go.mod h1:t9pL38kZkTBVDcjL1y7ajrkNQFLiArVAjOVO0sxzFF0=
+sigs.k8s.io/release-utils v0.6.0 h1:wJDuzWJqPH4a5FAxAXE2aBvbB6UMIW7iYMhsKnIMQkA=
+sigs.k8s.io/release-utils v0.6.0/go.mod h1:kR1/DuYCJ4covppUasYNcA11OixC9O37B/E0ejRfb+c=
 sigs.k8s.io/structured-merge-diff/v4 v4.0.1/go.mod h1:bJZC9H9iH24zzfZ/41RGcq60oK1F7G282QMXDPYydCw=
 sigs.k8s.io/structured-merge-diff/v4 v4.0.2/go.mod h1:bJZC9H9iH24zzfZ/41RGcq60oK1F7G282QMXDPYydCw=
 sigs.k8s.io/structured-merge-diff/v4 v4.0.3/go.mod h1:bJZC9H9iH24zzfZ/41RGcq60oK1F7G282QMXDPYydCw=
