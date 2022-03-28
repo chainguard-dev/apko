@@ -18,7 +18,7 @@ require (
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	sigs.k8s.io/release-utils v0.5.0
+	sigs.k8s.io/release-utils v0.6.0
 )
 
 require (
