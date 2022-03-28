@@ -64,7 +64,7 @@ func (di *apkDefaultImplementation) LoadSystemKeyring(o *options.Options, locati
 	var ring []string
 	if len(locations) == 0 {
 		locations = []string{
-			filepath.Join("/usr/share/apk/keys/", o.Arch.ToAPK()),
+			filepath.Join(DefaultSystemKeyRingPath, o.Arch.ToAPK()),
 		}
 	}
 	for _, d := range locations {
@@ -101,7 +101,7 @@ func (di *apkDefaultImplementation) LoadSystemKeyring(o *options.Options, locati
 func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.ImageConfiguration) (err error) {
 	o.Log.Printf("initializing apk keyring")
 
-	if err := os.MkdirAll(filepath.Join(o.WorkDir, "etc", "apk", "keys"),
+	if err := os.MkdirAll(filepath.Join(o.WorkDir, DefaultKeyRingPath),
 		0o755); err != nil {
 		return fmt.Errorf("failed to make keys dir: %w", err)
 	}

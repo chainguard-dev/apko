@@ -31,6 +31,11 @@ import (
 // but this has been designed so that we can port it easily to use libapk-go once
 // it is ready.
 
+const (
+	DefaultKeyRingPath       = "/etc/apk/keys"
+	DefaultSystemKeyRingPath = "/usr/share/apk/keys/"
+)
+
 type APK struct {
 	impl     apkImplementation
 	executor *exec.Executor
