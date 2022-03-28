@@ -96,6 +96,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	cfg = cfg.DeepCopy()
 	cfg.Author = "github.com/chainguard-dev/apko"
 	cfg.Architecture = arch.String()
+	cfg.Created = v1.Time{Time: created}
 	cfg.OS = "linux"
 
 	if ic.Entrypoint.Command != "" {
