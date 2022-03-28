@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	coci "github.com/sigstore/cosign/pkg/oci"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
@@ -127,7 +127,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	default:
 		var errg errgroup.Group
-		imgs := map[types.Architecture]v1.Image{}
+		imgs := map[types.Architecture]coci.SignedImage{}
 		workDir := bc.WorkDir
 
 		for _, arch := range archs {
