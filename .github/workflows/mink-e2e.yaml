@@ -63,7 +63,7 @@ jobs:
 
           echo $cfg produced: $DIGEST
 
-          # Each of the per-architecture images produces should have an SBOM attached to it.
+          # Each of the per-architecture images produced should have an SBOM attached to it.
           for d in $(crane manifest "${DIGEST}" | jq -r '.manifests[].digest'); do
             cosign download sbom ${KO_DOCKER_REPO}/image@${d}
           done
