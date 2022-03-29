@@ -29,5 +29,6 @@ contents:
     - jq
     - tree
     - make
+    - docker-cli
 entrypoint:
   command: /bin/sh -l
