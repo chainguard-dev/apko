@@ -44,7 +44,7 @@ function load_image() {
 }
 
 function run() {
-    docker run --rm -w /apko -v $(pwd):/apko -ti ${IMAGE_TAG}:latest /bin/sh -l hack/make-devenv.sh setup
+    docker run --rm -w /apko -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/apko -ti ${IMAGE_TAG}:latest /bin/sh -l hack/make-devenv.sh setup
 }
 
 function setup() {
