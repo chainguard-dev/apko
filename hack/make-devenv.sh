@@ -16,13 +16,16 @@ function checkrepo() {
 }
 
 function run_builder() {
-    set -e
-    mkdir _output > /dev/null 2>&1 || : 
-    docker run --rm -v $(pwd):/apko -w /apko -ti \
-        -e BUILD_UID=$(id -u) -e BUILD_GID=$(id -g) \
-        alpine:${BUILDER_ALPINE_TAG} \
-        /bin/sh hack/make-devenv.sh build_image
-    load_image
+    if ! (docker inspect apko-inception:latest &> /dev/null ); then
+        set -e
+        mkdir _output > /dev/null 2>&1 || : 
+        docker run --rm -v $(pwd):/apko -w /apko -ti \
+            -e BUILD_UID=$(id -u) -e BUILD_GID=$(id -g) \
+            alpine:${BUILDER_ALPINE_TAG} \
+            /bin/sh hack/make-devenv.sh build_image
+        load_image
+        rm _output/${DEVENV_IMAGE_TARBALL}
+    fi
     run
 }
 
@@ -30,13 +33,13 @@ function build_image() {
     set -e
     cat /etc/os-release
     apk add go
-    go run main.go build ./examples/apko-devenv.yaml ${IMAGE_TAG} ./_output/${DEVENV_IMAGE_TARBALL}
+    go run main.go build --sbom=false ./examples/apko-devenv.yaml ${IMAGE_TAG} ./_output/${DEVENV_IMAGE_TARBALL}
     chown ${BUILD_UID}:${BUILD_GID} _output/${DEVENV_IMAGE_TARBALL}
 }
 
 function load_image() {
     set -e
-    docker rmi ${IMAGE_TAG}:latest || :
+    docker rmi ${IMAGE_TAG}:latest 2>&1 || :
     docker load < _output/${DEVENV_IMAGE_TARBALL}
 }
 

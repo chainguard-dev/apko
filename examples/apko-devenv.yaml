@@ -27,5 +27,6 @@ contents:
     - go
     - git
     - jq
+    - tree
 entrypoint:
   command: /bin/sh -l
