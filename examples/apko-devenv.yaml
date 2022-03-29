@@ -28,5 +28,6 @@ contents:
     - git
     - jq
     - tree
+    - make
 entrypoint:
   command: /bin/sh -l
