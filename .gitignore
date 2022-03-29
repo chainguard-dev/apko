@@ -19,3 +19,4 @@ bin/
 .vscode
 .idea
 tmp/
+_output
