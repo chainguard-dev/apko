@@ -32,6 +32,15 @@ type Group struct {
 	Members   []string
 }
 
+type PathMutation struct {
+	Path        string
+	Type        string
+	UID         uint32
+	GID         uint32
+	Permissions uint32
+	Source      string
+}
+
 type ImageConfiguration struct {
 	Contents struct {
 		Repositories []string
@@ -52,6 +61,7 @@ type ImageConfiguration struct {
 	}
 	Archs       []Architecture
 	Environment map[string]string
+	Paths       []PathMutation
 }
 
 // Architecture represents a CPU architecture for the container image.
