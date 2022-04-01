@@ -42,6 +42,7 @@ type buildImplementation interface {
 	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
+	MutatePaths(*options.Options, *types.ImageConfiguration) error
 	ValidateImageConfiguration(*types.ImageConfiguration) error
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
@@ -179,6 +180,10 @@ func buildImage(
 
 	if err := di.MutateAccounts(o, ic); err != nil {
 		return fmt.Errorf("failed to mutate accounts: %w", err)
+	}
+
+	if err := di.MutatePaths(o, ic); err != nil {
+		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
 	// maybe install busybox symlinks
