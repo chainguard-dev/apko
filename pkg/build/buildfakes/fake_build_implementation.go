@@ -85,6 +85,18 @@ type FakeBuildImplementation struct {
 	mutateAccountsReturnsOnCall map[int]struct {
 		result1 error
 	}
+	MutatePathsStub        func(*options.Options, *types.ImageConfiguration) error
+	mutatePathsMutex       sync.RWMutex
+	mutatePathsArgsForCall []struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+	}
+	mutatePathsReturns struct {
+		result1 error
+	}
+	mutatePathsReturnsOnCall map[int]struct {
+		result1 error
+	}
 	RefreshStub        func(*options.Options) (*s6.Context, *exec.Executor, error)
 	refreshMutex       sync.RWMutex
 	refreshArgsForCall []struct {
@@ -502,6 +514,68 @@ func (fake *FakeBuildImplementation) MutateAccountsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
+func (fake *FakeBuildImplementation) MutatePaths(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+	fake.mutatePathsMutex.Lock()
+	ret, specificReturn := fake.mutatePathsReturnsOnCall[len(fake.mutatePathsArgsForCall)]
+	fake.mutatePathsArgsForCall = append(fake.mutatePathsArgsForCall, struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+	}{arg1, arg2})
+	stub := fake.MutatePathsStub
+	fakeReturns := fake.mutatePathsReturns
+	fake.recordInvocation("MutatePaths", []interface{}{arg1, arg2})
+	fake.mutatePathsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) MutatePathsCallCount() int {
+	fake.mutatePathsMutex.RLock()
+	defer fake.mutatePathsMutex.RUnlock()
+	return len(fake.mutatePathsArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) MutatePathsCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+	fake.mutatePathsMutex.Lock()
+	defer fake.mutatePathsMutex.Unlock()
+	fake.MutatePathsStub = stub
+}
+
+func (fake *FakeBuildImplementation) MutatePathsArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+	fake.mutatePathsMutex.RLock()
+	defer fake.mutatePathsMutex.RUnlock()
+	argsForCall := fake.mutatePathsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeBuildImplementation) MutatePathsReturns(result1 error) {
+	fake.mutatePathsMutex.Lock()
+	defer fake.mutatePathsMutex.Unlock()
+	fake.MutatePathsStub = nil
+	fake.mutatePathsReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) MutatePathsReturnsOnCall(i int, result1 error) {
+	fake.mutatePathsMutex.Lock()
+	defer fake.mutatePathsMutex.Unlock()
+	fake.MutatePathsStub = nil
+	if fake.mutatePathsReturnsOnCall == nil {
+		fake.mutatePathsReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.mutatePathsReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeBuildImplementation) Refresh(arg1 *options.Options) (*s6.Context, *exec.Executor, error) {
 	fake.refreshMutex.Lock()
 	ret, specificReturn := fake.refreshReturnsOnCall[len(fake.refreshArgsForCall)]
@@ -707,6 +781,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.installBusyboxSymlinksMutex.RUnlock()
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
+	fake.mutatePathsMutex.RLock()
+	defer fake.mutatePathsMutex.RUnlock()
 	fake.refreshMutex.RLock()
 	defer fake.refreshMutex.RUnlock()
 	fake.validateImageConfigurationMutex.RLock()

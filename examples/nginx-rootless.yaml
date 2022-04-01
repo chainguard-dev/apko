@@ -22,3 +22,17 @@ accounts:
 # optional environment configuration
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
+
+# optional path mutations
+paths:
+  - path: /run/nginx
+    type: directory
+    uid: 10000
+    gid: 10000
+    permissions: 0o755
+  - path: /etc/nginx/http.d/default.conf
+    type: hardlink
+    source: /usr/share/nginx/http-default_server.conf
+    uid: 10000
+    gid: 10000
+    permissions: 0o644
