@@ -14,6 +14,8 @@
 
 package exec
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"fmt"
 	"log"
@@ -21,6 +23,7 @@ import (
 )
 
 type Executor struct {
+	impl     executorImplementation
 	WorkDir  string
 	UseProot bool
 	UseQemu  string
@@ -31,6 +34,7 @@ type Option func(*Executor) error
 
 func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
+		impl:    &defaultBuildImplementation{},
 		WorkDir: workDir,
 		Log:     logger,
 	}
@@ -61,4 +65,8 @@ func WithQemu(qemuArch string) Option {
 		e.UseQemu = emu
 		return nil
 	}
+}
+
+func (e *Executor) SetImplementation(i executorImplementation) {
+	e.impl = i
 }
