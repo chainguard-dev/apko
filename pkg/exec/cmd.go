@@ -15,47 +15,8 @@
 package exec
 
 import (
-	"bufio"
-	"io"
-	"log"
 	"os/exec"
 )
-
-func monitorPipe(p io.ReadCloser, prefix string, logger *log.Logger) {
-	defer p.Close()
-
-	scanner := bufio.NewScanner(p)
-	for scanner.Scan() {
-		logger.Printf("%s: %s", prefix, scanner.Text())
-	}
-}
-
-func run(cmd *exec.Cmd, logname string, logger *log.Logger) error {
-	logger.Printf("running: %s", cmd)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	go monitorPipe(stdout, logname, logger)
-	go monitorPipe(stderr, logname, logger)
-
-	if err := cmd.Wait(); err != nil {
-		return err
-	}
-
-	return nil
-}
 
 // ExecuteChroot executes the named program with the given arguments
 // inside a chroot.
@@ -76,7 +37,7 @@ func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 		cmd = exec.Command("chroot", arg...)
 	}
 
-	return run(cmd, name, e.Log)
+	return e.impl.Run(cmd, name, e.Log)
 }
 
 // Execute executes the named program with the given arguments.
@@ -89,5 +50,5 @@ func (e *Executor) Execute(name string, arg ...string) error {
 	}
 
 	cmd := exec.Command(name, arg...)
-	return run(cmd, logname, e.Log)
+	return e.impl.Run(cmd, logname, e.Log)
 }
