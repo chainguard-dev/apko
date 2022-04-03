@@ -69,6 +69,16 @@ type Architecture struct{ s string }
 
 func (a Architecture) String() string { return a.s }
 
+func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var buf string
+	if err := unmarshal(&buf); err != nil {
+		return err
+	}
+
+	a.s = ParseArchitecture(buf).s
+	return nil
+}
+
 var (
 	_386    = Architecture{"386"}
 	amd64   = Architecture{"amd64"}

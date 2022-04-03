@@ -130,7 +130,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		workDir := bc.Options.WorkDir
 		imgs := map[types.Architecture]coci.SignedImage{}
 
-		for _, arch := range archs {
+		for _, arch := range bc.ImageConfiguration.Archs {
 			arch := arch
 			bc := *bc
 
