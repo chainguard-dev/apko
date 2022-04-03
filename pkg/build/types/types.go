@@ -72,7 +72,7 @@ func (a Architecture) String() string { return a.s }
 func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var buf string
 	if err := unmarshal(&buf); err != nil {
-		return nil
+		return err
 	}
 
 	a.s = ParseArchitecture(buf).s
