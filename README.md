@@ -59,8 +59,8 @@ of the box, avoiding the need to deal with things like `s6-overlay`.
 If you define a `service-bundle` entrypoint, it will generate an
 appropriate supervision tree and ensure `s6` is installed.
 
-### SBOM (coming soon)
+### SBOMs
 
 As a result of using apk to manage distribution and build artifacts,
-we will be able to generate SBOMs for containers, using the new
-apk-tools 3.x SBOM feature.
+we are able to generate SBOMs for containers.  Future versions will
+have even better SBOMs, using the apk-tools 3.x SBOM feature.
