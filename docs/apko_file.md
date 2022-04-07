@@ -94,7 +94,7 @@ There are multiple possible child elements:
  - `repositories` defines a list of alpine repositories to look in for packages (TK can these be
    files as well as URLs?)
  - `packages` defines a list of alpine packages to install inside the image
- - `keyring` TK
+ - `keyring` PGP keys to add to the keyring for verifying packages (TK is this accurate?)
 
 ### Entrypoint top level element
 
@@ -112,18 +112,36 @@ There are several child elements:
 
 Services are monitored with the [s6 supervisor](https://skarnet.org/software/s6/index.html).
 
-### Accounts
+### Accounts top level element
 
+`accounts` is used to set-up user accounts in the image and can be used when running processes in
+the container. It is best practice to set an account to avoid processes running as root which can be
+a security issue.
 
-run-as
-users, UID, UserName, GID
-groups
+There are several child elements:
 
+ - `users`: list of users and associated uids to include in the image e.g:
+```
+  users:
+    - username: nginx
+      uid: 10000
+```
+ - `run-as`: name of the user to run the main process under (should match a username or uid specified in
+   users)
+ - `groups`: list of group names and associated gids to include in the image e.g:
+
+```
+  groups:
+    - groupname: nginx
+      gid: 10000
+```
+
+TK are all users members of all groups? do both ids and names have to be specified? 
 
 ### Archs top level element
 
-`archs` defines a list architectures to build an image for. Valid values are 386, amd64, arm64, arm/v6, arm/v7,
-ppc64le, riscv64, s390x. TK what about armv7, x86_64, aarch64, armhf?
+`archs` defines a list architectures to build an image for. Valid values are: `386`, `amd64`, `arm64`, `arm/v6`, `arm/v7`,
+`ppc64le`, `riscv64`, `s390x`. TK what about armv7, x86_64, aarch64, armhf?
 
 TK does this produce a "fat manifest"? Does it load in Docker?
 
@@ -141,6 +159,29 @@ will set the environment variable named "FOO" to the value "bar".
 
 ### Paths
 
-TK
+path 
+UID
+GID
+Permissions
+Source
+type:
+    directory
+    empty-file
+    hardlink
+    symlink
+    permissions
 
-
+```
+paths:
+  - path: /run/nginx
+    type: directory
+    uid: 10000
+    gid: 10000
+    permissions: 0o755
+  - path: /etc/nginx/http.d/default.conf
+    type: hardlink
+    source: /usr/share/nginx/http-default_server.conf
+    uid: 10000
+    gid: 10000
+    permissions: 0o644
+```
