@@ -91,7 +91,7 @@ Details of each field can be found below.
 
 ### Contents top level element
 
-`contents` defines the file contents of the image. The primary way of adding files to an image
+`contents` defines the file contents of the image. This is the primary way of adding files to an image.
 
 There are multiple possible child elements:
 
@@ -164,7 +164,7 @@ setting permissions on files or directories as well as creating empty files, dir
 The `paths` element contains the following children:
 
  - `path`: filesystem path to manipulate
- - `type`: The type of manipulation to perform. This can be:
+ - `type`: The type of file operation to perform. This can be:
    - `directory`: create an empty directory at the path
    - `empty-file`: create an empty file at the path
    - `hardlink`: create a hardlink (`ln`) at the path, linking to the value specified in `source`
