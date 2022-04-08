@@ -74,7 +74,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.OSRelease.VersionID == "" {
-		ic.OSRelease.VersionID = "3.999"
+		ic.OSRelease.VersionID = "3.16"
 	}
 
 	if ic.OSRelease.HomeURL == "" {
