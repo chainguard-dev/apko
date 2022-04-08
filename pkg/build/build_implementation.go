@@ -43,6 +43,7 @@ type buildImplementation interface {
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
 	MutatePaths(*options.Options, *types.ImageConfiguration) error
+	GenerateOSRelease(*options.Options, *types.ImageConfiguration) error
 	ValidateImageConfiguration(*types.ImageConfiguration) error
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
@@ -189,6 +190,10 @@ func buildImage(
 	// maybe install busybox symlinks
 	if err := di.InstallBusyboxSymlinks(o, e); err != nil {
 		return fmt.Errorf("failed to install busybox symlinks: %w", err)
+	}
+
+	if err := di.GenerateOSRelease(o, ic); err != nil {
+		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 	}
 
 	if err := di.WriteSupervisionTree(s6context, ic); err != nil {

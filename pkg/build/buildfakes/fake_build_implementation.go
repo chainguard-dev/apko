@@ -38,6 +38,18 @@ type FakeBuildImplementation struct {
 		result1 string
 		result2 error
 	}
+	GenerateOSReleaseStub        func(*options.Options, *types.ImageConfiguration) error
+	generateOSReleaseMutex       sync.RWMutex
+	generateOSReleaseArgsForCall []struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+	}
+	generateOSReleaseReturns struct {
+		result1 error
+	}
+	generateOSReleaseReturnsOnCall map[int]struct {
+		result1 error
+	}
 	GenerateSBOMStub        func(*options.Options) error
 	generateSBOMMutex       sync.RWMutex
 	generateSBOMArgsForCall []struct {
@@ -265,6 +277,68 @@ func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 st
 		result1 string
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeBuildImplementation) GenerateOSRelease(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+	fake.generateOSReleaseMutex.Lock()
+	ret, specificReturn := fake.generateOSReleaseReturnsOnCall[len(fake.generateOSReleaseArgsForCall)]
+	fake.generateOSReleaseArgsForCall = append(fake.generateOSReleaseArgsForCall, struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+	}{arg1, arg2})
+	stub := fake.GenerateOSReleaseStub
+	fakeReturns := fake.generateOSReleaseReturns
+	fake.recordInvocation("GenerateOSRelease", []interface{}{arg1, arg2})
+	fake.generateOSReleaseMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) GenerateOSReleaseCallCount() int {
+	fake.generateOSReleaseMutex.RLock()
+	defer fake.generateOSReleaseMutex.RUnlock()
+	return len(fake.generateOSReleaseArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) GenerateOSReleaseCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+	fake.generateOSReleaseMutex.Lock()
+	defer fake.generateOSReleaseMutex.Unlock()
+	fake.GenerateOSReleaseStub = stub
+}
+
+func (fake *FakeBuildImplementation) GenerateOSReleaseArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+	fake.generateOSReleaseMutex.RLock()
+	defer fake.generateOSReleaseMutex.RUnlock()
+	argsForCall := fake.generateOSReleaseArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeBuildImplementation) GenerateOSReleaseReturns(result1 error) {
+	fake.generateOSReleaseMutex.Lock()
+	defer fake.generateOSReleaseMutex.Unlock()
+	fake.GenerateOSReleaseStub = nil
+	fake.generateOSReleaseReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) GenerateOSReleaseReturnsOnCall(i int, result1 error) {
+	fake.generateOSReleaseMutex.Lock()
+	defer fake.generateOSReleaseMutex.Unlock()
+	fake.GenerateOSReleaseStub = nil
+	if fake.generateOSReleaseReturnsOnCall == nil {
+		fake.generateOSReleaseReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.generateOSReleaseReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeBuildImplementation) GenerateSBOM(arg1 *options.Options) error {
@@ -773,6 +847,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.buildImageMutex.RUnlock()
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
+	fake.generateOSReleaseMutex.RLock()
+	defer fake.generateOSReleaseMutex.RUnlock()
 	fake.generateSBOMMutex.RLock()
 	defer fake.generateSBOMMutex.RUnlock()
 	fake.initializeApkMutex.RLock()
