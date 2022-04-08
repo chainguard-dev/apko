@@ -24,12 +24,14 @@ environment:
 ```
 
 Running `apko build` on this file will produce a tar file containing an Alpine base container image.
-The image can be used by container runtimes (e.g. run `docker load image.tar` to add to Docker). The
-command `apko publish` can also be used to directly push the image to an image registry.
+The image can be used by container runtimes (for example, running  `docker load image.tar` will add
+the image to Docker). The command `apko publish` can also be used to directly push the image to an
+image registry.
 
 The file contents of the image are completely specified in the `contents` section. In this case, a
-single Alpine package (TK link) or apk is installed which TK. The rest of the file specifies various
-metadata, including the default command to run and environment variables to set.
+single [Alpine package](https://pkgs.alpinelinux.org/packages) or apk is installed which includes 
+only the minimal set of files needed for a working Alpine linux image. The rest of the file
+specifies various metadata, including the default command to run and environment variables to set.
 
 ## Complete Example
 
@@ -91,22 +93,21 @@ Details of each field can be found below.
 
 There are multiple possible child elements:
 
- - `repositories` defines a list of alpine repositories to look in for packages (TK can these be
-   files as well as URLs?)
+ - `repositories` defines a list of alpine repositories to look in for packages. These can be either
+   URLs or file paths. File paths should start with `@local` e.g: `@local /github/workspace/packages`
  - `packages` defines a list of alpine packages to install inside the image
- - `keyring` PGP keys to add to the keyring for verifying packages (TK is this accurate?)
+ - `keyring` PGP keys to add to the keyring for verifying packages.
 
 ### Entrypoint top level element
 
-`entrypoint` defines the default commands and/or services to be executed by the container at runtime. It is directly
-analogous to TK.
+`entrypoint` defines the default commands and/or services to be executed by the container at runtime.
 
 There are several child elements:
 
  - `type`: if this is set to `service-bundle`, the s6 supervisor will be used to start commands
    listed in `services`
  - `cmd`: if the type is not `service-bundle`, this can be set to specify a command to run when the
-   container starts. TK is this the equivalent of entrypoint or cmd?
+   container starts. 
  - `services`: a map of service names to commands to run by the s6 supervisor. `type` should be set
    to `service-bundle` when specifying services.
 
@@ -136,14 +137,10 @@ There are several child elements:
       gid: 10000
 ```
 
-TK are all users members of all groups? do both ids and names have to be specified? 
-
 ### Archs top level element
 
-`archs` defines a list architectures to build an image for. Valid values are: `386`, `amd64`, `arm64`, `arm/v6`, `arm/v7`,
-`ppc64le`, `riscv64`, `s390x`. TK what about armv7, x86_64, aarch64, armhf?
-
-TK does this produce a "fat manifest"? Does it load in Docker?
+`archs` defines a list architectures to build the image for. Valid values are: `386`, `amd64`, `arm64`, `arm/v6`, `arm/v7`,
+`ppc64le`, `riscv64`, `s390x`.
 
 ### Environment
 
