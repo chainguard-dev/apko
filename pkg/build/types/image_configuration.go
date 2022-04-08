@@ -64,6 +64,23 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 
+	if ic.OSRelease.ID == "" {
+		ic.OSRelease.ID = "alpine"
+	}
+
+	if ic.OSRelease.Name == "" {
+		ic.OSRelease.Name = "apko-generated image"
+		ic.OSRelease.PrettyName = "apko-generated image"
+	}
+
+	if ic.OSRelease.VersionID == "" {
+		ic.OSRelease.VersionID = "3.999"
+	}
+
+	if ic.OSRelease.HomeURL == "" {
+		ic.OSRelease.HomeURL = "https://github.com/chainguard-dev/apko"
+	}
+
 	return nil
 }
 

@@ -41,6 +41,15 @@ type PathMutation struct {
 	Source      string
 }
 
+type OSRelease struct {
+	Name         string
+	ID           string
+	VersionID    string `yaml:"version-id"`
+	PrettyName   string `yaml:"pretty-name"`
+	HomeURL      string `yaml:"home-url"`
+	BugReportURL string `yaml:"bug-report-url"`
+}
+
 type ImageConfiguration struct {
 	Contents struct {
 		Repositories []string
@@ -62,6 +71,7 @@ type ImageConfiguration struct {
 	Archs       []Architecture
 	Environment map[string]string
 	Paths       []PathMutation
+	OSRelease   OSRelease `yaml:"os-release"`
 }
 
 // Architecture represents a CPU architecture for the container image.
