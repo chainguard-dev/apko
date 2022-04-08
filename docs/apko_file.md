@@ -1,8 +1,9 @@
 # The apko File Format
 
 Apko files are a YAML based declarative definition of an image to be built by apko. Unlike
-Dockerfiles, there is no support for running arbitrary Unix commands (i.e. RUN statements), which
-allows apko to guarantee the contents of the final image and produce extra metadata such as SBOMs.
+Dockerfiles, there is no support for running arbitrary Unix commands (i.e. there is no equivalent of
+`RUN` statements). This means apko can guarantee the contents and reproducibility of the final
+image, as well as produce extra metadata such as SBOMs.
 
 ## Simple Example
 
