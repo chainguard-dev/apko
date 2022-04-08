@@ -18,7 +18,7 @@ Please note that apko is a work in progress and details are subject to change!
 
 An apko file for building an Alpine base image looks like this:
 
-```
+```yaml
 contents:
   repositories:
     - https://dl-cdn.alpinelinux.org/alpine/edge/main
@@ -75,7 +75,9 @@ e1e9cdb1608b:/apko# apko build examples/alpine-base.yaml apko-alpine:test apko-a
 
 Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
 
-See the [examples directory](./examples) for more, err, examples!
+See the [docs](./docs/apko_file.md) for details of the file formate and the [examples
+directory](./examples) for more, err, examples!
+
 
 ## Why
 
