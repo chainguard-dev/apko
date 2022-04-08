@@ -9,7 +9,7 @@ image, as well as produce extra metadata such as SBOMs.
 
 This is easier to understand by looking at a simple example:
 
-```
+```yaml
 contents:
   repositories:
     - https://dl-cdn.alpinelinux.org/alpine/edge/main
@@ -30,15 +30,16 @@ the image to Docker). The command `apko publish` can also be used to directly pu
 image registry.
 
 The file contents of the image are completely specified in the `contents` section. In this case, a
-single [Alpine package](https://pkgs.alpinelinux.org/packages) or apk is installed which includes 
-only the minimal set of files needed for a working Alpine linux image. The rest of the file
-specifies various metadata, including the default command to run and environment variables to set.
+single [Alpine package](https://pkgs.alpinelinux.org/packages) or apk called "alpine-base" is
+installed. This apk includes only the minimal set of files needed for a working Alpine linux image.
+The rest of the file specifies various metadata, including the default command to run and
+environment variables to set.
 
 ## Complete Example
 
 The following example builds an nginx image and covers the full range of apko features:
 
-```
+```yaml
 contents:
   repositories:
     - https://dl-cdn.alpinelinux.org/alpine/edge/main
@@ -123,7 +124,7 @@ a security issue.
 There are several child elements:
 
  - `users`: list of users and associated uids to include in the image e.g:
-```
+```yaml
   users:
     - username: nginx
       uid: 10000
@@ -132,7 +133,7 @@ There are several child elements:
    users)
  - `groups`: list of group names and associated gids to include in the image e.g:
 
-```
+```yaml
   groups:
     - groupname: nginx
       gid: 10000
@@ -147,7 +148,7 @@ There are several child elements:
 
 `environment` defines a list of environment variables to set within the image e.g: 
 
-```
+```yaml
 environment:
     FOO: bar
 ```
