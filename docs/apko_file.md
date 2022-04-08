@@ -159,29 +159,21 @@ will set the environment variable named "FOO" to the value "bar".
 
 ### Paths
 
-path 
-UID
-GID
-Permissions
-Source
-type:
-    directory
-    empty-file
-    hardlink
-    symlink
-    permissions
+`paths` defines filesystem operations that can be applied to the image. This includes 
+setting permissions on files or directories as well as creating empty files, directories and links.  
 
-```
-paths:
-  - path: /run/nginx
-    type: directory
-    uid: 10000
-    gid: 10000
-    permissions: 0o755
-  - path: /etc/nginx/http.d/default.conf
-    type: hardlink
-    source: /usr/share/nginx/http-default_server.conf
-    uid: 10000
-    gid: 10000
-    permissions: 0o644
-```
+The `paths` element contains the following children:
+
+ - `path`: filesystem path to manipulate
+ - `type`: The type of manipulation to perform. This can be:
+   - `directory`: create an empty directory at the path
+   - `empty-file`: create an empty file at the path
+   - `hardlink`: create a hardlink (`ln`) at the path, linking to the value specified in `source`
+   - `symlink`: create a symbolic link (`ln -s`) at the path, linking to the value specified in
+     `source`
+   - `permissions`: sets file permissions on the file or directory at the path.
+ - `uid`: UID to associate with the file
+ - `gid`: GID to associate with the file
+ - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
+ - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
+ 
