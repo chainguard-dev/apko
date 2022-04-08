@@ -54,7 +54,7 @@ e289dc84c4ad:/# echo boo!
 boo!
 ```
 
-Or publish the image directly to a registy.
+Or publish the image directly to a registry.
 
 ```
 $ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
@@ -80,7 +80,7 @@ See the [examples directory](./examples) for more, err, examples!
 ## Why
 
 apko was created by [Chainguard](https://www.chainguard.dev), who require secure and reproducible
-container images for their tooling. Speed is also a critical factor; chainguard require images to be
+container images for their tooling. Speed is also a critical factor; Chainguard require images to be
 rebuilt constantly in response to new versions and patches.
 
 The design of apko is heavily influenced by the [ko](https://github.com/google/ko) and
@@ -107,4 +107,4 @@ The [melange project](https://github.com/chainguard-dev/melange) is designed to 
 The [ko](https://github.com/google/ko) project builds Go projects from source in a similar manner to apko.
 
 The [kontain.me](https://github.com/imjasonh/kontain.me) service creates fresh container images on
-demand using differnt forms of declarative configuration (including ko and apko).
+demand using different forms of declarative configuration (including ko and apko).
