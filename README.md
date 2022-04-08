@@ -9,7 +9,7 @@ apko has the following key features:
  - **Small.** apko generated images only contain what's needed by the application,
    in the style of [distroless](https://github.com/GoogleContainerTools/distroless)
  - **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
- - **Services.** apko supports using the s6 supervisor tool to run multiple processes
+ - **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
    in a container without reaping or signalling issues.
 
 Please note that apko is a work in progress and details are subject to change!
