@@ -62,7 +62,7 @@ type ImageConfiguration struct {
 		ShellFragment string `yaml:"shell-fragment"`
 
 		// TBD: presently a map of service names and the command to run
-		Services      map[interface{}]interface{}
+		Services map[interface{}]interface{}
 	}
 	Accounts struct {
 		RunAs  string `yaml:"run-as"`
