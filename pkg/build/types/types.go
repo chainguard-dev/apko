@@ -57,8 +57,9 @@ type ImageConfiguration struct {
 		Packages     []string
 	}
 	Entrypoint struct {
-		Type    string
-		Command string
+		Type          string
+		Command       string
+		ShellFragment string `yaml:"shell-fragment"`
 
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
