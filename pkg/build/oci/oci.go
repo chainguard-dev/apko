@@ -36,6 +36,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/google/shlex"
 	"github.com/sigstore/cosign/pkg/oci"
 	ocimutate "github.com/sigstore/cosign/pkg/oci/mutate"
 	ociremote "github.com/sigstore/cosign/pkg/oci/remote"
@@ -103,8 +104,15 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	cfg.Created = v1.Time{Time: created}
 	cfg.OS = "linux"
 
-	if ic.Entrypoint.Command != "" {
-		cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.Command}
+	if ic.Entrypoint.ShellFragment != "" {
+		cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.ShellFragment}
+	} else if ic.Entrypoint.Command != "" {
+		splitcmd, err := shlex.Split(ic.Entrypoint.Command)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse entrypoint command: %w", err)
+		}
+
+		cfg.Config.Entrypoint = splitcmd
 	} else {
 		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
 	}
