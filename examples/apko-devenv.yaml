@@ -31,4 +31,4 @@ contents:
     - make
     - docker-cli
 entrypoint:
-  command: /bin/sh -l
+  shell-fragment: /bin/sh -l
