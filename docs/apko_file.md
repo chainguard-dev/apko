@@ -108,7 +108,7 @@ There are several child elements:
 
  - `type`: if this is set to `service-bundle`, the s6 supervisor will be used to start commands
    listed in `services`
- - `cmd`: if the type is not `service-bundle`, this can be set to specify a command to run when the
+ - `command`: if the type is not `service-bundle`, this can be set to specify a command to run when the
    container starts. 
  - `services`: a map of service names to commands to run by the s6 supervisor. `type` should be set
    to `service-bundle` when specifying services.
