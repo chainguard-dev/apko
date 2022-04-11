@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # Copyright 2022 Chainguard, Inc.
 # SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,7 @@ BUILDER_ALPINE_TAG="3.15.0@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc
 DEVENV_IMAGE_TARBALL="apko-inception.tar.gz"
 IMAGE_TAG="apko-inception"
 
-function checkrepo() {
+checkrepo() {
     grep "module chainguard.dev/apko" go.mod &> /dev/null && return
     echo;
     echo "Please run me from the apko repository root. Thank you!";
@@ -15,7 +15,7 @@ function checkrepo() {
     exit 1;
 }
 
-function run_builder() {
+run_builder() {
     if ! (docker inspect apko-inception:latest &> /dev/null ); then
         set -e
         mkdir _output > /dev/null 2>&1 || : 
@@ -29,7 +29,7 @@ function run_builder() {
     run
 }
 
-function build_image() {
+build_image() {
     set -e
     cat /etc/os-release
     apk add go
@@ -37,23 +37,24 @@ function build_image() {
     chown ${BUILD_UID}:${BUILD_GID} _output/${DEVENV_IMAGE_TARBALL}
 }
 
-function load_image() {
+load_image() {
     set -e
     docker rmi ${IMAGE_TAG}:latest 2>&1 || :
     docker load < _output/${DEVENV_IMAGE_TARBALL}
 }
 
-function run() {
-    docker run --rm -w /apko -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/apko -ti ${IMAGE_TAG}:latest /bin/sh -l hack/make-devenv.sh setup
+run() {
+    docker run --rm -w /apko -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/apko -ti ${IMAGE_TAG}:latest hack/make-devenv.sh setup
 }
 
-function setup() {
+setup() {
     echo
-    echo "Welcome to the apko development environment!\n\n"
+    echo "Welcome to the apko development environment!"
     echo
     echo
     alias ll="ls -l"
     export PS1="[apko] ❯ "
+    sh -i
 }
 
 checkrepo
