@@ -112,20 +112,16 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 		splitcmd, err := shlex.Split(ic.Entrypoint.Command)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse entrypoint command: %w", err)
-		} else {
-			cfg.Config.Entrypoint = splitcmd
 		}
+		cfg.Config.Entrypoint = splitcmd
 	}
 
 	if ic.Cmd != "" {
-		logger.Print("ENTERING CMD STUFF")
-
 		splitcmd, err := shlex.Split(string(ic.Cmd))
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse cmd: %w", err)
-		} else {
-			cfg.Config.Cmd = splitcmd
 		}
+		cfg.Config.Cmd = splitcmd
 	}
 
 	if len(ic.Environment) > 0 {
