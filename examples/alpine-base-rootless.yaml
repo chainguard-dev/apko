@@ -4,9 +4,6 @@ contents:
   packages:
     - alpine-base
 
-entrypoint:
-  command: /bin/sh -l
-
 accounts:
   groups:
     - groupname: nonroot
@@ -15,6 +12,8 @@ accounts:
     - username: nonroot
       uid: 10000
   run-as: nonroot
+
+cmd: /bin/sh -l
 
 # optional environment configuration
 environment:

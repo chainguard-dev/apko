@@ -4,9 +4,8 @@ contents:
   packages:
     - alpine-base
 
-entrypoint:
-  command: /bin/sh -l
-
+cmd: /bin/sh -l
+  
 # optional environment configuration
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin

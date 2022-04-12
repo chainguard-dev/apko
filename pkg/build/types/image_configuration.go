@@ -105,8 +105,12 @@ func (ic *ImageConfiguration) Summarize(logger *log.Logger) {
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
 		logger.Printf("  entrypoint:")
 		logger.Printf("    type:    %s", ic.Entrypoint.Type)
-		logger.Printf("    cmd:     %s", ic.Entrypoint.Command)
+		logger.Printf("    command:     %s", ic.Entrypoint.Command)
 		logger.Printf("    service: %v", ic.Entrypoint.Services)
+		logger.Printf("    shell fragment: %v", ic.Entrypoint.ShellFragment)
+	}
+	if ic.Cmd != "" {
+		logger.Printf("  cmd: %s", ic.Cmd)
 	}
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
 		logger.Printf("  accounts:")

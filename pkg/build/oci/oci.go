@@ -104,6 +104,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	cfg.Created = v1.Time{Time: created}
 	cfg.OS = "linux"
 
+	// NOTE: Need to allow empty Entrypoints. The runtime will override to `/bin/sh -c` and handle quoting
 	switch {
 	case ic.Entrypoint.ShellFragment != "":
 		cfg.Config.Entrypoint = []string{"/bin/sh", "-c", ic.Entrypoint.ShellFragment}
@@ -112,10 +113,15 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse entrypoint command: %w", err)
 		}
-
 		cfg.Config.Entrypoint = splitcmd
-	default:
-		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
+	}
+
+	if ic.Cmd != "" {
+		splitcmd, err := shlex.Split(ic.Cmd)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse cmd: %w", err)
+		}
+		cfg.Config.Cmd = splitcmd
 	}
 
 	if len(ic.Environment) > 0 {

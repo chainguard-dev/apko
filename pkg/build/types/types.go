@@ -64,6 +64,7 @@ type ImageConfiguration struct {
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
 	}
+	Cmd      string
 	Accounts struct {
 		RunAs  string `yaml:"run-as"`
 		Users  []User

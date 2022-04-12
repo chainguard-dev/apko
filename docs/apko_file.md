@@ -109,13 +109,20 @@ There are several child elements:
  - `type`: if this is set to `service-bundle`, the s6 supervisor will be used to start commands
    listed in `services`
  - `command`: if the type is not `service-bundle`, this can be set to specify a command to run when the
-   container starts.
+   container starts. Note that this sets the "entrypoint" value on OCI images (contrast with the
+   `cmd` top level element).
  - `shell-fragment`: if the type is not `service-bundle`, this behaves like `command`, except that the
    command is a shell fragment.
  - `services`: a map of service names to commands to run by the s6 supervisor. `type` should be set
    to `service-bundle` when specifying services.
 
 Services are monitored with the [s6 supervisor](https://skarnet.org/software/s6/index.html).
+
+### Cmd top level element
+
+`cmd` defines a command to run when the container starts up. If `entrypoint.command` is not set, it
+will be executed with `/bin/sh -c`. If `entrypoint.command` is set, `cmd` will be passed as arguments to
+`entrypoint.command`. This sets the "cmd" value on OCI images.
 
 ### Accounts top level element
 
