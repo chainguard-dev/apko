@@ -1,3 +1,25 @@
+# Changes from 0.2.2 to 0.3.0
+
+* Significantly improved documentation.
+
+* Add support for generating `/etc/os-release` files for scanner
+  compatibility.
+
+* Fix specification of architectures in apko YAML configuration
+  files.
+
+* Add support for doing various path mutations on an image,
+  like changing the owner of a file or its permissions.
+
+* Attach SBOMs to built images.
+
+* Use pargzip to compress images for speed.
+
+* Improve test coverage by refactoring the code to allow for
+  mock implementations.
+
+* Properly track hardlinks when generating a layer tarball.
+
 # Changes from 0.2.1 to 0.2.2
 
 * Added `apko login` as alternative to `docker login`.
