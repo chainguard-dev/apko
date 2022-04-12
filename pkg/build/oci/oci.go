@@ -117,7 +117,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 	}
 
 	if ic.Cmd != "" {
-		splitcmd, err := shlex.Split(string(ic.Cmd))
+		splitcmd, err := shlex.Split(ic.Cmd)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse cmd: %w", err)
 		}
