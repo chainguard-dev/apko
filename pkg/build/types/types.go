@@ -64,6 +64,7 @@ type ImageConfiguration struct {
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
 	}
+	Cmd      Cmd
 	Accounts struct {
 		RunAs  string `yaml:"run-as"`
 		Users  []User
@@ -74,6 +75,8 @@ type ImageConfiguration struct {
 	Paths       []PathMutation
 	OSRelease   OSRelease `yaml:"os-release"`
 }
+
+type Cmd string
 
 // Architecture represents a CPU architecture for the container image.
 type Architecture struct{ s string }

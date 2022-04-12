@@ -13,6 +13,8 @@ accounts:
       uid: 10000
   run-as: nonroot
 
+cmd: /bin/sh -l
+
 # optional environment configuration
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
