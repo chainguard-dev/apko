@@ -114,8 +114,7 @@ func buildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created
 		}
 
 		cfg.Config.Entrypoint = splitcmd
-	default:
-		cfg.Config.Entrypoint = []string{"/bin/sh", "-l"}
+		// NOTE: allow empty Entrypoint which runtime will override to `/bin/sh -c` and handle quoting
 	}
 
 	if len(ic.Environment) > 0 {

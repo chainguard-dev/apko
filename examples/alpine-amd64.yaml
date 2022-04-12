@@ -4,8 +4,5 @@ contents:
   packages:
     - alpine-base
 
-entrypoint:
-  command: /bin/sh -l
-
 archs:
   - amd64
