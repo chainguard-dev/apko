@@ -24,9 +24,41 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
+func maybeGenerateVendorReleaseFile(
+	o *options.Options, ic *types.ImageConfiguration,
+) error {
+	if ic.OSRelease.ID == "" || ic.OSRelease.VersionID == "" {
+		return nil
+	}
+
+	path := filepath.Join(o.WorkDir, "etc", fmt.Sprintf("%s-release", ic.OSRelease.ID))
+
+	_, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	w, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	_, err = fmt.Fprintf(w, "%s\n", ic.OSRelease.VersionID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (di *defaultBuildImplementation) GenerateOSRelease(
 	o *options.Options, ic *types.ImageConfiguration,
 ) error {
+	if err := maybeGenerateVendorReleaseFile(o, ic); err != nil {
+		return err
+	}
+
 	path := filepath.Join(o.WorkDir, "etc", "os-release")
 
 	_, err := os.Stat(path)
