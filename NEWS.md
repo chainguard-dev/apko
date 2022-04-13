@@ -1,3 +1,13 @@
+# Changes from 0.3.0 to 0.3.1
+
+* Allow `entrypoint` to be blank.
+
+* Add new `cmd` statement to the YAML configuration.
+
+* Generate `/etc/alpine-release` (or equivalent) legacy files when
+  `/etc/os-release` generation is requested.  This helps with Trivy
+  scanning.
+
 # Changes from 0.2.2 to 0.3.0
 
 * Significantly improved documentation.
