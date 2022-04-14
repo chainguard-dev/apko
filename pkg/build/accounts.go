@@ -15,6 +15,7 @@
 package build
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -60,12 +61,6 @@ func (di *defaultBuildImplementation) appendUser(
 		Shell:    "/bin/sh",
 	}
 
-	o.Log.Printf("creating home directory for user %s", ue.UserName)
-	targetHomedir := filepath.Join(o.WorkDir, ue.HomeDir)
-	if err := os.MkdirAll(targetHomedir, 0755); err != nil {
-		o.Log.Printf("warning: unable to make home directory (%q) for user %s: %v", targetHomedir, ue.UserName, err)
-	}
-
 	return append(users, ue)
 }
 
@@ -96,27 +91,58 @@ func (di *defaultBuildImplementation) MutateAccounts(
 		})
 	}
 
-	if len(ic.Accounts.Users) != 0 {
-		// Mutate the /etc/passwd file
-		eg.Go(func() error {
-			path := filepath.Join(o.WorkDir, "etc", "passwd")
+	// Mutate the /etc/passwd file
+	eg.Go(func() error {
+		path := filepath.Join(o.WorkDir, "etc", "passwd")
 
-			uf, err := passwd.ReadOrCreateUserFile(path)
-			if err != nil {
-				return err
+		uf, err := passwd.ReadOrCreateUserFile(path)
+		if err != nil {
+			return err
+		}
+
+		for _, u := range ic.Accounts.Users {
+			uf.Entries = di.appendUser(o, uf.Entries, u)
+		}
+
+		// Make sure all users have home directories with the appropriate
+		// permissions.
+		for _, ue := range uf.Entries {
+			// This is what the home directory is set to for our homeless users.
+			if ue.HomeDir == "/dev/null" {
+				continue
+			}
+			// Create a version of the user's home directory rooted at our
+			// working directory.
+			targetHomedir := filepath.Join(o.WorkDir, ue.HomeDir)
+
+			// Make sure a directory exists with the path we expect.
+			if fi, err := os.Stat(targetHomedir); err == nil {
+				if !fi.IsDir() {
+					return fmt.Errorf("%s home directory %s exists, but is not a directory", ue.UserName, ue.HomeDir)
+				}
+				// If the directory already exists, we do not mess with the
+				// permissions because some built-in users use things like:
+				//    /bin, /sbin, /
+				// and we don't want to screw with those permissions.
+				continue
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("checking homedir exists: %w", err)
+			} else if err := os.MkdirAll(targetHomedir, 0700); err != nil {
+				return fmt.Errorf("creating homedir: %w", err)
+			} else if err := os.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
+				return fmt.Errorf("chown(%d, %d) = %w", ue.UID, ue.GID, err)
 			}
 
-			for _, u := range ic.Accounts.Users {
-				uf.Entries = di.appendUser(o, uf.Entries, u)
-			}
+			// We have made sure that the directory exists, and if we created it
+			// then we ensured it has the correct permissions.
+		}
 
-			if err := uf.WriteFile(path); err != nil {
-				return err
-			}
+		if err := uf.WriteFile(path); err != nil {
+			return err
+		}
 
-			return nil
-		})
-	}
+		return nil
+	})
 
 	if err := eg.Wait(); err != nil {
 		return err
