@@ -1,3 +1,8 @@
+# Changes from 0.3.1 to 0.3.2
+
+* Ensure all home directories for accounts in `/etc/passwd` are present
+  and have the correct permissions.
+
 # Changes from 0.3.0 to 0.3.1
 
 * Allow `entrypoint` to be blank.
