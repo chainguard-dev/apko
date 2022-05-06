@@ -1,0 +1,20 @@
+name: Add apko repo issues to Images project board
+
+on:
+  issues:
+    types:
+      - opened
+
+permissions:
+  contents: read
+  issues: write 
+
+jobs:
+  add-to-project:
+    name: Add issue to project board
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@main
+        with:
+          project-url: https://github.com/orgs/chainguard-dev/projects/12
+          github-token: ${{ secrets.PROJECT_WRITER }}
