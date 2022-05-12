@@ -1,20 +1,131 @@
-name: Add apko repo issues to Images project board
-
+name: Issue tracking workflow
 on:
   issues:
     types:
       - opened
-
-permissions:
-  contents: read
-  issues: write 
-
 jobs:
-  add-to-project:
-    name: Add issue to project board
+  track_issue:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@main
-        with:
-          project-url: https://github.com/orgs/chainguard-dev/projects/12
-          github-token: ${{ secrets.PROJECT_WRITER }}
+      - name: Get project data
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_WRITER }}
+          ORGANIZATION: chainguard-dev
+          DATE_FIELD: Created On
+          TENT_POLE_FIELD: Tent Pole
+          TENT_POLE_FIELD_VALUE: 97a8806e
+          PRIORITY_FIELD: Issue Priority
+          PRIORITY_FIELD_VALUE: f9c1fcf4
+          PROJECT_NUMBER: 5
+        run: |
+          gh api graphql -f query='
+            query($org: String!, $number: Int!) {
+              organization(login: $org){
+                projectNext(number: $number) {
+                  id
+                  fields(first:100) {
+                    nodes {
+                      id
+                      name
+                      settings
+                    }
+                  }
+                }
+              }
+            }' -f org=$ORGANIZATION -F number=$PROJECT_NUMBER > project_data.json
+          echo 'PROJECT_ID='$(jq '.data.organization.projectNext.id' project_data.json) >> $GITHUB_ENV
+          echo 'DATE_FIELD_ID='$(jq '.data.organization.projectNext.fields.nodes[] | select(.name== "'"$DATE_FIELD"'") | .id' project_data.json) >> $GITHUB_ENV
+          echo 'TENT_POLE_FIELD_ID='$(jq '.data.organization.projectNext.fields.nodes[] | select(.name== "'"$TENT_POLE_FIELD"'") | .id' project_data.json) >> $GITHUB_ENV
+          echo 'PRIORITY_FIELD_ID='$(jq '.data.organization.projectNext.fields.nodes[] | select(.name== "'"$PRIORITY_FIELD"'") | .id' project_data.json) >> $GITHUB_ENV
+          echo 'TENT_POLE_FIELD_VALUE='${TENT_POLE_FIELD_VALUE} >> $GITHUB_ENV
+          echo 'PRIORITY_FIELD_VALUE='${PRIORITY_FIELD_VALUE} >> $GITHUB_ENV
+      - name: Add issue to project
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_WRITER }}
+          ISSUE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          gh api graphql -f query='
+            mutation($project:ID!, $issue:ID!) {
+              addProjectNextItem(input: {projectId: $project, contentId: $issue}) {
+                projectNextItem {
+                  id,
+                  content {
+                     ... on Issue {
+                        createdAt
+                     }
+                     ... on PullRequest {
+                        createdAt
+                     }                     
+                  }
+                }
+              }
+            }' -f project=$PROJECT_ID -f issue=$ISSUE_ID > issue_data.json
+          
+          echo 'ITEM_ID='$(jq '.data.addProjectNextItem.projectNextItem.id' issue_data.json) >> $GITHUB_ENV
+          echo 'ITEM_CREATION_DATE='$(jq '.data.addProjectNextItem.projectNextItem.content.createdAt' issue_data.json) >> $GITHUB_ENV
+      - name: Set created on field
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_WRITER }}
+        run: |
+          gh api graphql -f query='
+            mutation (
+              $project: ID!
+              $item: ID!
+              $date_field: ID!
+              $date_value: String!
+            ) {
+              set_creation_date: updateProjectNextItemField(input: {
+                projectId: $project
+                itemId: $item
+                fieldId: $date_field
+                value: $date_value
+              }) {
+                projectNextItem {
+                  id
+                }
+              }
+            }' -f project=$PROJECT_ID -f item=$ITEM_ID -f date_field=$DATE_FIELD_ID -f date_value=$ITEM_CREATION_DATE --silent
+      - name: Set tent pole field
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_WRITER }}
+        run: |
+          gh api graphql -f query='
+            mutation (
+              $project: ID!
+              $item: ID!
+              $tent_pole_field: ID!
+              $tent_pole_field_value: String!
+            ) {
+              set_creation_date: updateProjectNextItemField(input: {
+                projectId: $project
+                itemId: $item
+                fieldId: $tent_pole_field
+                value: $tent_pole_field_value
+              }) {
+                projectNextItem {
+                  id
+                }
+              }
+            }' -f project=$PROJECT_ID -f item=$ITEM_ID -f tent_pole_field=$TENT_POLE_FIELD_ID -f tent_pole_field_value=$TENT_POLE_FIELD_VALUE --silent
+      - name: Set priority field
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_WRITER }}
+        run: |
+          gh api graphql -f query='
+            mutation (
+              $project: ID!
+              $item: ID!
+              $priority_field: ID!
+              $priority_field_value: String!
+            ) {
+              set_creation_date: updateProjectNextItemField(input: {
+                projectId: $project
+                itemId: $item
+                fieldId: $priority_field
+                value: $priority_field_value
+              }) {
+                projectNextItem {
+                  id
+                }
+              }
+            }' -f project=$PROJECT_ID -f item=$ITEM_ID -f priority_field=$PRIORITY_FIELD_ID -f priority_field_value=$PRIORITY_FIELD_VALUE --silent
