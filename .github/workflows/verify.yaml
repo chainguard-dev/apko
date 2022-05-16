@@ -18,7 +18,7 @@ jobs:
         with:
           go-version:  ${{ env.GO_VERSION }}
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@b517f99ae23d86ecc4c0dec08dcf48d2336abc29 # v3.1.0
+        uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.1.0
         timeout-minutes: 5
         with:
           version: v1.45.0
