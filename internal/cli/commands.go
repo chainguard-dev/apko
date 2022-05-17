@@ -21,8 +21,6 @@ import (
 )
 
 func New() *cobra.Command {
-	// TODO(jason): Consider moving this into an internal package.
-
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
