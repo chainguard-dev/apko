@@ -26,7 +26,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 )
 
-func ShowConfig() *cobra.Command {
+func showConfig() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 

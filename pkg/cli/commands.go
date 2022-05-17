@@ -20,7 +20,8 @@ import (
 	"sigs.k8s.io/release-utils/version"
 )
 
-func New() *cobra.Command {
+func New() *cobra.Command { // TODO(jason): Consider moving this into an internal package.
+
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
@@ -28,10 +29,10 @@ func New() *cobra.Command {
 	}
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
-	cmd.AddCommand(Build())
-	cmd.AddCommand(BuildMinirootFS())
-	cmd.AddCommand(ShowConfig())
-	cmd.AddCommand(Publish())
+	cmd.AddCommand(buildCmd())
+	cmd.AddCommand(buildMinirootFS())
+	cmd.AddCommand(showConfig())
+	cmd.AddCommand(publish())
 	cmd.AddCommand(version.Version())
 	return cmd
 }

@@ -33,7 +33,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom"
 )
 
-func Publish() *cobra.Command {
+func publish() *cobra.Command {
 	var imageRefs string
 	var useProot bool
 	var buildDate string
