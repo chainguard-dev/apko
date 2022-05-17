@@ -27,7 +27,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
-func BuildMinirootFS() *cobra.Command {
+func buildMinirootFS() *cobra.Command {
 	var useProot bool
 	var buildDate string
 	var buildArch string

@@ -30,7 +30,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom"
 )
 
-func Build() *cobra.Command {
+func buildCmd() *cobra.Command {
 	var useProot bool
 	var buildDate string
 	var buildArch string
