@@ -20,7 +20,8 @@ import (
 	"sigs.k8s.io/release-utils/version"
 )
 
-func New() *cobra.Command { // TODO(jason): Consider moving this into an internal package.
+func New() *cobra.Command {
+	// TODO(jason): Consider moving this into an internal package.
 
 	cmd := &cobra.Command{
 		Use:               "apko",
