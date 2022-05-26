@@ -167,3 +167,11 @@ func WithArch(arch types.Architecture) Option {
 		return nil
 	}
 }
+
+// WithOCIMediatypes determine whether to use OCI mediatypes for the build context.
+func WithOCIMediatypes(useOCIMediaTypes bool) Option {
+	return func(bc *Context) error {
+		bc.Options.UseOCIMediaTypes = useOCIMediaTypes
+		return nil
+	}
+}
