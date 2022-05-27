@@ -36,7 +36,7 @@ import (
 func publish() *cobra.Command {
 	var imageRefs string
 	var useProot bool
-	var useOCIMediaTypes bool
+	var useDockerMediaTypes bool
 	var buildDate string
 	var sbomPath string
 	var sbomFormats []string
@@ -58,7 +58,7 @@ in a keychain.`,
 			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
-				build.WithOCIMediatypes(useOCIMediaTypes),
+				build.WithDockerMediatypes(useDockerMediaTypes),
 				build.WithTags(args[1:]...),
 				build.WithBuildDate(buildDate),
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
@@ -75,7 +75,7 @@ in a keychain.`,
 
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
-	cmd.Flags().BoolVar(&useOCIMediaTypes, "use-oci-mediatypes", false, "use OCI mediatypes for image layers/manifest")
+	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
@@ -124,15 +124,15 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 		defer os.Remove(layerTarGZ)
 
-		if bc.Options.UseOCIMediaTypes {
-			digest, _, err = oci.PublishOCIImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
+		if bc.Options.UseDockerMediaTypes {
+			digest, _, err = oci.PublishDockerImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
 			if err != nil {
-				return fmt.Errorf("failed to build OCI image: %w", err)
+				return fmt.Errorf("failed to build Docker image: %w", err)
 			}
 		} else {
 			digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
 			if err != nil {
-				return fmt.Errorf("failed to build Docker image: %w", err)
+				return fmt.Errorf("failed to build OCI image: %w", err)
 			}
 		}
 
@@ -161,15 +161,15 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				// defer os.Remove(layerTarGZ)
 
 				var img coci.SignedImage
-				if bc.Options.UseOCIMediaTypes {
-					_, img, err = oci.PublishOCIImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats)
+				if bc.Options.UseDockerMediaTypes {
+					_, img, err = oci.PublishDockerImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats)
 					if err != nil {
-						return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
+						return fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
 					}
 				} else {
 					_, img, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Options.Log, bc.Options.SBOMPath, bc.Options.SBOMFormats)
 					if err != nil {
-						return fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
+						return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 					}
 				}
 				imgs[arch] = img
@@ -181,15 +181,15 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return err
 		}
 
-		if bc.Options.UseOCIMediaTypes {
-			digest, err = oci.PublishOCIIndex(imgs, log.Default(), bc.Options.Tags...)
+		if bc.Options.UseDockerMediaTypes {
+			digest, err = oci.PublishDockerIndex(imgs, log.Default(), bc.Options.Tags...)
 			if err != nil {
-				return fmt.Errorf("failed to build OCI index: %w", err)
+				return fmt.Errorf("failed to build Docker index: %w", err)
 			}
 		} else {
 			digest, err = oci.PublishIndex(imgs, log.Default(), bc.Options.Tags...)
 			if err != nil {
-				return fmt.Errorf("failed to build Docker index: %w", err)
+				return fmt.Errorf("failed to build OCI index: %w", err)
 			}
 		}
 	}

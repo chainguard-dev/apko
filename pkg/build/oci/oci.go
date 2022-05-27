@@ -195,11 +195,11 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 }
 
 func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
-	return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
+	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
 }
 
-func BuildOCIImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
-	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
+func BuildDockerImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
+	return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
 }
 
 func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
@@ -241,11 +241,11 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 }
 
 func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
 }
 
-func PublishOCIImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
 }
 
 func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
@@ -272,11 +272,11 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 }
 
 func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
-	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, imgs, logger, tags...)
+	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, imgs, logger, tags...)
 }
 
-func PublishOCIIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
-	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, imgs, logger, tags...)
+func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
+	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, imgs, logger, tags...)
 }
 
 func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
