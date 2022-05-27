@@ -168,10 +168,10 @@ func WithArch(arch types.Architecture) Option {
 	}
 }
 
-// WithOCIMediatypes determine whether to use OCI mediatypes for the build context.
-func WithOCIMediatypes(useOCIMediaTypes bool) Option {
+// WithDockerMediatypes determine whether to use Docker mediatypes for the build context.
+func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 	return func(bc *Context) error {
-		bc.Options.UseOCIMediaTypes = useOCIMediaTypes
+		bc.Options.UseDockerMediaTypes = useDockerMediaTypes
 		return nil
 	}
 }

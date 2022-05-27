@@ -22,19 +22,19 @@ import (
 )
 
 type Options struct {
-	UseOCIMediaTypes bool
-	WantSBOM         bool
-	UseProot         bool
-	WorkDir          string
-	TarballPath      string
-	Tags             []string
-	SourceDateEpoch  time.Time
-	SBOMPath         string
-	SBOMFormats      []string
-	ExtraKeyFiles    []string
-	ExtraRepos       []string
-	Arch             types.Architecture
-	Log              *log.Logger
+	UseDockerMediaTypes bool
+	WantSBOM            bool
+	UseProot            bool
+	WorkDir             string
+	TarballPath         string
+	Tags                []string
+	SourceDateEpoch     time.Time
+	SBOMPath            string
+	SBOMFormats         []string
+	ExtraKeyFiles       []string
+	ExtraRepos          []string
+	Arch                types.Architecture
+	Log                 *log.Logger
 }
 
 var Default = Options{
@@ -46,7 +46,7 @@ func (o *Options) Summarize() {
 	o.Log.Printf("  tarball path: %s", o.TarballPath)
 	o.Log.Printf("  use proot: %t", o.UseProot)
 	o.Log.Printf("  source date: %s", o.SourceDateEpoch)
-	o.Log.Printf("  OCI mediatypes: %t", o.UseOCIMediaTypes)
+	o.Log.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
 	o.Log.Printf("  SBOM output path: %s", o.SBOMPath)
 	o.Log.Printf("  arch: %v", o.Arch.ToAPK())
 }
