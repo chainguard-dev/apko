@@ -3,6 +3,8 @@ name: Create Release
 
 on:
   push:
+    branches:
+    - main
     tags:
     - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
@@ -11,6 +13,9 @@ env:
 
 jobs:
   cli:
+    # Only release CLI for tagged releases
+    if: startsWith(github.event.ref, 'refs/tags/v')
+
     name: Release the CLI
     runs-on: ubuntu-latest
 
@@ -62,4 +67,8 @@ jobs:
         echo ${{ github.token }} | go run ./ login ghcr.io --username=${{ github.repository_owner }} --password-stdin
     - name: Publish/Sign apko image
       run: |
+        # If not a tagged release, override image tag to "canary"
+        if [[ $GITHUB_REF != refs/tags/* ]]; then
+          export GIT_VERSION=canary
+        fi
         make sign-image
