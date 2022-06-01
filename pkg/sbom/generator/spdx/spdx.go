@@ -20,6 +20,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"sigs.k8s.io/release-utils/version"
@@ -72,7 +73,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Name:    documentName,
 		Version: "SPDX-2.2",
 		CreationInfo: CreationInfo{
-			Created: "1970-01-01T00:00:00Z",
+			Created: opts.ImageInfo.SourceDateEpoch.Format(time.RFC3339),
 			Creators: []string{
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
