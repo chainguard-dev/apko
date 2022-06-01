@@ -15,6 +15,8 @@
 package options
 
 import (
+	"time"
+
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -51,10 +53,11 @@ type OSInfo struct {
 }
 
 type ImageInfo struct {
-	Reference  string
-	Tag        string
-	Name       string
-	Repository string
-	Digest     string
-	Arch       types.Architecture
+	Reference       string
+	Tag             string
+	Name            string
+	Repository      string
+	Digest          string
+	Arch            types.Architecture
+	SourceDateEpoch time.Time
 }
