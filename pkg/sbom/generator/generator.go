@@ -18,6 +18,7 @@ package generator
 
 import (
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
+	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -38,6 +39,9 @@ func Generators() map[string]Generator {
 
 	cdx := cyclonedx.New()
 	generators[cdx.Key()] = &cdx
+
+	idb := idb.New()
+	generators[idb.Key()] = &idb
 
 	return generators
 }
