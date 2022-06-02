@@ -158,6 +158,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	si := signed.Image(v1Image)
 
 	// Attach the SBOM, e.g.
+	// TODO(kaniini): Allow all SBOM types to be uploaded.
 	if len(sbomFormats) > 0 {
 		var mt ggcrtypes.MediaType
 		var path string
@@ -168,6 +169,9 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		case "cyclonedx":
 			mt = ctypes.CycloneDXJSONMediaType
 			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", arch.ToAPK()))
+		case "idb":
+			mt = "application/vnd.apko.installed-db"
+			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", arch.ToAPK()))
 		default:
 			return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
 		}
