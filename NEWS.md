@@ -1,3 +1,27 @@
+# Changes from 0.3.3 to 0.4.0
+
+* Allow the apk installed DB to be attached as an "IDB" SBOM.
+  This can be used for scanning a runtime container for deviations
+  with the `apk audit` command.
+
+* The Tekton apko task is now automatically generated as part of
+  the release process.
+
+* Creation times for SPDX SBOMs are now determined from the
+  `SOURCE_DATE_EPOCH` environment variable for consistency with
+  other artifacts (such as the image filesystem modification times).
+
+* OCI mediatypes are now used by default instead of the Docker ones.
+  If you want to use Docker mediatypes (e.g. for quay.io), you can
+  use the `--use-docker-mediatypes` option.
+
+* A new `show-config` applet has been added to show all of the
+  configuration for an image that was derived from loading a YAML
+  file.
+
+* The CLI commands are no longer exported for public consumption
+  from other projects.
+
 # Changes from 0.3.2 to 0.3.3
 
 * Ensure home directories are created with 0755 permissions.
