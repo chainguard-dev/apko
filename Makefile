@@ -81,6 +81,13 @@ ko-apply:  ## Build the image and apply the manifests
 	KOCACHE=$(KOCACHE_PATH) ko apply --base-import-paths \
 		--recursive --filename config/
 
+.PHONY: ko-apply
+ko-resolve:  ## Build the image generate the Task YAML
+	$(create_kocache_path)
+	LDFLAGS="$(LDFLAGS)" \
+	KOCACHE=$(KOCACHE_PATH) ko resolve --base-import-paths \
+		--recursive --filename config/ > task.yaml
+
 ##########
 # Build
 ##########

@@ -72,3 +72,41 @@ jobs:
           export GIT_VERSION=canary
         fi
         make sign-image
+
+  tekton-task:
+    # Only release Task for tagged releases
+    if: startsWith(github.event.ref, 'refs/tags/v')
+
+    name: Release the Tekton Task
+    runs-on: ubuntu-latest
+
+    # https://docs.github.com/en/actions/reference/authentication-in-a-workflow
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+
+    steps:
+    - uses: actions/setup-go@b22fbbc2921299758641fab08929b4ac52b32923 # v2.2.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - uses: imjasonh/setup-ko@2c3450ca27f6e6f2b02e72a40f2163c281a1f675 # v0.4
+      with:
+        version: v0.11.1
+    - uses: sigstore/cosign-installer@581838fbedd492d2350a9ecd427a95d6de1e5d01 # v2.0.1
+    - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v2.4.0
+    - name: Login to registry
+      run: |
+        echo ${{ github.token }} | go run ./ login ghcr.io --username=${{ github.repository_owner }} --password-stdin
+
+    - name: Generate Tekton Task
+      run: |
+        # If not a tagged release, override image tag to "canary"
+        if [[ $GITHUB_REF != refs/tags/* ]]; then
+          export GIT_VERSION=canary
+        fi
+        make ko-resolve
+    - name: Attach to release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: gh release upload ${GITHUB_REF#refs/tags/} task.yaml
