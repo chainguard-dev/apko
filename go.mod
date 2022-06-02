@@ -1,6 +1,6 @@
 module chainguard.dev/apko
 
-go 1.17
+go 1.18
 
 require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220228164355-396b2034c795

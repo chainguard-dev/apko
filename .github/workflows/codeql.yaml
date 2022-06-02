@@ -7,7 +7,6 @@ on:
   pull_request:
 
 env:
-  GO_VERSION: 1.17.x
   CODEQL_EXTRACTOR_GO_BUILD_TRACING: true
 
 jobs:
@@ -15,14 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v2.4.0
+
     - uses: actions/setup-go@b22fbbc2921299758641fab08929b4ac52b32923 # v3.0.0
       with:
-        go-version: ${{ env.GO_VERSION }}
+        go-version: 1.18
+        check-latest: true
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@a3a6c128d771b6b9bdebb1c9d0583ebd2728a108
       with:
         languages: go
+
     - name: build
       run: make apko
+
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@a3a6c128d771b6b9bdebb1c9d0583ebd2728a108
