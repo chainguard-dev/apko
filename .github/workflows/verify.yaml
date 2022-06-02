@@ -19,7 +19,8 @@ jobs:
         uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.1.0
         timeout-minutes: 5
         with:
-          version: v1.45.0
+          version: v1.46.2
+
       - run: |
           go mod tidy
           git diff --exit-code
