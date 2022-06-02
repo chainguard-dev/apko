@@ -30,4 +30,4 @@ jobs:
       - name: snapshot
         run: |
           make snapshot
-          ./dist/apko-build_linux_amd64/apko version
+          ./dist/apko-build_linux_amd64_v1/apko version
