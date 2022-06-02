@@ -48,7 +48,7 @@ func (i *IDB) Generate(opts *options.Options, path string) error {
 		return fmt.Errorf("reading installed db for copying: %w", err)
 	}
 
-	if err := os.WriteFile(path, idbData, 0o644); err != nil {
+	if err := os.WriteFile(path, idbData, 0o600); err != nil {
 		return fmt.Errorf("copying installed db: %w", err)
 	}
 
