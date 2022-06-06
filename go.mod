@@ -14,12 +14,12 @@ require (
 	github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a
 	github.com/sigstore/cosign v1.6.1-0.20220326192931-34d08380a965
 	github.com/spf13/cobra v1.4.0
-	github.com/stretchr/testify v1.7.1
+	github.com/stretchr/testify v1.7.2
 	gitlab.alpinelinux.org/alpine/go v0.4.0
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/build v0.0.0-20220326001204-1a930a73d482
 	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.1
 	sigs.k8s.io/release-utils v0.6.0
 )
 
