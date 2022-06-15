@@ -7,7 +7,7 @@ apko has the following key features:
  - **Fully reproducible by default.** Run apko twice and you will get exactly the same binary.
  - **Fast.** apko aims to build images in ms.
  - **Small.** apko generated images only contain what's needed by the application,
-   in the style of [distroless](https://github.com/GoogleContainerTools/distroless)
+   in the style of [distroless](https://github.com/GoogleContainerTools/distroless).
  - **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
  - **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
    in a container without reaping or signalling issues.
@@ -75,7 +75,7 @@ e1e9cdb1608b:/apko# apko build examples/alpine-base.yaml apko-alpine:test apko-a
 
 Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
 
-See the [docs](./docs/apko_file.md) for details of the file formate and the [examples
+See the [docs](./docs/apko_file.md) for details of the file format and the [examples
 directory](./examples) for more, err, examples!
 
 
