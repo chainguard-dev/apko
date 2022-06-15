@@ -83,8 +83,10 @@ jobs:
         make sign-image
 
   tekton-task:
-    # Only release Task for tagged releases
-    if: startsWith(github.event.ref, 'refs/tags/v')
+    # Only release the Tekton Task after a CLI release has been created, since
+    # goreleaser creates a GitHub Release which the Tekton Task will be
+    # attached to.
+    needs: cli
 
     name: Release the Tekton Task
     runs-on: ubuntu-latest
