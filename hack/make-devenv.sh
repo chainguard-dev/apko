@@ -8,7 +8,7 @@ DEVENV_IMAGE_TARBALL="apko-inception.tar.gz"
 IMAGE_TAG="apko-inception"
 
 checkrepo() {
-    grep "module chainguard.dev/apko" go.mod &> /dev/null && return
+    grep "module chainguard.dev/apko" go.mod >/dev/null 2>&1 && return
     echo;
     echo "Please run me from the apko repository root. Thank you!";
     echo
@@ -16,7 +16,7 @@ checkrepo() {
 }
 
 run_builder() {
-    if ! (docker inspect apko-inception:latest &> /dev/null ); then
+    if ! (docker inspect apko-inception:latest >/dev/null 2>&1 ); then
         set -e
         mkdir _output > /dev/null 2>&1 || : 
         docker run --rm -v $(pwd):/apko -w /apko -ti \
