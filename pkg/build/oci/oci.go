@@ -239,7 +239,9 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 		return name.Digest{}, err
 	}
 
-	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
+	if err := retry.Do(func() error {
+		return remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain))
+	}); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil
@@ -350,8 +352,9 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 		return name.Digest{}, err
 	}
 
-	err = remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
-	if err != nil {
+	if err := retry.Do(func() error {
+		return remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
+	}); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return ref.Context().Digest(hash.String()), nil
