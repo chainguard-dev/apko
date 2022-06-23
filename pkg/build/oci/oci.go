@@ -24,6 +24,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/avast/retry-go"
 	ecr "github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -238,7 +239,9 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 		return name.Digest{}, err
 	}
 
-	if err := remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain)); err != nil {
+	if err := retry.Do(func() error {
+		return remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain))
+	}); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil
@@ -349,8 +352,9 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 		return name.Digest{}, err
 	}
 
-	err = remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
-	if err != nil {
+	if err := retry.Do(func() error {
+		return remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
+	}); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return ref.Context().Digest(hash.String()), nil
@@ -380,13 +384,18 @@ func writePeripherals(tag name.Reference, opt ...remote.Option) walk.Fn {
 		if err != nil {
 			return err
 		}
-		if f, err := se.Attachment("sbom"); err != nil {
+
+		f, err := se.Attachment("sbom")
+		if err != nil {
 			// Some levels (e.g. the index) may not have an SBOM,
 			// just like some levels may not have signatures/attestations.
-		} else if err := remote.Write(ref, f, opt...); err != nil {
+			return nil
+		}
+
+		if err := retry.Do(func() error {
+			return remote.Write(ref, f, opt...)
+		}); err != nil {
 			return fmt.Errorf("writing sbom: %w", err)
-		} else {
-			log.Printf("Published SBOM %v", ref)
 		}
 
 		// TODO(mattmoor): Don't enable this until we start signing or it
@@ -399,6 +408,8 @@ func writePeripherals(tag name.Reference, opt ...remote.Option) walk.Fn {
 		// if err := ociremote.WriteAttestations(tag.Context(), se, ociOpts...); err != nil {
 		// 	return err
 		// }
+		log.Printf("Published SBOM %v", ref)
+
 		return nil
 	}
 }

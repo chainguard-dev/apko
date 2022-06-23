@@ -3,6 +3,7 @@ module chainguard.dev/apko
 go 1.18
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220228164355-396b2034c795
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220119192733-fe33c00cee21
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
