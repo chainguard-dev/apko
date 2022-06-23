@@ -18,13 +18,13 @@ package build
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strconv"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
@@ -60,8 +60,15 @@ func (bc *Context) BuildImage() error {
 	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
-func (bc *Context) Logger() *log.Logger {
-	return bc.Options.Log
+func (bc *Context) Logger() *logrus.Entry {
+	zeroArch := types.Architecture{}
+	if bc.Options.Arch != zeroArch {
+		return bc.Options.Log.WithFields(logrus.Fields{
+			"arch": bc.Options.Arch.ToAPK(),
+		})
+	}
+
+	return logrus.NewEntry(bc.Options.Log)
 }
 
 func (bc *Context) BuildLayer() (string, error) {
@@ -143,8 +150,6 @@ func New(workDir string, opts ...Option) (*Context, error) {
 }
 
 func (bc *Context) Refresh() error {
-	bc.UpdatePrefix()
-
 	s6, executor, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
 		return err
@@ -154,14 +159,6 @@ func (bc *Context) Refresh() error {
 	bc.s6 = s6
 
 	return nil
-}
-
-func (bc *Context) UpdatePrefix() {
-	bc.Options.Log = log.New(
-		log.Writer(),
-		fmt.Sprintf("apko (%s): ", bc.Options.Arch.ToAPK()),
-		log.LstdFlags|log.Lmsgprefix,
-	)
 }
 
 func (bc *Context) SetImplementation(i buildImplementation) {

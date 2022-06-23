@@ -16,9 +16,9 @@ package types
 
 import (
 	"fmt"
-	"log"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -96,7 +96,7 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize(logger *log.Logger) {
+func (ic *ImageConfiguration) Summarize(logger *logrus.Logger) {
 	logger.Printf("image configuration:")
 	logger.Printf("  contents:")
 	logger.Printf("    repositories: %v", ic.Contents.Repositories)

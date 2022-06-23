@@ -15,10 +15,10 @@
 package options
 
 import (
-	"log"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"github.com/sirupsen/logrus"
 )
 
 type Options struct {
@@ -34,11 +34,11 @@ type Options struct {
 	ExtraKeyFiles       []string
 	ExtraRepos          []string
 	Arch                types.Architecture
-	Log                 *log.Logger
+	Log                 *logrus.Logger
 }
 
 var Default = Options{
-	Log: log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
+	Log: logrus.New(),
 }
 
 func (o *Options) Summarize() {

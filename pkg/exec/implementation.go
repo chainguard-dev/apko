@@ -17,18 +17,19 @@ package exec
 import (
 	"bufio"
 	"io"
-	"log"
 	"os/exec"
+
+	"github.com/sirupsen/logrus"
 )
 
 //counterfeiter:generate . executorImplementation
 type executorImplementation interface {
-	Run(cmd *exec.Cmd, logname string, logger *log.Logger) error
+	Run(cmd *exec.Cmd, logname string, logger *logrus.Logger) error
 }
 
 type defaultBuildImplementation struct{}
 
-func monitorPipe(p io.ReadCloser, prefix string, logger *log.Logger) {
+func monitorPipe(p io.ReadCloser, prefix string, logger *logrus.Logger) {
 	defer p.Close()
 
 	scanner := bufio.NewScanner(p)
@@ -39,7 +40,7 @@ func monitorPipe(p io.ReadCloser, prefix string, logger *log.Logger) {
 
 // Run
 func (di *defaultBuildImplementation) Run(
-	cmd *exec.Cmd, logname string, logger *log.Logger,
+	cmd *exec.Cmd, logname string, logger *logrus.Logger,
 ) error {
 	logger.Printf("running: %s", cmd)
 

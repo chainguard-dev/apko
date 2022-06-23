@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -45,6 +44,7 @@ import (
 	"github.com/sigstore/cosign/pkg/oci/static"
 	"github.com/sigstore/cosign/pkg/oci/walk"
 	ctypes "github.com/sigstore/cosign/pkg/types"
+	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -57,7 +57,7 @@ var keychain = authn.NewMultiKeychain(
 	github.Keychain,
 )
 
-func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
+func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
 	imageType := humanReadableImageType(mediaType)
 	logger.Printf("building %s image from layer '%s'", imageType, layerTarGZ)
 
@@ -199,15 +199,15 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	return si, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
 	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
 }
 
-func BuildDockerImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
+func BuildDockerImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
 	return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
 }
 
-func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger) error {
+func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
 	imageType := humanReadableImageType(mediaType)
 	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, "", nil)
 	if err != nil {
@@ -227,14 +227,14 @@ func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imag
 	return nil
 }
 
-func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (name.Digest, error) {
+func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, logger *logrus.Entry) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
 	// Write any attached SBOMs/signatures.
-	wp := writePeripherals(imgRef, remote.WithAuthFromKeychain(keychain))
+	wp := writePeripherals(imgRef, logger, remote.WithAuthFromKeychain(keychain))
 	if err := wp(context.Background(), image); err != nil {
 		return name.Digest{}, err
 	}
@@ -247,15 +247,15 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash) (
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
 	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
 }
 
-func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
 	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
 }
 
-func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *log.Logger, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -269,7 +269,7 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	digest := name.Digest{}
 	for _, tag := range tags {
 		logger.Printf("publishing tag %v", tag)
-		digest, err = publishTagFromImage(v1Image, tag, h)
+		digest, err = publishTagFromImage(v1Image, tag, h, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
@@ -278,15 +278,15 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
+func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
 	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, imgs, logger, tags...)
 }
 
-func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
+func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
 	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, imgs, logger, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *log.Logger, tags ...string) (name.Digest, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -331,7 +331,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 	digest := name.Digest{}
 	for _, tag := range tags {
 		logger.Printf("publishing tag %v", tag)
-		digest, err = publishTagFromIndex(idx, tag, h)
+		digest, err = publishTagFromIndex(idx, tag, h, logger)
 		if err != nil {
 			return name.Digest{}, err
 		}
@@ -340,14 +340,14 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 	return digest, nil
 }
 
-func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Hash) (name.Digest, error) {
+func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Hash, logger *logrus.Entry) (name.Digest, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
 	// Write any attached SBOMs/signatures (recursively)
-	wp := writePeripherals(ref, remote.WithAuthFromKeychain(keychain))
+	wp := writePeripherals(ref, logger, remote.WithAuthFromKeychain(keychain))
 	if err := walk.SignedEntity(context.Background(), index, wp); err != nil {
 		return name.Digest{}, err
 	}
@@ -360,7 +360,7 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 	return ref.Context().Digest(hash.String()), nil
 }
 
-func writePeripherals(tag name.Reference, opt ...remote.Option) walk.Fn {
+func writePeripherals(tag name.Reference, logger *logrus.Entry, opt ...remote.Option) walk.Fn {
 	ociOpts := []ociremote.Option{ociremote.WithRemoteOptions(opt...)}
 
 	// Respect COSIGN_REPOSITORY
@@ -408,7 +408,7 @@ func writePeripherals(tag name.Reference, opt ...remote.Option) walk.Fn {
 		// if err := ociremote.WriteAttestations(tag.Context(), se, ociOpts...); err != nil {
 		// 	return err
 		// }
-		log.Printf("Published SBOM %v", ref)
+		logger.Printf("Published SBOM %v", ref)
 
 		return nil
 	}

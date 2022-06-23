@@ -18,8 +18,9 @@ package exec
 
 import (
 	"fmt"
-	"log"
 	"os/exec"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Executor struct {
@@ -27,12 +28,12 @@ type Executor struct {
 	WorkDir  string
 	UseProot bool
 	UseQemu  string
-	Log      *log.Logger
+	Log      *logrus.Logger
 }
 
 type Option func(*Executor) error
 
-func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) {
+func New(workDir string, logger *logrus.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		impl:    &defaultBuildImplementation{},
 		WorkDir: workDir,

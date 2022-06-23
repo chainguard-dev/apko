@@ -16,10 +16,10 @@ package build
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
+	log "github.com/sirupsen/logrus"
 )
 
 type Options struct {
