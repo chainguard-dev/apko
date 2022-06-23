@@ -60,6 +60,10 @@ func (bc *Context) BuildImage() error {
 	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
+func (bc *Context) Logger() *log.Logger {
+	return bc.Options.Log
+}
+
 func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
