@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,10 +113,10 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 	}
 
 	if len(bc.ImageConfiguration.Archs) != 0 {
-		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
+		bc.Logger().Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
 	}
 
-	bc.Options.Log.Printf("building image '%s'", imageRef)
+	bc.Logger().Printf("building image '%s'", imageRef)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
@@ -132,14 +131,14 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 	if bc.Options.UseDockerMediaTypes {
 		if err := oci.BuildDockerImageTarballFromLayer(
 			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			log.Default(),
+			bc.Logger(),
 		); err != nil {
 			return fmt.Errorf("failed to build Docker image: %w", err)
 		}
 	} else {
 		if err := oci.BuildImageTarballFromLayer(
 			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			log.Default(),
+			bc.Logger(),
 		); err != nil {
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}

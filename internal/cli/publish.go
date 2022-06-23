@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -105,7 +104,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		bc.ImageConfiguration.Archs = archs
 	}
 
-	log.Printf("building tags %v", bc.Options.Tags)
+	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
 	var digest name.Digest
 	switch len(bc.ImageConfiguration.Archs) {
@@ -182,12 +181,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 
 		if bc.Options.UseDockerMediaTypes {
-			digest, err = oci.PublishDockerIndex(imgs, log.Default(), bc.Options.Tags...)
+			digest, err = oci.PublishDockerIndex(imgs, bc.Logger(), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build Docker index: %w", err)
 			}
 		} else {
-			digest, err = oci.PublishIndex(imgs, log.Default(), bc.Options.Tags...)
+			digest, err = oci.PublishIndex(imgs, bc.Logger(), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI index: %w", err)
 			}
