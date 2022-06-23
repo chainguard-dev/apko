@@ -65,7 +65,7 @@ func (a *APK) buildExecutor() error {
 		execOpts = append(execOpts, exec.WithQemu(a.Options.Arch.ToQEmu()))
 	}
 
-	executor, err := exec.New(a.Options.WorkDir, a.Options.Log, execOpts...)
+	executor, err := exec.New(a.Options.WorkDir, a.Options.Logger(), execOpts...)
 	if err != nil {
 		return fmt.Errorf("building executor: %w", err)
 	}

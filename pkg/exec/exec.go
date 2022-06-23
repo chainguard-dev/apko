@@ -28,16 +28,15 @@ type Executor struct {
 	WorkDir  string
 	UseProot bool
 	UseQemu  string
-	Log      *logrus.Logger
+	Log      *logrus.Entry
 }
 
 type Option func(*Executor) error
 
-func New(workDir string, logger *logrus.Logger, opts ...Option) (*Executor, error) {
+func New(workDir string, logger *logrus.Entry, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		impl:    &defaultBuildImplementation{},
 		WorkDir: workDir,
-		Log:     logger,
 	}
 
 	for _, opt := range opts {
@@ -45,6 +44,8 @@ func New(workDir string, logger *logrus.Logger, opts ...Option) (*Executor, erro
 			return nil, err
 		}
 	}
+
+	e.Log = logger.WithFields(logrus.Fields{"use-proot": e.UseProot, "use-qemu": e.UseQemu})
 
 	return e, nil
 }

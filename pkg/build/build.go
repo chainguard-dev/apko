@@ -61,14 +61,7 @@ func (bc *Context) BuildImage() error {
 }
 
 func (bc *Context) Logger() *logrus.Entry {
-	zeroArch := types.Architecture{}
-	if bc.Options.Arch != zeroArch {
-		return bc.Options.Log.WithFields(logrus.Fields{
-			"arch": bc.Options.Arch.ToAPK(),
-		})
-	}
-
-	return logrus.NewEntry(bc.Options.Log)
+	return bc.Options.Logger()
 }
 
 func (bc *Context) BuildLayer() (string, error) {

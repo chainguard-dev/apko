@@ -64,7 +64,7 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 		execOpts = append(execOpts, exec.WithQemu(o.Arch.ToQEmu()))
 	}
 
-	executor, err := exec.New(o.WorkDir, o.Log, execOpts...)
+	executor, err := exec.New(o.WorkDir, o.Logger(), execOpts...)
 	if err != nil {
 		return nil, nil, err
 	}

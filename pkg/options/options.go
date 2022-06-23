@@ -50,3 +50,7 @@ func (o *Options) Summarize() {
 	o.Log.Printf("  SBOM output path: %s", o.SBOMPath)
 	o.Log.Printf("  arch: %v", o.Arch.ToAPK())
 }
+
+func (o *Options) Logger() *logrus.Entry {
+	return o.Log.WithFields(logrus.Fields{"arch": o.Arch.ToAPK()})
+}

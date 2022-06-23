@@ -24,12 +24,12 @@ import (
 
 //counterfeiter:generate . executorImplementation
 type executorImplementation interface {
-	Run(cmd *exec.Cmd, logname string, logger *logrus.Logger) error
+	Run(cmd *exec.Cmd, logname string, logger *logrus.Entry) error
 }
 
 type defaultBuildImplementation struct{}
 
-func monitorPipe(p io.ReadCloser, prefix string, logger *logrus.Logger) {
+func monitorPipe(p io.ReadCloser, prefix string, logger *logrus.Entry) {
 	defer p.Close()
 
 	scanner := bufio.NewScanner(p)
@@ -40,8 +40,9 @@ func monitorPipe(p io.ReadCloser, prefix string, logger *logrus.Logger) {
 
 // Run
 func (di *defaultBuildImplementation) Run(
-	cmd *exec.Cmd, logname string, logger *logrus.Logger,
+	cmd *exec.Cmd, logname string, baseLogger *logrus.Entry,
 ) error {
+	logger := baseLogger.WithFields(logrus.Fields{"cmd": logname})
 	logger.Printf("running: %s", cmd)
 
 	stdout, err := cmd.StdoutPipe()
