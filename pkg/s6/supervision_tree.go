@@ -22,11 +22,20 @@ import (
 )
 
 func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
-	svcdir := filepath.Join(sc.WorkDir, "sv", name)
+	svbase := filepath.Join(sc.WorkDir, "sv")
+	svcdir := filepath.Join(svbase, name)
 	sc.Log.Printf("  supervision dir: %s", svcdir)
 
 	if err := os.MkdirAll(svcdir, 0755); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
+	}
+
+	if err := os.Chmod(svcdir, 0777); err != nil { // nolint:gosec
+		return svcdir, fmt.Errorf("could not set permissions on supervision dir: %w", err)
+	}
+
+	if err := os.Chmod(svbase, 0777); err != nil { // nolint:gosec
+		return svcdir, fmt.Errorf("could not set permissions on base supervision dir: %w", err)
 	}
 
 	return svcdir, nil
