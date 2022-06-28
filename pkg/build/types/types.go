@@ -74,6 +74,7 @@ type ImageConfiguration struct {
 	Environment map[string]string
 	Paths       []PathMutation
 	OSRelease   OSRelease `yaml:"os-release"`
+	VCSUrl      string `yaml:"vcs-url"`
 }
 
 // Architecture represents a CPU architecture for the container image.
