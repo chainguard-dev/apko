@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 // Option is an option for the build context.
@@ -29,7 +29,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		log.Printf("loading config file: %s", configFile)
+		bc.Options.Log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {
@@ -148,6 +148,16 @@ func WithArch(arch types.Architecture) Option {
 func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 	return func(bc *Context) error {
 		bc.Options.UseDockerMediaTypes = useDockerMediaTypes
+		return nil
+	}
+}
+
+// WithDebugLogging sets the debug log level for the build context.
+func WithDebugLogging(enable bool) Option {
+	return func(bc *Context) error {
+		if enable {
+			bc.Options.Log.SetLevel(logrus.DebugLevel)
+		}
 		return nil
 	}
 }

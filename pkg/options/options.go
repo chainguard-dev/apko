@@ -47,7 +47,7 @@ var Default = Options{
 			ShowFullLevel: true,
 		},
 		Hooks: make(logrus.LevelHooks),
-		Level: logrus.DebugLevel,
+		Level: logrus.InfoLevel,
 	},
 }
 
