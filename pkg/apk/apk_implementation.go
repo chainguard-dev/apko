@@ -51,7 +51,7 @@ type apkDefaultImplementation struct{}
 // the build context itself is properly set up, and that `bc.Options.WorkDir` is set
 // to the path of a working directory.
 func (di *apkDefaultImplementation) InitDB(o *options.Options, e exec.Executor) error {
-	o.Log.Printf("initializing apk database")
+	o.Logger().Infof("initializing apk database")
 	return e.Execute(
 		"apk", "add", "--initdb", "--arch", o.Arch.ToAPK(), "--root", o.WorkDir,
 	)
@@ -71,7 +71,7 @@ func (di *apkDefaultImplementation) LoadSystemKeyring(o *options.Options, locati
 		keyFiles, err := os.ReadDir(d)
 
 		if errors.Is(err, os.ErrNotExist) {
-			o.Log.Printf("%s doesn't exist, skipping...", d)
+			o.Logger().Warnf("%s doesn't exist, skipping...", d)
 			continue
 		}
 
@@ -86,7 +86,7 @@ func (di *apkDefaultImplementation) LoadSystemKeyring(o *options.Options, locati
 			if ext == ".pub" {
 				ring = append(ring, p)
 			} else {
-				o.Log.Printf("%s has invalid extension (%s), skipping...", p, ext)
+				o.Logger().Infof("%s has invalid extension (%s), skipping...", p, ext)
 			}
 		}
 	}
@@ -99,7 +99,7 @@ func (di *apkDefaultImplementation) LoadSystemKeyring(o *options.Options, locati
 
 // Installs the specified keys into the APK keyring inside the build context.
 func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.ImageConfiguration) (err error) {
-	o.Log.Printf("initializing apk keyring")
+	o.Logger().Infof("initializing apk keyring")
 
 	if err := os.MkdirAll(filepath.Join(o.WorkDir, DefaultKeyRingPath),
 		0o755); err != nil {
@@ -116,7 +116,7 @@ func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.Im
 	}
 
 	if len(o.ExtraKeyFiles) > 0 {
-		o.Log.Printf("appending %d extra keys to keyring", len(o.ExtraKeyFiles))
+		o.Logger().Debugf("appending %d extra keys to keyring", len(o.ExtraKeyFiles))
 		keyFiles = append(keyFiles, o.ExtraKeyFiles...)
 	}
 
@@ -125,7 +125,7 @@ func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.Im
 	for _, element := range keyFiles {
 		element := element
 		eg.Go(func() error {
-			o.Log.Printf("installing key %v", element)
+			o.Logger().Debugf("installing key %v", element)
 
 			// Normalize the element as a URI, so that local paths
 			// are translated into file:// URLs, allowing them to be parsed
@@ -182,7 +182,7 @@ func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.Im
 
 // Generates a specified /etc/apk/world file in the build context.
 func (di *apkDefaultImplementation) InitWorld(o *options.Options, ic *types.ImageConfiguration) error {
-	o.Log.Printf("initializing apk world")
+	o.Logger().Infof("initializing apk world")
 
 	data := strings.Join(ic.Contents.Packages, "\n")
 
@@ -197,7 +197,7 @@ func (di *apkDefaultImplementation) InitWorld(o *options.Options, ic *types.Imag
 
 // Force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
 func (di *apkDefaultImplementation) FixateWorld(o *options.Options, e *exec.Executor) error {
-	o.Log.Printf("synchronizing with desired apk world")
+	o.Logger().Infof("synchronizing with desired apk world")
 
 	args := []string{
 		"fix", "--root", o.WorkDir, "--no-scripts", "--no-cache",
@@ -263,7 +263,7 @@ func (di *apkDefaultImplementation) NormalizeScriptsTar(o *options.Options) erro
 
 // Generates a specified /etc/apk/repositories file in the build context.
 func (di *apkDefaultImplementation) InitRepositories(o *options.Options, ic *types.ImageConfiguration) error {
-	o.Log.Printf("initializing apk repositories")
+	o.Logger().Infof("initializing apk repositories")
 
 	data := strings.Join(ic.Contents.Repositories, "\n")
 
