@@ -32,6 +32,7 @@ import (
 func buildCmd() *cobra.Command {
 	var useProot bool
 	var useDockerMediaTypes bool
+	var debugEnabled bool
 	var buildDate string
 	var buildArch string
 	var writeSBOM bool
@@ -71,12 +72,14 @@ bill of materials) describing the image contents.
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithDebugLogging(debugEnabled),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
+	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")

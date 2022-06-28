@@ -43,6 +43,7 @@ func publish() *cobra.Command {
 	var archstrs []string
 	var extraKeys []string
 	var extraRepos []string
+	var debugEnabled bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -66,6 +67,7 @@ in a keychain.`,
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
+				build.WithDebugLogging(debugEnabled),
 			); err != nil {
 				return err
 			}
@@ -76,6 +78,7 @@ in a keychain.`,
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
+	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")

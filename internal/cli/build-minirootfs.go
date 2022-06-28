@@ -28,6 +28,7 @@ import (
 
 func buildMinirootFS() *cobra.Command {
 	var useProot bool
+	var debugEnabled bool
 	var buildDate string
 	var buildArch string
 	var sbomPath string
@@ -46,11 +47,13 @@ func buildMinirootFS() *cobra.Command {
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithDebugLogging(debugEnabled),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
+	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
