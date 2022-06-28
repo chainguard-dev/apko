@@ -69,7 +69,7 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 		return nil, nil, err
 	}
 
-	return s6.New(o.WorkDir, o.Log), executor, nil
+	return s6.New(o.WorkDir, o.Logger()), executor, nil
 }
 
 func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, error) {
