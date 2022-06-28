@@ -16,8 +16,11 @@ package options
 
 import (
 	"time"
+	"os"
 
 	"chainguard.dev/apko/pkg/build/types"
+
+	nested "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,7 +41,14 @@ type Options struct {
 }
 
 var Default = Options{
-	Log: logrus.New(),
+	Log: &logrus.Logger{
+		Out: os.Stderr,
+		Formatter: &nested.Formatter{
+			ShowFullLevel: true,
+		},
+		Hooks: make(logrus.LevelHooks),
+		Level: logrus.DebugLevel,
+	},
 }
 
 func (o *Options) Summarize() {
