@@ -2,18 +2,19 @@
 package execfakes
 
 import (
-	"log"
 	execa "os/exec"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 type FakeExecutorImplementation struct {
-	RunStub        func(*execa.Cmd, string, *log.Logger) error
+	RunStub        func(*execa.Cmd, string, *logrus.Entry) error
 	runMutex       sync.RWMutex
 	runArgsForCall []struct {
 		arg1 *execa.Cmd
 		arg2 string
-		arg3 *log.Logger
+		arg3 *logrus.Entry
 	}
 	runReturns struct {
 		result1 error
@@ -25,13 +26,13 @@ type FakeExecutorImplementation struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeExecutorImplementation) Run(arg1 *execa.Cmd, arg2 string, arg3 *log.Logger) error {
+func (fake *FakeExecutorImplementation) Run(arg1 *execa.Cmd, arg2 string, arg3 *logrus.Entry) error {
 	fake.runMutex.Lock()
 	ret, specificReturn := fake.runReturnsOnCall[len(fake.runArgsForCall)]
 	fake.runArgsForCall = append(fake.runArgsForCall, struct {
 		arg1 *execa.Cmd
 		arg2 string
-		arg3 *log.Logger
+		arg3 *logrus.Entry
 	}{arg1, arg2, arg3})
 	stub := fake.RunStub
 	fakeReturns := fake.runReturns
@@ -52,13 +53,13 @@ func (fake *FakeExecutorImplementation) RunCallCount() int {
 	return len(fake.runArgsForCall)
 }
 
-func (fake *FakeExecutorImplementation) RunCalls(stub func(*execa.Cmd, string, *log.Logger) error) {
+func (fake *FakeExecutorImplementation) RunCalls(stub func(*execa.Cmd, string, *logrus.Entry) error) {
 	fake.runMutex.Lock()
 	defer fake.runMutex.Unlock()
 	fake.RunStub = stub
 }
 
-func (fake *FakeExecutorImplementation) RunArgsForCall(i int) (*execa.Cmd, string, *log.Logger) {
+func (fake *FakeExecutorImplementation) RunArgsForCall(i int) (*execa.Cmd, string, *logrus.Entry) {
 	fake.runMutex.RLock()
 	defer fake.runMutex.RUnlock()
 	argsForCall := fake.runArgsForCall[i]

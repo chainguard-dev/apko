@@ -15,21 +15,17 @@
 package exec
 
 import (
-	"log"
 	"os/exec"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRun(t *testing.T) {
 	impl := defaultBuildImplementation{}
 	testCommand := "ls"
-	l := log.New(
-		log.Writer(),
-		"exec-test",
-		log.LstdFlags|log.Lmsgprefix,
-	)
+	l := logrus.NewEntry(&logrus.Logger{})
 	for _, tc := range []struct {
 		cmd       *exec.Cmd
 		shouldErr bool
