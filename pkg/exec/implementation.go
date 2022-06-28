@@ -34,7 +34,7 @@ func monitorPipe(p io.ReadCloser, logger *logrus.Entry) {
 
 	scanner := bufio.NewScanner(p)
 	for scanner.Scan() {
-		logger.Printf("%s", scanner.Text())
+		logger.Debugf("%s", scanner.Text())
 	}
 }
 
@@ -43,7 +43,7 @@ func (di *defaultBuildImplementation) Run(
 	cmd *exec.Cmd, logname string, baseLogger *logrus.Entry,
 ) error {
 	logger := baseLogger.WithFields(logrus.Fields{"cmd": logname})
-	logger.Printf("running: %s", cmd)
+	logger.Infof("running: %s", cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
