@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/pkg/oci"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
@@ -181,12 +182,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 
 		if bc.Options.UseDockerMediaTypes {
-			digest, err = oci.PublishDockerIndex(imgs, bc.Logger(), bc.Options.Tags...)
+			digest, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build Docker index: %w", err)
 			}
 		} else {
-			digest, err = oci.PublishIndex(imgs, bc.Logger(), bc.Options.Tags...)
+			digest, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI index: %w", err)
 			}
