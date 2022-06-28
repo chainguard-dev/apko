@@ -15,13 +15,13 @@
 package options
 
 import (
-	"time"
 	"os"
-
-	"chainguard.dev/apko/pkg/build/types"
+	"time"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 type Options struct {

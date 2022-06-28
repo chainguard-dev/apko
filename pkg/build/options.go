@@ -18,8 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/sirupsen/logrus"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 // Option is an option for the build context.
