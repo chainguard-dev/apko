@@ -212,6 +212,9 @@ func ParseArchitecture(s string) Architecture {
 func ParseArchitectures(in []string) []Architecture {
 	uniq := map[Architecture]struct{}{}
 	for _, s := range in {
+		if s == "all" {
+			return AllArchs
+		}
 		a := ParseArchitecture(s)
 		uniq[a] = struct{}{}
 	}
