@@ -22,10 +22,10 @@ type Services map[interface{}]interface{}
 
 type Context struct {
 	WorkDir string
-	Log     *logrus.Logger
+	Log     *logrus.Entry
 }
 
-func New(wd string, logger *logrus.Logger) *Context {
+func New(wd string, logger *logrus.Entry) *Context {
 	return &Context{
 		WorkDir: wd,
 		Log:     logger,
