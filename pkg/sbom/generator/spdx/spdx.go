@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/version"
 
 	purl "github.com/package-url/packageurl-go"
@@ -86,15 +87,101 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Relationships: []Relationship{},
 	}
 
-	mainPkgName := "apko-os-layer"
+	layerPackage, err := sx.layerPackage(opts)
+	if err != nil {
+		return fmt.Errorf("generating layer spdx package: %w", err)
+	}
+
+	doc.Packages = append(doc.Packages, *layerPackage)
+
+	// FIXME: Change here if we have the image data
+	doc.DocumentDescribes = []string{layerPackage.ID}
+
+	for _, pkg := range opts.Packages {
+		// add the package
+		p, err := sx.apkPackage(opts, pkg)
+		if err != nil {
+			return fmt.Errorf("generating apk package: %w", err)
+		}
+		// Add the layer to the ID to avoid clashes
+		p.ID = stringToIdentifier(fmt.Sprintf(
+			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
+		))
+
+		doc.Packages = append(doc.Packages, p)
+
+		// Add to the relationships list
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: layerPackage.ID,
+			Type:    "CONTAINS",
+			Related: p.ID,
+		})
+	}
+
+	out, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
+	}
+	defer out.Close()
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+
+	if err := enc.Encode(doc); err != nil {
+		return fmt.Errorf("encoding spdx sbom: %w", err)
+	}
+
+	return nil
+}
+
+// apkPackage returns a SPDX package describing an apk
+func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Package, err error) {
+	p = Package{
+		ID: stringToIdentifier(fmt.Sprintf(
+			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
+		)),
+		Name:             pkg.Name,
+		Version:          pkg.Version,
+		FilesAnalyzed:    false,
+		LicenseConcluded: pkg.License,
+		LicenseDeclared:  NOASSERTION,
+		Description:      pkg.Description,
+		DownloadLocation: pkg.URL,
+		Originator:       pkg.Maintainer,
+		SourceInfo:       "Package info from apk database",
+		CopyrightText:    NOASSERTION,
+		Checksums: []Checksum{
+			{
+				Algorithm: "SHA1",
+				Value:     fmt.Sprintf("%x", pkg.Checksum),
+			},
+		},
+		ExternalRefs: []ExternalRef{
+			{
+				Category: "PACKAGE_MANAGER",
+				Locator: purl.NewPackageURL(
+					"apk", opts.OS.ID, pkg.Name, pkg.Version,
+					purl.QualifiersFromMap(
+						map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()},
+					), "").String(),
+				Type: "purl",
+			},
+		},
+	}
+	return p, nil
+}
+
+// LayerPackage returns a package describing the layer
+func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
+	layerPackageName := "apko-os-layer"
 	if opts.ImageInfo.Reference != "" {
 		x := ""
 		if !strings.Contains(opts.ImageInfo.Reference, "/") {
 			x = "index.docker.io/library/"
 		}
-		mainPkgName = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
+		layerPackageName = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
 	}
-	mainPkgID := stringToIdentifier(mainPkgName)
+	mainPkgID := stringToIdentifier(layerPackageName)
 
 	// Main package purl
 	mmMain := map[string]string{}
@@ -108,9 +195,9 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
 	}
 
-	mainPackage := Package{
+	layerPackage := Package{
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
-		Name:             mainPkgName,
+		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		LicenseConcluded: NOASSERTION,
@@ -132,68 +219,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			},
 		},
 	}
-	mm := map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()}
-
-	doc.Packages = append(doc.Packages, mainPackage)
-	doc.DocumentDescribes = []string{mainPackage.ID}
-
-	for _, pkg := range opts.Packages {
-		// add the package
-		p := Package{
-			ID: stringToIdentifier(fmt.Sprintf(
-				"SPDXRef-Package-%s-%s-%s", mainPkgID, pkg.Name, pkg.Version,
-			)),
-			Name:             pkg.Name,
-			Version:          pkg.Version,
-			FilesAnalyzed:    false,
-			LicenseConcluded: pkg.License,
-			LicenseDeclared:  NOASSERTION,
-			Description:      pkg.Description,
-			DownloadLocation: pkg.URL,
-			Originator:       pkg.Maintainer,
-			SourceInfo:       "Package info from apk database",
-			CopyrightText:    NOASSERTION,
-			Checksums: []Checksum{
-				{
-					Algorithm: "SHA1",
-					Value:     fmt.Sprintf("%x", pkg.Checksum),
-				},
-			},
-			ExternalRefs: []ExternalRef{
-				{
-					Category: "PACKAGE_MANAGER",
-					Locator: purl.NewPackageURL(
-						"apk", opts.OS.ID, pkg.Name, pkg.Version,
-						purl.QualifiersFromMap(mm), "").String(),
-					Type: "purl",
-				},
-			},
-		}
-
-		doc.Packages = append(doc.Packages, p)
-
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: mainPackage.ID,
-			Type:    "CONTAINS",
-			Related: p.ID,
-		})
-	}
-
-	out, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
-	}
-	defer out.Close()
-
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-
-	if err := enc.Encode(doc); err != nil {
-		return fmt.Errorf("encoding spdx sbom: %w", err)
-	}
-
-	return nil
+	return &layerPackage, nil
 }
 
 type Document struct {
