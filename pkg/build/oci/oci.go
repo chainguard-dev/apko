@@ -178,7 +178,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		}
 		if len(sbomFormats) > 1 {
 			// When we have multiple formats, warn that we're picking the first.
-			logger.Printf("WARNING: multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
+			logger.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
 		}
 
 		sbom, err := os.ReadFile(path)
