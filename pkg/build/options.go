@@ -22,21 +22,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Options struct {
-	WantSBOM        bool
-	UseProot        bool
-	WorkDir         string
-	TarballPath     string
-	Tags            []string
-	SourceDateEpoch time.Time
-	SBOMPath        string
-	SBOMFormats     []string
-	ExtraKeyFiles   []string
-	ExtraRepos      []string
-	Arch            types.Architecture
-	Log             *log.Logger
-}
-
 // Option is an option for the build context.
 type Option func(*Context) error
 
