@@ -96,7 +96,7 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize(logger *logrus.Logger) {
+func (ic *ImageConfiguration) Summarize(logger *logrus.Entry) {
 	logger.Printf("image configuration:")
 	logger.Printf("  contents:")
 	logger.Printf("    repositories: %v", ic.Contents.Repositories)

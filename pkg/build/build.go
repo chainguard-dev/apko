@@ -42,9 +42,9 @@ type Context struct {
 }
 
 func (bc *Context) Summarize() {
-	bc.Options.Log.Printf("build context:")
-	bc.Options.Summarize()
-	bc.ImageConfiguration.Summarize(bc.Options.Log)
+	bc.Logger().Printf("build context:")
+	bc.Options.Summarize(bc.Logger())
+	bc.ImageConfiguration.Summarize(bc.Logger())
 }
 
 func (bc *Context) BuildTarball() (string, error) {

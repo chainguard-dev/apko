@@ -51,14 +51,14 @@ var Default = Options{
 	},
 }
 
-func (o *Options) Summarize() {
-	o.Log.Printf("  working directory: %s", o.WorkDir)
-	o.Log.Printf("  tarball path: %s", o.TarballPath)
-	o.Log.Printf("  use proot: %t", o.UseProot)
-	o.Log.Printf("  source date: %s", o.SourceDateEpoch)
-	o.Log.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
-	o.Log.Printf("  SBOM output path: %s", o.SBOMPath)
-	o.Log.Printf("  arch: %v", o.Arch.ToAPK())
+func (o *Options) Summarize(logger *logrus.Entry) {
+	logger.Printf("  working directory: %s", o.WorkDir)
+	logger.Printf("  tarball path: %s", o.TarballPath)
+	logger.Printf("  use proot: %t", o.UseProot)
+	logger.Printf("  source date: %s", o.SourceDateEpoch)
+	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
+	logger.Printf("  SBOM output path: %s", o.SBOMPath)
+	logger.Printf("  arch: %v", o.Arch.ToAPK())
 }
 
 func (o *Options) Logger() *logrus.Entry {
