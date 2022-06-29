@@ -14,6 +14,26 @@ apko has the following key features:
 
 Please note that apko is a work in progress and details are subject to change!
 
+## Installation
+
+The quickest way to get an environment for running apko on Mac or Linux is to clone the repo and use the scripts under the hack
+directory:
+
+```
+$ ./hack/make-devenv.sh
+
+Welcome to the apko development environment!
+
+[apko] ❯
+```
+
+Install apko within the development environment using a `make` command:
+```
+$ make install
+```
+
+Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
+
 ## Quickstart
 
 An apko file for building an Alpine base image looks like this:
@@ -60,20 +80,6 @@ Or publish the image directly to a registry.
 $ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
 ...
 ```
-
-The quickest way to get an environment for running apko on Mac or Linux is to clone the repo and use the scripts under the hack
-directory:
-
-```
-$ ./hack/make-devenv.sh
-e1e9cdb1608b:/apko# make install
-...
-e1e9cdb1608b:/apko# apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
-...
-
-```
-
-Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
 
 See the [docs](./docs/apko_file.md) for details of the file format and the [examples
 directory](./examples) for more, err, examples!
