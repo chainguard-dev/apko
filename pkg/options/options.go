@@ -38,6 +38,7 @@ type Options struct {
 	ExtraKeyFiles       []string
 	ExtraRepos          []string
 	Arch                types.Architecture
+	ImageDigest         string
 	Log                 *logrus.Logger
 	TempDirPath         string
 }
@@ -80,4 +81,13 @@ func (o *Options) TempDir() string {
 	}
 	o.TempDirPath = path
 	return o.TempDirPath
+}
+
+// TarballFileName returns a deterministic filename for the layer taball
+func (o Options) TarballFileName() string {
+	tarName := "apko.tar.gz"
+	if o.Arch.String() != "" {
+		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.String())
+	}
+	return tarName
 }
