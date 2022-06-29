@@ -16,11 +16,11 @@ package apk
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -31,7 +31,7 @@ func TestSystemKeyringLocations(t *testing.T) {
 	dir := t.TempDir()
 	di := apkDefaultImplementation{}
 	o := &options.Options{
-		Log: log.Default(),
+		Log: &logrus.Logger{},
 	}
 
 	// Read the empty dir, passing only one empty location should err
@@ -71,7 +71,7 @@ func TestInitKeyring(t *testing.T) {
 	dir := t.TempDir()
 	di := apkDefaultImplementation{}
 	o := &options.Options{
-		Log:     log.Default(),
+		Log:     &logrus.Logger{},
 		WorkDir: dir,
 	}
 
@@ -126,7 +126,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 
 	dir := t.TempDir()
 	o := &options.Options{
-		Log:     log.Default(),
+		Log:     &logrus.Logger{},
 		WorkDir: dir,
 	}
 

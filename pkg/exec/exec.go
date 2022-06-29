@@ -18,8 +18,9 @@ package exec
 
 import (
 	"fmt"
-	"log"
 	"os/exec"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Executor struct {
@@ -27,16 +28,15 @@ type Executor struct {
 	WorkDir  string
 	UseProot bool
 	UseQemu  string
-	Log      *log.Logger
+	Log      *logrus.Entry
 }
 
 type Option func(*Executor) error
 
-func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) {
+func New(workDir string, logger *logrus.Entry, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		impl:    &defaultBuildImplementation{},
 		WorkDir: workDir,
-		Log:     logger,
 	}
 
 	for _, opt := range opts {
@@ -44,6 +44,8 @@ func New(workDir string, logger *log.Logger, opts ...Option) (*Executor, error) 
 			return nil, err
 		}
 	}
+
+	e.Log = logger.WithFields(logrus.Fields{"use-proot": e.UseProot, "use-qemu": e.UseQemu})
 
 	return e, nil
 }

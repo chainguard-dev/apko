@@ -29,7 +29,7 @@ import (
 func (di *defaultBuildImplementation) appendGroup(
 	o *options.Options, groups []passwd.GroupEntry, group types.Group,
 ) []passwd.GroupEntry {
-	o.Log.Printf("creating group %d(%s)", group.GID, group.GroupName)
+	o.Logger().Printf("creating group %d(%s)", group.GID, group.GroupName)
 
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
@@ -44,10 +44,10 @@ func (di *defaultBuildImplementation) appendGroup(
 func (di *defaultBuildImplementation) appendUser(
 	o *options.Options, users []passwd.UserEntry, user types.User,
 ) []passwd.UserEntry {
-	o.Log.Printf("creating user %d(%s)", user.UID, user.UserName)
+	o.Logger().Printf("creating user %d(%s)", user.UID, user.UserName)
 
 	if user.GID == 0 {
-		o.Log.Printf("warning: guessing unset GID for user %v", user)
+		o.Logger().Warnf("guessing unset GID for user %v", user)
 		user.GID = user.UID
 	}
 

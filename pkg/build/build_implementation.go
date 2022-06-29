@@ -60,16 +60,16 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 
 	execOpts := []exec.Option{exec.WithProot(o.UseProot)}
 	if o.UseProot && !o.Arch.Compatible(hostArch) {
-		o.Log.Printf("%q requires QEMU (not compatible with %q)", o.Arch, hostArch)
+		o.Logger().Debugf("%q requires QEMU (not compatible with %q)", o.Arch, hostArch)
 		execOpts = append(execOpts, exec.WithQemu(o.Arch.ToQEmu()))
 	}
 
-	executor, err := exec.New(o.WorkDir, o.Log, execOpts...)
+	executor, err := exec.New(o.WorkDir, o.Logger(), execOpts...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return s6.New(o.WorkDir, o.Log), executor, nil
+	return s6.New(o.WorkDir, o.Logger()), executor, nil
 }
 
 func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, error) {
@@ -96,17 +96,17 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, 
 		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 
-	o.Log.Printf("built image layer tarball as %s", outfile.Name())
+	o.Logger().Infof("built image layer tarball as %s", outfile.Name())
 	return outfile.Name(), nil
 }
 
 // GenerateSBOM runs the sbom generation
 func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
 	if len(o.SBOMFormats) == 0 {
-		o.Log.Printf("skipping SBOM generation")
+		o.Logger().Warnf("skipping SBOM generation")
 		return nil
 	}
-	o.Log.Printf("generating SBOM")
+	o.Logger().Infof("generating SBOM")
 
 	// TODO(puerco): Split GenerateSBOM into context implementation
 	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
@@ -169,12 +169,12 @@ func buildImage(
 	di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
 	e *exec.Executor, s6context *s6.Context,
 ) error {
-	o.Log.Printf("doing pre-flight checks")
+	o.Logger().Infof("doing pre-flight checks")
 	if err := di.ValidateImageConfiguration(ic); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	o.Log.Printf("building image fileystem in %s", o.WorkDir)
+	o.Logger().Infof("building image fileystem in %s", o.WorkDir)
 
 	if err := di.InitializeApk(o, ic); err != nil {
 		return fmt.Errorf("initializing apk: %w", err)
@@ -201,7 +201,7 @@ func buildImage(
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
-	o.Log.Printf("finished building filesystem in %s", o.WorkDir)
+	o.Logger().Infof("finished building filesystem in %s", o.WorkDir)
 
 	return nil
 }

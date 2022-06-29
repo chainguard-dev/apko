@@ -16,35 +16,12 @@ package build
 
 import (
 	"fmt"
-	"log"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
-
-type Options struct {
-	WantSBOM        bool
-	UseProot        bool
-	WorkDir         string
-	TarballPath     string
-	Tags            []string
-	SourceDateEpoch time.Time
-	SBOMPath        string
-	SBOMFormats     []string
-	ExtraKeyFiles   []string
-	ExtraRepos      []string
-	Arch            types.Architecture
-	Log             *log.Logger
-}
-
-func (o *Options) Summarize() {
-	o.Log.Printf("  working directory: %s", o.WorkDir)
-	o.Log.Printf("  tarball path: %s", o.TarballPath)
-	o.Log.Printf("  use proot: %t", o.UseProot)
-	o.Log.Printf("  source date: %s", o.SourceDateEpoch)
-	o.Log.Printf("  SBOM output path: %s", o.SBOMPath)
-	o.Log.Printf("  arch: %v", o.Arch.ToAPK())
-}
 
 // Option is an option for the build context.
 type Option func(*Context) error
@@ -53,7 +30,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		log.Printf("loading config file: %s", configFile)
+		bc.Options.Log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile); err != nil {
@@ -172,6 +149,16 @@ func WithArch(arch types.Architecture) Option {
 func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 	return func(bc *Context) error {
 		bc.Options.UseDockerMediaTypes = useDockerMediaTypes
+		return nil
+	}
+}
+
+// WithDebugLogging sets the debug log level for the build context.
+func WithDebugLogging(enable bool) Option {
+	return func(bc *Context) error {
+		if enable {
+			bc.Options.Log.SetLevel(logrus.DebugLevel)
+		}
 		return nil
 	}
 }
