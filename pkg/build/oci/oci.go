@@ -165,6 +165,28 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	return si, nil
 }
 
+// PostAttachSBOM attaches the sboms to an already published image
+func PostAttachSBOM(si oci.SignedImage, sbomPath string, sbomFormats []string,
+	arch types.Architecture, logger *logrus.Entry, tags ...string,
+) (oci.SignedImage, error) {
+	var err2 error
+	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
+		return nil, err2
+	}
+	for _, tag := range tags {
+		ref, err := name.ParseReference(tag)
+		if err != nil {
+			return nil, fmt.Errorf("parsing reference: %w", err)
+		}
+		// Write any attached SBOMs/signatures.
+		wp := writePeripherals(ref, logger, remote.WithAuthFromKeychain(keychain))
+		if err := wp(context.Background(), si); err != nil {
+			return nil, err
+		}
+	}
+	return si, nil
+}
+
 func attachSBOM(
 	si oci.SignedImage, sbomPath string, sbomFormats []string,
 	arch types.Architecture, logger *logrus.Entry,
