@@ -15,6 +15,7 @@
 package options
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -38,6 +39,7 @@ type Options struct {
 	ExtraRepos          []string
 	Arch                types.Architecture
 	Log                 *logrus.Logger
+	TempDirPath         string
 }
 
 var Default = Options{
@@ -63,4 +65,19 @@ func (o *Options) Summarize(logger *logrus.Entry) {
 
 func (o *Options) Logger() *logrus.Entry {
 	return o.Log.WithFields(logrus.Fields{"arch": o.Arch.ToAPK()})
+}
+
+// Tempdir returns the temporary directory where apko will create
+// the layer blobs
+func (o *Options) TempDir() string {
+	if o.TempDirPath != "" {
+		return o.TempDirPath
+	}
+
+	path, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+	if err != nil {
+		o.Logger().Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
+	}
+	o.TempDirPath = path
+	return o.TempDirPath
 }
