@@ -147,6 +147,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		workDir := bc.Options.WorkDir
 		imgs := map[types.Architecture]coci.SignedImage{}
 		bc.Options.WantSBOM = false
+		// The build context options is sometimes copied in the next
+		// functions. Ensure we have the directory defined and created
+		// by invoking the function early.
+		bc.Options.TempDir()
+		defer os.RemoveAll(bc.Options.TempDir())
 
 		for _, arch := range bc.ImageConfiguration.Archs {
 			arch := arch
@@ -201,6 +206,24 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			digest, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI index: %w", err)
+			}
+		}
+
+		for arch, img := range imgs {
+			bc.Options.WantSBOM = true
+			bc.Options.Arch = arch
+			bc.Options.TarballPath = filepath.Join(bc.Options.TempDir(), bc.Options.TarballFileName())
+			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
+
+			if err := bc.GenerateImageSBOM(arch, img); err != nil {
+				return fmt.Errorf("generating sbom for %s: %w", arch, err)
+			}
+
+			if _, err := oci.PostAttachSBOM(
+				img, bc.Options.SBOMPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+			); err != nil {
+				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
+
 			}
 		}
 	}
