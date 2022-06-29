@@ -210,11 +210,12 @@ func ParseArchitecture(s string) Architecture {
 // equivalent ("amd64"). Values are deduped, and the resulting slice is sorted
 // for reproducibility.
 func ParseArchitectures(in []string) []Architecture {
+	if len(in) == 1 && in[0] == "all" {
+		return AllArchs
+	}
+
 	uniq := map[Architecture]struct{}{}
 	for _, s := range in {
-		if s == "all" {
-			return AllArchs
-		}
 		a := ParseArchitecture(s)
 		uniq[a] = struct{}{}
 	}
