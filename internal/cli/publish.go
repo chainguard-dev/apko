@@ -43,6 +43,7 @@ func publish() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var debugEnabled bool
+	var writeSBOM bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -54,6 +55,9 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !writeSBOM {
+				sbomFormats = []string{}
+			}
 			archs := types.ParseArchitectures(archstrs)
 			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
@@ -79,7 +83,8 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
-	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
+	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
@@ -98,6 +103,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	bc, err := build.New(wd, opts...)
 	if err != nil {
 		return err
+	}
+
+	if len(bc.Options.SBOMFormats) > 0 {
+		bc.Options.WantSBOM = true
+	} else {
+		bc.Options.WantSBOM = false
 	}
 
 	if len(archs) == 0 {
@@ -197,8 +208,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		sbompath = bc.Options.TempDir()
 	}
 
-	logrus.Info("Generating Image SBOMs")
 	if wantSBOM {
+		logrus.Info("Generating arch image SBOMs")
 		for arch, img := range imgs {
 			bc.Options.WantSBOM = true
 			bc.Options.Arch = arch
