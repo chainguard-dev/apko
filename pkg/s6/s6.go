@@ -15,17 +15,17 @@
 package s6
 
 import (
-	"log"
+	"github.com/sirupsen/logrus"
 )
 
 type Services map[interface{}]interface{}
 
 type Context struct {
 	WorkDir string
-	Log     *log.Logger
+	Log     *logrus.Entry
 }
 
-func New(wd string, logger *log.Logger) *Context {
+func New(wd string, logger *logrus.Entry) *Context {
 	return &Context{
 		WorkDir: wd,
 		Log:     logger,

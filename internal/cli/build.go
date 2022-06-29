@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,6 +32,7 @@ import (
 func buildCmd() *cobra.Command {
 	var useProot bool
 	var useDockerMediaTypes bool
+	var debugEnabled bool
 	var buildDate string
 	var buildArch string
 	var writeSBOM bool
@@ -72,12 +72,14 @@ bill of materials) describing the image contents.
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithDebugLogging(debugEnabled),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
+	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
@@ -114,10 +116,10 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 	}
 
 	if len(bc.ImageConfiguration.Archs) != 0 {
-		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
+		bc.Logger().Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
 	}
 
-	bc.Options.Log.Printf("building image '%s'", imageRef)
+	bc.Logger().Printf("building image '%s'", imageRef)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
@@ -132,14 +134,14 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 	if bc.Options.UseDockerMediaTypes {
 		if err := oci.BuildDockerImageTarballFromLayer(
 			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			log.Default(),
+			bc.Logger(),
 		); err != nil {
 			return fmt.Errorf("failed to build Docker image: %w", err)
 		}
 	} else {
 		if err := oci.BuildImageTarballFromLayer(
 			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			log.Default(),
+			bc.Logger(),
 		); err != nil {
 			return fmt.Errorf("failed to build OCI image: %w", err)
 		}

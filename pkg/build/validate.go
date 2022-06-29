@@ -29,7 +29,7 @@ func RequirePasswdFile(optional bool) Assertion {
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Options.Log.Printf("warning: %s is missing", path)
+				bc.Logger().Warnf("%s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/passwd file is missing: %w", err)
@@ -45,7 +45,7 @@ func RequireGroupFile(optional bool) Assertion {
 		_, err := os.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Options.Log.Printf("warning: %s is missing", path)
+				bc.Logger().Warnf("%s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/group file is missing: %w", err)

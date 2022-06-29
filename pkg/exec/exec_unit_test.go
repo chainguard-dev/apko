@@ -18,19 +18,24 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
+
+func testLogger() *logrus.Entry {
+	return logrus.NewEntry(&logrus.Logger{})
+}
 
 func TestNew(t *testing.T) {
 	badOpt := func(e *Executor) error {
 		return fmt.Errorf("synth error")
 	}
-	e, err := New(".", nil)
+	e, err := New(".", testLogger())
 	require.NotNil(t, e)
 	require.NoError(t, err)
 
 	// Option fails
-	e, err = New(".", nil, badOpt)
+	e, err = New(".", testLogger(), badOpt)
 	require.Nil(t, e)
 	require.Error(t, err)
 }

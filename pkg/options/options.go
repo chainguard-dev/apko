@@ -15,8 +15,11 @@
 package options
 
 import (
-	"log"
+	"os"
 	"time"
+
+	nested "github.com/antonfisher/nested-logrus-formatter"
+	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -34,19 +37,30 @@ type Options struct {
 	ExtraKeyFiles       []string
 	ExtraRepos          []string
 	Arch                types.Architecture
-	Log                 *log.Logger
+	Log                 *logrus.Logger
 }
 
 var Default = Options{
-	Log: log.New(log.Writer(), "apko (early): ", log.LstdFlags|log.Lmsgprefix),
+	Log: &logrus.Logger{
+		Out: os.Stderr,
+		Formatter: &nested.Formatter{
+			ShowFullLevel: true,
+		},
+		Hooks: make(logrus.LevelHooks),
+		Level: logrus.InfoLevel,
+	},
 }
 
-func (o *Options) Summarize() {
-	o.Log.Printf("  working directory: %s", o.WorkDir)
-	o.Log.Printf("  tarball path: %s", o.TarballPath)
-	o.Log.Printf("  use proot: %t", o.UseProot)
-	o.Log.Printf("  source date: %s", o.SourceDateEpoch)
-	o.Log.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
-	o.Log.Printf("  SBOM output path: %s", o.SBOMPath)
-	o.Log.Printf("  arch: %v", o.Arch.ToAPK())
+func (o *Options) Summarize(logger *logrus.Entry) {
+	logger.Printf("  working directory: %s", o.WorkDir)
+	logger.Printf("  tarball path: %s", o.TarballPath)
+	logger.Printf("  use proot: %t", o.UseProot)
+	logger.Printf("  source date: %s", o.SourceDateEpoch)
+	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
+	logger.Printf("  SBOM output path: %s", o.SBOMPath)
+	logger.Printf("  arch: %v", o.Arch.ToAPK())
+}
+
+func (o *Options) Logger() *logrus.Entry {
+	return o.Log.WithFields(logrus.Fields{"arch": o.Arch.ToAPK()})
 }

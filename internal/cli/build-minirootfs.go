@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 
@@ -29,6 +28,7 @@ import (
 
 func buildMinirootFS() *cobra.Command {
 	var useProot bool
+	var debugEnabled bool
 	var buildDate string
 	var buildArch string
 	var sbomPath string
@@ -47,11 +47,13 @@ func buildMinirootFS() *cobra.Command {
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithDebugLogging(debugEnabled),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
+	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
@@ -76,16 +78,16 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 
 	if len(bc.ImageConfiguration.Archs) != 0 {
-		log.Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
+		bc.Logger().Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Options.Arch)
 	}
 
-	log.Printf("building minirootfs '%s'", bc.Options.TarballPath)
+	bc.Logger().Printf("building minirootfs '%s'", bc.Options.TarballPath)
 
 	layerTarGZ, err := bc.BuildLayer()
 	if err != nil {
 		return fmt.Errorf("failed to build layer image: %w", err)
 	}
-	log.Printf("wrote minirootfs to %s\n", layerTarGZ)
+	bc.Logger().Printf("wrote minirootfs to %s\n", layerTarGZ)
 
 	return nil
 }

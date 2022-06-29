@@ -3,6 +3,7 @@ module chainguard.dev/apko
 go 1.18
 
 require (
+	github.com/antonfisher/nested-logrus-formatter v1.3.1
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220228164355-396b2034c795
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220119192733-fe33c00cee21
@@ -14,6 +15,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.5.0
 	github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a
 	github.com/sigstore/cosign v1.6.1-0.20220326192931-34d08380a965
+	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.5.0
 	github.com/stretchr/testify v1.7.5
 	gitlab.alpinelinux.org/alpine/go v0.5.0
@@ -87,7 +89,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sigstore/rekor v0.4.1-0.20220114213500-23f583409af3 // indirect
 	github.com/sigstore/sigstore v1.1.1-0.20220324220036-a3f98177f3b0 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/theupdateframework/go-tuf v0.0.0-20220211205608-f0c3294f63b9 // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect
