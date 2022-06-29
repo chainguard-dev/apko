@@ -227,7 +227,11 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 
 // LayerPackage returns a package describing the layer
 func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
-	layerPackageName := "apko-os-layer"
+	layerPackageName := opts.ImageInfo.LayerDigest
+	if opts.ImageInfo.Name != "" {
+		layerPackageName = opts.ImageInfo.Name + "@" + opts.ImageInfo.LayerDigest
+	}
+
 	if opts.ImageInfo.Reference != "" {
 		x := ""
 		if !strings.Contains(opts.ImageInfo.Reference, "/") {
@@ -256,10 +260,9 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 		FilesAnalyzed:    false,
 		LicenseConcluded: NOASSERTION,
 		LicenseDeclared:  NOASSERTION,
-		Description:      "",
+		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
 		Originator:       "",
-		SourceInfo:       "",
 		CopyrightText:    NOASSERTION,
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
