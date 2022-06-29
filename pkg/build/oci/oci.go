@@ -195,6 +195,7 @@ func attachSBOM(
 	// Attach the SBOM, e.g.
 	// TODO(kaniini): Allow all SBOM types to be uploaded.
 	if len(sbomFormats) == 0 {
+		logrus.Debug("Not building sboms, no formats requested")
 		return si, nil
 	}
 

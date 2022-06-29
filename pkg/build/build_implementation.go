@@ -140,9 +140,13 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
 	s.Options.ImageInfo.Arch = o.Arch
 	s.Options.ImageInfo.LayerDigest = digest.String()
 	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
-	s.Options.OutputDir = o.SBOMPath
 	s.Options.Packages = packages
 	s.Options.Formats = o.SBOMFormats
+
+	s.Options.OutputDir = o.TempDir()
+	if o.SBOMPath != "" {
+		s.Options.OutputDir = o.SBOMPath
+	}
 
 	if _, err := s.Generate(); err != nil {
 		return fmt.Errorf("generating SBOMs: %w", err)

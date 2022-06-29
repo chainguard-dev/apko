@@ -116,9 +116,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return errors.New("no archs requested")
 	case 1:
 		bc.Options.Arch = bc.ImageConfiguration.Archs[0]
-		// We don't want to build the SBOM just now. We don't know
-		// the image digest.
-		bc.Options.WantSBOM = false
 
 		if err := bc.Refresh(); err != nil {
 			return fmt.Errorf("failed to update build context for %q: %w", bc.Options.Arch, err)
@@ -147,6 +144,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		workDir := bc.Options.WorkDir
 		imgs := map[types.Architecture]coci.SignedImage{}
 		bc.Options.WantSBOM = false
+
+		// This is a hack to skip the SBOM generation during
+		// image build. Will be removed when global options are a thing.
+		formats := bc.Options.SBOMFormats
+		bc.Options.SBOMFormats = []string{}
+
 		// The build context options is sometimes copied in the next
 		// functions. Ensure we have the directory defined and created
 		// by invoking the function early.
@@ -209,6 +212,13 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 		}
 
+		bc.Options.SBOMFormats = formats
+		sbompath := bc.Options.SBOMPath
+		if bc.Options.SBOMPath == "" {
+			sbompath = bc.Options.TempDir()
+		}
+
+		logrus.Info("Generating Image SBOMs")
 		for arch, img := range imgs {
 			bc.Options.WantSBOM = true
 			bc.Options.Arch = arch
@@ -220,10 +230,9 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 
 			if _, err := oci.PostAttachSBOM(
-				img, bc.Options.SBOMPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+				img, sbompath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
-
 			}
 		}
 	}
