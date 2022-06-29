@@ -157,45 +157,57 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	}
 
 	si := signed.Image(v1Image)
-
-	// Attach the SBOM, e.g.
-	// TODO(kaniini): Allow all SBOM types to be uploaded.
-	if len(sbomFormats) > 0 {
-		var mt ggcrtypes.MediaType
-		var path string
-		switch sbomFormats[0] {
-		case "spdx":
-			mt = ctypes.SPDXJSONMediaType
-			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", arch.ToAPK()))
-		case "cyclonedx":
-			mt = ctypes.CycloneDXJSONMediaType
-			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", arch.ToAPK()))
-		case "idb":
-			mt = "application/vnd.apko.installed-db"
-			path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", arch.ToAPK()))
-		default:
-			return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
-		}
-		if len(sbomFormats) > 1 {
-			// When we have multiple formats, warn that we're picking the first.
-			logger.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
-		}
-
-		sbom, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("reading sbom: %w", err)
-		}
-
-		f, err := static.NewFile(sbom, static.WithLayerMediaType(mt))
-		if err != nil {
-			return nil, err
-		}
-		si, err = ocimutate.AttachFileToImage(si, "sbom", f)
-		if err != nil {
-			return nil, err
-		}
+	var err2 error
+	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
+		return nil, fmt.Errorf("attaching SBOM to image: %w", err2)
 	}
 
+	return si, nil
+}
+
+func attachSBOM(
+	si oci.SignedImage, sbomPath string, sbomFormats []string,
+	arch types.Architecture, logger *logrus.Entry,
+) (oci.SignedImage, error) {
+	// Attach the SBOM, e.g.
+	// TODO(kaniini): Allow all SBOM types to be uploaded.
+	if len(sbomFormats) == 0 {
+		return nil, nil
+	}
+
+	var mt ggcrtypes.MediaType
+	var path string
+	switch sbomFormats[0] {
+	case "spdx":
+		mt = ctypes.SPDXJSONMediaType
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", arch.ToAPK()))
+	case "cyclonedx":
+		mt = ctypes.CycloneDXJSONMediaType
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", arch.ToAPK()))
+	case "idb":
+		mt = "application/vnd.apko.installed-db"
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", arch.ToAPK()))
+	default:
+		return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
+	}
+	if len(sbomFormats) > 1 {
+		// When we have multiple formats, warn that we're picking the first.
+		logger.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
+	}
+
+	sbom, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading sbom: %w", err)
+	}
+
+	f, err := static.NewFile(sbom, static.WithLayerMediaType(mt))
+	if err != nil {
+		return nil, err
+	}
+	si, err = ocimutate.AttachFileToImage(si, "sbom", f)
+	if err != nil {
+		return nil, err
+	}
 	return si, nil
 }
 
