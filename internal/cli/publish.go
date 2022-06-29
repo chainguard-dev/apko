@@ -116,6 +116,9 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return errors.New("no archs requested")
 	case 1:
 		bc.Options.Arch = bc.ImageConfiguration.Archs[0]
+		// We don't want to build the SBOM just now. We don't know
+		// the image digest.
+		bc.Options.WantSBOM = false
 
 		if err := bc.Refresh(); err != nil {
 			return fmt.Errorf("failed to update build context for %q: %w", bc.Options.Arch, err)
@@ -143,6 +146,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		var errg errgroup.Group
 		workDir := bc.Options.WorkDir
 		imgs := map[types.Architecture]coci.SignedImage{}
+		bc.Options.WantSBOM = false
 
 		for _, arch := range bc.ImageConfiguration.Archs {
 			arch := arch
@@ -175,6 +179,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 						return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 					}
 				}
+
+				// Append the Image data to the SBOM options
+				// bc.Options.  = img ...
+				// Append SBOM
 				imgs[arch] = img
 				return nil
 			})
