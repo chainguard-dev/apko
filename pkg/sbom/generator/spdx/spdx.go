@@ -86,16 +86,27 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Packages:      []Package{},
 		Relationships: []Relationship{},
 	}
-
+	var imagePackage *Package
 	layerPackage, err := sx.layerPackage(opts)
 	if err != nil {
 		return fmt.Errorf("generating layer spdx package: %w", err)
 	}
 
-	doc.Packages = append(doc.Packages, *layerPackage)
-
-	// FIXME: Change here if we have the image data
 	doc.DocumentDescribes = []string{layerPackage.ID}
+
+	if opts.ImageInfo.ImageDigest != "" {
+		imagePackage = sx.imagePackage(opts)
+		doc.DocumentDescribes = []string{imagePackage.ID}
+		doc.Packages = append(doc.Packages, *imagePackage)
+		// Add to the relationships list
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: imagePackage.ID,
+			Type:    "CONTAINS",
+			Related: layerPackage.ID,
+		})
+	}
+
+	doc.Packages = append(doc.Packages, *layerPackage)
 
 	for _, pkg := range opts.Packages {
 		// add the package
@@ -132,6 +143,49 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	return nil
+}
+
+func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
+	// Main package purl
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch.String() != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+
+	return &Package{
+		ID: stringToIdentifier(fmt.Sprintf(
+			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
+		)),
+		Name:             opts.ImageInfo.Name + "@" + opts.ImageInfo.ImageDigest,
+		LicenseConcluded: NOASSERTION,
+		LicenseDeclared:  NOASSERTION,
+		DownloadLocation: NOASSERTION,
+		CopyrightText:    NOASSERTION,
+		FilesAnalyzed:    false,
+		Description:      "apko container image",
+		Checksums: []Checksum{
+			{
+				Algorithm: "SHA256",
+				Value:     strings.TrimPrefix(opts.ImageInfo.ImageDigest, "sha256:"),
+			},
+		},
+		ExternalRefs: []ExternalRef{
+			{
+				Category: "PACKAGE_MANAGER",
+				Type:     "purl",
+				Locator: purl.NewPackageURL(
+					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+					purl.QualifiersFromMap(mmMain), "",
+				).String(),
+			},
+		},
+	}
 }
 
 // apkPackage returns a SPDX package describing an apk
