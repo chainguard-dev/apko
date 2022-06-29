@@ -87,7 +87,7 @@ func (o *Options) TempDir() string {
 func (o Options) TarballFileName() string {
 	tarName := "apko.tar.gz"
 	if o.Arch.String() != "" {
-		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.String())
+		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.ToAPK())
 	}
 	return tarName
 }
