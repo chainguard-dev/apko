@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	coci "github.com/sigstore/cosign/pkg/oci"
 	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -49,6 +50,20 @@ func (bc *Context) Summarize() {
 
 func (bc *Context) BuildTarball() (string, error) {
 	return bc.impl.BuildTarball(&bc.Options)
+}
+
+func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
+	opts := bc.Options
+
+	h, err := img.Digest()
+	if err != nil {
+		return fmt.Errorf("getting %s image digest: %w", arch, err)
+	}
+
+	opts.Arch = arch
+	opts.ImageDigest = h.String()
+
+	return bc.impl.GenerateSBOM(&opts)
 }
 
 func (bc *Context) GenerateSBOM() error {
@@ -84,8 +99,12 @@ func (bc *Context) BuildLayer() (string, error) {
 	}
 
 	// generate SBOM
-	if err := bc.GenerateSBOM(); err != nil {
-		return "", fmt.Errorf("generating SBOMs: %w", err)
+	if bc.Options.WantSBOM {
+		if err := bc.GenerateSBOM(); err != nil {
+			return "", fmt.Errorf("generating SBOMs: %w", err)
+		}
+	} else {
+		bc.Logger().Debug("Not generating SBOMs (WantSBOM = false)")
 	}
 
 	return layerTarGZ, nil

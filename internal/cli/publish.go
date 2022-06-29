@@ -16,7 +16,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +43,7 @@ func publish() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var debugEnabled bool
+	var writeSBOM bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -55,6 +55,9 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !writeSBOM {
+				sbomFormats = []string{}
+			}
 			archs := types.ParseArchitectures(archstrs)
 			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
@@ -80,7 +83,8 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
-	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
+	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
@@ -101,98 +105,125 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return err
 	}
 
+	if len(bc.Options.SBOMFormats) > 0 {
+		bc.Options.WantSBOM = true
+	} else {
+		bc.Options.WantSBOM = false
+	}
+
 	if len(archs) == 0 {
 		archs = types.AllArchs
 	}
 	if len(bc.ImageConfiguration.Archs) == 0 {
 		bc.ImageConfiguration.Archs = archs
 	}
+	bc.Logger().Infof(
+		"Publishing images for %d architectures: %+v",
+		len(bc.ImageConfiguration.Archs),
+		bc.ImageConfiguration.Archs,
+	)
+
+	// The build context options is sometimes copied in the next functions. Ensure
+	// we have the directory defined and created by invoking the function early.
+	bc.Options.TempDir()
+	defer os.RemoveAll(bc.Options.TempDir())
 
 	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
-	var digest name.Digest
-	switch len(bc.ImageConfiguration.Archs) {
-	case 0:
-		return errors.New("no archs requested")
-	case 1:
-		bc.Options.Arch = bc.ImageConfiguration.Archs[0]
+	var errg errgroup.Group
+	workDir := bc.Options.WorkDir
+	imgs := map[types.Architecture]coci.SignedImage{}
 
-		if err := bc.Refresh(); err != nil {
-			return fmt.Errorf("failed to update build context for %q: %w", bc.Options.Arch, err)
-		}
+	// This is a hack to skip the SBOM generation during
+	// image build. Will be removed when global options are a thing.
+	formats := bc.Options.SBOMFormats
+	wantSBOM := bc.Options.WantSBOM
+	bc.Options.SBOMFormats = []string{}
+	bc.Options.WantSBOM = false
 
-		layerTarGZ, err := bc.BuildLayer()
-		if err != nil {
-			return fmt.Errorf("failed to build layer image: %w", err)
-		}
-		defer os.Remove(layerTarGZ)
+	imageTags := []string{}
+	if len(bc.ImageConfiguration.Archs) == 1 {
+		imageTags = bc.Options.Tags
+	}
 
-		if bc.Options.UseDockerMediaTypes {
-			digest, _, err = oci.PublishDockerImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
-			if err != nil {
-				return fmt.Errorf("failed to build Docker image: %w", err)
+	var finalDigest name.Digest
+	for _, arch := range bc.ImageConfiguration.Archs {
+		arch := arch
+		bc := *bc
+
+		errg.Go(func() error {
+			bc.Options.Arch = arch
+			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
+
+			if err := bc.Refresh(); err != nil {
+				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
-		} else {
-			digest, _, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...)
+
+			layerTarGZ, err := bc.BuildLayer()
 			if err != nil {
-				return fmt.Errorf("failed to build OCI image: %w", err)
+				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
-		}
+			// TODO(kaniini): clean up everything correctly for multitag scenario
+			// defer os.Remove(layerTarGZ)
 
-	default:
-		var errg errgroup.Group
-		workDir := bc.Options.WorkDir
-		imgs := map[types.Architecture]coci.SignedImage{}
-
-		for _, arch := range bc.ImageConfiguration.Archs {
-			arch := arch
-			bc := *bc
-
-			errg.Go(func() error {
-				bc.Options.Arch = arch
-				bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
-
-				if err := bc.Refresh(); err != nil {
-					return fmt.Errorf("failed to update build context for %q: %w", arch, err)
-				}
-
-				layerTarGZ, err := bc.BuildLayer()
+			var img coci.SignedImage
+			if bc.Options.UseDockerMediaTypes {
+				finalDigest, img, err = oci.PublishDockerImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats, imageTags...)
 				if err != nil {
-					return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
+					return fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
 				}
-				// TODO(kaniini): clean up everything correctly for multitag scenario
-				// defer os.Remove(layerTarGZ)
-
-				var img coci.SignedImage
-				if bc.Options.UseDockerMediaTypes {
-					_, img, err = oci.PublishDockerImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats)
-					if err != nil {
-						return fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
-					}
-				} else {
-					_, img, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats)
-					if err != nil {
-						return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
-					}
+			} else {
+				finalDigest, img, err = oci.PublishImageFromLayer(layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats, imageTags...)
+				if err != nil {
+					return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 				}
-				imgs[arch] = img
-				return nil
-			})
-		}
+			}
 
-		if err := errg.Wait(); err != nil {
-			return err
-		}
+			imgs[arch] = img
+			return nil
+		})
+	}
 
+	if err := errg.Wait(); err != nil {
+		return err
+	}
+
+	if len(archs) > 1 {
 		if bc.Options.UseDockerMediaTypes {
-			digest, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+			finalDigest, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build Docker index: %w", err)
 			}
 		} else {
-			digest, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+			finalDigest, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI index: %w", err)
+			}
+		}
+	}
+
+	bc.Options.SBOMFormats = formats
+	sbompath := bc.Options.SBOMPath
+	if bc.Options.SBOMPath == "" {
+		sbompath = bc.Options.TempDir()
+	}
+
+	if wantSBOM {
+		logrus.Info("Generating arch image SBOMs")
+		for arch, img := range imgs {
+			bc.Options.WantSBOM = true
+			bc.Options.Arch = arch
+			bc.Options.TarballPath = filepath.Join(bc.Options.TempDir(), bc.Options.TarballFileName())
+			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
+
+			if err := bc.GenerateImageSBOM(arch, img); err != nil {
+				return fmt.Errorf("generating sbom for %s: %w", arch, err)
+			}
+
+			if _, err := oci.PostAttachSBOM(
+				img, sbompath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+			); err != nil {
+				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
 			}
 		}
 	}
@@ -200,14 +231,14 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// If provided, this is the name of the file to write digest referenced into
 	if outputRefs != "" {
 		//nolint:gosec // Make image ref file readable by non-root
-		if err := os.WriteFile(outputRefs, []byte(digest.String()), 0666); err != nil {
+		if err := os.WriteFile(outputRefs, []byte(finalDigest.String()), 0666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
 		}
 	}
 
 	// Write the image digest to STDOUT in order to enable command
 	// composition e.g. kn service create --image=$(apko publish ...)
-	fmt.Println(digest)
+	fmt.Println(finalDigest)
 
 	return nil
 }

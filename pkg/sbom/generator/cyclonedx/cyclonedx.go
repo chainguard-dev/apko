@@ -109,23 +109,52 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	if opts.ImageInfo.Arch.String() != "" {
 		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
 	}
-	rootComponent := Component{
+	var imageComponent Component
+	layerComponent := Component{
 		BOMRef: purl.NewPackageURL(
-			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
 			purl.QualifiersFromMap(mmMain), "",
 		).String(),
-		Name:       opts.OS.Name,
+		Name:        opts.OS.Name,
+		Description: "apko OS layer",
+		PUrl: purl.NewPackageURL(
+			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
+			purl.QualifiersFromMap(mmMain), "",
+		).String(),
 		Version:    opts.OS.Version,
 		Type:       "operating-system",
 		Components: pkgComponents,
+	}
+
+	if opts.ImageInfo.ImageDigest != "" {
+		imageComponent = Component{
+			BOMRef: purl.NewPackageURL(
+				purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+				purl.QualifiersFromMap(mmMain), "",
+			).String(),
+			Type: "container",
+			Name: "",
+			// Version:            "",
+			Description: "apko container image",
+			PUrl: purl.NewPackageURL(
+				purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+				purl.QualifiersFromMap(mmMain), "",
+			).String(),
+			Components: []Component{layerComponent},
+		}
 	}
 
 	bom := Document{
 		BOMFormat:    "CycloneDX",
 		SpecVersion:  "1.4",
 		Version:      1,
-		Components:   []Component{rootComponent},
 		Dependencies: pkgDependencies,
+	}
+
+	if opts.ImageInfo.ImageDigest != "" {
+		bom.Components = []Component{imageComponent}
+	} else {
+		bom.Components = []Component{layerComponent}
 	}
 
 	out, err := os.Create(path)

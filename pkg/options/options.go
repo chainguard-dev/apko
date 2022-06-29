@@ -15,6 +15,7 @@
 package options
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -37,7 +38,9 @@ type Options struct {
 	ExtraKeyFiles       []string
 	ExtraRepos          []string
 	Arch                types.Architecture
+	ImageDigest         string
 	Log                 *logrus.Logger
+	TempDirPath         string
 }
 
 var Default = Options{
@@ -63,4 +66,28 @@ func (o *Options) Summarize(logger *logrus.Entry) {
 
 func (o *Options) Logger() *logrus.Entry {
 	return o.Log.WithFields(logrus.Fields{"arch": o.Arch.ToAPK()})
+}
+
+// Tempdir returns the temporary directory where apko will create
+// the layer blobs
+func (o *Options) TempDir() string {
+	if o.TempDirPath != "" {
+		return o.TempDirPath
+	}
+
+	path, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+	if err != nil {
+		o.Logger().Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
+	}
+	o.TempDirPath = path
+	return o.TempDirPath
+}
+
+// TarballFileName returns a deterministic filename for the layer taball
+func (o Options) TarballFileName() string {
+	tarName := "apko.tar.gz"
+	if o.Arch.String() != "" {
+		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.ToAPK())
+	}
+	return tarName
 }
