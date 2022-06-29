@@ -16,6 +16,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -194,7 +195,7 @@ func attachSBOM(
 	// Attach the SBOM, e.g.
 	// TODO(kaniini): Allow all SBOM types to be uploaded.
 	if len(sbomFormats) == 0 {
-		return nil, nil
+		return si, nil
 	}
 
 	var mt ggcrtypes.MediaType
@@ -228,24 +229,29 @@ func attachSBOM(
 	}
 	si, err = ocimutate.AttachFileToImage(si, "sbom", f)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("attaching file to image: %w", err)
 	}
+
 	return si, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
-	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
+func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string) error {
+	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 }
 
-func BuildDockerImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
-	return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger)
+func BuildDockerImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string) error {
+	return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 }
 
-func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry) error {
+func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string) error {
 	imageType := humanReadableImageType(mediaType)
-	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, "", nil)
+	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return err
+	}
+
+	if v1Image == nil {
+		return errors.New("image build from layer returned nil")
 	}
 
 	imgRefTag, err := name.NewTag(imageRef)
