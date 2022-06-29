@@ -111,7 +111,7 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	}
 	rootComponent := Component{
 		BOMRef: purl.NewPackageURL(
-			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
 			purl.QualifiersFromMap(mmMain), "",
 		).String(),
 		Name:       opts.OS.Name,

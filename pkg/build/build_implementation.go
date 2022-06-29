@@ -136,7 +136,7 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
 		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
 	s.Options.ImageInfo.Arch = o.Arch
-	s.Options.ImageInfo.Digest = digest.String()
+	s.Options.ImageInfo.LayerDigest = digest.String()
 	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
 	s.Options.OutputDir = o.SBOMPath
 	s.Options.Packages = packages

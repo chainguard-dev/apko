@@ -66,8 +66,8 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	// The default document name makes no attempt to avoid
 	// clashes. Ensuring a unique name requires a digest
 	documentName := "sbom"
-	if opts.ImageInfo.Digest != "" {
-		documentName += "-" + opts.ImageInfo.Digest
+	if opts.ImageInfo.LayerDigest != "" {
+		documentName += "-" + opts.ImageInfo.LayerDigest
 	}
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
@@ -213,7 +213,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.Digest,
+					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
 					purl.QualifiersFromMap(mmMain), "",
 				).String(),
 			},
