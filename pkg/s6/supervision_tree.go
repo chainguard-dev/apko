@@ -22,11 +22,9 @@ import (
 )
 
 func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
-
 	svbase := filepath.Join(sc.WorkDir, "sv")
 	svcdir := filepath.Join(svbase, name)
 	sc.Log.Debugf("  supervision dir: %s", svcdir)
-
 
 	if err := os.MkdirAll(svcdir, 0755); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
