@@ -45,7 +45,7 @@ func TestParseArchitectures(t *testing.T) {
 		// Unknown arch strings are accepted.
 		desc: "unknown arch",
 		in:   []string{"apples", "bananas"},
-		want: []Architecture{Architecture{"apples"}, Architecture{"bananas"}},
+		want: []Architecture{{"apples"}, {"bananas"}},
 	}, {
 		desc: "all",
 		in:   []string{"all"},
@@ -54,7 +54,7 @@ func TestParseArchitectures(t *testing.T) {
 		// If 'all' is present and isn't the only element, it will be interpreted as an architecture.
 		desc: "uh oh all",
 		in:   []string{"all", "riscv64"},
-		want: []Architecture{Architecture{"all"}, riscv64},
+		want: []Architecture{{"all"}, riscv64},
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
 			got := ParseArchitectures(c.in)
