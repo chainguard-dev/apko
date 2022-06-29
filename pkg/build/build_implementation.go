@@ -129,6 +129,8 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
 		s.Options.ImageInfo.Name = tag.String()
 	}
 
+	s.Options.ImageInfo.ImageDigest = o.ImageDigest
+
 	// Generate the packages externally as we may
 	// move the package reader somewhere else
 	packages, err := s.ReadPackageIndex()

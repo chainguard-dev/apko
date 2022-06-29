@@ -58,6 +58,7 @@ type ImageInfo struct {
 	Name            string
 	Repository      string
 	LayerDigest     string
+	ImageDigest     string
 	Arch            types.Architecture
 	SourceDateEpoch time.Time
 }
