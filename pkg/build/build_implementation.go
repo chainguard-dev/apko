@@ -17,8 +17,8 @@ package build
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -52,9 +52,7 @@ type buildImplementation interface {
 type defaultBuildImplementation struct{}
 
 func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.Executor, error) {
-	if strings.HasPrefix(o.TarballPath, "/tmp/apko") {
-		o.TarballPath = ""
-	}
+	o.TarballPath = ""
 
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
 
@@ -79,7 +77,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, 
 	if o.TarballPath != "" {
 		outfile, err = os.Create(o.TarballPath)
 	} else {
-		outfile, err = os.CreateTemp("", "apko-*.tar.gz")
+		outfile, err = os.Create(filepath.Join(o.TempDir(), o.TarballFileName()))
 	}
 	if err != nil {
 		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
