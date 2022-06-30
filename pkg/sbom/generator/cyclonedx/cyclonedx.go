@@ -85,7 +85,7 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 				continue
 			}
 
-			depRefs = append(depRefs, purl.NewPackageURL("apk", opts.OS.ID, pkg.Name, "",
+			depRefs = append(depRefs, purl.NewPackageURL("apk", opts.OS.ID, dep, "",
 				purl.QualifiersFromMap(mm), "").String())
 		}
 
