@@ -40,9 +40,11 @@ var DefaultOptions = options.Options{
 		Name:    "Alpine Linux",
 		Version: "Unknown",
 	},
-	ImageInfo: options.ImageInfo{},
-	FileName:  "sbom",
-	Formats:   []string{"spdx", "cyclonedx"},
+	ImageInfo: options.ImageInfo{
+		Images: []options.ArchImageInfo{},
+	},
+	FileName: "sbom",
+	Formats:  []string{"spdx", "cyclonedx"},
 }
 
 type SBOM struct {
@@ -106,12 +108,27 @@ func (s *SBOM) Generate() ([]string, error) {
 	return files, nil
 }
 
+// Generate creates the sboms according to the options set
+func (s *SBOM) GenerateIndex() ([]string, error) {
+	if err := s.impl.CheckGenerators(
+		&s.Options, s.Generators,
+	); err != nil {
+		return nil, err
+	}
+	files, err := s.impl.GenerateIndex(&s.Options, s.Generators)
+	if err != nil {
+		return nil, fmt.Errorf("generating sboms: %w", err)
+	}
+	return files, nil
+}
+
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
 	ReadReleaseData(*options.Options, string) error
 	ReadPackageIndex(*options.Options, string) ([]*repository.Package, error)
 	Generate(*options.Options, map[string]generator.Generator) ([]string, error)
 	CheckGenerators(*options.Options, map[string]generator.Generator) error
+	GenerateIndex(*options.Options, map[string]generator.Generator) ([]string, error)
 }
 
 type defaultSBOMImplementation struct{}
@@ -186,4 +203,19 @@ func (di *defaultSBOMImplementation) CheckGenerators(
 		}
 	}
 	return nil
+}
+
+// GenerateIndex generates the index SBOM for a multi-arch image
+func (di *defaultSBOMImplementation) GenerateIndex(opts *options.Options, generators map[string]generator.Generator) ([]string, error) {
+	sboms := []string{}
+	for _, format := range opts.Formats {
+		path := filepath.Join(
+			opts.OutputDir, "sbom-index."+generators[format].Ext(),
+		)
+		if err := generators[format].GenerateIndex(opts, path); err != nil {
+			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+		}
+		sboms = append(sboms, path)
+	}
+	return sboms, nil
 }
