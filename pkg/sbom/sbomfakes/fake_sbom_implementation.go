@@ -36,6 +36,20 @@ type FakeSbomImplementation struct {
 		result1 []string
 		result2 error
 	}
+	GenerateIndexStub        func(*options.Options, map[string]generator.Generator) ([]string, error)
+	generateIndexMutex       sync.RWMutex
+	generateIndexArgsForCall []struct {
+		arg1 *options.Options
+		arg2 map[string]generator.Generator
+	}
+	generateIndexReturns struct {
+		result1 []string
+		result2 error
+	}
+	generateIndexReturnsOnCall map[int]struct {
+		result1 []string
+		result2 error
+	}
 	ReadPackageIndexStub        func(*options.Options, string) ([]*repository.Package, error)
 	readPackageIndexMutex       sync.RWMutex
 	readPackageIndexArgsForCall []struct {
@@ -193,6 +207,71 @@ func (fake *FakeSbomImplementation) GenerateReturnsOnCall(i int, result1 []strin
 	}{result1, result2}
 }
 
+func (fake *FakeSbomImplementation) GenerateIndex(arg1 *options.Options, arg2 map[string]generator.Generator) ([]string, error) {
+	fake.generateIndexMutex.Lock()
+	ret, specificReturn := fake.generateIndexReturnsOnCall[len(fake.generateIndexArgsForCall)]
+	fake.generateIndexArgsForCall = append(fake.generateIndexArgsForCall, struct {
+		arg1 *options.Options
+		arg2 map[string]generator.Generator
+	}{arg1, arg2})
+	stub := fake.GenerateIndexStub
+	fakeReturns := fake.generateIndexReturns
+	fake.recordInvocation("GenerateIndex", []interface{}{arg1, arg2})
+	fake.generateIndexMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeSbomImplementation) GenerateIndexCallCount() int {
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
+	return len(fake.generateIndexArgsForCall)
+}
+
+func (fake *FakeSbomImplementation) GenerateIndexCalls(stub func(*options.Options, map[string]generator.Generator) ([]string, error)) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = stub
+}
+
+func (fake *FakeSbomImplementation) GenerateIndexArgsForCall(i int) (*options.Options, map[string]generator.Generator) {
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
+	argsForCall := fake.generateIndexArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeSbomImplementation) GenerateIndexReturns(result1 []string, result2 error) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = nil
+	fake.generateIndexReturns = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeSbomImplementation) GenerateIndexReturnsOnCall(i int, result1 []string, result2 error) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = nil
+	if fake.generateIndexReturnsOnCall == nil {
+		fake.generateIndexReturnsOnCall = make(map[int]struct {
+			result1 []string
+			result2 error
+		})
+	}
+	fake.generateIndexReturnsOnCall[i] = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeSbomImplementation) ReadPackageIndex(arg1 *options.Options, arg2 string) ([]*repository.Package, error) {
 	fake.readPackageIndexMutex.Lock()
 	ret, specificReturn := fake.readPackageIndexReturnsOnCall[len(fake.readPackageIndexArgsForCall)]
@@ -327,6 +406,8 @@ func (fake *FakeSbomImplementation) Invocations() map[string][][]interface{} {
 	defer fake.checkGeneratorsMutex.RUnlock()
 	fake.generateMutex.RLock()
 	defer fake.generateMutex.RUnlock()
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
 	fake.readPackageIndexMutex.RLock()
 	defer fake.readPackageIndexMutex.RUnlock()
 	fake.readReleaseDataMutex.RLock()
