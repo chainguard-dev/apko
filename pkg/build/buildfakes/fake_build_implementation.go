@@ -8,6 +8,8 @@ import (
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/sigstore/cosign/pkg/oci"
 )
 
 type FakeBuildImplementation struct {
@@ -37,6 +39,19 @@ type FakeBuildImplementation struct {
 	buildTarballReturnsOnCall map[int]struct {
 		result1 string
 		result2 error
+	}
+	GenerateIndexSBOMStub        func(*options.Options, name.Digest, map[types.Architecture]oci.SignedImage) error
+	generateIndexSBOMMutex       sync.RWMutex
+	generateIndexSBOMArgsForCall []struct {
+		arg1 *options.Options
+		arg2 name.Digest
+		arg3 map[types.Architecture]oci.SignedImage
+	}
+	generateIndexSBOMReturns struct {
+		result1 error
+	}
+	generateIndexSBOMReturnsOnCall map[int]struct {
+		result1 error
 	}
 	GenerateOSReleaseStub        func(*options.Options, *types.ImageConfiguration) error
 	generateOSReleaseMutex       sync.RWMutex
@@ -277,6 +292,69 @@ func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 st
 		result1 string
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOM(arg1 *options.Options, arg2 name.Digest, arg3 map[types.Architecture]oci.SignedImage) error {
+	fake.generateIndexSBOMMutex.Lock()
+	ret, specificReturn := fake.generateIndexSBOMReturnsOnCall[len(fake.generateIndexSBOMArgsForCall)]
+	fake.generateIndexSBOMArgsForCall = append(fake.generateIndexSBOMArgsForCall, struct {
+		arg1 *options.Options
+		arg2 name.Digest
+		arg3 map[types.Architecture]oci.SignedImage
+	}{arg1, arg2, arg3})
+	stub := fake.GenerateIndexSBOMStub
+	fakeReturns := fake.generateIndexSBOMReturns
+	fake.recordInvocation("GenerateIndexSBOM", []interface{}{arg1, arg2, arg3})
+	fake.generateIndexSBOMMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOMCallCount() int {
+	fake.generateIndexSBOMMutex.RLock()
+	defer fake.generateIndexSBOMMutex.RUnlock()
+	return len(fake.generateIndexSBOMArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOMCalls(stub func(*options.Options, name.Digest, map[types.Architecture]oci.SignedImage) error) {
+	fake.generateIndexSBOMMutex.Lock()
+	defer fake.generateIndexSBOMMutex.Unlock()
+	fake.GenerateIndexSBOMStub = stub
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOMArgsForCall(i int) (*options.Options, name.Digest, map[types.Architecture]oci.SignedImage) {
+	fake.generateIndexSBOMMutex.RLock()
+	defer fake.generateIndexSBOMMutex.RUnlock()
+	argsForCall := fake.generateIndexSBOMArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOMReturns(result1 error) {
+	fake.generateIndexSBOMMutex.Lock()
+	defer fake.generateIndexSBOMMutex.Unlock()
+	fake.GenerateIndexSBOMStub = nil
+	fake.generateIndexSBOMReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) GenerateIndexSBOMReturnsOnCall(i int, result1 error) {
+	fake.generateIndexSBOMMutex.Lock()
+	defer fake.generateIndexSBOMMutex.Unlock()
+	fake.GenerateIndexSBOMStub = nil
+	if fake.generateIndexSBOMReturnsOnCall == nil {
+		fake.generateIndexSBOMReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.generateIndexSBOMReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeBuildImplementation) GenerateOSRelease(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
@@ -847,6 +925,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.buildImageMutex.RUnlock()
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
+	fake.generateIndexSBOMMutex.RLock()
+	defer fake.generateIndexSBOMMutex.RUnlock()
 	fake.generateOSReleaseMutex.RLock()
 	defer fake.generateOSReleaseMutex.RUnlock()
 	fake.generateSBOMMutex.RLock()

@@ -15,13 +15,18 @@
 package build
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	coci "github.com/sigstore/cosign/pkg/oci"
+	"sigs.k8s.io/release-utils/hash"
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
@@ -30,6 +35,7 @@ import (
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
+	soptions "chainguard.dev/apko/pkg/sbom/options"
 	"chainguard.dev/apko/pkg/tarball"
 )
 
@@ -47,6 +53,7 @@ type buildImplementation interface {
 	ValidateImageConfiguration(*types.ImageConfiguration) error
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
+	GenerateIndexSBOM(*options.Options, name.Digest, map[types.Architecture]coci.SignedImage) error
 }
 
 type defaultBuildImplementation struct{}
@@ -206,6 +213,81 @@ func buildImage(
 	}
 
 	o.Logger().Infof("finished building filesystem in %s", o.WorkDir)
+
+	return nil
+}
+
+func (di *defaultBuildImplementation) GenerateIndexSBOM(
+	o *options.Options, indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
+) error {
+	if len(o.SBOMFormats) == 0 {
+		o.Logger().Warnf("skipping index SBOM generation")
+		return nil
+	}
+
+	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
+	// Parse the image reference
+	if len(o.Tags) > 0 {
+		tag, err := name.NewTag(o.Tags[0])
+		if err != nil {
+			return fmt.Errorf("parsing tag %s: %w", o.Tags[0], err)
+		}
+		s.Options.ImageInfo.Tag = tag.TagStr()
+		s.Options.ImageInfo.Name = tag.String()
+	}
+
+	o.Logger().Infof("Generating index SBOM")
+
+	// Add the image digest
+	h, err := v1.NewHash(indexDigest.DigestStr())
+	if err != nil {
+		return errors.New("getting index hash")
+	}
+	s.Options.ImageInfo.IndexDigest = h
+	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
+	s.Options.Formats = o.SBOMFormats
+	s.Options.OutputDir = o.TempDir()
+	if o.SBOMPath != "" {
+		s.Options.OutputDir = o.SBOMPath
+	}
+	s.Options.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
+	if o.UseDockerMediaTypes {
+		s.Options.ImageInfo.IndexMediaType = ggcrtypes.DockerManifestList
+	}
+	var ext string
+	switch o.SBOMFormats[0] {
+	case "spdx":
+		ext = "spdx.json"
+	case "cyclonedx":
+		ext = "cdx"
+	case "idb":
+		ext = "idb"
+	}
+
+	// Load the images data into the SBOM generator options
+	for arch, i := range imgs {
+		sbomHash, err := hash.SHA256ForFile(filepath.Join(s.Options.OutputDir, fmt.Sprintf("sbom-%s.%s", arch.ToAPK(), ext)))
+		if err != nil {
+			return fmt.Errorf("checksumming %s SBOM: %w", arch, err)
+		}
+
+		d, err := i.Digest()
+		if err != nil {
+			return fmt.Errorf("getting arch image digest: %w", err)
+		}
+
+		s.Options.ImageInfo.Images = append(
+			s.Options.ImageInfo.Images,
+			soptions.ArchImageInfo{
+				Digest:     d,
+				Arch:       arch,
+				SBOMDigest: sbomHash,
+			})
+	}
+
+	if _, err := s.GenerateIndex(); err != nil {
+		return fmt.Errorf("generting index SBOM: %w", err)
+	}
 
 	return nil
 }

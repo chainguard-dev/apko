@@ -54,3 +54,7 @@ func (i *IDB) Generate(opts *options.Options, path string) error {
 
 	return nil
 }
+
+func (i *IDB) GenerateIndex(opts *options.Options, path string) error {
+	return nil
+}

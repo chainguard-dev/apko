@@ -16,6 +16,7 @@ package spdx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -51,6 +52,7 @@ func (sx *SPDX) Ext() string {
 }
 
 func stringToIdentifier(in string) (out string) {
+	in = strings.ReplaceAll(in, ":", "-")
 	return validIDCharsRe.ReplaceAllStringFunc(in, func(s string) string {
 		r := ""
 		for i := 0; i < len(s); i++ {
@@ -129,6 +131,15 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 	}
 
+	if err := renderDoc(doc, path); err != nil {
+		return fmt.Errorf("rendering document: %w", err)
+	}
+
+	return nil
+}
+
+// renderDoc marshals a document to json and writes it to disk
+func renderDoc(doc *Document, path string) error {
 	out, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
@@ -141,7 +152,6 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	if err := enc.Encode(doc); err != nil {
 		return fmt.Errorf("encoding spdx sbom: %w", err)
 	}
-
 	return nil
 }
 
@@ -280,15 +290,22 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 }
 
 type Document struct {
-	ID                string         `json:"SPDXID"`
-	Name              string         `json:"name"`
-	Version           string         `json:"spdxVersion"`
-	CreationInfo      CreationInfo   `json:"creationInfo"`
-	DataLicense       string         `json:"dataLicense"`
-	Namespace         string         `json:"documentNamespace"`
-	DocumentDescribes []string       `json:"documentDescribes"`
-	Packages          []Package      `json:"packages"`
-	Relationships     []Relationship `json:"relationships"`
+	ID                   string                `json:"SPDXID"`
+	Name                 string                `json:"name"`
+	Version              string                `json:"spdxVersion"`
+	CreationInfo         CreationInfo          `json:"creationInfo"`
+	DataLicense          string                `json:"dataLicense"`
+	Namespace            string                `json:"documentNamespace"`
+	DocumentDescribes    []string              `json:"documentDescribes"`
+	Packages             []Package             `json:"packages"`
+	Relationships        []Relationship        `json:"relationships"`
+	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs"`
+}
+
+type ExternalDocumentRef struct {
+	Checksum           Checksum `json:"checksum"`
+	ExternalDocumentID string   `json:"externalDocumentId"`
+	SPDXDocument       string   `json:"spdxDocument"`
 }
 
 type CreationInfo struct {
@@ -300,17 +317,17 @@ type CreationInfo struct {
 type Package struct {
 	ID               string        `json:"SPDXID"`
 	Name             string        `json:"name"`
-	Version          string        `json:"versionInfo"`
+	Version          string        `json:"versionInfo,omitempty"`
 	FilesAnalyzed    bool          `json:"filesAnalyzed"`
 	LicenseConcluded string        `json:"licenseConcluded"`
 	LicenseDeclared  string        `json:"licenseDeclared"`
 	Description      string        `json:"description"`
-	DownloadLocation string        `json:"downloadLocation"`
-	Originator       string        `json:"originator"`
+	DownloadLocation string        `json:"downloadLocation,omitempty"`
+	Originator       string        `json:"originator,omitempty"`
 	SourceInfo       string        `json:"sourceInfo"`
 	CopyrightText    string        `json:"copyrightText"`
 	Checksums        []Checksum    `json:"checksums"`
-	ExternalRefs     []ExternalRef `json:"externalRefs"`
+	ExternalRefs     []ExternalRef `json:"externalRefs,omitempty"`
 }
 
 type Checksum struct {
@@ -328,4 +345,102 @@ type Relationship struct {
 	Element string `json:"spdxElementId"`
 	Type    string `json:"relationshipType"`
 	Related string `json:"relatedSpdxElement"`
+}
+
+func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
+	if opts.ImageInfo.Images == nil || len(opts.ImageInfo.Images) == 0 {
+		return errors.New("unable to render index sbom, no architecture images found")
+	}
+	documentName := "sbom"
+	if opts.ImageInfo.IndexDigest.DeepCopy().String() != "" {
+		documentName = "sbom-" + opts.ImageInfo.IndexDigest.DeepCopy().String()
+	}
+	doc := &Document{
+		ID:      "SPDXRef-DOCUMENT",
+		Name:    documentName,
+		Version: "SPDX-2.2",
+		CreationInfo: CreationInfo{
+			Created: opts.ImageInfo.SourceDateEpoch.Format(time.RFC3339),
+			Creators: []string{
+				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
+				"Organization: Chainguard, Inc",
+			},
+			LicenseListVersion: "3.16",
+		},
+		DataLicense:   "CC0-1.0",
+		Namespace:     "https://spdx.org/spdxdocs/apko/",
+		Packages:      []Package{},
+		Relationships: []Relationship{},
+	}
+
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Tag != "" {
+		mmMain["tag"] = opts.ImageInfo.Tag
+	}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch.String() != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+	if opts.ImageInfo.IndexMediaType != "" {
+		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
+	}
+
+	// Create the index package
+	indexPackageName := opts.ImageInfo.Name + "@" + opts.ImageInfo.IndexDigest.DeepCopy().String()
+	indexPackage := Package{
+		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
+		Name:             indexPackageName,
+		FilesAnalyzed:    false,
+		LicenseConcluded: NOASSERTION,
+		LicenseDeclared:  NOASSERTION,
+		Description:      "Multi-arch image index",
+		SourceInfo:       "Generated at image build time by apko",
+		CopyrightText:    NOASSERTION,
+		Checksums: []Checksum{
+			{
+				Algorithm: "SHA256",
+				Value:     opts.ImageInfo.IndexDigest.DeepCopy().Hex,
+			},
+		},
+		ExternalRefs: []ExternalRef{
+			{
+				Category: "PACKAGE_MANAGER",
+				Type:     "purl",
+				Locator: purl.NewPackageURL(
+					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+					purl.QualifiersFromMap(mmMain), "",
+				).String(),
+			},
+		},
+	}
+	doc.Packages = append(doc.Packages, indexPackage)
+	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
+
+	for _, info := range opts.ImageInfo.Images {
+		externalDocID := "DocumentRef-" + stringToIdentifier(fmt.Sprintf("%s-image-sbom", info.Arch.String()))
+
+		// First we relate the individsual SBOMs from the single images
+		doc.ExternalDocumentRefs = append(doc.ExternalDocumentRefs, ExternalDocumentRef{
+			Checksum: Checksum{
+				Algorithm: "SHA256",
+				Value:     info.SBOMDigest,
+			},
+			ExternalDocumentID: externalDocID,
+			SPDXDocument:       "https://" + strings.Replace(opts.ImageInfo.Name, "/", "/v2/", 1) + "/blobs/sha256:" + info.SBOMDigest,
+		})
+
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: externalDocID + fmt.Sprintf(":SPDXRef-Package-sha256-%s", info.Digest.DeepCopy().Hex),
+			Type:    "VARIANT_OF",
+			Related: stringToIdentifier(indexPackage.ID),
+		})
+	}
+
+	if err := renderDoc(doc, path); err != nil {
+		return fmt.Errorf("rendering document: %w", err)
+	}
+
+	return nil
 }

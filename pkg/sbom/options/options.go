@@ -17,6 +17,8 @@ package options
 import (
 	"time"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -59,6 +61,15 @@ type ImageInfo struct {
 	Repository      string
 	LayerDigest     string
 	ImageDigest     string
+	IndexMediaType  ggcrtypes.MediaType
+	IndexDigest     v1.Hash
+	Images          []ArchImageInfo
 	Arch            types.Architecture
 	SourceDateEpoch time.Time
+}
+
+type ArchImageInfo struct {
+	Digest     v1.Hash
+	Arch       types.Architecture
+	SBOMDigest string
 }

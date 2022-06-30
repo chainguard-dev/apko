@@ -206,3 +206,7 @@ type Dependency struct {
 	Ref       string   `json:"ref"`
 	DependsOn []string `json:"dependsOn"`
 }
+
+func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
+	return nil
+}

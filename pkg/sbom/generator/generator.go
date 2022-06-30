@@ -29,6 +29,7 @@ type Generator interface {
 	Key() string
 	Ext() string
 	Generate(*options.Options, string) error
+	GenerateIndex(*options.Options, string) error
 }
 
 func Generators() map[string]Generator {

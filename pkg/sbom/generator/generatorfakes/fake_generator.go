@@ -31,6 +31,18 @@ type FakeGenerator struct {
 	generateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GenerateIndexStub        func(*options.Options, string) error
+	generateIndexMutex       sync.RWMutex
+	generateIndexArgsForCall []struct {
+		arg1 *options.Options
+		arg2 string
+	}
+	generateIndexReturns struct {
+		result1 error
+	}
+	generateIndexReturnsOnCall map[int]struct {
+		result1 error
+	}
 	KeyStub        func() string
 	keyMutex       sync.RWMutex
 	keyArgsForCall []struct {
@@ -160,6 +172,68 @@ func (fake *FakeGenerator) GenerateReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeGenerator) GenerateIndex(arg1 *options.Options, arg2 string) error {
+	fake.generateIndexMutex.Lock()
+	ret, specificReturn := fake.generateIndexReturnsOnCall[len(fake.generateIndexArgsForCall)]
+	fake.generateIndexArgsForCall = append(fake.generateIndexArgsForCall, struct {
+		arg1 *options.Options
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.GenerateIndexStub
+	fakeReturns := fake.generateIndexReturns
+	fake.recordInvocation("GenerateIndex", []interface{}{arg1, arg2})
+	fake.generateIndexMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeGenerator) GenerateIndexCallCount() int {
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
+	return len(fake.generateIndexArgsForCall)
+}
+
+func (fake *FakeGenerator) GenerateIndexCalls(stub func(*options.Options, string) error) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = stub
+}
+
+func (fake *FakeGenerator) GenerateIndexArgsForCall(i int) (*options.Options, string) {
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
+	argsForCall := fake.generateIndexArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeGenerator) GenerateIndexReturns(result1 error) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = nil
+	fake.generateIndexReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeGenerator) GenerateIndexReturnsOnCall(i int, result1 error) {
+	fake.generateIndexMutex.Lock()
+	defer fake.generateIndexMutex.Unlock()
+	fake.GenerateIndexStub = nil
+	if fake.generateIndexReturnsOnCall == nil {
+		fake.generateIndexReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.generateIndexReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeGenerator) Key() string {
 	fake.keyMutex.Lock()
 	ret, specificReturn := fake.keyReturnsOnCall[len(fake.keyArgsForCall)]
@@ -220,6 +294,8 @@ func (fake *FakeGenerator) Invocations() map[string][][]interface{} {
 	defer fake.extMutex.RUnlock()
 	fake.generateMutex.RLock()
 	defer fake.generateMutex.RUnlock()
+	fake.generateIndexMutex.RLock()
+	defer fake.generateIndexMutex.RUnlock()
 	fake.keyMutex.RLock()
 	defer fake.keyMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

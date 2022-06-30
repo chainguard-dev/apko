@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"github.com/sirupsen/logrus"
@@ -64,6 +65,10 @@ func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedIma
 	opts.ImageDigest = h.String()
 
 	return bc.impl.GenerateSBOM(&opts)
+}
+
+func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
+	return bc.impl.GenerateIndexSBOM(&bc.Options, indexDigest, imgs)
 }
 
 func (bc *Context) GenerateSBOM() error {

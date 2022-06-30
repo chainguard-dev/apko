@@ -126,7 +126,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
 	bc.Options.TempDir()
-	defer os.RemoveAll(bc.Options.TempDir())
+	// defer os.RemoveAll(bc.Options.TempDir())
 
 	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
@@ -147,6 +147,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	var finalDigest name.Digest
+	var idx coci.SignedImageIndex
+
 	for _, arch := range bc.ImageConfiguration.Archs {
 		arch := arch
 		bc := *bc
@@ -190,12 +192,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	if len(archs) > 1 {
 		if bc.Options.UseDockerMediaTypes {
-			finalDigest, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+			finalDigest, idx, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build Docker index: %w", err)
 			}
 		} else {
-			finalDigest, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+			finalDigest, idx, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI index: %w", err)
 			}
@@ -225,6 +227,16 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			); err != nil {
 				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
 			}
+		}
+
+		if err := bc.GenerateIndexSBOM(finalDigest, imgs); err != nil {
+			return fmt.Errorf("generating index SBOM: %w", err)
+		}
+
+		if _, err := oci.PostAttachSBOM(
+			idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+		); err != nil {
+			return fmt.Errorf("attaching sboms to index: %w", err)
 		}
 	}
 
