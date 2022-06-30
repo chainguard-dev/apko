@@ -158,18 +158,19 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	}
 
 	si := signed.Image(v1Image)
+	var ent oci.SignedEntity
 	var err2 error
-	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
+	if ent, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
 		return nil, fmt.Errorf("attaching SBOM to image: %w", err2)
 	}
 
-	return si, nil
+	return ent.(oci.SignedImage), nil
 }
 
 // PostAttachSBOM attaches the sboms to an already published image
-func PostAttachSBOM(si oci.SignedImage, sbomPath string, sbomFormats []string,
+func PostAttachSBOM(si oci.SignedEntity, sbomPath string, sbomFormats []string,
 	arch types.Architecture, logger *logrus.Entry, tags ...string,
-) (oci.SignedImage, error) {
+) (oci.SignedEntity, error) {
 	var err2 error
 	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
 		return nil, err2
@@ -189,9 +190,9 @@ func PostAttachSBOM(si oci.SignedImage, sbomPath string, sbomFormats []string,
 }
 
 func attachSBOM(
-	si oci.SignedImage, sbomPath string, sbomFormats []string,
+	si oci.SignedEntity, sbomPath string, sbomFormats []string,
 	arch types.Architecture, logger *logrus.Entry,
-) (oci.SignedImage, error) {
+) (oci.SignedEntity, error) {
 	// Attach the SBOM, e.g.
 	// TODO(kaniini): Allow all SBOM types to be uploaded.
 	if len(sbomFormats) == 0 {
@@ -201,16 +202,20 @@ func attachSBOM(
 
 	var mt ggcrtypes.MediaType
 	var path string
+	archName := arch.ToAPK()
+	if archName == "" {
+		archName = "index"
+	}
 	switch sbomFormats[0] {
 	case "spdx":
 		mt = ctypes.SPDXJSONMediaType
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", arch.ToAPK()))
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", archName))
 	case "cyclonedx":
 		mt = ctypes.CycloneDXJSONMediaType
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", arch.ToAPK()))
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", archName))
 	case "idb":
 		mt = "application/vnd.apko.installed-db"
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", arch.ToAPK()))
+		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", archName))
 	default:
 		return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
 	}
@@ -228,9 +233,14 @@ func attachSBOM(
 	if err != nil {
 		return nil, err
 	}
-	si, err = ocimutate.AttachFileToImage(si, "sbom", f)
-	if err != nil {
-		return nil, fmt.Errorf("attaching file to image: %w", err)
+	var aterr error
+	if i, ok := si.(oci.SignedImage); ok {
+		si, aterr = ocimutate.AttachFileToImage(i, "sbom", f)
+	} else if ii, ok := si.(oci.SignedImageIndex); ok {
+		si, aterr = ocimutate.AttachFileToImageIndex(ii, "sbom", f)
+	}
+	if aterr != nil {
+		return nil, fmt.Errorf("attaching file to image: %w", aterr)
 	}
 
 	return si, nil
@@ -319,15 +329,15 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
+func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, imgs, logger, tags...)
 }
 
-func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
+func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, imgs, logger, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -340,17 +350,17 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 		img := imgs[arch]
 		mt, err := img.MediaType()
 		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to get mediatype: %w", err)
+			return name.Digest{}, idx, fmt.Errorf("failed to get mediatype: %w", err)
 		}
 
 		h, err := img.Digest()
 		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
+			return name.Digest{}, idx, fmt.Errorf("failed to compute digest: %w", err)
 		}
 
 		size, err := img.Size()
 		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to compute size: %w", err)
+			return name.Digest{}, idx, fmt.Errorf("failed to compute size: %w", err)
 		}
 
 		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
@@ -366,7 +376,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 
 	h, err := idx.Digest()
 	if err != nil {
-		return name.Digest{}, err
+		return name.Digest{}, idx, err
 	}
 
 	digest := name.Digest{}
@@ -374,11 +384,11 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 		logger.Printf("publishing tag %v", tag)
 		digest, err = publishTagFromIndex(idx, tag, h, logger)
 		if err != nil {
-			return name.Digest{}, err
+			return name.Digest{}, idx, err
 		}
 	}
 
-	return digest, nil
+	return digest, idx, nil
 }
 
 func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Hash, logger *logrus.Entry) (name.Digest, error) {
