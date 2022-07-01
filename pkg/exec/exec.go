@@ -59,13 +59,20 @@ func WithProot(proot bool) Option {
 
 func WithQemu(qemuArch string) Option {
 	return func(e *Executor) error {
-		emu, err := exec.LookPath(fmt.Sprintf("qemu-%s", qemuArch))
-		if err != nil {
-			return fmt.Errorf("unable to find qemu emulator for %s: %w", qemuArch, err)
+		paths := []string{
+			fmt.Sprintf("qemu-%s", qemuArch),
+			fmt.Sprintf("qemu-%s-static", qemuArch),
 		}
 
-		e.UseQemu = emu
-		return nil
+		for _, path := range paths {
+			emu, err := exec.LookPath(path)
+			if err == nil {
+				e.UseQemu = emu
+				return nil
+			}
+		}
+
+		return fmt.Errorf("unable to find qemu emulator for %s on $PATH, is qemu-user or qemu-user-static installed?", qemuArch)
 	}
 }
 
