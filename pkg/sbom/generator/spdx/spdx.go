@@ -173,7 +173,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
 		)),
-		Name:             opts.ImageInfo.Name + "@" + opts.ImageInfo.ImageDigest,
+		Name:             opts.ImageInfo.ImageDigest,
 		LicenseConcluded: NOASSERTION,
 		LicenseDeclared:  NOASSERTION,
 		DownloadLocation: NOASSERTION,
@@ -239,17 +239,6 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 // LayerPackage returns a package describing the layer
 func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 	layerPackageName := opts.ImageInfo.LayerDigest
-	if opts.ImageInfo.Name != "" {
-		layerPackageName = opts.ImageInfo.Name + "@" + opts.ImageInfo.LayerDigest
-	}
-
-	if opts.ImageInfo.Reference != "" {
-		x := ""
-		if !strings.Contains(opts.ImageInfo.Reference, "/") {
-			x = "index.docker.io/library/"
-		}
-		layerPackageName = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
-	}
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	// Main package purl
@@ -325,7 +314,7 @@ type Package struct {
 	Description      string        `json:"description,omitempty"`
 	DownloadLocation string        `json:"downloadLocation,omitempty"`
 	Originator       string        `json:"originator,omitempty"`
-	SourceInfo       string        `json:"sourceInfo"`
+	SourceInfo       string        `json:"sourceInfo,omitempty"`
 	CopyrightText    string        `json:"copyrightText"`
 	Checksums        []Checksum    `json:"checksums"`
 	ExternalRefs     []ExternalRef `json:"externalRefs,omitempty"`
