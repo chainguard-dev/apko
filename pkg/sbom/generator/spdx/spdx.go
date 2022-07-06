@@ -27,6 +27,7 @@ import (
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/version"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -158,21 +159,21 @@ func renderDoc(doc *Document, path string) error {
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	// Main package purl
 	mmMain := map[string]string{}
-	if opts.ImageInfo.Tag != "" {
-		mmMain["tag"] = opts.ImageInfo.Tag
-	}
 	if opts.ImageInfo.Repository != "" {
 		mmMain["repository_url"] = opts.ImageInfo.Repository
 	}
 	if opts.ImageInfo.Arch.String() != "" {
 		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
 	}
+	if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
+		mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
+	}
 
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
 		)),
-		Name:             opts.ImageInfo.Name + "@" + opts.ImageInfo.ImageDigest,
+		Name:             opts.ImageInfo.ImageDigest,
 		LicenseConcluded: NOASSERTION,
 		LicenseDeclared:  NOASSERTION,
 		DownloadLocation: NOASSERTION,
@@ -238,17 +239,6 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 // LayerPackage returns a package describing the layer
 func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 	layerPackageName := opts.ImageInfo.LayerDigest
-	if opts.ImageInfo.Name != "" {
-		layerPackageName = opts.ImageInfo.Name + "@" + opts.ImageInfo.LayerDigest
-	}
-
-	if opts.ImageInfo.Reference != "" {
-		x := ""
-		if !strings.Contains(opts.ImageInfo.Reference, "/") {
-			x = "index.docker.io/library/"
-		}
-		layerPackageName = fmt.Sprintf("SPDXRef-%s%s", x, opts.ImageInfo.Reference)
-	}
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	// Main package purl
@@ -299,7 +289,7 @@ type Document struct {
 	DocumentDescribes    []string              `json:"documentDescribes"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
-	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs"`
+	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
 }
 
 type ExternalDocumentRef struct {
@@ -321,10 +311,10 @@ type Package struct {
 	FilesAnalyzed    bool          `json:"filesAnalyzed"`
 	LicenseConcluded string        `json:"licenseConcluded"`
 	LicenseDeclared  string        `json:"licenseDeclared"`
-	Description      string        `json:"description"`
+	Description      string        `json:"description,omitempty"`
 	DownloadLocation string        `json:"downloadLocation,omitempty"`
 	Originator       string        `json:"originator,omitempty"`
-	SourceInfo       string        `json:"sourceInfo"`
+	SourceInfo       string        `json:"sourceInfo,omitempty"`
 	CopyrightText    string        `json:"copyrightText"`
 	Checksums        []Checksum    `json:"checksums"`
 	ExternalRefs     []ExternalRef `json:"externalRefs,omitempty"`
@@ -388,7 +378,16 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	}
 
 	// Create the index package
-	indexPackageName := opts.ImageInfo.Name + "@" + opts.ImageInfo.IndexDigest.DeepCopy().String()
+	indexPackageName := opts.ImageInfo.IndexDigest.DeepCopy().String()
+	repoName := "index"
+	if opts.ImageInfo.Name != "" {
+		ref, err := name.ParseReference(opts.ImageInfo.Name)
+		if err != nil {
+			return fmt.Errorf("parsing image reference: %w", err)
+		}
+		repoName = ref.Context().RepositoryStr()
+		indexPackageName = repoName + "@" + indexPackageName
+	}
 	indexPackage := Package{
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             indexPackageName,
@@ -398,6 +397,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
 		CopyrightText:    NOASSERTION,
+		DownloadLocation: NOASSERTION,
 		Checksums: []Checksum{
 			{
 				Algorithm: "SHA256",
@@ -409,7 +409,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+					purl.TypeOCI, "", repoName, opts.ImageInfo.ImageDigest,
 					purl.QualifiersFromMap(mmMain), "",
 				).String(),
 			},
@@ -419,22 +419,58 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
 
 	for _, info := range opts.ImageInfo.Images {
-		externalDocID := "DocumentRef-" + stringToIdentifier(fmt.Sprintf("%s-image-sbom", info.Arch.String()))
+		imagePackageID := "SPDXRef-Package-" + stringToIdentifier(info.Digest.DeepCopy().String())
 
-		// First we relate the individsual SBOMs from the single images
-		doc.ExternalDocumentRefs = append(doc.ExternalDocumentRefs, ExternalDocumentRef{
-			Checksum: Checksum{
-				Algorithm: "SHA256",
-				Value:     info.SBOMDigest,
+		imageRepoName := "image"
+		if repoName != "index" {
+			imageRepoName = repoName
+		}
+
+		mmMain := map[string]string{}
+		if opts.ImageInfo.Repository != "" {
+			mmMain["repository_url"] = opts.ImageInfo.Repository
+		}
+		if opts.ImageInfo.Arch.String() != "" {
+			mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+		}
+
+		if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
+			mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
+		}
+
+		if opts.ImageInfo.IndexMediaType != "" {
+			mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
+		}
+
+		doc.Packages = append(doc.Packages, Package{
+			ID:               imagePackageID,
+			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
+			FilesAnalyzed:    false,
+			LicenseConcluded: NOASSERTION,
+			LicenseDeclared:  NOASSERTION,
+			CopyrightText:    NOASSERTION,
+			DownloadLocation: NOASSERTION,
+			Checksums: []Checksum{
+				{
+					Algorithm: "SHA256",
+					Value:     info.Digest.DeepCopy().Hex,
+				},
 			},
-			ExternalDocumentID: externalDocID,
-			SPDXDocument:       "https://" + strings.Replace(opts.ImageInfo.Name, "/", "/v2/", 1) + "/blobs/sha256:" + info.SBOMDigest,
+			ExternalRefs: []ExternalRef{
+				{
+					Category: "PACKAGE_MANAGER",
+					Type:     "purl",
+					Locator: purl.NewPackageURL(
+						purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
+						purl.QualifiersFromMap(mmMain), "",
+					).String(),
+				},
+			},
 		})
-
 		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: externalDocID + fmt.Sprintf(":SPDXRef-Package-sha256-%s", info.Digest.DeepCopy().Hex),
+			Element: stringToIdentifier(indexPackage.ID),
 			Type:    "VARIANT_OF",
-			Related: stringToIdentifier(indexPackage.ID),
+			Related: imagePackageID,
 		})
 	}
 
