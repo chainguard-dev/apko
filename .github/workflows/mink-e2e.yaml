@@ -65,9 +65,17 @@ jobs:
           echo $cfg produced: $DIGEST
 
           # Each of the per-architecture images produced should have an SBOM attached to it.
+          i=0
           for d in $(crane manifest "${DIGEST}" | jq -r '.manifests[].digest'); do
             cosign download sbom ${KO_DOCKER_REPO}/image@${d}
+            i=$(($i+1))
           done
+
+          # If more than one arch, the index should have an sbom
+          if [ "$i" -gt "1" ]; then
+            cosign download sbom ${DIGEST}
+          fi
+          
           echo ::endgroup::
         done
 
