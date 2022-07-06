@@ -238,6 +238,8 @@ func attachSBOM(
 		si, aterr = ocimutate.AttachFileToImage(i, "sbom", f)
 	} else if ii, ok := si.(oci.SignedImageIndex); ok {
 		si, aterr = ocimutate.AttachFileToImageIndex(ii, "sbom", f)
+	} else {
+		return nil, errors.New("unable to cast signed signedentity as image or index")
 	}
 	if aterr != nil {
 		return nil, fmt.Errorf("attaching file to image: %w", aterr)
