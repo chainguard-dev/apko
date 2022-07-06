@@ -34,7 +34,7 @@ func buildCmd() *cobra.Command {
 	var useDockerMediaTypes bool
 	var debugEnabled bool
 	var buildDate string
-	var buildArch string
+	var buildArch []string
 	var writeSBOM bool
 	var sbomPath string
 	var sbomFormats []string
@@ -57,6 +57,13 @@ bill of materials) describing the image contents.
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// TODO(kaniini): Print warning when multi-arch build is requested
+			// and ignored by the build system.
+			var ba string
+			if len(buildArch) > 0 {
+				ba = buildArch[0]
+			}
+
 			if !writeSBOM {
 				sbomFormats = []string{}
 			}
@@ -71,7 +78,7 @@ bill of materials) describing the image contents.
 				build.WithExtraKeys(extraKeys),
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
-				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithArch(types.ParseArchitecture(ba)),
 				build.WithDebugLogging(debugEnabled),
 			)
 		},
@@ -83,7 +90,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
-	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
+	cmd.Flags().StringSliceVar(&buildArch, "build-arch", []string{runtime.GOARCH}, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
