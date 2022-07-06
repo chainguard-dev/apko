@@ -97,7 +97,7 @@ apko: $(SRCS) ## Builds apko
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
 
 .PHONY: install
-install: $(SRCS) apko ## Builds and moves apko into BINDIR (default /usr/bin)
+install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
 	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
 
 #####################
