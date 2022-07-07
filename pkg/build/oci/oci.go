@@ -352,17 +352,17 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 		img := imgs[arch]
 		mt, err := img.MediaType()
 		if err != nil {
-			return name.Digest{}, idx, fmt.Errorf("failed to get mediatype: %w", err)
+			return name.Digest{}, nil, fmt.Errorf("failed to get mediatype: %w", err)
 		}
 
 		h, err := img.Digest()
 		if err != nil {
-			return name.Digest{}, idx, fmt.Errorf("failed to compute digest: %w", err)
+			return name.Digest{}, nil, fmt.Errorf("failed to compute digest: %w", err)
 		}
 
 		size, err := img.Size()
 		if err != nil {
-			return name.Digest{}, idx, fmt.Errorf("failed to compute size: %w", err)
+			return name.Digest{}, nil, fmt.Errorf("failed to compute size: %w", err)
 		}
 
 		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
@@ -378,7 +378,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 
 	h, err := idx.Digest()
 	if err != nil {
-		return name.Digest{}, idx, err
+		return name.Digest{}, nil, err
 	}
 
 	digest := name.Digest{}
@@ -386,7 +386,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 		logger.Printf("publishing tag %v", tag)
 		digest, err = publishTagFromIndex(idx, tag, h, logger)
 		if err != nil {
-			return name.Digest{}, idx, err
+			return name.Digest{}, nil, err
 		}
 	}
 
