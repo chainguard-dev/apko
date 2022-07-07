@@ -16,73 +16,26 @@ package types
 
 import (
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"chainguard.dev/apko/pkg/vcs"
 )
 
 // Attempt to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus.Entry) {
-	toplevelDir, err := os.Getwd()
+	url, err := vcs.ProbeDirFromPath(imageConfigPath)
 	if err != nil {
+		logger.Debugf("failed to probe VCS URL: %v", err)
 		return
 	}
 
-	imageConfigPath, err = filepath.Abs(imageConfigPath)
-	if err != nil {
-		return
+	if url != "" {
+		ic.VCSUrl = url
+		logger.Printf("detected %s as VCS URL", ic.VCSUrl)
 	}
-
-	searchPath := filepath.Dir(imageConfigPath)
-
-	for {
-		logger.Debugf("checking %s for VCS URL, toplevel: %s", searchPath, toplevelDir)
-
-		if !strings.HasPrefix(searchPath, toplevelDir) {
-			return
-		}
-
-		repo, err := git.PlainOpen(searchPath)
-		if err != nil {
-			searchPath = filepath.Dir(searchPath)
-			continue
-		}
-
-		remote, err := repo.Remote("origin")
-		if err != nil {
-			logger.Warnf("unable to determine git vcs url: %v", err)
-			return
-		}
-
-		remoteConfig := remote.Config()
-		remoteURL := remoteConfig.URLs[0]
-
-		normalizedURL, err := url.Parse(remoteURL)
-		if err != nil {
-			// URL is most likely a git+ssh:// type URL, represented
-			// in the way git itself does so.
-
-			// Take the user@host:repo and turn it into user@host/repo.
-			remoteURL = strings.Replace(remoteURL, ":", "/", 1)
-			remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
-
-			normalizedURL, err = url.Parse(remoteURL)
-			if err != nil {
-				logger.Warnf("unable to parse %s as a git vcs url: %v", remoteURL, err)
-				return
-			}
-		}
-
-		ic.VCSUrl = normalizedURL.String()
-		break
-	}
-
-	logger.Printf("detected %s as VCS URL", ic.VCSUrl)
 }
 
 // Loads an image configuration given a configuration file path.
