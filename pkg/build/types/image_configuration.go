@@ -28,43 +28,60 @@ import (
 
 // Attempt to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus.Entry) {
-	parentDir := filepath.Dir(imageConfigPath)
-	if parentDir == "" {
+	toplevelDir, err := os.Getwd()
+	if err != nil {
 		return
 	}
 
-	repo, err := git.PlainOpen(parentDir)
+	imageConfigPath, err = filepath.Abs(imageConfigPath)
 	if err != nil {
-		logger.Warnf("unable to determine git vcs url: %v", err)
 		return
 	}
 
-	remote, err := repo.Remote("origin")
-	if err != nil {
-		logger.Warnf("unable to determine git vcs url: %v", err)
-		return
-	}
+	searchPath := filepath.Dir(imageConfigPath)
 
-	remoteConfig := remote.Config()
-	remoteURL := remoteConfig.URLs[0]
+	for {
+		logger.Debugf("checking %s for VCS URL, toplevel: %s", searchPath, toplevelDir)
 
-	normalizedURL, err := url.Parse(remoteURL)
-	if err != nil {
-		// URL is most likely a git+ssh:// type URL, represented
-		// in the way git itself does so.
-
-		// Take the user@host:repo and turn it into user@host/repo.
-		remoteURL = strings.Replace(remoteURL, ":", "/", 1)
-		remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
-
-		normalizedURL, err = url.Parse(remoteURL)
-		if err != nil {
-			logger.Warnf("unable to parse %s as a git vcs url: %v", remoteURL, err)
+		if !strings.HasPrefix(searchPath, toplevelDir) {
 			return
 		}
+
+		repo, err := git.PlainOpen(searchPath)
+		if err != nil {
+			searchPath = filepath.Dir(searchPath)
+			continue
+		}
+
+		remote, err := repo.Remote("origin")
+		if err != nil {
+			logger.Warnf("unable to determine git vcs url: %v", err)
+			return
+		}
+
+		remoteConfig := remote.Config()
+		remoteURL := remoteConfig.URLs[0]
+
+		normalizedURL, err := url.Parse(remoteURL)
+		if err != nil {
+			// URL is most likely a git+ssh:// type URL, represented
+			// in the way git itself does so.
+
+			// Take the user@host:repo and turn it into user@host/repo.
+			remoteURL = strings.Replace(remoteURL, ":", "/", 1)
+			remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
+
+			normalizedURL, err = url.Parse(remoteURL)
+			if err != nil {
+				logger.Warnf("unable to parse %s as a git vcs url: %v", remoteURL, err)
+				return
+			}
+		}
+
+		ic.VCSUrl = normalizedURL.String()
+		break
 	}
 
-	ic.VCSUrl = normalizedURL.String()
 	logger.Printf("detected %s as VCS URL", ic.VCSUrl)
 }
 
