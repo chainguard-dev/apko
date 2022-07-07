@@ -126,7 +126,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
 	bc.Options.TempDir()
-	// defer os.RemoveAll(bc.Options.TempDir())
+	defer os.RemoveAll(bc.Options.TempDir())
 
 	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
