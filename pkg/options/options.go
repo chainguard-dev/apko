@@ -65,7 +65,14 @@ func (o *Options) Summarize(logger *logrus.Entry) {
 }
 
 func (o *Options) Logger() *logrus.Entry {
-	return o.Log.WithFields(logrus.Fields{"arch": o.Arch.ToAPK()})
+	fields := logrus.Fields{}
+	emptyArch := types.Architecture{}
+
+	if o.Arch != emptyArch {
+		fields["arch"] = o.Arch.ToAPK()
+	}
+
+	return o.Log.WithFields(fields)
 }
 
 // Tempdir returns the temporary directory where apko will create
