@@ -112,7 +112,7 @@ func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *
 		return nil
 	}
 
-	s := newSBOM(o)
+	s := newSBOM(o, ic)
 
 	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
 		return fmt.Errorf("reading layer tar: %w", err)
@@ -145,7 +145,7 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types
 		return nil
 	}
 
-	s := newSBOM(o)
+	s := newSBOM(o, ic)
 
 	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
 		return fmt.Errorf("reading layer tar: %w", err)
@@ -219,7 +219,7 @@ func buildImage(
 	return nil
 }
 
-func newSBOM(o *options.Options) *sbom.SBOM {
+func newSBOM(o *options.Options, ic *types.ImageConfiguration) *sbom.SBOM {
 	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
 	// Parse the image reference
 	if len(o.Tags) > 0 {
@@ -234,6 +234,7 @@ func newSBOM(o *options.Options) *sbom.SBOM {
 
 	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
 	s.Options.Formats = o.SBOMFormats
+	s.Options.ImageInfo.VCSUrl = ic.VCSUrl
 
 	s.Options.OutputDir = o.TempDir()
 	if o.SBOMPath != "" {
@@ -252,7 +253,7 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 		return nil
 	}
 
-	s := newSBOM(o)
+	s := newSBOM(o, ic)
 	o.Logger().Infof("Generating index SBOM")
 
 	// Add the image digest
