@@ -38,7 +38,6 @@ type Options struct {
 	ExtraKeyFiles       []string
 	ExtraRepos          []string
 	Arch                types.Architecture
-	ImageDigest         string
 	Log                 *logrus.Logger
 	TempDirPath         string
 }
