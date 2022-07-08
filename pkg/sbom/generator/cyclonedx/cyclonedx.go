@@ -20,6 +20,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -100,9 +101,6 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 
 	// Main package purl qualifiers
 	mmMain := map[string]string{}
-	if opts.ImageInfo.Tag != "" {
-		mmMain["tag"] = opts.ImageInfo.Tag
-	}
 	if opts.ImageInfo.Repository != "" {
 		mmMain["repository_url"] = opts.ImageInfo.Repository
 	}
@@ -157,18 +155,10 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 		bom.Components = []Component{layerComponent}
 	}
 
-	out, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
+	if err := renderDoc(&bom, path); err != nil {
+		return fmt.Errorf("rendering sbom to disk: %w", err)
 	}
-	defer out.Close()
 
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-
-	if err := enc.Encode(bom); err != nil {
-		return fmt.Errorf("encoding BOM: %w", err)
-	}
 	return nil
 }
 
@@ -188,6 +178,7 @@ type Component struct {
 	Version            string              `json:"version"`
 	Description        string              `json:"description"`
 	PUrl               string              `json:"purl"`
+	Hashes             []Hash              `json:"hashes,omitempty"`
 	ExternalReferences []ExternalReference `json:"externalReferences,omitempty"`
 	Licenses           []License           `json:"licenses,omitempty"`
 	Components         []Component         `json:"components,omitempty"`
@@ -207,6 +198,151 @@ type Dependency struct {
 	DependsOn []string `json:"dependsOn"`
 }
 
+type HashAlgorithm string
+
+type Hash struct {
+	Algorithm HashAlgorithm `json:"alg"`
+	Value     string        `json:"content"`
+}
+
 func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
+	indexComponentName := opts.ImageInfo.IndexDigest.DeepCopy().String()
+	repoName := "index"
+	if opts.ImageInfo.Name != "" {
+		ref, err := name.ParseReference(opts.ImageInfo.Name)
+		if err != nil {
+			return fmt.Errorf("parsing image reference: %w", err)
+		}
+		repoName = ref.Context().RepositoryStr()
+		indexComponentName = repoName + "@" + indexComponentName
+	}
+
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch.String() != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+	if opts.ImageInfo.IndexMediaType != "" {
+		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
+	}
+
+	purlString := purl.NewPackageURL(
+		purl.TypeOCI, "", repoName, opts.ImageInfo.ImageDigest,
+		purl.QualifiersFromMap(mmMain), "",
+	).String()
+
+	indexComponent := Component{
+		BOMRef:      purlString,
+		Type:        "container",
+		Name:        indexComponentName,
+		Version:     opts.ImageInfo.IndexDigest.DeepCopy().Hex,
+		Description: "Multi-arch image index",
+		PUrl:        purlString,
+		Hashes: []Hash{
+			{
+				Algorithm: "SHA-256",
+				Value:     opts.ImageInfo.IndexDigest.DeepCopy().Hex,
+			},
+		},
+		Components: []Component{},
+	}
+
+	// Add the images as subcomponents
+	for _, info := range opts.ImageInfo.Images {
+		indexComponent.Components = append(
+			indexComponent.Components, cdx.archImageComponent(opts, info),
+		)
+	}
+
+	bom := Document{
+		BOMFormat:   "CycloneDX",
+		SpecVersion: "1.4",
+		Version:     1,
+		Components: []Component{
+			indexComponent,
+		},
+		Dependencies: []Dependency{},
+	}
+
+	if err := renderDoc(&bom, path); err != nil {
+		return fmt.Errorf("rendering SBOM: %w", err)
+	}
+
+	return nil
+}
+
+// imageComponent takes an image and returns a component representing it
+func (cdx *CycloneDX) archImageComponent(opts *options.Options, info options.ArchImageInfo) Component {
+	repoName := ""
+	if opts.ImageInfo.Name != "" {
+		ref, err := name.ParseReference(opts.ImageInfo.Name)
+		if err == nil {
+			repoName = ref.Context().RepositoryStr()
+		}
+	}
+
+	imageRepoName := "image"
+	if repoName != "" {
+		imageRepoName = repoName
+	}
+
+	mmMain := map[string]string{}
+	if opts.ImageInfo.Repository != "" {
+		mmMain["repository_url"] = opts.ImageInfo.Repository
+	}
+	if opts.ImageInfo.Arch.String() != "" {
+		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+
+	if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
+		mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
+	}
+
+	if opts.ImageInfo.IndexMediaType != "" {
+		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
+	}
+
+	purlString := purl.NewPackageURL(
+		purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
+		purl.QualifiersFromMap(mmMain), "",
+	).String()
+
+	return Component{
+		BOMRef: purlString,
+		Type:   "container",
+		Name:   info.Digest.DeepCopy().String(),
+		Description: fmt.Sprintf(
+			"apko image for %s/%s", info.Arch.ToOCIPlatform().OS, info.Arch,
+		),
+		PUrl:    purlString,
+		Version: info.Digest.DeepCopy().String(),
+		Hashes: []Hash{
+			{
+				Algorithm: "SHA-256",
+				Value:     info.Digest.DeepCopy().Hex,
+			},
+		},
+		ExternalReferences: []ExternalReference{},
+		Licenses:           []License{},
+		Components:         []Component{},
+	}
+}
+
+// renderDoc marshals a document to json and writes it to disk
+func renderDoc(doc *Document, path string) error {
+	out, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
+	}
+	defer out.Close()
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+
+	if err := enc.Encode(doc); err != nil {
+		return fmt.Errorf("encoding spdx sbom: %w", err)
+	}
 	return nil
 }
