@@ -109,6 +109,19 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 	}
 
+	if opts.ImageInfo.VCSUrl != "" {
+		vcsURLRef := ExternalRef{
+			Category: "OTHER",
+			Locator:  opts.ImageInfo.VCSUrl,
+			Type:     "vcs",
+		}
+		if opts.ImageInfo.ImageDigest != "" {
+			imagePackage.ExternalRefs = append(imagePackage.ExternalRefs, vcsURLRef)
+		} else {
+			layerPackage.ExternalRefs = append(layerPackage.ExternalRefs, vcsURLRef)
+		}
+	}
+
 	doc.Packages = append(doc.Packages, *layerPackage)
 
 	for _, pkg := range opts.Packages {
@@ -415,6 +428,15 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			},
 		},
 	}
+
+	if opts.ImageInfo.VCSUrl != "" {
+		indexPackage.ExternalRefs = append(indexPackage.ExternalRefs, ExternalRef{
+			Category: "OTHER",
+			Locator:  opts.ImageInfo.VCSUrl,
+			Type:     "vcs",
+		})
+	}
+
 	doc.Packages = append(doc.Packages, indexPackage)
 	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
 
