@@ -55,16 +55,8 @@ func (bc *Context) BuildTarball() (string, error) {
 
 func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
 	opts := bc.Options
-
-	h, err := img.Digest()
-	if err != nil {
-		return fmt.Errorf("getting %s image digest: %w", arch, err)
-	}
-
 	opts.Arch = arch
-	opts.ImageDigest = h.String()
-
-	return bc.impl.GenerateSBOM(&opts, &bc.ImageConfiguration)
+	return bc.impl.GenerateImageSBOM(&opts, &bc.ImageConfiguration, img)
 }
 
 func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
