@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	osr "github.com/dominodatalab/os-release"
+	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -226,4 +227,19 @@ func (di *defaultSBOMImplementation) GenerateIndex(opts *options.Options, genera
 		sboms = append(sboms, path)
 	}
 	return sboms, nil
+}
+
+// ReadLayerTarball reads an apko layer adding its digest to the sbom options
+func (di *defaultSBOMImplementation) ReadLayerTarball(opts *options.Options, tarballPath string) error {
+	v1Layer, err := v1tar.LayerFromFile(tarballPath)
+	if err != nil {
+		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+	}
+
+	digest, err := v1Layer.Digest()
+	if err != nil {
+		return fmt.Errorf("could not calculate layer digest: %w", err)
+	}
+	opts.ImageInfo.LayerDigest = digest.String()
+	return nil
 }
