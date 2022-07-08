@@ -54,6 +54,19 @@ type FakeBuildImplementation struct {
 		result1 string
 		result2 error
 	}
+	GenerateImageSBOMStub        func(*options.Options, *types.ImageConfiguration, oci.SignedImage) error
+	generateImageSBOMMutex       sync.RWMutex
+	generateImageSBOMArgsForCall []struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+		arg3 oci.SignedImage
+	}
+	generateImageSBOMReturns struct {
+		result1 error
+	}
+	generateImageSBOMReturnsOnCall map[int]struct {
+		result1 error
+	}
 	GenerateIndexSBOMStub        func(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]oci.SignedImage) error
 	generateIndexSBOMMutex       sync.RWMutex
 	generateIndexSBOMArgsForCall []struct {
@@ -308,6 +321,69 @@ func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 st
 		result1 string
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 oci.SignedImage) error {
+	fake.generateImageSBOMMutex.Lock()
+	ret, specificReturn := fake.generateImageSBOMReturnsOnCall[len(fake.generateImageSBOMArgsForCall)]
+	fake.generateImageSBOMArgsForCall = append(fake.generateImageSBOMArgsForCall, struct {
+		arg1 *options.Options
+		arg2 *types.ImageConfiguration
+		arg3 oci.SignedImage
+	}{arg1, arg2, arg3})
+	stub := fake.GenerateImageSBOMStub
+	fakeReturns := fake.generateImageSBOMReturns
+	fake.recordInvocation("GenerateImageSBOM", []interface{}{arg1, arg2, arg3})
+	fake.generateImageSBOMMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOMCallCount() int {
+	fake.generateImageSBOMMutex.RLock()
+	defer fake.generateImageSBOMMutex.RUnlock()
+	return len(fake.generateImageSBOMArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOMCalls(stub func(*options.Options, *types.ImageConfiguration, oci.SignedImage) error) {
+	fake.generateImageSBOMMutex.Lock()
+	defer fake.generateImageSBOMMutex.Unlock()
+	fake.GenerateImageSBOMStub = stub
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOMArgsForCall(i int) (*options.Options, *types.ImageConfiguration, oci.SignedImage) {
+	fake.generateImageSBOMMutex.RLock()
+	defer fake.generateImageSBOMMutex.RUnlock()
+	argsForCall := fake.generateImageSBOMArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOMReturns(result1 error) {
+	fake.generateImageSBOMMutex.Lock()
+	defer fake.generateImageSBOMMutex.Unlock()
+	fake.GenerateImageSBOMStub = nil
+	fake.generateImageSBOMReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) GenerateImageSBOMReturnsOnCall(i int, result1 error) {
+	fake.generateImageSBOMMutex.Lock()
+	defer fake.generateImageSBOMMutex.Unlock()
+	fake.GenerateImageSBOMStub = nil
+	if fake.generateImageSBOMReturnsOnCall == nil {
+		fake.generateImageSBOMReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.generateImageSBOMReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeBuildImplementation) GenerateIndexSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 name.Digest, arg4 map[types.Architecture]oci.SignedImage) error {
@@ -943,6 +1019,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.buildImageMutex.RUnlock()
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
+	fake.generateImageSBOMMutex.RLock()
+	defer fake.generateImageSBOMMutex.RUnlock()
 	fake.generateIndexSBOMMutex.RLock()
 	defer fake.generateIndexSBOMMutex.RUnlock()
 	fake.generateOSReleaseMutex.RLock()
