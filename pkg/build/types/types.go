@@ -65,6 +65,7 @@ type ImageConfiguration struct {
 		Services map[interface{}]interface{}
 	}
 	Cmd      string
+	WorkDir  string `yaml:"work-dir"`
 	Accounts struct {
 		RunAs  string `yaml:"run-as"`
 		Users  []User

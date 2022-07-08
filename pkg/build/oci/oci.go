@@ -134,6 +134,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		cfg.Config.Cmd = splitcmd
 	}
 
+	if ic.WorkDir != "" {
+		cfg.Config.WorkingDir = ic.WorkDir
+	}
+
 	if ic.VCSUrl != "" {
 		cfg.Config.Labels["org.opencontainers.image.source"] = ic.VCSUrl
 	}
