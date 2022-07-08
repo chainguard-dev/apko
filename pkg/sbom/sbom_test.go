@@ -104,8 +104,8 @@ func TestReadPackageIndes(t *testing.T) {
 		sut := sbom.SBOM{}
 		sut.SetImplementation(mock)
 
-		obj, err := sut.ReadPackageIndex()
-		tc.assert(obj, err)
+		err := sut.ReadPackageIndex()
+		tc.assert(sut.Options.Packages, err)
 	}
 }
 

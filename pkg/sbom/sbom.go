@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	osr "github.com/dominodatalab/os-release"
+	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -84,18 +85,20 @@ func (s *SBOM) ReadReleaseData() error {
 
 // ReadPackageIndex parses the package index in the working directory
 // and returns a slice of the installed packages
-func (s *SBOM) ReadPackageIndex() ([]*repository.Package, error) {
+func (s *SBOM) ReadPackageIndex() error {
 	pks, err := s.impl.ReadPackageIndex(
 		&s.Options, filepath.Join(s.Options.WorkDir, packageIndexPath),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("reading apk package index: %w", err)
+		return fmt.Errorf("reading apk package index: %w", err)
 	}
-	return pks, nil
+	s.Options.Packages = pks
+	return nil
 }
 
 // Generate creates the sboms according to the options set
 func (s *SBOM) Generate() ([]string, error) {
+	// s.Options.Logger().Infof("generating SBOM")
 	if err := s.impl.CheckGenerators(
 		&s.Options, s.Generators,
 	); err != nil {
@@ -122,6 +125,11 @@ func (s *SBOM) GenerateIndex() ([]string, error) {
 	return files, nil
 }
 
+// ReadLayerTarball reads an apko layer tarball and adds its metadata to the SBOM options
+func (s *SBOM) ReadLayerTarball(path string) error {
+	return s.impl.ReadLayerTarball(&s.Options, path)
+}
+
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
 	ReadReleaseData(*options.Options, string) error
@@ -129,6 +137,7 @@ type sbomImplementation interface {
 	Generate(*options.Options, map[string]generator.Generator) ([]string, error)
 	CheckGenerators(*options.Options, map[string]generator.Generator) error
 	GenerateIndex(*options.Options, map[string]generator.Generator) ([]string, error)
+	ReadLayerTarball(*options.Options, string) error
 }
 
 type defaultSBOMImplementation struct{}
@@ -218,4 +227,19 @@ func (di *defaultSBOMImplementation) GenerateIndex(opts *options.Options, genera
 		sboms = append(sboms, path)
 	}
 	return sboms, nil
+}
+
+// ReadLayerTarball reads an apko layer adding its digest to the sbom options
+func (di *defaultSBOMImplementation) ReadLayerTarball(opts *options.Options, tarballPath string) error {
+	v1Layer, err := v1tar.LayerFromFile(tarballPath)
+	if err != nil {
+		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+	}
+
+	digest, err := v1Layer.Digest()
+	if err != nil {
+		return fmt.Errorf("could not calculate layer digest: %w", err)
+	}
+	opts.ImageInfo.LayerDigest = digest.String()
+	return nil
 }

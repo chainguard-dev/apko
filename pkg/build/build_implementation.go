@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"sigs.k8s.io/release-utils/hash"
@@ -44,7 +43,7 @@ import (
 type buildImplementation interface {
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
 	BuildTarball(*options.Options) (string, error)
-	GenerateSBOM(*options.Options) error
+	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
@@ -53,7 +52,8 @@ type buildImplementation interface {
 	ValidateImageConfiguration(*types.ImageConfiguration) error
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
-	GenerateIndexSBOM(*options.Options, name.Digest, map[types.Architecture]coci.SignedImage) error
+	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
+	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) error
 }
 
 type defaultBuildImplementation struct{}
@@ -105,55 +105,57 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, 
 	return outfile.Name(), nil
 }
 
-// GenerateSBOM runs the sbom generation
-func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
+// GenerateImageSBOM generates an sbom for an image
+func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
 		return nil
 	}
-	o.Logger().Infof("generating SBOM")
 
-	// TODO(puerco): Split GenerateSBOM into context implementation
-	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
+	s := newSBOM(o)
 
-	v1Layer, err := v1tar.LayerFromFile(o.TarballPath)
-	if err != nil {
-		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
+		return fmt.Errorf("reading layer tar: %w", err)
 	}
 
-	digest, err := v1Layer.Digest()
-	if err != nil {
-		return fmt.Errorf("could not calculate layer digest: %w", err)
-	}
-
-	// Parse the image reference
-	if len(o.Tags) > 0 {
-		tag, err := name.NewTag(o.Tags[0])
-		if err != nil {
-			return fmt.Errorf("parsing tag %s: %w", o.Tags[0], err)
-		}
-		s.Options.ImageInfo.Tag = tag.TagStr()
-		s.Options.ImageInfo.Name = tag.String()
-	}
-
-	s.Options.ImageInfo.ImageDigest = o.ImageDigest
-
-	// Generate the packages externally as we may
-	// move the package reader somewhere else
-	packages, err := s.ReadPackageIndex()
-	if err != nil {
+	if err := s.ReadPackageIndex(); err != nil {
 		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
-	s.Options.ImageInfo.Arch = o.Arch
-	s.Options.ImageInfo.LayerDigest = digest.String()
-	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
-	s.Options.Packages = packages
-	s.Options.Formats = o.SBOMFormats
 
-	s.Options.OutputDir = o.TempDir()
-	if o.SBOMPath != "" {
-		s.Options.OutputDir = o.SBOMPath
+	// Get the image digest
+	h, err := img.Digest()
+	if err != nil {
+		return fmt.Errorf("getting %s image digest: %w", o.Arch, err)
 	}
+
+	s.Options.ImageInfo.ImageDigest = h.String()
+	s.Options.ImageInfo.Arch = o.Arch
+
+	if _, err := s.Generate(); err != nil {
+		return fmt.Errorf("generating SBOMs: %w", err)
+	}
+
+	return nil
+}
+
+// GenerateSBOM generates an SBOM for an apko layer
+func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types.ImageConfiguration) error {
+	if len(o.SBOMFormats) == 0 {
+		o.Logger().Warnf("skipping SBOM generation")
+		return nil
+	}
+
+	s := newSBOM(o)
+
+	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
+		return fmt.Errorf("reading layer tar: %w", err)
+	}
+
+	if err := s.ReadPackageIndex(); err != nil {
+		return fmt.Errorf("getting installed packages from sbom: %w", err)
+	}
+
+	s.Options.ImageInfo.Arch = o.Arch
 
 	if _, err := s.Generate(); err != nil {
 		return fmt.Errorf("generating SBOMs: %w", err)
@@ -217,25 +219,40 @@ func buildImage(
 	return nil
 }
 
+func newSBOM(o *options.Options) *sbom.SBOM {
+	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
+	// Parse the image reference
+	if len(o.Tags) > 0 {
+		tag, err := name.NewTag(o.Tags[0])
+		if err == nil {
+			s.Options.ImageInfo.Tag = tag.TagStr()
+			s.Options.ImageInfo.Name = tag.String()
+		} else {
+			o.Logger().Errorf("%s parsing tag %s, ignoring", o.Tags[0], err)
+		}
+	}
+
+	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
+	s.Options.Formats = o.SBOMFormats
+
+	s.Options.OutputDir = o.TempDir()
+	if o.SBOMPath != "" {
+		s.Options.OutputDir = o.SBOMPath
+	}
+
+	return s
+}
+
 func (di *defaultBuildImplementation) GenerateIndexSBOM(
-	o *options.Options, indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
+	o *options.Options, ic *types.ImageConfiguration,
+	indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
 ) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping index SBOM generation")
 		return nil
 	}
 
-	s := sbom.NewWithWorkDir(o.WorkDir, o.Arch)
-	// Parse the image reference
-	if len(o.Tags) > 0 {
-		tag, err := name.NewTag(o.Tags[0])
-		if err != nil {
-			return fmt.Errorf("parsing tag %s: %w", o.Tags[0], err)
-		}
-		s.Options.ImageInfo.Tag = tag.TagStr()
-		s.Options.ImageInfo.Name = tag.String()
-	}
-
+	s := newSBOM(o)
 	o.Logger().Infof("Generating index SBOM")
 
 	// Add the image digest
@@ -244,12 +261,7 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 		return errors.New("getting index hash")
 	}
 	s.Options.ImageInfo.IndexDigest = h
-	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
-	s.Options.Formats = o.SBOMFormats
-	s.Options.OutputDir = o.TempDir()
-	if o.SBOMPath != "" {
-		s.Options.OutputDir = o.SBOMPath
-	}
+
 	s.Options.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
 	if o.UseDockerMediaTypes {
 		s.Options.ImageInfo.IndexMediaType = ggcrtypes.DockerManifestList
