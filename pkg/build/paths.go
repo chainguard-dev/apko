@@ -42,6 +42,10 @@ func mutatePermissions(o *options.Options, mut types.PathMutation) error {
 		return err
 	}
 
+	if err := os.Chown(target, int(mut.UID), int(mut.GID)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -50,6 +54,23 @@ func mutateDirectory(o *options.Options, mut types.PathMutation) error {
 
 	if err := os.MkdirAll(filepath.Join(o.WorkDir, mut.Path), perms); err != nil {
 		return err
+	}
+
+	if mut.Recursive {
+		if err := filepath.WalkDir(filepath.Join(o.WorkDir, mut.Path), func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := os.Chmod(path, perms); err != nil {
+				return err
+			}
+			if err := os.Chown(path, int(mut.UID), int(mut.GID)); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

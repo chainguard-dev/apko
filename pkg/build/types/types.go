@@ -39,6 +39,7 @@ type PathMutation struct {
 	GID         uint32
 	Permissions uint32
 	Source      string
+	Recursive   bool
 }
 
 type OSRelease struct {
