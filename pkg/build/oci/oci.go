@@ -111,6 +111,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	cfg.Author = "github.com/chainguard-dev/apko"
 	cfg.Architecture = arch.String()
 	cfg.Created = v1.Time{Time: created}
+	cfg.Config.Labels = make(map[string]string)
 	cfg.OS = "linux"
 
 	// NOTE: Need to allow empty Entrypoints. The runtime will override to `/bin/sh -c` and handle quoting
@@ -131,6 +132,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 			return nil, fmt.Errorf("unable to parse cmd: %w", err)
 		}
 		cfg.Config.Cmd = splitcmd
+	}
+
+	if ic.VCSUrl != "" {
+		cfg.Config.Labels["org.opencontainers.image.source"] = ic.VCSUrl
 	}
 
 	if len(ic.Environment) > 0 {

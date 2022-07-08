@@ -20,10 +20,26 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"chainguard.dev/apko/pkg/vcs"
 )
 
+// Attempt to probe an upstream VCS URL if known.
+func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus.Entry) {
+	url, err := vcs.ProbeDirFromPath(imageConfigPath)
+	if err != nil {
+		logger.Debugf("failed to probe VCS URL: %v", err)
+		return
+	}
+
+	if url != "" {
+		ic.VCSUrl = url
+		logger.Printf("detected %s as VCS URL", ic.VCSUrl)
+	}
+}
+
 // Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(imageConfigPath string) error {
+func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to read image configuration file: %w", err)
@@ -31,6 +47,10 @@ func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 
 	if err := yaml.Unmarshal(data, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
+	}
+
+	if ic.VCSUrl == "" {
+		ic.ProbeVCSUrl(imageConfigPath, logger)
 	}
 
 	return nil
