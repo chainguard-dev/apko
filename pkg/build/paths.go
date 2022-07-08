@@ -56,7 +56,7 @@ func mutateDirectory(o *options.Options, mut types.PathMutation) error {
 		return err
 	}
 
-	if mut.WalkDir {
+	if mut.Recursive {
 		if err := filepath.WalkDir(filepath.Join(o.WorkDir, mut.Path), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
