@@ -44,7 +44,7 @@ import (
 type buildImplementation interface {
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
 	BuildTarball(*options.Options) (string, error)
-	GenerateSBOM(*options.Options) error
+	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
@@ -53,7 +53,7 @@ type buildImplementation interface {
 	ValidateImageConfiguration(*types.ImageConfiguration) error
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
-	GenerateIndexSBOM(*options.Options, name.Digest, map[types.Architecture]coci.SignedImage) error
+	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
 }
 
 type defaultBuildImplementation struct{}
@@ -106,7 +106,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options) (string, 
 }
 
 // GenerateSBOM runs the sbom generation
-func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options) error {
+func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types.ImageConfiguration) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
 		return nil
@@ -218,7 +218,8 @@ func buildImage(
 }
 
 func (di *defaultBuildImplementation) GenerateIndexSBOM(
-	o *options.Options, indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
+	o *options.Options, ic *types.ImageConfiguration,
+	indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
 ) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping index SBOM generation")

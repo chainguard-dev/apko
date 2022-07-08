@@ -64,15 +64,15 @@ func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedIma
 	opts.Arch = arch
 	opts.ImageDigest = h.String()
 
-	return bc.impl.GenerateSBOM(&opts)
+	return bc.impl.GenerateSBOM(&opts, &bc.ImageConfiguration)
 }
 
 func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
-	return bc.impl.GenerateIndexSBOM(&bc.Options, indexDigest, imgs)
+	return bc.impl.GenerateIndexSBOM(&bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
 }
 
 func (bc *Context) GenerateSBOM() error {
-	return bc.impl.GenerateSBOM(&bc.Options)
+	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
 }
 
 func (bc *Context) BuildImage() error {
