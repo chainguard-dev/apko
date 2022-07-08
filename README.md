@@ -16,7 +16,7 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to clone the repo and use the scripts under the hack directory:
+apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to clone the repo and use the scripts under the hack directory. Running these scripts requires [installing Docker](https://docs.docker.com/get-docker/).
 
 ```
 $ ./hack/make-devenv.sh
