@@ -52,6 +52,8 @@ entrypoint:
   services:
     nginx: /usr/sbin/nginx -c /etc/nginx/nginx.conf -g "daemon off;"
 
+work-dir: /usr/share/nginx
+
 accounts:
   groups:
     - groupname: nginx
@@ -123,6 +125,15 @@ Services are monitored with the [s6 supervisor](https://skarnet.org/software/s6/
 `cmd` defines a command to run when the container starts up. If `entrypoint.command` is not set, it
 will be executed with `/bin/sh -c`. If `entrypoint.command` is set, `cmd` will be passed as arguments to
 `entrypoint.command`. This sets the "cmd" value on OCI images.
+
+### Work-dir top level element
+
+Sets the working directory for the image. Entrypoint and Cmd commands are taken as relative to
+this path. This is useful for setting a default directory for input/output and for images that are
+subsequently used in Dockerfiles.
+
+Equivalent to [WORKDIR](https://docs.docker.com/engine/reference/builder/#workdir) in Dockerfile
+syntax.
 
 ### Accounts top level element
 
