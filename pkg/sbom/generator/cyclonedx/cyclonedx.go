@@ -40,7 +40,7 @@ func (cdx *CycloneDX) Ext() string {
 	return "cdx"
 }
 
-// Generate writes a cyclondx sbom in path
+// Generate writes a CycloneDX sbom in path
 func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	pkgComponents := []Component{}
 	pkgDependencies := []Dependency{}
@@ -139,6 +139,19 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 				purl.QualifiersFromMap(mmMain), "",
 			).String(),
 			Components: []Component{layerComponent},
+		}
+	}
+
+	if opts.ImageInfo.VCSUrl != "" {
+		vcsURLRef := ExternalReference{
+			URL:  "vcs",
+			Type: opts.ImageInfo.VCSUrl,
+		}
+
+		if opts.ImageInfo.ImageDigest != "" {
+			imageComponent.ExternalReferences = append(imageComponent.ExternalReferences, vcsURLRef)
+		} else {
+			layerComponent.ExternalReferences = append(layerComponent.ExternalReferences, vcsURLRef)
 		}
 	}
 
@@ -247,6 +260,13 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 			},
 		},
 		Components: []Component{},
+	}
+
+	if opts.ImageInfo.VCSUrl != "" {
+		indexComponent.ExternalReferences = append(indexComponent.ExternalReferences, ExternalReference{
+			URL:  "vcs",
+			Type: opts.ImageInfo.VCSUrl,
+		})
 	}
 
 	// Add the images as subcomponents
