@@ -49,10 +49,6 @@ func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry)
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
-	if ic.VCSUrl == "" {
-		ic.ProbeVCSUrl(imageConfigPath, logger)
-	}
-
 	return nil
 }
 
