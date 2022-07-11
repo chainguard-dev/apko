@@ -137,9 +137,18 @@ func (o *Options) IndexPurlQualifiers() map[string]string {
 	return qualifiers
 }
 
-func (aii *ArchImageInfo) PurlQualifiers() map[string]string {
-	qualifiers := map[string]string{}
+// ArchImagePurlQualifiers returns the details
+func (o *Options) ArchImagePurlQualifiers(aii *ArchImageInfo) map[string]string {
+	qualifiers := o.IndexPurlQualifiers()
 	qualifiers["arch"] = aii.Arch.ToOCIPlatform().Architecture
 	qualifiers["os"] = aii.Arch.ToOCIPlatform().OS
+	switch o.ImageInfo.IndexMediaType {
+	case ggcrtypes.OCIImageIndex:
+		qualifiers["mediaType"] = string(ggcrtypes.OCIManifestSchema1)
+	case ggcrtypes.DockerManifestList:
+		qualifiers["mediaType"] = string(ggcrtypes.DockerManifestSchema2)
+	default:
+		qualifiers["mediaType"] = ""
+	}
 	return qualifiers
 }
