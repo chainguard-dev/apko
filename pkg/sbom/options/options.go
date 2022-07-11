@@ -64,6 +64,7 @@ type ImageInfo struct {
 	ImageDigest     string
 	VCSUrl          string
 	IndexMediaType  ggcrtypes.MediaType
+	ImageMediaType  ggcrtypes.MediaType
 	IndexDigest     v1.Hash
 	Images          []ArchImageInfo
 	Arch            types.Architecture
