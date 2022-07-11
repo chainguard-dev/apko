@@ -100,24 +100,17 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	}
 
 	// Main package purl qualifiers
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
 	var imageComponent Component
 	layerComponent := Component{
 		BOMRef: purl.NewPackageURL(
-			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
-			purl.QualifiersFromMap(mmMain), "",
+			purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
+			purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 		).String(),
 		Name:        opts.OS.Name,
 		Description: "apko OS layer",
 		PUrl: purl.NewPackageURL(
-			purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
-			purl.QualifiersFromMap(mmMain), "",
+			purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
+			purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 		).String(),
 		Version:    opts.OS.Version,
 		Type:       "operating-system",
@@ -127,16 +120,16 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	if opts.ImageInfo.ImageDigest != "" {
 		imageComponent = Component{
 			BOMRef: purl.NewPackageURL(
-				purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
-				purl.QualifiersFromMap(mmMain), "",
+				purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
+				purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 			).String(),
 			Type: "container",
 			Name: "",
 			// Version:            "",
 			Description: "apko container image",
 			PUrl: purl.NewPackageURL(
-				purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
-				purl.QualifiersFromMap(mmMain), "",
+				purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
+				purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 			).String(),
 			Components: []Component{layerComponent},
 		}
@@ -230,20 +223,9 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 		indexComponentName = repoName + "@" + indexComponentName
 	}
 
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
-	if opts.ImageInfo.IndexMediaType != "" {
-		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
-	}
-
 	purlString := purl.NewPackageURL(
 		purl.TypeOCI, "", repoName, opts.ImageInfo.ImageDigest,
-		purl.QualifiersFromMap(mmMain), "",
+		purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
 	).String()
 
 	indexComponent := Component{
@@ -295,38 +277,9 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 
 // imageComponent takes an image and returns a component representing it
 func (cdx *CycloneDX) archImageComponent(opts *options.Options, info options.ArchImageInfo) Component {
-	repoName := ""
-	if opts.ImageInfo.Name != "" {
-		ref, err := name.ParseReference(opts.ImageInfo.Name)
-		if err == nil {
-			repoName = ref.Context().RepositoryStr()
-		}
-	}
-
-	imageRepoName := "image"
-	if repoName != "" {
-		imageRepoName = repoName
-	}
-
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
-
-	if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
-		mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
-	}
-
-	if opts.ImageInfo.IndexMediaType != "" {
-		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
-	}
-
 	purlString := purl.NewPackageURL(
-		purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
-		purl.QualifiersFromMap(mmMain), "",
+		purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
+		purl.QualifiersFromMap(info.PurlQualifiers()), "",
 	).String()
 
 	return Component{
