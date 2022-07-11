@@ -38,6 +38,8 @@ func WithConfig(configFile string) Option {
 		}
 
 		bc.ImageConfiguration = ic
+		bc.ImageConfigFile = configFile
+
 		return nil
 	}
 }

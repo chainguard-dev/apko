@@ -37,6 +37,7 @@ import (
 type Context struct {
 	impl               buildImplementation
 	ImageConfiguration types.ImageConfiguration
+	ImageConfigFile    string
 	executor           *exec.Executor
 	s6                 *s6.Context
 	Assertions         []Assertion
