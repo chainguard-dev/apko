@@ -162,6 +162,7 @@ func renderDoc(doc *Document, path string) error {
 
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 
 	if err := enc.Encode(doc); err != nil {
 		return fmt.Errorf("encoding spdx sbom: %w", err)
@@ -204,7 +205,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.ImageDigest,
+					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
 					purl.QualifiersFromMap(mmMain), "",
 				).String(),
 			},
@@ -254,18 +255,6 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 	layerPackageName := opts.ImageInfo.LayerDigest
 	mainPkgID := stringToIdentifier(layerPackageName)
 
-	// Main package purl
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Tag != "" {
-		mmMain["tag"] = opts.ImageInfo.Tag
-	}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
-
 	layerPackage := Package{
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
 		Name:             layerPackageName,
@@ -283,8 +272,8 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImageInfo.Name, opts.ImageInfo.LayerDigest,
-					purl.QualifiersFromMap(mmMain), "",
+					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
+					purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 				).String(),
 			},
 		},
@@ -376,20 +365,6 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		Relationships: []Relationship{},
 	}
 
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Tag != "" {
-		mmMain["tag"] = opts.ImageInfo.Tag
-	}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
-	if opts.ImageInfo.IndexMediaType != "" {
-		mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
-	}
-
 	// Create the index package
 	indexPackageName := opts.ImageInfo.IndexDigest.DeepCopy().String()
 	repoName := "index"
@@ -422,8 +397,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", repoName, opts.ImageInfo.ImageDigest,
-					purl.QualifiersFromMap(mmMain), "",
+					purl.TypeOCI, "", repoName, opts.ImageInfo.IndexDigest.DeepCopy().String(),
+					purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
 				).String(),
 			},
 		},
@@ -448,22 +423,6 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			imageRepoName = repoName
 		}
 
-		mmMain := map[string]string{}
-		if opts.ImageInfo.Repository != "" {
-			mmMain["repository_url"] = opts.ImageInfo.Repository
-		}
-		if opts.ImageInfo.Arch.String() != "" {
-			mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-		}
-
-		if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
-			mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
-		}
-
-		if opts.ImageInfo.IndexMediaType != "" {
-			mmMain["mediaType"] = string(opts.ImageInfo.IndexMediaType)
-		}
-
 		doc.Packages = append(doc.Packages, Package{
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
@@ -484,7 +443,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
-						purl.QualifiersFromMap(mmMain), "",
+						purl.QualifiersFromMap(info.PurlQualifiers()), "",
 					).String(),
 				},
 			},

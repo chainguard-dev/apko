@@ -17,6 +17,7 @@ package options
 import (
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
@@ -73,4 +74,53 @@ type ArchImageInfo struct {
 	Digest     v1.Hash
 	Arch       types.Architecture
 	SBOMDigest string
+}
+
+// ImagePurlName returns a name to represent the image in a purl
+func (o *Options) ImagePurlName() string {
+	repoName := "image"
+	if o.ImageInfo.Name != "" {
+		ref, err := name.ParseReference(o.ImageInfo.Name)
+		if err != nil {
+			return repoName
+		}
+		repoName = ref.Context().RepositoryStr()
+	}
+	return repoName
+}
+
+// ImagePurlQualifiers returns the qualifiers for an image, the extra
+// data that goes into the purl quey string
+func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
+	qualifiers = map[string]string{}
+	if o.ImageInfo.Repository != "" {
+		qualifiers["repository_url"] = o.ImageInfo.Repository
+	}
+	if o.ImageInfo.Arch.String() != "" {
+		qualifiers["arch"] = o.ImageInfo.Arch.ToOCIPlatform().Architecture
+	}
+	// This should be "linux" always
+	if o.ImageInfo.Arch.ToOCIPlatform().OS != "" {
+		qualifiers["os"] = o.ImageInfo.Arch.ToOCIPlatform().OS
+	}
+	return qualifiers
+}
+
+// IndexPurlQualifiers returns the qualifiers for the multiarch index
+func (o *Options) IndexPurlQualifiers() map[string]string {
+	qualifiers := map[string]string{}
+	if o.ImageInfo.Repository != "" {
+		qualifiers["repository_url"] = o.ImageInfo.Repository
+	}
+	if o.ImageInfo.IndexMediaType != "" {
+		qualifiers["mediaType"] = string(o.ImageInfo.IndexMediaType)
+	}
+	return qualifiers
+}
+
+func (aii *ArchImageInfo) PurlQualifiers() map[string]string {
+	qualifiers := map[string]string{}
+	qualifiers["arch"] = aii.Arch.ToOCIPlatform().Architecture
+	qualifiers["os"] = aii.Arch.ToOCIPlatform().OS
+	return qualifiers
 }
