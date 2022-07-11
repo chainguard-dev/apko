@@ -104,6 +104,24 @@ func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
 	if o.ImageInfo.Arch.ToOCIPlatform().OS != "" {
 		qualifiers["os"] = o.ImageInfo.Arch.ToOCIPlatform().OS
 	}
+	if o.ImageInfo.ImageMediaType != "" {
+		qualifiers["mediaType"] = string(o.ImageInfo.ImageMediaType)
+	}
+	return qualifiers
+}
+
+// LayerPurlQualifiers reurns the qualifiers for the purl, they are based
+// on the image with the corresponding mediatype
+func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
+	qualifiers = o.ImagePurlQualifiers()
+	switch o.ImageInfo.ImageMediaType {
+	case ggcrtypes.OCIManifestSchema1:
+		qualifiers["mediaType"] = string(ggcrtypes.OCILayer)
+	case ggcrtypes.DockerManifestSchema2:
+		qualifiers["mediaType"] = string(ggcrtypes.DockerLayer)
+	default:
+		qualifiers["mediaType"] = ""
+	}
 	return qualifiers
 }
 
