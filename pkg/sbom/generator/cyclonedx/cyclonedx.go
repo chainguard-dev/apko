@@ -313,6 +313,7 @@ func renderDoc(doc *Document, path string) error {
 
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 
 	if err := enc.Encode(doc); err != nil {
 		return fmt.Errorf("encoding spdx sbom: %w", err)
