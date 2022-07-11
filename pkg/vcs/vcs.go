@@ -82,6 +82,9 @@ func ProbeDirForVCSUrl(startDir, toplevelDir string) (string, error) {
 			}
 		}
 
+		// sanitize any user authentication data from the VCS URL
+		normalizedURL.User = nil
+
 		return normalizedURL.String(), nil
 	}
 }
