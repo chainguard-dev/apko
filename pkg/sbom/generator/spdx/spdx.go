@@ -403,7 +403,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	doc.Packages = append(doc.Packages, indexPackage)
 	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
 
-	for _, info := range opts.ImageInfo.Images {
+	for i, info := range opts.ImageInfo.Images {
 		imagePackageID := "SPDXRef-Package-" + stringToIdentifier(info.Digest.DeepCopy().String())
 
 		imageRepoName := "image"
@@ -431,7 +431,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
-						purl.QualifiersFromMap(info.PurlQualifiers()), "",
+						purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i])), "",
 					).String(),
 				},
 			},
