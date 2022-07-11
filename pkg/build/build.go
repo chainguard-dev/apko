@@ -156,7 +156,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.Options.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
-	if bc.ImageConfiguration.VCSUrl == "" {
+	if !bc.Options.WithoutVCS && bc.ImageConfiguration.VCSUrl == "" {
 		bc.ImageConfiguration.ProbeVCSUrl(bc.ImageConfigFile, bc.Logger())
 	}
 
