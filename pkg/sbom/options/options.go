@@ -15,7 +15,7 @@
 package options
 
 import (
-	"strings"
+	"path/filepath"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -86,8 +86,7 @@ func (o *Options) ImagePurlName() string {
 		if err != nil {
 			return repoName
 		}
-		parts := strings.Split(ref.Context().RepositoryStr(), "/")
-		repoName = parts[len(parts)-1]
+		repoName = filepath.Base(ref.Context().RepositoryStr())
 	}
 	return repoName
 }
