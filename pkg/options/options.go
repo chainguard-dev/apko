@@ -29,7 +29,7 @@ type Options struct {
 	UseDockerMediaTypes bool
 	WantSBOM            bool
 	UseProot            bool
-	WithoutVCS          bool
+	WithVCS             bool
 	WorkDir             string
 	TarballPath         string
 	Tags                []string

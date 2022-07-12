@@ -165,10 +165,10 @@ func WithDebugLogging(enable bool) Option {
 	}
 }
 
-// WithoutVCS disables VCS URL probing for the build context.
-func WithoutVCS(enable bool) Option {
+// WithVCS enables VCS URL probing for the build context.
+func WithVCS(enable bool) Option {
 	return func(bc *Context) error {
-		bc.Options.WithoutVCS = enable
+		bc.Options.WithVCS = enable
 		return nil
 	}
 }

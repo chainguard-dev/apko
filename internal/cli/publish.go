@@ -43,7 +43,7 @@ func publish() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var debugEnabled bool
-	var withoutVCS bool
+	var withVCS bool
 	var writeSBOM bool
 
 	cmd := &cobra.Command{
@@ -72,7 +72,7 @@ in a keychain.`,
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
 				build.WithDebugLogging(debugEnabled),
-				build.WithoutVCS(withoutVCS),
+				build.WithVCS(withVCS),
 			); err != nil {
 				return err
 			}
@@ -84,7 +84,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&withoutVCS, "without-vcs", false, "disable VCS URL detection")
+	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
