@@ -143,6 +143,16 @@ func (di *defaultBuildImplementation) MutateAccounts(
 			return err
 		}
 
+		// Resolve run-as user if requested.
+		if ic.Accounts.RunAs != "" {
+			for _, ue := range uf.Entries {
+				if ue.UserName == ic.Accounts.RunAs {
+					ic.Accounts.RunAs = fmt.Sprintf("%d", ue.UID)
+					break
+				}
+			}
+		}
+
 		return nil
 	})
 
