@@ -37,6 +37,7 @@ import (
 type Context struct {
 	impl               buildImplementation
 	ImageConfiguration types.ImageConfiguration
+	ImageConfigFile    string
 	executor           *exec.Executor
 	s6                 *s6.Context
 	Assertions         []Assertion
@@ -153,6 +154,10 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	zeroArch := types.Architecture{}
 	if bc.Options.Arch == zeroArch {
 		bc.Options.Arch = types.ParseArchitecture(runtime.GOARCH)
+	}
+
+	if bc.Options.WithVCS && bc.ImageConfiguration.VCSUrl == "" {
+		bc.ImageConfiguration.ProbeVCSUrl(bc.ImageConfigFile, bc.Logger())
 	}
 
 	return &bc, nil

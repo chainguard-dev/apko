@@ -38,6 +38,8 @@ func WithConfig(configFile string) Option {
 		}
 
 		bc.ImageConfiguration = ic
+		bc.ImageConfigFile = configFile
+
 		return nil
 	}
 }
@@ -159,6 +161,14 @@ func WithDebugLogging(enable bool) Option {
 		if enable {
 			bc.Options.Log.SetLevel(logrus.DebugLevel)
 		}
+		return nil
+	}
+}
+
+// WithVCS enables VCS URL probing for the build context.
+func WithVCS(enable bool) Option {
+	return func(bc *Context) error {
+		bc.Options.WithVCS = enable
 		return nil
 	}
 }
