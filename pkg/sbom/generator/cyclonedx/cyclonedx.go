@@ -137,8 +137,8 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 
 	if opts.ImageInfo.VCSUrl != "" {
 		vcsURLRef := ExternalReference{
-			URL:  "vcs",
-			Type: opts.ImageInfo.VCSUrl,
+			URL:  opts.ImageInfo.VCSUrl,
+			Type: "vcs",
 		}
 
 		if opts.ImageInfo.ImageDigest != "" {
@@ -246,8 +246,8 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 
 	if opts.ImageInfo.VCSUrl != "" {
 		indexComponent.ExternalReferences = append(indexComponent.ExternalReferences, ExternalReference{
-			URL:  "vcs",
-			Type: opts.ImageInfo.VCSUrl,
+			URL:  opts.ImageInfo.VCSUrl,
+			Type: "vcs",
 		})
 	}
 
