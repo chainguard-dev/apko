@@ -171,18 +171,6 @@ func renderDoc(doc *Document, path string) error {
 }
 
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
-	// Main package purl
-	mmMain := map[string]string{}
-	if opts.ImageInfo.Repository != "" {
-		mmMain["repository_url"] = opts.ImageInfo.Repository
-	}
-	if opts.ImageInfo.Arch.String() != "" {
-		mmMain["arch"] = opts.ImageInfo.Arch.ToOCIPlatform().Architecture
-	}
-	if opts.ImageInfo.Arch.ToOCIPlatform().OS != "" {
-		mmMain["os"] = opts.ImageInfo.Arch.ToOCIPlatform().OS
-	}
-
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
@@ -206,7 +194,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
-					purl.QualifiersFromMap(mmMain), "",
+					purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
 				).String(),
 			},
 		},
@@ -273,7 +261,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
-					purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
+					purl.QualifiersFromMap(opts.LayerPurlQualifiers()), "",
 				).String(),
 			},
 		},
@@ -415,7 +403,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	doc.Packages = append(doc.Packages, indexPackage)
 	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
 
-	for _, info := range opts.ImageInfo.Images {
+	for i, info := range opts.ImageInfo.Images {
 		imagePackageID := "SPDXRef-Package-" + stringToIdentifier(info.Digest.DeepCopy().String())
 
 		imageRepoName := "image"
@@ -443,7 +431,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
-						purl.QualifiersFromMap(info.PurlQualifiers()), "",
+						purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i])), "",
 					).String(),
 				},
 			},

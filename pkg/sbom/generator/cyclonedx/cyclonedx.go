@@ -110,7 +110,7 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 		Description: "apko OS layer",
 		PUrl: purl.NewPackageURL(
 			purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
-			purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
+			purl.QualifiersFromMap(opts.LayerPurlQualifiers()), "",
 		).String(),
 		Version:    opts.OS.Version,
 		Type:       "operating-system",
@@ -279,7 +279,7 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 func (cdx *CycloneDX) archImageComponent(opts *options.Options, info options.ArchImageInfo) Component {
 	purlString := purl.NewPackageURL(
 		purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
-		purl.QualifiersFromMap(info.PurlQualifiers()), "",
+		purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&info)), "",
 	).String()
 
 	return Component{

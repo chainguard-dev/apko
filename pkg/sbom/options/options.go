@@ -64,6 +64,7 @@ type ImageInfo struct {
 	ImageDigest     string
 	VCSUrl          string
 	IndexMediaType  ggcrtypes.MediaType
+	ImageMediaType  ggcrtypes.MediaType
 	IndexDigest     v1.Hash
 	Images          []ArchImageInfo
 	Arch            types.Architecture
@@ -103,6 +104,24 @@ func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
 	if o.ImageInfo.Arch.ToOCIPlatform().OS != "" {
 		qualifiers["os"] = o.ImageInfo.Arch.ToOCIPlatform().OS
 	}
+	if o.ImageInfo.ImageMediaType != "" {
+		qualifiers["mediaType"] = string(o.ImageInfo.ImageMediaType)
+	}
+	return qualifiers
+}
+
+// LayerPurlQualifiers reurns the qualifiers for the purl, they are based
+// on the image with the corresponding mediatype
+func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
+	qualifiers = o.ImagePurlQualifiers()
+	switch o.ImageInfo.ImageMediaType {
+	case ggcrtypes.OCIManifestSchema1:
+		qualifiers["mediaType"] = string(ggcrtypes.OCILayer)
+	case ggcrtypes.DockerManifestSchema2:
+		qualifiers["mediaType"] = string(ggcrtypes.DockerLayer)
+	default:
+		qualifiers["mediaType"] = ""
+	}
 	return qualifiers
 }
 
@@ -118,9 +137,18 @@ func (o *Options) IndexPurlQualifiers() map[string]string {
 	return qualifiers
 }
 
-func (aii *ArchImageInfo) PurlQualifiers() map[string]string {
-	qualifiers := map[string]string{}
+// ArchImagePurlQualifiers returns the details
+func (o *Options) ArchImagePurlQualifiers(aii *ArchImageInfo) map[string]string {
+	qualifiers := o.IndexPurlQualifiers()
 	qualifiers["arch"] = aii.Arch.ToOCIPlatform().Architecture
 	qualifiers["os"] = aii.Arch.ToOCIPlatform().OS
+	switch o.ImageInfo.IndexMediaType {
+	case ggcrtypes.OCIImageIndex:
+		qualifiers["mediaType"] = string(ggcrtypes.OCIManifestSchema1)
+	case ggcrtypes.DockerManifestList:
+		qualifiers["mediaType"] = string(ggcrtypes.DockerManifestSchema2)
+	default:
+		qualifiers["mediaType"] = ""
+	}
 	return qualifiers
 }

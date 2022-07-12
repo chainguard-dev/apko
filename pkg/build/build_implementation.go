@@ -236,6 +236,12 @@ func newSBOM(o *options.Options, ic *types.ImageConfiguration) *sbom.SBOM {
 	s.Options.Formats = o.SBOMFormats
 	s.Options.ImageInfo.VCSUrl = ic.VCSUrl
 
+	if o.UseDockerMediaTypes {
+		s.Options.ImageInfo.ImageMediaType = ggcrtypes.DockerManifestSchema2
+	} else {
+		s.Options.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
+	}
+
 	s.Options.OutputDir = o.TempDir()
 	if o.SBOMPath != "" {
 		s.Options.OutputDir = o.SBOMPath
