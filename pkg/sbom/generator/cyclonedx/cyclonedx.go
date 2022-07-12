@@ -20,7 +20,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -212,26 +211,15 @@ type Hash struct {
 }
 
 func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
-	indexComponentName := opts.ImageInfo.IndexDigest.DeepCopy().String()
-	repoName := "index"
-	if opts.ImageInfo.Name != "" {
-		ref, err := name.ParseReference(opts.ImageInfo.Name)
-		if err != nil {
-			return fmt.Errorf("parsing image reference: %w", err)
-		}
-		repoName = ref.Context().RepositoryStr()
-		indexComponentName = repoName + "@" + indexComponentName
-	}
-
 	purlString := purl.NewPackageURL(
-		purl.TypeOCI, "", repoName, opts.ImageInfo.ImageDigest,
+		purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.String(),
 		purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
 	).String()
 
 	indexComponent := Component{
 		BOMRef:      purlString,
 		Type:        "container",
-		Name:        indexComponentName,
+		Name:        opts.ImageInfo.IndexDigest.String(),
 		Version:     opts.ImageInfo.IndexDigest.DeepCopy().Hex,
 		Description: "Multi-arch image index",
 		PUrl:        purlString,

@@ -27,7 +27,6 @@ import (
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/version"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -354,19 +353,9 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	}
 
 	// Create the index package
-	indexPackageName := opts.ImageInfo.IndexDigest.DeepCopy().String()
-	repoName := "index"
-	if opts.ImageInfo.Name != "" {
-		ref, err := name.ParseReference(opts.ImageInfo.Name)
-		if err != nil {
-			return fmt.Errorf("parsing image reference: %w", err)
-		}
-		repoName = ref.Context().RepositoryStr()
-		indexPackageName = repoName + "@" + indexPackageName
-	}
 	indexPackage := Package{
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
-		Name:             indexPackageName,
+		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
 		FilesAnalyzed:    false,
 		LicenseConcluded: NOASSERTION,
 		LicenseDeclared:  NOASSERTION,
@@ -385,7 +374,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", repoName, opts.ImageInfo.IndexDigest.DeepCopy().String(),
+					purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.DeepCopy().String(),
 					purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
 				).String(),
 			},
@@ -406,11 +395,6 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	for i, info := range opts.ImageInfo.Images {
 		imagePackageID := "SPDXRef-Package-" + stringToIdentifier(info.Digest.DeepCopy().String())
 
-		imageRepoName := "image"
-		if repoName != "index" {
-			imageRepoName = repoName
-		}
-
 		doc.Packages = append(doc.Packages, Package{
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
@@ -430,7 +414,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 					Category: "PACKAGE_MANAGER",
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
-						purl.TypeOCI, "", imageRepoName, info.Digest.DeepCopy().String(),
+						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
 						purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i])), "",
 					).String(),
 				},

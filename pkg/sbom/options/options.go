@@ -15,6 +15,7 @@
 package options
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -85,7 +86,17 @@ func (o *Options) ImagePurlName() string {
 		if err != nil {
 			return repoName
 		}
-		repoName = ref.Context().RepositoryStr()
+		parts := strings.Split(ref.Context().RepositoryStr(), "/")
+		repoName = parts[len(parts)-1]
+	}
+	return repoName
+}
+
+// IndexPurlName returns a name to refer to the image index in purls
+func (o *Options) IndexPurlName() string {
+	repoName := o.ImagePurlName()
+	if repoName == "image" {
+		return "index"
 	}
 	return repoName
 }
