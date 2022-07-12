@@ -16,6 +16,7 @@ package options
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -105,19 +106,25 @@ func (o *Options) IndexPurlName() string {
 func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
 	qualifiers = map[string]string{}
 	if o.ImageInfo.Repository != "" {
-		qualifiers["repository_url"] = o.ImageInfo.Repository
+		qualifiers["repository_url"] = escapeQualifier(o.ImageInfo.Repository)
 	}
 	if o.ImageInfo.Arch.String() != "" {
-		qualifiers["arch"] = o.ImageInfo.Arch.ToOCIPlatform().Architecture
+		qualifiers["arch"] = escapeQualifier(o.ImageInfo.Arch.ToOCIPlatform().Architecture)
 	}
 	// This should be "linux" always
 	if o.ImageInfo.Arch.ToOCIPlatform().OS != "" {
-		qualifiers["os"] = o.ImageInfo.Arch.ToOCIPlatform().OS
+		qualifiers["os"] = escapeQualifier(o.ImageInfo.Arch.ToOCIPlatform().OS)
 	}
 	if o.ImageInfo.ImageMediaType != "" {
-		qualifiers["mediaType"] = string(o.ImageInfo.ImageMediaType)
+		qualifiers["mediaType"] = escapeQualifier(string(o.ImageInfo.ImageMediaType))
 	}
 	return qualifiers
+}
+
+// This function is here while a fix in the purl library gets merged
+// ref: https://github.com/package-url/packageurl-go/pull/22
+func escapeQualifier(in string) string {
+	return strings.ReplaceAll(in, "+", "%26")
 }
 
 // LayerPurlQualifiers reurns the qualifiers for the purl, they are based
@@ -126,9 +133,9 @@ func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
 	qualifiers = o.ImagePurlQualifiers()
 	switch o.ImageInfo.ImageMediaType {
 	case ggcrtypes.OCIManifestSchema1:
-		qualifiers["mediaType"] = string(ggcrtypes.OCILayer)
+		qualifiers["mediaType"] = escapeQualifier(string(ggcrtypes.OCILayer))
 	case ggcrtypes.DockerManifestSchema2:
-		qualifiers["mediaType"] = string(ggcrtypes.DockerLayer)
+		qualifiers["mediaType"] = escapeQualifier(string(ggcrtypes.DockerLayer))
 	default:
 		qualifiers["mediaType"] = ""
 	}
@@ -139,10 +146,10 @@ func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
 func (o *Options) IndexPurlQualifiers() map[string]string {
 	qualifiers := map[string]string{}
 	if o.ImageInfo.Repository != "" {
-		qualifiers["repository_url"] = o.ImageInfo.Repository
+		qualifiers["repository_url"] = escapeQualifier(o.ImageInfo.Repository)
 	}
 	if o.ImageInfo.IndexMediaType != "" {
-		qualifiers["mediaType"] = string(o.ImageInfo.IndexMediaType)
+		qualifiers["mediaType"] = escapeQualifier(string(o.ImageInfo.IndexMediaType))
 	}
 	return qualifiers
 }
@@ -154,9 +161,9 @@ func (o *Options) ArchImagePurlQualifiers(aii *ArchImageInfo) map[string]string 
 	qualifiers["os"] = aii.Arch.ToOCIPlatform().OS
 	switch o.ImageInfo.IndexMediaType {
 	case ggcrtypes.OCIImageIndex:
-		qualifiers["mediaType"] = string(ggcrtypes.OCIManifestSchema1)
+		qualifiers["mediaType"] = escapeQualifier(string(ggcrtypes.OCIManifestSchema1))
 	case ggcrtypes.DockerManifestList:
-		qualifiers["mediaType"] = string(ggcrtypes.DockerManifestSchema2)
+		qualifiers["mediaType"] = escapeQualifier(string(ggcrtypes.DockerManifestSchema2))
 	default:
 		qualifiers["mediaType"] = ""
 	}
