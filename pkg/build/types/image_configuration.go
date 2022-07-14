@@ -38,6 +38,15 @@ func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus
 	}
 }
 
+// Parse a configuration blob into an ImageConfiguration struct.
+func (ic *ImageConfiguration) Parse(configData []byte, logger *logrus.Entry) error {
+	if err := yaml.Unmarshal(configData, ic); err != nil {
+		return fmt.Errorf("failed to parse image configuration: %w", err)
+	}
+
+	return nil
+}
+
 // Loads an image configuration given a configuration file path.
 func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry) error {
 	data, err := os.ReadFile(imageConfigPath)
@@ -45,11 +54,7 @@ func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry)
 		return fmt.Errorf("failed to read image configuration file: %w", err)
 	}
 
-	if err := yaml.Unmarshal(data, ic); err != nil {
-		return fmt.Errorf("failed to parse image configuration: %w", err)
-	}
-
-	return nil
+	return ic.Parse(data, logger)
 }
 
 // Do preflight checks and mutations on an image configuration.
