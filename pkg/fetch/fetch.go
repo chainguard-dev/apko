@@ -37,8 +37,8 @@ func Fetch(path string) ([]byte, error) {
 	// our paths.  Should come up with a better strategy at some point...
 	uri := url.URL{
 		Scheme: "https",
-		Host: pathElements[0],
-		Path: filepath.Join(pathElements[1:3]...),
+		Host:   pathElements[0],
+		Path:   filepath.Join(pathElements[1:3]...),
 	}
 
 	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
