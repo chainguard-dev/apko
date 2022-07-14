@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinzhu/copier"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
@@ -42,6 +43,33 @@ func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus
 func (ic *ImageConfiguration) Parse(configData []byte, logger *logrus.Entry) error {
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
+	}
+
+	if ic.Include != "" {
+		logger.Printf("including %s for configuration", ic.Include)
+
+		baseIc := ImageConfiguration{}
+
+		if err := baseIc.Load(ic.Include, logger); err != nil {
+			return fmt.Errorf("failed to read include file: %w", err)
+		}
+
+		mergedIc := ImageConfiguration{}
+
+		// Copy the base configuration...
+		if err := copier.Copy(&mergedIc, &baseIc); err != nil {
+			return fmt.Errorf("failed to copy base configuration: %w", err)
+		}
+
+		// ... and then overlay the local configuration on top.
+		if err := copier.CopyWithOption(&mergedIc, ic, copier.Option{IgnoreEmpty: true}); err != nil {
+			return fmt.Errorf("failed to overlay specific configuration: %w", err)
+		}
+
+		// Now copy the merged configuration back to ic.
+		if err := copier.Copy(ic, &mergedIc); err != nil {
+			return fmt.Errorf("failed to copy merged configuration: %w", err)
+		}
 	}
 
 	return nil
