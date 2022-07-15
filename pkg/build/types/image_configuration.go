@@ -71,6 +71,19 @@ func (ic *ImageConfiguration) Parse(configData []byte, logger *logrus.Entry) err
 		if err := copier.Copy(ic, &mergedIc); err != nil {
 			return fmt.Errorf("failed to copy merged configuration: %w", err)
 		}
+
+		// Merge packages, repositories and keyrings.
+		keyring := append([]string{}, baseIc.Contents.Keyring...)
+		keyring = append(keyring, mergedIc.Contents.Keyring...)
+		ic.Contents.Keyring = keyring
+
+		repos := append([]string{}, baseIc.Contents.Repositories...)
+		repos = append(repos, mergedIc.Contents.Repositories...)
+		ic.Contents.Repositories = repos
+
+		pkgs := append([]string{}, baseIc.Contents.Packages...)
+		pkgs = append(pkgs, mergedIc.Contents.Packages...)
+		ic.Contents.Packages = pkgs
 	}
 
 	return nil
