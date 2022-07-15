@@ -1,0 +1,1 @@
+include: github.com/chainguard-dev/apko/examples/alpine-base.yaml@main
