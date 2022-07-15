@@ -196,3 +196,17 @@ The `paths` element contains the following children:
  - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
  - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
  
+
+### Includes
+
+`include` defines a path to a configuration file which should be used as the base configuration,
+the configuration data is layered on top of this base configuration.  By default, there is no
+base configuration used.
+
+The path can be either a local file, or a file in a remote git repository, in the same style as
+Go package names and Github Actions.  For example, the following include line would reference
+`examples/alpine-base.yaml` in the apko git repository:
+
+```
+include: github.com/chainguard-dev/apko/examples/alpine-base.yaml@main
+```
