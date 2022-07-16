@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -43,6 +44,7 @@ func publish() *cobra.Command {
 	var archstrs []string
 	var extraKeys []string
 	var extraRepos []string
+	var rawAnnotations []string
 	var debugEnabled bool
 	var withVCS bool
 	var writeSBOM bool
@@ -61,6 +63,10 @@ in a keychain.`,
 				sbomFormats = []string{}
 			}
 			archs := types.ParseArchitectures(archstrs)
+			annotations, err := parseAnnotations(rawAnnotations)
+			if err != nil {
+				return fmt.Errorf("parsing annotations from command line: %w", err)
+			}
 			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
 				build.WithProot(useProot),
@@ -74,6 +80,7 @@ in a keychain.`,
 				build.WithExtraRepos(extraRepos),
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
+				build.WithAnnotations(annotations),
 			); err != nil {
 				return err
 			}
@@ -93,6 +100,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 
 	return cmd
 }
@@ -285,4 +293,26 @@ func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImag
 		}
 	}
 	return indexDigest, idx, nil
+}
+
+func parseAnnotations(rawAnnotations []string) (map[string]string, error) {
+	annotations := map[string]string{}
+	keyRegex := regexp.MustCompile(`^[a-z0-9-\.]+$`)
+	for _, s := range rawAnnotations {
+		parts := strings.SplitN(s, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("unable to parse annotation: %s", s)
+		}
+		if _, ok := annotations[parts[0]]; ok {
+			return nil, fmt.Errorf("annotation %s defined more than once", parts[0])
+		}
+		if !keyRegex.MatchString(parts[0]) {
+			return nil, fmt.Errorf("annotation key malformed: %s", parts[0])
+		}
+		if parts[1] == "" {
+			return nil, fmt.Errorf("annotation %s value is empty", parts[0])
+		}
+		annotations[parts[0]] = parts[1]
+	}
+	return annotations, nil
 }

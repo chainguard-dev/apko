@@ -172,3 +172,11 @@ func WithVCS(enable bool) Option {
 		return nil
 	}
 }
+
+// WithAnnotations parses and populates the annotations in the ImageConfiguration
+func WithAnnotations(annotations map[string]string) Option {
+	return func(bc *Context) error {
+		bc.ImageConfiguration.Annotations = annotations
+		return nil
+	}
+}
