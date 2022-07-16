@@ -102,6 +102,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
 	}
 
+	if mediaType != ggcrtypes.DockerLayer && len(ic.Annotations) > 0 {
+		v1Image = mutate.Annotations(v1Image, ic.Annotations).(v1.Image)
+	}
+
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get %s config file: %w", imageType, err)
