@@ -330,7 +330,7 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 
 	digest := name.Digest{}
 	for _, tag := range tags {
-		logger.Printf("publishing tag %v", tag)
+		logger.Printf("publishing image tag %v", tag)
 		digest, err = publishTagFromImage(v1Image, tag, h, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
@@ -392,7 +392,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 
 	digest := name.Digest{}
 	for _, tag := range tags {
-		logger.Printf("publishing tag %v", tag)
+		logger.Printf("publishing index tag %v", tag)
 		digest, err = publishTagFromIndex(idx, tag, h, logger)
 		if err != nil {
 			return name.Digest{}, nil, err

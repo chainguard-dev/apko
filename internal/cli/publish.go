@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/pkg/oci"
@@ -147,6 +148,9 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var finalDigest name.Digest
 	var idx coci.SignedImageIndex
 
+	// References, collect'em all!
+	builtReferences := []string{}
+
 	for _, arch := range bc.ImageConfiguration.Archs {
 		arch := arch
 		bc := *bc
@@ -172,6 +176,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
 
+			builtReferences = append(builtReferences, finalDigest.String())
 			imgs[arch] = img
 			return nil
 		})
@@ -186,6 +191,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)
 		}
+		builtReferences = append(builtReferences, finalDigest.String())
 	}
 
 	bc.Options.SBOMFormats = formats
@@ -229,7 +235,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// If provided, this is the name of the file to write digest referenced into
 	if outputRefs != "" {
 		//nolint:gosec // Make image ref file readable by non-root
-		if err := os.WriteFile(outputRefs, []byte(finalDigest.String()), 0666); err != nil {
+		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
 		}
 	}
@@ -243,15 +249,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 // publishImage publishes a specific architecture image
 func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
-	// We only tag the images if we're building a single one
-	imageTags := []string{}
-	if len(bc.ImageConfiguration.Archs) == 1 {
-		imageTags = bc.Options.Tags
-	}
 	if bc.Options.UseDockerMediaTypes {
 		imgDigest, img, err = oci.PublishDockerImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, imageTags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
@@ -259,7 +260,7 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 	} else {
 		imgDigest, img, err = oci.PublishImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, imageTags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
