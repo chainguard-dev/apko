@@ -1,0 +1,5 @@
+include: examples/alpine-base.yaml
+
+contents:
+  packages:
+    - nano
