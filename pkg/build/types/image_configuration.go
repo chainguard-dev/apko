@@ -41,7 +41,7 @@ func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) Parse(configData []byte, logger *logrus.Entry) error {
+func (ic *ImageConfiguration) parse(configData []byte, logger *logrus.Entry) error {
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
@@ -93,7 +93,7 @@ func (ic *ImageConfiguration) Parse(configData []byte, logger *logrus.Entry) err
 func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err == nil {
-		return ic.Parse(data, logger)
+		return ic.parse(data, logger)
 	}
 
 	// At this point, we're doing a remote config file.
@@ -104,7 +104,7 @@ func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry)
 		return fmt.Errorf("unable to fetch remote include from git: %w", err)
 	}
 
-	return ic.Parse(data, logger)
+	return ic.parse(data, logger)
 }
 
 // Do preflight checks and mutations on an image configuration.
