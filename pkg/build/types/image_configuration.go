@@ -140,4 +140,10 @@ func (ic *ImageConfiguration) Summarize(logger *logrus.Entry) {
 			logger.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
 		}
 	}
+	if len(ic.Annotations) > 0 {
+		logger.Printf("    annotations:")
+		for k, v := range ic.Annotations {
+			logger.Printf("      %s: %s", k, v)
+		}
+	}
 }
