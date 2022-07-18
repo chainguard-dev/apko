@@ -54,6 +54,10 @@ func parseRef(path string) (*resource, error) {
 	paths, referenceName, _ := strings.Cut(path, "@")
 	pathElements := strings.Split(paths, string(os.PathSeparator))
 
+	if len(pathElements) < 4 {
+		return nil, fmt.Errorf("not enough path data available")
+	}
+
 	// TODO(kaniini): We presently assume a github-like forge for figuring out
 	// our paths.  Should come up with a better strategy at some point...
 	ref := resource{
