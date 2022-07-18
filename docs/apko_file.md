@@ -210,3 +210,16 @@ Go package names and Github Actions.  For example, the following include line wo
 ```
 include: github.com/chainguard-dev/apko/examples/alpine-base.yaml@main
 ```
+
+At present, the path structure assumes that the git repository lives on a site similar to
+GitHub, GitLab or Gitea.  In other words, given an include path like the above, it will
+parse as:
+
+```
+host: github.com
+repository: chainguard-dev/apko
+path: examples/alpine-base.yaml
+reference: main
+```
+
+Patches to improve the parsing to make it more flexible are welcome.
