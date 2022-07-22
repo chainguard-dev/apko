@@ -152,6 +152,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		for k, v := range ic.Environment {
 			envs = append(envs, fmt.Sprintf("%s=%s", k, v))
 		}
+		sort.Strings(envs)
 
 		cfg.Config.Env = envs
 	} else {
