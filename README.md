@@ -28,7 +28,7 @@ Welcome to the apko development environment!
 
 Install apko within the development environment using a `make` command:
 ```
-$ make install
+$ make apko && make install
 ```
 
 Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
