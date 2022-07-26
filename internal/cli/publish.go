@@ -216,7 +216,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			bc.Options.TarballPath = filepath.Join(bc.Options.TempDir(), bc.Options.TarballFileName())
 			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
 
-			if err := bc.GenerateImageSBOM(*bc.Options, arch, img); err != nil {
+			if err := bc.GenerateImageSBOM(arch, img); err != nil {
 				return fmt.Errorf("generating sbom for %s: %w", arch, err)
 			}
 
