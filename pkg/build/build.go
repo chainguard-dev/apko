@@ -41,7 +41,7 @@ type Context struct {
 	executor           *exec.Executor
 	s6                 *s6.Context
 	Assertions         []Assertion
-	Options            *options.Options
+	Options            options.Options
 }
 
 func (bc *Context) Summarize() {
@@ -51,26 +51,26 @@ func (bc *Context) Summarize() {
 }
 
 func (bc *Context) BuildTarball() (string, error) {
-	return bc.impl.BuildTarball(bc.Options)
+	return bc.impl.BuildTarball(&bc.Options)
 }
 
 func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
 	opts := bc.Options
 	opts.Arch = arch
-	return bc.impl.GenerateImageSBOM(opts, &bc.ImageConfiguration, img)
+	return bc.impl.GenerateImageSBOM(&opts, &bc.ImageConfiguration, img)
 }
 
 func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
-	return bc.impl.GenerateIndexSBOM(bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
+	return bc.impl.GenerateIndexSBOM(&bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
 }
 
 func (bc *Context) GenerateSBOM() error {
-	return bc.impl.GenerateSBOM(bc.Options, &bc.ImageConfiguration)
+	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
 }
 
 func (bc *Context) BuildImage() error {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	return buildImage(bc.impl, bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
+	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
 func (bc *Context) Logger() *logrus.Entry {
@@ -124,7 +124,7 @@ func (bc *Context) runAssertions() error {
 // overwrite the provided timestamp if present.
 func New(workDir string, opts ...Option) (*Context, error) {
 	bc := Context{
-		Options: &options.Default,
+		Options: options.Default,
 		impl:    &defaultBuildImplementation{},
 	}
 	bc.Options.WorkDir = workDir
@@ -164,7 +164,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 }
 
 func (bc *Context) Refresh() error {
-	s6, executor, err := bc.impl.Refresh(bc.Options)
+	s6, executor, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
 		return err
 	}

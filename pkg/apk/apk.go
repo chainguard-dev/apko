@@ -20,7 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -137,7 +137,7 @@ func AdditionalTags(opts options.Options) ([]string, error) {
 		return nil, nil
 	}
 	dbPath := filepath.Join(opts.WorkDir, "lib/apk/db/installed")
-	contents, err := ioutil.ReadFile(dbPath)
+	contents, err := os.ReadFile(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -159,22 +159,21 @@ func AdditionalTags(opts options.Options) ([]string, error) {
 			version := strings.TrimLeft(t, "V:")
 			opts.Log.Debugf("Found version, images will be tagged with %s", version)
 			return appendTag(opts, version)
-		} else {
-			opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
-			break
 		}
+		opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
+		break
 	}
 	return nil, sc.Err()
 }
 
 func appendTag(opts options.Options, newTag string) ([]string, error) {
-	var newTags []string
-	for _, t := range opts.Tags {
+	newTags := make([]string, len(opts.Tags))
+	for i, t := range opts.Tags {
 		nt, err := replaceTag(t, newTag)
 		if err != nil {
 			return nil, err
 		}
-		newTags = append(newTags, nt)
+		newTags[i] = nt
 	}
 	opts.Log.Infof("Returning additional tags %v", newTags)
 	return newTags, nil

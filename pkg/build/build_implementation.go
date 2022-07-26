@@ -27,7 +27,6 @@ import (
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"sigs.k8s.io/release-utils/hash"
 
-	"chainguard.dev/apko/pkg/apk"
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
@@ -172,7 +171,7 @@ func (di *defaultBuildImplementation) InitializeApk(o *options.Options, ic *type
 }
 
 func (di *defaultBuildImplementation) AdditionalTags(o *options.Options) error {
-	at, err := apk.AdditionalTags(*o)
+	at, err := chainguardAPK.AdditionalTags(*o)
 	if err != nil {
 		return err
 	}

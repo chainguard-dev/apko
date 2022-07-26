@@ -16,7 +16,6 @@ package apk
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,10 +105,10 @@ P:nginx
 A:priya
 `
 	if err := os.MkdirAll(filepath.Join(td, "lib/apk/db/"), 0755); err != nil {
-		t.Fatal(err)
+		require.Error(t, err, "mkdir all dirs failed")
 	}
-	if err := ioutil.WriteFile(filepath.Join(td, "lib/apk/db/installed"), []byte(contents), 0755); err != nil {
-		t.Fatal(err)
+	if err := os.WriteFile(filepath.Join(td, "lib/apk/db/installed"), []byte(contents), 0755); err != nil {
+		require.Error(t, err, "write file failed")
 	}
 	tests := []struct {
 		description       string
@@ -139,10 +138,10 @@ A:priya
 			}
 			got, err := AdditionalTags(opts)
 			if err != nil {
-				t.Fatal(err)
+				require.Error(t, err, "additional tags failed")
 			}
 			if d := cmp.Diff(got, test.expectedTags); d != "" {
-				t.Fatalf("actual does not match expected: %s", d)
+				require.Errorf(t, fmt.Errorf("does not match: %s", d), "actual does not match expected")
 			}
 		})
 	}
