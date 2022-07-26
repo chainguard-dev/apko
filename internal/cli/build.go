@@ -142,20 +142,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		return fmt.Errorf("generating SBOMs: %w", err)
 	}
 
-	if bc.Options.UseDockerMediaTypes {
-		if err := oci.BuildDockerImageTarballFromLayer(
-			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats,
-		); err != nil {
-			return fmt.Errorf("failed to build Docker image: %w", err)
-		}
-	} else {
-		if err := oci.BuildImageTarballFromLayer(
-			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats,
-		); err != nil {
-			return fmt.Errorf("failed to build OCI image: %w", err)
-		}
+	if err := oci.BuildImageTarballFromLayer(
+		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Logger(), bc.Options); err != nil {
+		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
 
 	return nil
