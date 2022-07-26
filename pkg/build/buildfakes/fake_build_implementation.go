@@ -1059,3 +1059,7 @@ func (fake *FakeBuildImplementation) recordInvocation(key string, args []interfa
 	}
 	fake.invocations[key] = append(fake.invocations[key], args)
 }
+
+func(fake *FakeBuildImplementation) AdditionalTags(opts *options.Options) error {
+	return nil
+}

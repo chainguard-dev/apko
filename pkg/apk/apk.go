@@ -45,14 +45,14 @@ const (
 type APK struct {
 	impl     apkImplementation
 	executor *exec.Executor
-	Options  *options.Options
+	Options  options.Options
 }
 
 func New() *APK {
-	return NewWithOptions(&options.Default)
+	return NewWithOptions(options.Default)
 }
 
-func NewWithOptions(o *options.Options) *APK {
+func NewWithOptions(o options.Options) *APK {
 	a := &APK{
 		Options: o,
 		impl:    &apkDefaultImplementation{},
@@ -82,28 +82,28 @@ func (a *APK) buildExecutor() error {
 // Builds the image in Context.WorkDir according to the image configuration
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	// initialize apk
-	if err := a.impl.InitDB(a.Options, *a.executor); err != nil {
+	if err := a.impl.InitDB(&a.Options, *a.executor); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		if err := a.impl.InitKeyring(a.Options, ic); err != nil {
+		if err := a.impl.InitKeyring(&a.Options, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := a.impl.InitRepositories(a.Options, ic); err != nil {
+		if err := a.impl.InitRepositories(&a.Options, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := a.impl.InitWorld(a.Options, ic); err != nil {
+		if err := a.impl.InitWorld(&a.Options, ic); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
@@ -114,19 +114,15 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	}
 
 	// sync reality with desired apk world
-	if err := a.impl.FixateWorld(a.Options, a.executor); err != nil {
+	if err := a.impl.FixateWorld(&a.Options, a.executor); err != nil {
 		return fmt.Errorf("failed to fixate apk world: %w", err)
 	}
 
 	eg.Go(func() error {
-		if err := a.impl.NormalizeScriptsTar(a.Options); err != nil {
+		if err := a.impl.NormalizeScriptsTar(&a.Options); err != nil {
 			return fmt.Errorf("failed to normalize scripts.tar: %w", err)
 		}
 		return nil
-	})
-
-	eg.Go(func() error {
-		return a.AddPackageVersionTag(a.Options)
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -136,17 +132,17 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	return nil
 }
 
-func (a *APK) AddPackageVersionTag(opts *options.Options) error {
-	if a.Options.PackageVersionTag == "" {
-		return nil
+func AdditionalTags(opts options.Options) ([]string, error) {
+	if opts.PackageVersionTag == "" {
+		return nil, nil
 	}
-	dbPath := filepath.Join(a.Options.WorkDir, "lib/apk/db/installed")
+	dbPath := filepath.Join(opts.WorkDir, "lib/apk/db/installed")
 	contents, err := ioutil.ReadFile(dbPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	want := fmt.Sprintf("P:%s", a.Options.PackageVersionTag)
-	a.Options.Log.Debugf("Searching %s for contents '%s'", dbPath, want)
+	want := fmt.Sprintf("P:%s", opts.PackageVersionTag)
+	opts.Log.Debugf("Searching %s for contents '%s'", dbPath, want)
 	sc := bufio.NewScanner(bytes.NewBuffer(contents))
 	for sc.Scan() {
 		t := sc.Text() // GET the line string
@@ -157,32 +153,31 @@ func (a *APK) AddPackageVersionTag(opts *options.Options) error {
 		if sc.Scan() {
 			t := sc.Text()
 			if !strings.HasPrefix(t, "V:") {
-				a.Options.Log.Warnf("No version info found for package %s, skipping additional tagging", a.Options.PackageVersionTag)
+				opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
 				break
 			}
 			version := strings.TrimLeft(t, "V:")
-			a.Options.Log.Debugf("Found version, image will be tagged with %s", version)
-			return appendTag(a.Options, version)
+			opts.Log.Debugf("Found version, images will be tagged with %s", version)
+			return appendTag(opts, version)
 		} else {
-			a.Options.Log.Warnf("No version info found for package %s, skipping additional tagging", a.Options.PackageVersionTag)
+			opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
 			break
 		}
 	}
-	return sc.Err()
+	return nil, sc.Err()
 }
 
-func appendTag(opts *options.Options, newTag string) error {
+func appendTag(opts options.Options, newTag string) ([]string, error) {
 	var newTags []string
 	for _, t := range opts.Tags {
 		nt, err := replaceTag(t, newTag)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		newTags = append(newTags, nt)
 	}
-	opts.Log.Infof("Adding additional tags %v", newTags)
-	opts.Tags = append(opts.Tags, newTags...)
-	return nil
+	opts.Log.Infof("Returning additional tags %v", newTags)
+	return newTags, nil
 }
 
 func replaceTag(img, newTag string) (string, error) {

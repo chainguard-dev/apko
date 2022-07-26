@@ -27,6 +27,7 @@ import (
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"sigs.k8s.io/release-utils/hash"
 
+	"chainguard.dev/apko/pkg/apk"
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
@@ -54,6 +55,7 @@ type buildImplementation interface {
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
 	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
 	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) error
+	AdditionalTags(*options.Options) error
 }
 
 type defaultBuildImplementation struct{}
@@ -165,8 +167,17 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types
 }
 
 func (di *defaultBuildImplementation) InitializeApk(o *options.Options, ic *types.ImageConfiguration) error {
-	apk := chainguardAPK.NewWithOptions(o)
+	apk := chainguardAPK.NewWithOptions(*o)
 	return apk.Initialize(ic)
+}
+
+func (di *defaultBuildImplementation) AdditionalTags(o *options.Options) error {
+	at, err := apk.AdditionalTags(*o)
+	if err != nil {
+		return err
+	}
+	o.Tags = append(o.Tags, at...)
+	return nil
 }
 
 func (di *defaultBuildImplementation) BuildImage(
@@ -191,6 +202,10 @@ func buildImage(
 
 	if err := di.InitializeApk(o, ic); err != nil {
 		return fmt.Errorf("initializing apk: %w", err)
+	}
+
+	if err := di.AdditionalTags(o); err != nil {
+		return fmt.Errorf("adding additional tags: %w", err)
 	}
 
 	if err := di.MutateAccounts(o, ic); err != nil {
