@@ -16,13 +16,19 @@ package apk_test
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/apk/apkfakes"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 )
 
 func TestInitialize(t *testing.T) {
@@ -86,5 +92,59 @@ func TestInitialize(t *testing.T) {
 		} else {
 			require.NoError(t, err, tc.msg, err)
 		}
+	}
+}
+
+func TestAddPackageVersionTag(t *testing.T) {
+	td := t.TempDir()
+	contents := `
+D: hi
+P:go
+V:1.18
+A:hello
+
+P:nginx
+A:priya
+`
+	if err := os.MkdirAll(filepath.Join(td, "lib/apk/db/"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ioutil.WriteFile(filepath.Join(td, "lib/apk/db/installed"), []byte(contents), 0755); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		description       string
+		packageVersionTag string
+		tags              []string
+		expectedTags      []string
+	}{
+		{
+			description:       "tag with go",
+			packageVersionTag: "go",
+			tags:              []string{"gcr.io/myimage/go:latest"},
+			expectedTags:      []string{"gcr.io/myimage/go:latest", "gcr.io/myimage/go:1.18"},
+		}, {
+			description:       "nginx has no version",
+			packageVersionTag: "nginx",
+			tags:              []string{"gcr.io/myimage/go:latest"},
+			expectedTags:      []string{"gcr.io/myimage/go:latest"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			a := &apk.APK{Options: &options.Options{
+				PackageVersionTag: test.packageVersionTag,
+				Tags:              test.tags,
+				WorkDir:           td,
+				Log:               &logrus.Logger{},
+			}}
+			if err := a.AddPackageVersionTag(a.Options); err != nil {
+				t.Fatal(err)
+			}
+			got := a.Options.Tags
+			if d := cmp.Diff(got, test.expectedTags); d != "" {
+				t.Fatalf("actual does not match expected: %s", d)
+			}
+		})
 	}
 }

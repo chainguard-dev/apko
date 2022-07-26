@@ -165,7 +165,7 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types
 }
 
 func (di *defaultBuildImplementation) InitializeApk(o *options.Options, ic *types.ImageConfiguration) error {
-	apk := chainguardAPK.NewWithOptions(*o)
+	apk := chainguardAPK.NewWithOptions(o)
 	return apk.Initialize(ic)
 }
 

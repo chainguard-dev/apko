@@ -280,7 +280,6 @@ func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imag
 	if v1Image == nil {
 		return errors.New("image build from layer returned nil")
 	}
-
 	imgRefTag, err := name.NewTag(imageRef)
 	if err != nil {
 		return fmt.Errorf("unable to validate image reference tag: %w", err)
