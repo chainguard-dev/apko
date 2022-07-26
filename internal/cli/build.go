@@ -41,6 +41,7 @@ func buildCmd() *cobra.Command {
 	var sbomFormats []string
 	var extraKeys []string
 	var extraRepos []string
+	var packageVersionTag string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -93,6 +94,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
+	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
 	cmd.Flags().StringSliceVar(&buildArch, "build-arch", []string{runtime.GOARCH}, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
@@ -142,20 +144,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.O
 		return fmt.Errorf("generating SBOMs: %w", err)
 	}
 
-	if bc.Options.UseDockerMediaTypes {
-		if err := oci.BuildDockerImageTarballFromLayer(
-			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats,
-		); err != nil {
-			return fmt.Errorf("failed to build Docker image: %w", err)
-		}
-	} else {
-		if err := oci.BuildImageTarballFromLayer(
-			imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch,
-			bc.Logger(), bc.Options.SBOMPath, bc.Options.SBOMFormats,
-		); err != nil {
-			return fmt.Errorf("failed to build OCI image: %w", err)
-		}
+	if err := oci.BuildImageTarballFromLayer(
+		imageRef, layerTarGZ, outputTarGZ, bc.ImageConfiguration, bc.Logger(), bc.Options); err != nil {
+		return fmt.Errorf("failed to build OCI image: %w", err)
 	}
 
 	return nil
