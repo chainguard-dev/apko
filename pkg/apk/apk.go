@@ -18,13 +18,16 @@ package apk
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom"
 )
 
 // Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
@@ -124,6 +127,51 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	}
 
 	return nil
+}
+
+// AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
+// If --package-version-tag is set to a package name (e.g. go), then this function
+// returns a list of all images that should be published with the associated version of that package tagged (e.g. 1.18)
+func AdditionalTags(opts options.Options) ([]string, error) {
+	if opts.PackageVersionTag == "" {
+		return nil, nil
+	}
+	dbPath := filepath.Join(opts.WorkDir, "lib/apk/db/installed")
+	pkgs, err := sbom.ReadPackageIndex(&sbom.DefaultOptions, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	for _, pkg := range pkgs {
+		if pkg.Name != opts.PackageVersionTag {
+			continue
+		}
+		version := pkg.Version
+		opts.Log.Debugf("Found version, images will be tagged with %s", version)
+		return appendTag(opts, version)
+	}
+	opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
+	return nil, nil
+}
+
+func appendTag(opts options.Options, newTag string) ([]string, error) {
+	newTags := make([]string, len(opts.Tags))
+	for i, t := range opts.Tags {
+		nt, err := replaceTag(t, newTag)
+		if err != nil {
+			return nil, err
+		}
+		newTags[i] = nt
+	}
+	opts.Log.Infof("Returning additional tags %v", newTags)
+	return newTags, nil
+}
+
+func replaceTag(img, newTag string) (string, error) {
+	ref, err := name.ParseReference(img)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s", ref.Context(), newTag), nil
 }
 
 func (a *APK) SetImplementation(impl apkImplementation) {

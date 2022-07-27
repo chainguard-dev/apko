@@ -41,6 +41,7 @@ type Options struct {
 	Arch                types.Architecture
 	Log                 *logrus.Logger
 	TempDirPath         string
+	PackageVersionTag   string
 }
 
 var Default = Options{

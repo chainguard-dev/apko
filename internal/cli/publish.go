@@ -41,6 +41,7 @@ func publish() *cobra.Command {
 	var useDockerMediaTypes bool
 	var buildDate string
 	var sbomPath string
+	var packageVersionTag string
 	var sbomFormats []string
 	var archstrs []string
 	var extraKeys []string
@@ -82,6 +83,7 @@ in a keychain.`,
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
+				build.WithPackageVersionTag(packageVersionTag),
 			); err != nil {
 				return err
 			}
@@ -95,6 +97,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
+	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
@@ -159,6 +162,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	// References, collect'em all!
 	builtReferences := []string{}
+	additionalTags := []string{}
 
 	mtx := sync.Mutex{}
 
@@ -186,6 +190,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
+			// This should be the same across architectures
+			additionalTags = bc.Options.Tags
 
 			builtReferences = append(builtReferences, finalDigest.String())
 			mtx.Lock()
@@ -200,6 +206,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if len(archs) > 1 {
+		bc.Options.Tags = append(bc.Options.Tags, additionalTags...)
 		finalDigest, idx, err = publishIndex(bc, imgs)
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)

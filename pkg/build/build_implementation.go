@@ -54,6 +54,7 @@ type buildImplementation interface {
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
 	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
 	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) error
+	AdditionalTags(*options.Options) error
 }
 
 type defaultBuildImplementation struct{}
@@ -169,6 +170,18 @@ func (di *defaultBuildImplementation) InitializeApk(o *options.Options, ic *type
 	return apk.Initialize(ic)
 }
 
+func (di *defaultBuildImplementation) AdditionalTags(o *options.Options) error {
+	at, err := chainguardAPK.AdditionalTags(*o)
+	if err != nil {
+		return err
+	}
+	if at == nil {
+		return nil
+	}
+	o.Tags = append(o.Tags, at...)
+	return nil
+}
+
 func (di *defaultBuildImplementation) BuildImage(
 	o *options.Options, ic *types.ImageConfiguration, e *exec.Executor, s6context *s6.Context,
 ) error {
@@ -191,6 +204,10 @@ func buildImage(
 
 	if err := di.InitializeApk(o, ic); err != nil {
 		return fmt.Errorf("initializing apk: %w", err)
+	}
+
+	if err := di.AdditionalTags(o); err != nil {
+		return fmt.Errorf("adding additional tags: %w", err)
 	}
 
 	if err := di.MutateAccounts(o, ic); err != nil {

@@ -109,6 +109,13 @@ func WithSBOM(path string) Option {
 	}
 }
 
+func WithPackageVersionTag(pvt string) Option {
+	return func(bc *Context) error {
+		bc.Options.PackageVersionTag = pvt
+		return nil
+	}
+}
+
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
 		bc.Options.SBOMFormats = formats
