@@ -175,6 +175,9 @@ func (di *defaultBuildImplementation) AdditionalTags(o *options.Options) error {
 	if err != nil {
 		return err
 	}
+	if at == nil {
+		return nil
+	}
 	o.Tags = append(o.Tags, at...)
 	return nil
 }

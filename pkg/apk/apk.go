@@ -132,6 +132,9 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	return nil
 }
 
+// AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
+// If --package-version-tag is set to a package name (e.g. go), then this function
+// returns a list of all images that should be published with the associated version of that package tagged (e.g. 1.18)
 func AdditionalTags(opts options.Options) ([]string, error) {
 	if opts.PackageVersionTag == "" {
 		return nil, nil
