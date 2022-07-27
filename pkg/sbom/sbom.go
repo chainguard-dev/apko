@@ -162,6 +162,10 @@ func (di *defaultSBOMImplementation) ReadReleaseData(opts *options.Options, path
 func (di *defaultSBOMImplementation) ReadPackageIndex(
 	opts *options.Options, path string,
 ) (packages []*repository.Package, err error) {
+	return ReadPackageIndex(opts, path)
+}
+
+func ReadPackageIndex(opts *options.Options, path string) (packages []*repository.Package, err error) {
 	installedDB, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening APK installed db: %w", err)

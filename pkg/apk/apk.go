@@ -17,13 +17,9 @@ package apk
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"golang.org/x/sync/errgroup"
@@ -31,6 +27,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom"
 )
 
 // Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
@@ -140,33 +137,20 @@ func AdditionalTags(opts options.Options) ([]string, error) {
 		return nil, nil
 	}
 	dbPath := filepath.Join(opts.WorkDir, "lib/apk/db/installed")
-	contents, err := os.ReadFile(dbPath)
+	pkgs, err := sbom.ReadPackageIndex(&sbom.DefaultOptions, dbPath)
 	if err != nil {
 		return nil, err
 	}
-	want := fmt.Sprintf("P:%s", opts.PackageVersionTag)
-	opts.Log.Debugf("Searching %s for contents '%s'", dbPath, want)
-	sc := bufio.NewScanner(bytes.NewBuffer(contents))
-	for sc.Scan() {
-		t := sc.Text() // GET the line string
-		if t != want {
+	for _, pkg := range pkgs {
+		if pkg.Name != opts.PackageVersionTag {
 			continue
 		}
-		// we want the next line with the version
-		if sc.Scan() {
-			t := sc.Text()
-			if !strings.HasPrefix(t, "V:") {
-				opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
-				break
-			}
-			version := strings.TrimLeft(t, "V:")
-			opts.Log.Debugf("Found version, images will be tagged with %s", version)
-			return appendTag(opts, version)
-		}
-		opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
-		break
+		version := pkg.Version
+		opts.Log.Debugf("Found version, images will be tagged with %s", version)
+		return appendTag(opts, version)
 	}
-	return nil, sc.Err()
+	opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
+	return nil, nil
 }
 
 func appendTag(opts options.Options, newTag string) ([]string, error) {
