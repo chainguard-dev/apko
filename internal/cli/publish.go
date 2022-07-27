@@ -161,6 +161,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	// References, collect'em all!
 	builtReferences := []string{}
+	additionalTags := []string{}
 
 	for _, arch := range bc.ImageConfiguration.Archs {
 		arch := arch
@@ -186,6 +187,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
+			// This should be the same across architectures
+			additionalTags = bc.Options.Tags
 
 			builtReferences = append(builtReferences, finalDigest.String())
 			imgs[arch] = img
@@ -198,6 +201,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if len(archs) > 1 {
+		bc.Options.Tags = append(bc.Options.Tags, additionalTags...)
 		finalDigest, idx, err = publishIndex(bc, imgs)
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)
