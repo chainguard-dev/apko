@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/pkg/oci"
@@ -159,6 +160,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// References, collect'em all!
 	builtReferences := []string{}
 
+	mtx := sync.Mutex{}
+
 	for _, arch := range bc.ImageConfiguration.Archs {
 		arch := arch
 		bc := *bc
@@ -185,7 +188,9 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 
 			builtReferences = append(builtReferences, finalDigest.String())
+			mtx.Lock()
 			imgs[arch] = img
+			mtx.Unlock()
 			return nil
 		})
 	}
