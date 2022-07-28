@@ -146,17 +146,17 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 
 		if errCheckFile == nil {
-			doc, err := sx.ParseInternalSBOM(opts, internalSBOMPath)
+			internalDoc, err := sx.ParseInternalSBOM(opts, internalSBOMPath)
 			if err != nil {
 				return fmt.Errorf("parsing internal sbom: %w", err)
 			}
 
 			// Copy the apk's relationships and packages into sbom
-			doc.Relationships = append(doc.Relationships, doc.Relationships...)
-			doc.Packages = append(doc.Packages, doc.Packages...)
+			doc.Relationships = append(doc.Relationships, internalDoc.Relationships...)
+			doc.Packages = append(doc.Packages, internalDoc.Packages...)
 			// Finally, we add the packages into the new SBOM
 
-			for _, ip := range doc.DocumentDescribes {
+			for _, ip := range internalDoc.DocumentDescribes {
 				// Add to the relationships list
 				doc.Relationships = append(doc.Relationships, Relationship{
 					Element: p.ID,
