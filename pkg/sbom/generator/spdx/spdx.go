@@ -183,7 +183,7 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) ([]Relatio
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, internalSBOM); err == nil {
+	if err := json.Unmarshal(data, internalSBOM); err != nil {
 		return nil, nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
 	return internalSBOM.Relationships, internalSBOM.Packages, nil
