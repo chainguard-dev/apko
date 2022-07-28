@@ -146,24 +146,22 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 
 		if errCheckFile == nil {
-			rels, internalPackages, err := sx.ParseInternalSBOM(
-				opts, internalSBOMPath,
-			)
+			doc, err := sx.ParseInternalSBOM(opts, internalSBOMPath)
 			if err != nil {
 				return fmt.Errorf("parsing internal sbom: %w", err)
 			}
 
 			// Copy the apk's relationships and packages into sbom
-			doc.Relationships = append(doc.Relationships, rels...)
-			doc.Packages = append(doc.Packages, internalPackages...)
+			doc.Relationships = append(doc.Relationships, doc.Relationships...)
+			doc.Packages = append(doc.Packages, doc.Packages...)
 			// Finally, we add the packages into the new SBOM
 
-			for _, ip := range internalPackages {
+			for _, ip := range doc.DocumentDescribes {
 				// Add to the relationships list
 				doc.Relationships = append(doc.Relationships, Relationship{
 					Element: p.ID,
 					Type:    "CONTAINS",
-					Related: ip.ID,
+					Related: ip,
 				})
 			}
 		}
@@ -177,16 +175,16 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 }
 
 // ParseInternalSBOM opens an SBOM inside apks and
-func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) ([]Relationship, []Package, error) {
+func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("opening sbom file %s: %w", path, err)
+		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
-		return nil, nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
-	return internalSBOM.Relationships, internalSBOM.Packages, nil
+	return internalSBOM, nil
 }
 
 // renderDoc marshals a document to json and writes it to disk
