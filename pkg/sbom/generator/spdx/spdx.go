@@ -140,11 +140,12 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
 		)
 
-		if _, err := os.Stat(internalSBOMPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		var errCheckFile error
+		if _, errCheckFile = os.Stat(internalSBOMPath); errCheckFile != nil && !errors.Is(errCheckFile, os.ErrNotExist) {
 			return fmt.Errorf("checking for an internal SBOM in apk fs: %w", err)
 		}
 
-		if err == nil {
+		if errCheckFile == nil {
 			rels, internalPackages, err := sx.ParseInternalSBOM(
 				opts, internalSBOMPath,
 			)
