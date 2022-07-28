@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
 
 const NOASSERTION = "NOASSERTION"
+const apkSBOMdir = "/var/lib/db/sbom"
 
 type SPDX struct{}
 
@@ -131,6 +133,39 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			Type:    "CONTAINS",
 			Related: p.ID,
 		})
+
+		// Check to see if the apk contains an sbom describing itself
+		// Check if there is an SBOM for the contents of the APK
+		internalSBOMPath := filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		)
+
+		if _, err := os.Stat(internalSBOMPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("checking for an internal SBOM in apk fs: %w", err)
+		}
+
+		if err == nil {
+			rels, internalPackages, err := sx.ParseInternalSBOM(
+				opts, internalSBOMPath,
+			)
+			if err != nil {
+				return fmt.Errorf("parsing internal sbom: %w", err)
+			}
+
+			// Copy the apk's relationships and packages into sbom
+			doc.Relationships = append(doc.Relationships, rels...)
+			doc.Packages = append(doc.Packages, internalPackages...)
+			// Finally, we add the packages into the new SBOM
+
+			for _, ip := range internalPackages {
+				// Add to the relationships list
+				doc.Relationships = append(doc.Relationships, Relationship{
+					Element: p.ID,
+					Type:    "CONTAINS",
+					Related: ip.ID,
+				})
+			}
+		}
 	}
 
 	if err := renderDoc(doc, path); err != nil {
@@ -138,6 +173,19 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	return nil
+}
+
+// ParseInternalSBOM opens an SBOM inside apks and
+func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) ([]Relationship, []Package, error) {
+	internalSBOM := &Document{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opening sbom file %s: %w", path, err)
+	}
+	if err := json.Unmarshal(data, internalSBOM); err == nil {
+		return nil, nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+	}
+	return internalSBOM.Relationships, internalSBOM.Packages, nil
 }
 
 // renderDoc marshals a document to json and writes it to disk
