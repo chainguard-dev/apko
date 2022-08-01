@@ -43,6 +43,8 @@ $ docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml
 ...
 ```
 
+The above examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
+
 Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
 
 ## Quickstart
