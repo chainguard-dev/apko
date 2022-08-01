@@ -20,7 +20,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.5.0
 	github.com/stretchr/testify v1.8.0
-	gitlab.alpinelinux.org/alpine/go v0.5.0
+	gitlab.alpinelinux.org/alpine/go v0.5.1
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/build v0.0.0-20220326001204-1a930a73d482
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
