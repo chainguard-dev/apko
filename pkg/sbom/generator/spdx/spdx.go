@@ -276,6 +276,7 @@ type Document struct {
 	DataLicense          string                `json:"dataLicense"`
 	Namespace            string                `json:"documentNamespace"`
 	DocumentDescribes    []string              `json:"documentDescribes"`
+	Files                []File                `json:"files,omitempty"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
@@ -293,20 +294,40 @@ type CreationInfo struct {
 	LicenseListVersion string   `json:"licenseListVersion"`
 }
 
+type File struct {
+	ID                string     `json:"SPDXID"`
+	Name              string     `json:"fileName"`
+	CopyrightText     string     `json:"copyrightText"`
+	NoticeText        string     `json:"noticeText,omitempty"`
+	LicenseConcluded  string     `json:"licenseConcluded"`
+	Description       string     `json:"description,omitempty"`
+	FileTypes         []string   `json:"fileTypes,omitempty"`
+	LicenseInfoInFile []string   `json:"licenseInfoInFiles"` // List of licenses
+	Checksums         []Checksum `json:"checksums"`
+}
+
 type Package struct {
-	ID               string        `json:"SPDXID"`
-	Name             string        `json:"name"`
-	Version          string        `json:"versionInfo,omitempty"`
-	FilesAnalyzed    bool          `json:"filesAnalyzed"`
-	LicenseConcluded string        `json:"licenseConcluded"`
-	LicenseDeclared  string        `json:"licenseDeclared"`
-	Description      string        `json:"description,omitempty"`
-	DownloadLocation string        `json:"downloadLocation,omitempty"`
-	Originator       string        `json:"originator,omitempty"`
-	SourceInfo       string        `json:"sourceInfo,omitempty"`
-	CopyrightText    string        `json:"copyrightText"`
-	Checksums        []Checksum    `json:"checksums"`
-	ExternalRefs     []ExternalRef `json:"externalRefs,omitempty"`
+	ID                   string                  `json:"SPDXID"`
+	Name                 string                  `json:"name"`
+	Version              string                  `json:"versionInfo,omitempty"`
+	FilesAnalyzed        bool                    `json:"filesAnalyzed"`
+	HasFiles             []string                `json:"hasFiles,omitempty"`
+	LicenseInfoFromFiles []string                `json:"licenseInfoFromFiles,omitempty"`
+	LicenseConcluded     string                  `json:"licenseConcluded"`
+	LicenseDeclared      string                  `json:"licenseDeclared"`
+	Description          string                  `json:"description,omitempty"`
+	DownloadLocation     string                  `json:"downloadLocation,omitempty"`
+	Originator           string                  `json:"originator,omitempty"`
+	SourceInfo           string                  `json:"sourceInfo,omitempty"`
+	CopyrightText        string                  `json:"copyrightText"`
+	Checksums            []Checksum              `json:"checksums"`
+	ExternalRefs         []ExternalRef           `json:"externalRefs,omitempty"`
+	VerificationCode     PackageVerificationCode `json:"packageVerificationCode,omitempty"`
+}
+
+type PackageVerificationCode struct {
+	Value         string   `json:"packageVerificationCodeValue"`
+	ExcludedFiles []string `json:"packageVerificationCodeExcludedFiles,omitempty"`
 }
 
 type Checksum struct {
