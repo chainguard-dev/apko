@@ -16,22 +16,38 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to clone the repo and use the scripts under the hack directory:
+apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not
+running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is
+to use the [OCI Container (Docker) image](https://github.com/distroless/apko):
 
 ```
-$ ./hack/make-devenv.sh
+$ docker run distroless.dev/apko version
+     _      ____    _  __   ___
+    / \    |  _ \  | |/ /  / _ \
+   / _ \   | |_) | | ' /  | | | |
+  / ___ \  |  __/  | . \  | |_| |
+ /_/   \_\ |_|     |_|\_\  \___/
+apko
 
-Welcome to the apko development environment!
-
-[apko] ❯
+GitVersion:    v0.5.0-20-g8cbefb9
+GitCommit:     8cbefb9bda9136e540193cc036067d9c3662b277
+GitTreeState:  clean
+BuildDate:     2022-07-27T21:11:55
+GoVersion:     go1.18.4
+Compiler:      gc
+Platform:      linux/arm64
 ```
 
-Install apko within the development environment using a `make` command:
+To use the examples, you'll generally want to mount your current directory into the container e.g:
+
 ```
-$ make apko && make install
+$ docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
+...
 ```
 
-Alternatively, if you're on a Mac, you might want to try [Lima](./mac/README.md).
+The above examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
+
+Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
 
 ## Quickstart
 
