@@ -16,7 +16,9 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to use the OCI Container (Docker) image:
+apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not
+running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is
+to use the [OCI Container (Docker) image](https://github.com/distroless/apko):
 
 ```
 $ docker run distroless.dev/apko version
