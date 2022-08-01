@@ -6,6 +6,14 @@ not available for mac.
 This page documents workarounds to run
 `apko` on a mac.
 
+## OCI Container (Docker)
+
+Use the [official container image](https://github.com/distroless/apko): 
+
+```
+$ docker run -v $PWD:/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
+```
+
 ## Lima
 
 We maintain an example configuration file for
