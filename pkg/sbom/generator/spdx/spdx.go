@@ -88,6 +88,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
 		Packages:      []Package{},
+		Files:         []File{},
 		Relationships: []Relationship{},
 	}
 	var imagePackage *Package
@@ -135,40 +136,46 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 
 		// Check to see if the apk contains an sbom describing itself
-		// Check if there is an SBOM for the contents of the APK
-		internalSBOMPath := filepath.Join(
-			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
-		)
-
-		var errCheckFile error
-		if _, errCheckFile = os.Stat(internalSBOMPath); errCheckFile != nil && !errors.Is(errCheckFile, os.ErrNotExist) {
-			return fmt.Errorf("checking for an internal SBOM in apk fs: %w", err)
-		}
-
-		if errCheckFile == nil {
-			internalDoc, err := sx.ParseInternalSBOM(opts, internalSBOMPath)
-			if err != nil {
-				return fmt.Errorf("parsing internal sbom: %w", err)
-			}
-
-			// Copy the apk's relationships and packages into sbom
-			doc.Relationships = append(doc.Relationships, internalDoc.Relationships...)
-			doc.Packages = append(doc.Packages, internalDoc.Packages...)
-			// Finally, we add the packages into the new SBOM
-
-			for _, ip := range internalDoc.DocumentDescribes {
-				// Add to the relationships list
-				doc.Relationships = append(doc.Relationships, Relationship{
-					Element: p.ID,
-					Type:    "CONTAINS",
-					Related: ip,
-				})
-			}
+		if err := sx.ProcessInternalApkSBOM(opts, doc, &p); err != nil {
+			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
 
 	if err := renderDoc(doc, path); err != nil {
 		return fmt.Errorf("rendering document: %w", err)
+	}
+
+	return nil
+}
+
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
+	path := filepath.Join(
+		opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+	)
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("checking for an internal SBOM in apk filesysten: %w", err)
+	}
+
+	internalDoc, err := sx.ParseInternalSBOM(opts, path)
+	if err != nil {
+		return fmt.Errorf("parsing internal sbom: %w", err)
+	}
+
+	// Copy the apk's relationships and packages into sbom
+	doc.Relationships = append(doc.Relationships, internalDoc.Relationships...)
+	doc.Packages = append(doc.Packages, internalDoc.Packages...)
+	// Finally, we add the packages into the new SBOM
+
+	for _, ip := range internalDoc.DocumentDescribes {
+		// Add to the relationships list
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: p.ID,
+			Type:    "CONTAINS",
+			Related: ip,
+		})
 	}
 
 	return nil
