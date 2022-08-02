@@ -161,20 +161,23 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
+		// TODO: Maybe don't fail if internal SBOM is not right
 		return fmt.Errorf("parsing internal sbom: %w", err)
 	}
 
 	// Copy the apk's relationships and packages into sbom
 	doc.Relationships = append(doc.Relationships, internalDoc.Relationships...)
-	doc.Packages = append(doc.Packages, internalDoc.Packages...)
-	// Finally, we add the packages into the new SBOM
 
-	for _, ip := range internalDoc.DocumentDescribes {
-		// Add to the relationships list
+	// Finally, we add the packages and files into the new SBOM
+	doc.Packages = append(doc.Packages, internalDoc.Packages...)
+	doc.Files = append(doc.Files, internalDoc.Files...)
+
+	for _, elementID := range internalDoc.DocumentDescribes {
+		// Add the described elements in the internal elements to the relationships list
 		doc.Relationships = append(doc.Relationships, Relationship{
 			Element: p.ID,
 			Type:    "CONTAINS",
-			Related: ip,
+			Related: elementID,
 		})
 	}
 
@@ -188,6 +191,7 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	if err != nil {
 		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
+
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
 		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
