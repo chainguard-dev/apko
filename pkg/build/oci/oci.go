@@ -103,6 +103,11 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
 	}
 
+	annotations := ic.Annotations
+	if ic.VCSUrl != "" {
+		annotations["org.opencontainers.image.source"] = ic.VCSUrl
+	}
+
 	if mediaType != ggcrtypes.DockerLayer && len(ic.Annotations) > 0 {
 		v1Image = mutate.Annotations(v1Image, ic.Annotations).(v1.Image)
 	}
