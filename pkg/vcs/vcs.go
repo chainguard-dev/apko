@@ -60,7 +60,17 @@ func ProbeDirForVCSUrl(startDir, toplevelDir string) (string, error) {
 	// sanitize any user authentication data from the VCS URL
 	normalizedURL.User = nil
 
-	return normalizedURL.String(), nil
+	finalURL := normalizedURL.String()
+
+	hash, err := resolveGitRevision(repo, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("resolving repo HEAD: %w", err)
+	}
+	if hash != "" {
+		finalURL = fmt.Sprintf("%s@%s", finalURL, hash)
+	}
+
+	return finalURL, nil
 }
 
 // Given a starting directory, work backwards to the current working
