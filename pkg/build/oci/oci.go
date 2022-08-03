@@ -148,10 +148,6 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		cfg.Config.WorkingDir = ic.WorkDir
 	}
 
-	if ic.VCSUrl != "" {
-		cfg.Config.Labels["org.opencontainers.image.source"] = ic.VCSUrl
-	}
-
 	if len(ic.Environment) > 0 {
 		envs := []string{}
 
