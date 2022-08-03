@@ -29,6 +29,7 @@ import (
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -181,6 +182,14 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	}
 
 	return ent.(oci.SignedImage), nil
+}
+
+func Copy(src, dst string) error {
+	logrus.Infof("Copying %s to %s", src, dst)
+	if err := crane.Copy(src, dst, crane.WithAuthFromKeychain(keychain)); err != nil {
+		return fmt.Errorf("tagging %s with tag %s: %w", src, dst, err)
+	}
+	return nil
 }
 
 // PostAttachSBOM attaches the sboms to an already published image

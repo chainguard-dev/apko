@@ -23,7 +23,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"github.com/sirupsen/logrus"
@@ -215,8 +214,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	for _, at := range additionalTags {
-		logrus.Infof("Copying %s to %s", finalDigest.Name(), at)
-		if err := crane.Copy(finalDigest.Name(), at); err != nil {
+		if err := oci.Copy(finalDigest.Name(), at); err != nil {
 			return fmt.Errorf("tagging %s with tag %s: %w", finalDigest.Name(), at, err)
 		}
 	}
