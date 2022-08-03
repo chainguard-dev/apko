@@ -109,15 +109,10 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	if opts.ImageInfo.VCSUrl != "" {
-		vcsURLRef := ExternalRef{
-			Category: "OTHER",
-			Locator:  opts.ImageInfo.VCSUrl,
-			Type:     "vcs",
-		}
 		if opts.ImageInfo.ImageDigest != "" {
-			imagePackage.ExternalRefs = append(imagePackage.ExternalRefs, vcsURLRef)
+			imagePackage.DownloadLocation = opts.ImageInfo.VCSUrl
 		} else {
-			layerPackage.ExternalRefs = append(layerPackage.ExternalRefs, vcsURLRef)
+			layerPackage.DownloadLocation = opts.ImageInfo.VCSUrl
 		}
 	}
 
@@ -403,11 +398,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	}
 
 	if opts.ImageInfo.VCSUrl != "" {
-		indexPackage.ExternalRefs = append(indexPackage.ExternalRefs, ExternalRef{
-			Category: "OTHER",
-			Locator:  opts.ImageInfo.VCSUrl,
-			Type:     "vcs",
-		})
+		indexPackage.DownloadLocation = opts.ImageInfo.VCSUrl
 	}
 
 	doc.Packages = append(doc.Packages, indexPackage)
