@@ -112,3 +112,53 @@ func ProbeDirFromPath(startingPath string) (string, error) {
 
 	return ProbeDirForVCSUrl(startingPath, toplevelDir)
 }
+
+// OpenRepository opens a repository in startDir checking every
+// parent dir until topLevelDir
+func OpenRepository(startDir, toplevelDir string) (repo *git.Repository, err error) {
+	if toplevelDir == "" {
+		toplevelDir = "/"
+	}
+
+	for l, d := range map[string]string{
+		"start": startDir, "top-level": toplevelDir,
+	} {
+		d, err := filepath.Abs(d)
+		if err != nil {
+			return nil, fmt.Errorf("resolving %s directory: %w", l, err)
+		}
+
+		fi, err := os.Stat(d)
+		if err != nil {
+			return nil, fmt.Errorf("cannot check %s directory: %w", l, err)
+		}
+
+		if !fi.IsDir() {
+			return nil, fmt.Errorf("%s path %s is not a directory", l, d)
+		}
+
+		if l == "start" {
+			startDir = d
+			continue
+		}
+		toplevelDir = d
+	}
+
+	searchPath := startDir
+
+	for {
+		if !strings.HasPrefix(searchPath, toplevelDir) {
+			return nil, fmt.Errorf("path %s is not contained by %s", searchPath, toplevelDir)
+		}
+
+		repo, err := git.PlainOpen(searchPath)
+		if err != nil {
+			if searchPath == "/" || searchPath == toplevelDir {
+				return nil, fmt.Errorf("directory %s is not in a git repository", startDir)
+			}
+			searchPath = filepath.Dir(searchPath)
+			continue
+		}
+		return repo, nil
+	}
+}
