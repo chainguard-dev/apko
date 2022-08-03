@@ -28,22 +28,17 @@ import (
 // to the toplevel directory and probe for a Git repository, returning
 // the origin URI if known.
 func ProbeDirForVCSUrl(startDir, toplevelDir string) (string, error) {
-	fi, err := os.Stat(startDir)
-	if err != nil {
-		return "", fmt.Errorf("cannot check start directory: %w", err)
-	}
+	for l, d := range map[string]string{
+		"start": startDir, "top-level": toplevelDir,
+	} {
+		fi, err := os.Stat(d)
+		if err != nil {
+			return "", fmt.Errorf("cannot check %s directory: %w", l, err)
+		}
 
-	if !fi.IsDir() {
-		return "", fmt.Errorf("starting path %s is not directory", startDir)
-	}
-
-	fi, err = os.Stat(toplevelDir)
-	if err != nil {
-		return "", fmt.Errorf("cannot check start directory: %w", err)
-	}
-
-	if !fi.IsDir() {
-		return "", fmt.Errorf("top-level path %s is not directory", toplevelDir)
+		if !fi.IsDir() {
+			return "", fmt.Errorf("%s path %s is not a directory", l, d)
+		}
 	}
 
 	searchPath := startDir
