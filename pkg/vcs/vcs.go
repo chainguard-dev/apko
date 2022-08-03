@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // Given a starting directory and toplevel directory, work backwards
@@ -89,6 +90,17 @@ func ProbeDirFromPath(startingPath string) (string, error) {
 	}
 
 	return ProbeDirForVCSUrl(startingPath, toplevelDir)
+}
+
+// resolveGitRevision resolves a git revision
+func resolveGitRevision(repo *git.Repository, revString string) (string, error) {
+	rev := plumbing.Revision(revString)
+	hash, err := repo.ResolveRevision(rev)
+	if err != nil {
+		return "", fmt.Errorf("resolving revision: %w", err)
+	}
+
+	return hash.String(), nil
 }
 
 // OpenRepository opens a repository in startDir checking every
