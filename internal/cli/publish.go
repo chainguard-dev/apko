@@ -206,17 +206,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if len(archs) > 1 {
+		bc.Options.Tags = append(bc.Options.Tags, additionalTags...)
 		finalDigest, idx, err = publishIndex(bc, imgs)
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)
 		}
 		builtReferences = append(builtReferences, finalDigest.String())
-	}
-
-	for _, at := range additionalTags {
-		if err := oci.Copy(finalDigest.Name(), at); err != nil {
-			return fmt.Errorf("tagging %s with tag %s: %w", finalDigest.Name(), at, err)
-		}
 	}
 
 	bc.Options.SBOMFormats = formats
