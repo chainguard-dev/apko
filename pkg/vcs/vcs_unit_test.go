@@ -26,38 +26,42 @@ import (
 )
 
 func createTestRepo(t *testing.T) string {
-	// This is a tarball of an empty repo with a single
+	// This is a tarball of an empty repo with two commits:
 	// Initial Commit (421a8437f04bc1693a8e45e9cb940278cabef756)
 	// Second Commit (9f7ff0afdae5d8b1cf7761369ee42b3343ba750b)
-	repoContents := `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
-AAAAAAAAAAAAAAAAAAAAAABgAP8BiBaLcAB4AAA=`
+	// and one remote:
+	// origin	git@github.com:example/example.git (fetch)
+	repoContents := `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`
 
 	tarFile, err := os.CreateTemp("", "repo-*.tar.gz")
 	require.NoError(t, err)
@@ -179,5 +183,46 @@ func TestResolveGitRevision(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, hash)
 		}
+	}
+}
+
+func TestGetRemoteURL(t *testing.T) {
+	repoDir := createTestRepo(t)
+	defer os.RemoveAll(repoDir)
+
+	repo, err := OpenRepository(repoDir, "")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		remoteName string
+		URL        string
+		shouldErr  bool
+	}{
+		{
+			// Regular remote
+			remoteName: defaultRemoteName,
+			URL:        "git+ssh://github.com/example/example.git",
+			shouldErr:  false,
+		},
+		{
+			// Empty name should default to same
+			remoteName: "",
+			URL:        "git+ssh://github.com/example/example.git",
+			shouldErr:  false,
+		},
+		{
+			// Non existing remote should fail
+			remoteName: "upstream",
+			shouldErr:  true,
+		},
+	} {
+		url, err := getRemoteURL(repo, tc.remoteName)
+		if tc.shouldErr {
+			require.Error(t, err)
+			require.Empty(t, url)
+			continue
+		}
+		require.NoError(t, err)
+		require.Equal(t, tc.URL, url)
 	}
 }
