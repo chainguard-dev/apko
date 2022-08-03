@@ -25,6 +25,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
+const defaultRemoteName = "origin"
+
 // Given a starting directory and toplevel directory, work backwards
 // to the toplevel directory and probe for a Git repository, returning
 // the origin URI if known.
@@ -34,43 +36,20 @@ func ProbeDirForVCSUrl(startDir, toplevelDir string) (string, error) {
 		return "", fmt.Errorf("opening git repository: %w", err)
 	}
 
-	remote, err := repo.Remote("origin")
+	vcsURL, err := getRemoteURL(repo, defaultRemoteName)
 	if err != nil {
-		return "", fmt.Errorf("unable to determine upstream git vcs url: %w", err)
+		return "", fmt.Errorf("fetching remote URL: %w", err)
 	}
-
-	remoteConfig := remote.Config()
-	remoteURL := remoteConfig.URLs[0]
-
-	normalizedURL, err := url.Parse(remoteURL)
-	if err != nil {
-		// URL is most likely a git+ssh:// type URL, represented
-		// in the way git itself does so.
-
-		// Take the user@host:repo and turn it into user@host/repo.
-		remoteURL = strings.Replace(remoteURL, ":", "/", 1)
-		remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
-
-		normalizedURL, err = url.Parse(remoteURL)
-		if err != nil {
-			return "", fmt.Errorf("unable to parse %s as a git vcs url: %w", remoteURL, err)
-		}
-	}
-
-	// sanitize any user authentication data from the VCS URL
-	normalizedURL.User = nil
-
-	finalURL := normalizedURL.String()
 
 	hash, err := resolveGitRevision(repo, "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("resolving repo HEAD: %w", err)
 	}
 	if hash != "" {
-		finalURL = fmt.Sprintf("%s@%s", finalURL, hash)
+		vcsURL = fmt.Sprintf("%s@%s", vcsURL, hash)
 	}
 
-	return finalURL, nil
+	return vcsURL, nil
 }
 
 // Given a starting directory, work backwards to the current working
@@ -100,6 +79,39 @@ func ProbeDirFromPath(startingPath string) (string, error) {
 	}
 
 	return ProbeDirForVCSUrl(startingPath, toplevelDir)
+}
+
+func getRemoteURL(repo *git.Repository, remoteName string) (string, error) {
+	if remoteName == "" {
+		remoteName = defaultRemoteName
+	}
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return "", fmt.Errorf("unable to determine upstream git vcs url: %w", err)
+	}
+
+	remoteConfig := remote.Config()
+	remoteURL := remoteConfig.URLs[0]
+
+	normalizedURL, err := url.Parse(remoteURL)
+	if err != nil {
+		// URL is most likely a git+ssh:// type URL, represented
+		// in the way git itself does so.
+
+		// Take the user@host:repo and turn it into user@host/repo.
+		remoteURL = strings.Replace(remoteURL, ":", "/", 1)
+		remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
+
+		normalizedURL, err = url.Parse(remoteURL)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse %s as a git vcs url: %w", remoteURL, err)
+		}
+	}
+
+	// sanitize any user authentication data from the VCS URL
+	normalizedURL.User = nil
+
+	return normalizedURL.String(), nil
 }
 
 // resolveGitRevision resolves a git revision
