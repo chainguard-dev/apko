@@ -28,60 +28,38 @@ import (
 // to the toplevel directory and probe for a Git repository, returning
 // the origin URI if known.
 func ProbeDirForVCSUrl(startDir, toplevelDir string) (string, error) {
-	for l, d := range map[string]string{
-		"start": startDir, "top-level": toplevelDir,
-	} {
-		fi, err := os.Stat(d)
-		if err != nil {
-			return "", fmt.Errorf("cannot check %s directory: %w", l, err)
-		}
+	repo, err := OpenRepository(startDir, toplevelDir)
+	if err != nil {
+		return "", fmt.Errorf("opening git repository: %w", err)
+	}
 
-		if !fi.IsDir() {
-			return "", fmt.Errorf("%s path %s is not a directory", l, d)
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		return "", fmt.Errorf("unable to determine upstream git vcs url: %w", err)
+	}
+
+	remoteConfig := remote.Config()
+	remoteURL := remoteConfig.URLs[0]
+
+	normalizedURL, err := url.Parse(remoteURL)
+	if err != nil {
+		// URL is most likely a git+ssh:// type URL, represented
+		// in the way git itself does so.
+
+		// Take the user@host:repo and turn it into user@host/repo.
+		remoteURL = strings.Replace(remoteURL, ":", "/", 1)
+		remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
+
+		normalizedURL, err = url.Parse(remoteURL)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse %s as a git vcs url: %w", remoteURL, err)
 		}
 	}
 
-	searchPath := startDir
+	// sanitize any user authentication data from the VCS URL
+	normalizedURL.User = nil
 
-	for {
-		if !strings.HasPrefix(searchPath, toplevelDir) {
-			return "", fmt.Errorf("path %s is not contained by %s", searchPath, toplevelDir)
-		}
-
-		repo, err := git.PlainOpen(searchPath)
-		if err != nil {
-			searchPath = filepath.Dir(searchPath)
-			continue
-		}
-
-		remote, err := repo.Remote("origin")
-		if err != nil {
-			return "", fmt.Errorf("unable to determine upstream git vcs url: %w", err)
-		}
-
-		remoteConfig := remote.Config()
-		remoteURL := remoteConfig.URLs[0]
-
-		normalizedURL, err := url.Parse(remoteURL)
-		if err != nil {
-			// URL is most likely a git+ssh:// type URL, represented
-			// in the way git itself does so.
-
-			// Take the user@host:repo and turn it into user@host/repo.
-			remoteURL = strings.Replace(remoteURL, ":", "/", 1)
-			remoteURL = fmt.Sprintf("git+ssh://%s", remoteURL)
-
-			normalizedURL, err = url.Parse(remoteURL)
-			if err != nil {
-				return "", fmt.Errorf("unable to parse %s as a git vcs url: %w", remoteURL, err)
-			}
-		}
-
-		// sanitize any user authentication data from the VCS URL
-		normalizedURL.User = nil
-
-		return normalizedURL.String(), nil
-	}
+	return normalizedURL.String(), nil
 }
 
 // Given a starting directory, work backwards to the current working
