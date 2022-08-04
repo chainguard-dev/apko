@@ -116,3 +116,33 @@ func TestStringToIdentifier(t *testing.T) {
 		require.True(t, validIDRe.MatchString(stringToIdentifier(tc)))
 	}
 }
+
+func TestSourcePackage(t *testing.T) {
+	repo := "github.com/distroless/example.git"
+	commitHash := "868f0dc23e721039f9669b56d01ea4b897f2fb24"
+	vcsURL := fmt.Sprintf("git+ssh://%s@%s", repo, commitHash)
+	doc := Document{}
+	imagePackage := Package{
+		ID: "dummy-id",
+	}
+
+	// Call the function
+	addSourcePackage(vcsURL, &doc, &imagePackage)
+
+	// Verify the package is added
+	require.Len(t, doc.Packages, 1)
+
+	// Verify the fields are set
+	require.Equal(t, repo, doc.Packages[0].Name)
+	require.Equal(t, commitHash, doc.Packages[0].Version)
+	require.NotNil(t, doc.Packages[0].Checksums)
+	require.Len(t, doc.Packages[0].Checksums, 1)
+	require.Equal(t, doc.Packages[0].Checksums[0].Value, commitHash)
+	require.Equal(t, doc.Packages[0].Checksums[0].Algorithm, "SHA1")
+
+	// Check the relationship is right
+	require.Len(t, doc.Relationships, 1)
+	require.Equal(t, "GENERATED_FROM", doc.Relationships[0].Type)
+	require.Equal(t, imagePackage.ID, doc.Relationships[0].Element)
+	require.Equal(t, doc.Packages[0].ID, doc.Relationships[0].Related)
+}

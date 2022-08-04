@@ -63,7 +63,7 @@ func stringToIdentifier(in string) (out string) {
 	})
 }
 
-// Generate writes a cyclondx sbom in path
+// Generate writes an SPDX SBOM in path
 func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	// The default document name makes no attempt to avoid
 	// clashes. Ensuring a unique name requires a digest
@@ -110,9 +110,9 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	if opts.ImageInfo.VCSUrl != "" {
 		if opts.ImageInfo.ImageDigest != "" {
-			imagePackage.DownloadLocation = opts.ImageInfo.VCSUrl
+			addSourcePackage(opts.ImageInfo.VCSUrl, doc, imagePackage)
 		} else {
-			layerPackage.DownloadLocation = opts.ImageInfo.VCSUrl
+			addSourcePackage(opts.ImageInfo.VCSUrl, doc, layerPackage)
 		}
 	}
 
@@ -397,10 +397,6 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		},
 	}
 
-	if opts.ImageInfo.VCSUrl != "" {
-		indexPackage.DownloadLocation = opts.ImageInfo.VCSUrl
-	}
-
 	doc.Packages = append(doc.Packages, indexPackage)
 	doc.DocumentDescribes = append(doc.DocumentDescribes, indexPackage.ID)
 
@@ -432,6 +428,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				},
 			},
 		})
+
 		doc.Relationships = append(doc.Relationships, Relationship{
 			Element: stringToIdentifier(indexPackage.ID),
 			Type:    "VARIANT_OF",
@@ -439,9 +436,53 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		})
 	}
 
+	addSourcePackage(opts.ImageInfo.VCSUrl, doc, &indexPackage)
+
 	if err := renderDoc(doc, path); err != nil {
 		return fmt.Errorf("rendering document: %w", err)
 	}
 
 	return nil
+}
+
+// addSourcePackage creates a package describing the source code
+func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
+	version := ""
+	checksums := []Checksum{}
+	packageName := vcsURL
+	if url, commitHash, found := strings.Cut(vcsURL, "@"); found {
+		checksums = append(checksums, Checksum{
+			Algorithm: "SHA1",
+			Value:     commitHash,
+		})
+		version = commitHash
+		packageName = url
+	}
+
+	// Trim the schemas from the url for the package name
+	packageName = strings.TrimPrefix(packageName, "git+ssh://")
+	packageName = strings.TrimPrefix(packageName, "git://")
+	packageName = strings.TrimPrefix(packageName, "https://")
+
+	sourcePackage := Package{
+		ID:                   stringToIdentifier(vcsURL),
+		Name:                 packageName,
+		Version:              version,
+		FilesAnalyzed:        false,
+		HasFiles:             []string{},
+		LicenseInfoFromFiles: []string{},
+		LicenseConcluded:     NOASSERTION,
+		LicenseDeclared:      NOASSERTION,
+		Description:          "Image configuration source",
+		DownloadLocation:     vcsURL,
+		Checksums:            checksums,
+		ExternalRefs:         []ExternalRef{},
+		VerificationCode:     PackageVerificationCode{},
+	}
+	doc.Packages = append(doc.Packages, sourcePackage)
+	doc.Relationships = append(doc.Relationships, Relationship{
+		Element: parent.ID,
+		Type:    "GENERATED_FROM",
+		Related: sourcePackage.ID,
+	})
 }
