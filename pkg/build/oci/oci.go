@@ -105,12 +105,15 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	}
 
 	annotations := ic.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
 	if ic.VCSUrl != "" {
 		annotations["org.opencontainers.image.source"] = ic.VCSUrl
 	}
 
-	if mediaType != ggcrtypes.DockerLayer && len(ic.Annotations) > 0 {
-		v1Image = mutate.Annotations(v1Image, ic.Annotations).(v1.Image)
+	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
+		v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
 	}
 
 	cfg, err := v1Image.ConfigFile()
