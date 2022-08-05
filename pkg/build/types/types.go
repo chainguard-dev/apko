@@ -15,6 +15,7 @@
 package types
 
 import (
+	"runtime"
 	"sort"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -217,6 +218,10 @@ func ParseArchitecture(s string) Architecture {
 func ParseArchitectures(in []string) []Architecture {
 	if len(in) == 1 && in[0] == "all" {
 		return AllArchs
+	}
+
+	if len(in) == 1 && in[0] == "host" {
+		in[0] = runtime.GOARCH
 	}
 
 	uniq := map[Architecture]struct{}{}
