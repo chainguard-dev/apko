@@ -16,72 +16,56 @@ package vfs
 
 import (
 	"io"
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDirFS(t *testing.T) {
 	dir, err := DirFS("testdata")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	dentry, err := dir.ReadDir(".")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.Equal(t, len(dentry), 1, "There should only be one directory entry")
 	assert.Equal(t, dentry[0].Name(), "etc", "That directory entry should be named etc")
 
 	dentry, err = dir.ReadDir("./etc")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.Equal(t, len(dentry), 1, "etc/ should only have one child entry")
 	assert.Equal(t, dentry[0].Name(), "motd", "That directory entry should be named motd")
 
 	st, err := dir.Stat("./etc")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.Equal(t, st.IsDir(), true, "etc/ is a directory")
 
 	st, err = dir.Stat("./etc/motd")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.Equal(t, st.IsDir(), false, "etc/motd is a normal file")
 
 	inF, err := dir.Open("./etc/motd")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer inF.Close()
 
 	data, err := io.ReadAll(inF)
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.Equal(t, data, []byte{'H', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', '\n'}, "motd should return Hello world")
 
 	otherdata, err := dir.ReadFile("./etc/motd")
+	require.NoError(t, err)
 	assert.Equal(t, data, otherdata, "dir.ReadFile behavior should match os.ReadFile")
 
 	outF, err := dir.Create("./etc/motd2")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer outF.Close()
 	defer dir.Remove("./etc/motd2")
 
-	if _, err := outF.Write(data); err != nil {
-		log.Fatal(err)
-	}
+	_, err = outF.Write(data)
+	require.NoError(t, err)
 }
