@@ -195,6 +195,10 @@ func (vfs *VFS) Stat(path string) (os.FileInfo, error) {
 	return vfs.FS.Stat(path)
 }
 
+func (vfs *VFS) Create(path string) (fs.File, error) {
+	return vfs.FS.Create(path)
+}
+
 func (vfs *VFS) Open(path string) (fs.File, error) {
 	return vfs.FS.Open(path)
 }
@@ -226,6 +230,14 @@ func (vfs *VFS) ReadDir(path string) ([]fs.DirEntry, error) {
 	}
 
 	return out, nil
+}
+
+func (vfs *VFS) Chmod(path string, mode fs.FileMode) error {
+	return vfs.Root.Chmod(path, mode)
+}
+
+func (vfs *VFS) Chown(path string, uid, gid uint32) error {
+	return vfs.Root.Chown(path, uid, gid)
 }
 
 func New(base BaseFS) (*VFS, error) {
