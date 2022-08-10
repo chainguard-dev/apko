@@ -180,6 +180,8 @@ type BaseFS interface {
 	fs.StatFS
 
 	Create(path string) (io.WriteCloser, error)
+	Remove(path string) error
+	RemoveAll(path string) error
 }
 
 type VFS struct {

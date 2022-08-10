@@ -52,3 +52,11 @@ func (dir dirFS) ReadFile(path string) ([]byte, error) {
 func (dir dirFS) Stat(path string) (fs.FileInfo, error) {
 	return os.Stat(dir.finalPath(path))
 }
+
+func (dir dirFS) Remove(path string) error {
+	return os.Remove(dir.finalPath(path))
+}
+
+func (dir dirFS) RemoveAll(path string) error {
+	return os.RemoveAll(dir.finalPath(path))
+}
