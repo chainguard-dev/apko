@@ -35,11 +35,19 @@ type INode struct {
 func parseElements(path string) (string, string, bool) {
 	pathElements := filepath.SplitList(path)
 	currentElement := pathElements[0]
-	otherElements := filepath.Join(pathElements[1:]...)
 
+	if len(pathElements) == 1 {
+		return currentElement, "", true
+	}
+
+	otherElements := filepath.Join(pathElements[1:]...)
 	if pathElements[0] == "." {
 		currentElement = pathElements[1]
-		otherElements = filepath.Join(pathElements[2:]...)
+		otherElements = ""
+
+		if len(pathElements) > 2 {
+			otherElements = filepath.Join(pathElements[2:]...)
+		}
 	}
 
 	return currentElement, otherElements, len(pathElements) == 1
