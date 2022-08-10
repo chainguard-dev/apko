@@ -479,6 +479,25 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		ExternalRefs:         []ExternalRef{},
 		VerificationCode:     PackageVerificationCode{},
 	}
+
+	// If this is a github package, add a purl to it:
+	if strings.HasPrefix(packageName, "github.com/") {
+		slug := strings.TrimPrefix(packageName, "github.com/")
+		org, user, ok := strings.Cut(slug, "/")
+		if ok {
+			sourcePackage.ExternalRefs = []ExternalRef{
+				{
+					Category: "PACKAGE_MANAGER",
+					Type:     "purl",
+					Locator: purl.NewPackageURL(
+						purl.TypeGithub, org, strings.TrimSuffix(user, ".git"), version,
+						nil, "",
+					).String(),
+				},
+			}
+		}
+	}
+
 	doc.Packages = append(doc.Packages, sourcePackage)
 	doc.Relationships = append(doc.Relationships, Relationship{
 		Element: parent.ID,
