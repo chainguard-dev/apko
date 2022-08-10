@@ -177,6 +177,8 @@ type BaseFS interface {
 	fs.ReadDirFS
 	fs.ReadFileFS
 	fs.StatFS
+
+	Create(path string) (fs.File, error)
 }
 
 type VFS struct {
