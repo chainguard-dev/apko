@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func (dir dirFS) finalPath(path string) string {
 	return filepath.Join(string(dir), path)
 }
 
-func (dir dirFS) Create(path string) (fs.File, error) {
+func (dir dirFS) Create(path string) (io.WriteCloser, error) {
 	return os.Create(dir.finalPath(path))
 }
 

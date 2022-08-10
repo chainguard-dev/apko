@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -178,7 +179,7 @@ type BaseFS interface {
 	fs.ReadFileFS
 	fs.StatFS
 
-	Create(path string) (fs.File, error)
+	Create(path string) (io.WriteCloser, error)
 }
 
 type VFS struct {
@@ -195,7 +196,7 @@ func (vfs *VFS) Stat(path string) (os.FileInfo, error) {
 	return vfs.FS.Stat(path)
 }
 
-func (vfs *VFS) Create(path string) (fs.File, error) {
+func (vfs *VFS) Create(path string) (io.WriteCloser, error) {
 	return vfs.FS.Create(path)
 }
 
