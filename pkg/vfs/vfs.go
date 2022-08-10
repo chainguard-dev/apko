@@ -139,7 +139,7 @@ func (i *INode) Chown(path string, uid, gid uint32) error {
 }
 
 func (i INode) IsDir() bool {
-	return i.Mode() & fs.ModeDir == fs.ModeDir
+	return i.Mode()&fs.ModeDir == fs.ModeDir
 }
 
 func (i INode) Mode() fs.FileMode {
