@@ -15,8 +15,8 @@
 package vfs
 
 import (
-	"testing"
 	"syscall"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,6 +77,7 @@ func TestVFS(t *testing.T) {
 	require.Equal(t, st.Gid, uint32(65532), "Gid must be 65532")
 
 	err = vfs.Chmod("./etc/motd", 0755)
+	require.NoError(t, err)
 
 	fi, err = vfs.Stat("./etc/motd")
 	require.NoError(t, err)
@@ -84,5 +85,5 @@ func TestVFS(t *testing.T) {
 	st, ok = fi.Sys().(*syscall.Stat_t)
 	require.True(t, ok, "must present a Stat_t")
 
-	require.Equal(t, st.Mode & 0755, uint32(0755), "must have mode 0755")
+	require.Equal(t, st.Mode&0755, uint32(0755), "must have mode 0755")
 }
