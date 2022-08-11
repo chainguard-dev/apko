@@ -129,6 +129,15 @@ func TestSourcePackage(t *testing.T) {
 	// Call the function
 	addSourcePackage(vcsURL, &doc, &imagePackage)
 
+	// Verify the purl
+	require.Len(t, doc.Packages[0].ExternalRefs, 1)
+	require.Equal(t, doc.Packages[0].ExternalRefs[0].Category, "PACKAGE_MANAGER")
+	require.Equal(t, doc.Packages[0].ExternalRefs[0].Type, "purl")
+	require.Equal(
+		t, doc.Packages[0].ExternalRefs[0].Locator,
+		"pkg:github/distroless/example@868f0dc23e721039f9669b56d01ea4b897f2fb24",
+	)
+
 	// Verify the package is added
 	require.Len(t, doc.Packages, 1)
 
