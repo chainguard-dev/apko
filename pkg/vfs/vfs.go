@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -28,12 +29,12 @@ import (
 // otherwise be represented by a traditional inode on disk.
 type INode struct {
 	Filename      string
-	Children      map[string]INode
+	Children      map[string]*INode
 	UnderlayINode syscall.Stat_t
 }
 
 func parseElements(path string) (string, string, bool) {
-	pathElements := filepath.SplitList(path)
+	pathElements := strings.Split(path, "/")
 	currentElement := pathElements[0]
 
 	if len(pathElements) == 1 {
@@ -58,7 +59,15 @@ func (i *INode) walk(path string) (*INode, error) {
 
 	// We are at the end of the path, return ourselves.
 	if terminated {
-		return i, nil
+		if currentElement == "" {
+			return i, nil
+		}
+
+		if child, ok := i.Children[currentElement]; ok {
+			return child, nil
+		}
+
+		return nil, fmt.Errorf("no underlay inode found")
 	}
 
 	// We are not at the end of the path, traverse downward.
@@ -88,7 +97,17 @@ func (i *INode) Create(path string) (*INode, error) {
 
 	// We are at the end of the path, return ourselves.
 	if terminated {
-		return i, nil
+		if child, ok := i.Children[currentElement]; ok {
+			return child, nil
+		}
+
+		if i.Children == nil {
+			i.Children = make(map[string]*INode)
+		}
+
+		child := &INode{Filename: currentElement}
+		i.Children[currentElement] = child
+		return child, nil
 	}
 
 	// We are not at the end of the path, traverse downward.
@@ -98,7 +117,11 @@ func (i *INode) Create(path string) (*INode, error) {
 
 	// We do not yet have an overlay INode, create one and
 	// continue downward.
-	child := INode{}
+	if i.Children == nil {
+		i.Children = make(map[string]*INode)
+	}
+
+	child := &INode{Filename: currentElement}
 	i.Children[currentElement] = child
 	return child.Create(otherElements)
 }
@@ -143,6 +166,7 @@ func (i *INode) Chown(path string, uid, gid uint32) error {
 
 	node.UnderlayINode.Uid = uid
 	node.UnderlayINode.Gid = gid
+
 	return nil
 }
 
@@ -194,7 +218,7 @@ type BaseFS interface {
 
 type VFS struct {
 	FS   BaseFS
-	Root INode
+	Root *INode
 }
 
 func (vfs *VFS) Stat(path string) (os.FileInfo, error) {
@@ -224,9 +248,7 @@ func (vfs *VFS) ReadDir(path string) ([]fs.DirEntry, error) {
 		return []fs.DirEntry{}, err
 	}
 
-	basePath := filepath.Dir(path)
-
-	baseINode, err := vfs.Root.walk(basePath)
+	baseINode, err := vfs.Root.walk(path)
 	if err != nil {
 		return de, nil
 	}
@@ -254,7 +276,7 @@ func (vfs *VFS) Chown(path string, uid, gid uint32) error {
 func New(base BaseFS) (*VFS, error) {
 	return &VFS{
 		FS: base,
-		Root: INode{
+		Root: &INode{
 			Filename: ".",
 		},
 	}, nil
