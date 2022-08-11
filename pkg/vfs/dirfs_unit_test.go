@@ -68,4 +68,8 @@ func TestDirFS(t *testing.T) {
 
 	_, err = outF.Write(data)
 	require.NoError(t, err)
+
+	moredata, err := dir.ReadFile("./etc/motd2")
+	require.NoError(t, err)
+	assert.Equal(t, data, moredata, "motd2 should match motd")
 }
