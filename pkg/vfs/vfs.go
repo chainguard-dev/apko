@@ -33,6 +33,9 @@ type INode struct {
 	UnderlayINode syscall.Stat_t
 }
 
+// parseElements parses a path into components, and returns the current
+// path component, followed by the remaining path components, and a hint
+// as to whether or not the path list is terminated or not.
 func parseElements(path string) (string, string, bool) {
 	pathElements := strings.Split(path, "/")
 	currentElement := pathElements[0]
@@ -203,8 +206,8 @@ func (i INode) Type() fs.FileMode {
 	return i.Mode()
 }
 
-// A VFS is an overlay virtual filesystem which tracks an underlying
-// io/fs.FS.
+// BaseFS is the required interfaces for an underlay filesystem
+// which is used with VFS.
 type BaseFS interface {
 	fs.FS
 	fs.ReadDirFS
@@ -216,6 +219,12 @@ type BaseFS interface {
 	RemoveAll(path string) error
 }
 
+// VFS is an overlay virtual filesystem which tracks an underlying
+// BaseFS.
+//
+// It allows for things like permission and ownership changes that
+// do not require physical root access, because it is tracked at
+// the VFS level instead.
 type VFS struct {
 	FS   BaseFS
 	Root *INode
