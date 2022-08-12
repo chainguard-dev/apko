@@ -1,6 +1,6 @@
-# apko: APK-based OCI image builder
+# apko: apk-based OCI image builder
 
-Build and publish [OCI container images](https://opencontainers.org/) built from [APK](https://wiki.alpinelinux.org/wiki/Package_management) packages.
+Build and publish [OCI container images](https://opencontainers.org/) built from [apk](https://wiki.alpinelinux.org/wiki/Package_management) packages.
 
 apko has the following key features:
 
@@ -16,12 +16,12 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not
-running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is
-to use the [OCI Container (Docker) image](https://github.com/distroless/apko):
+apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to use the [OCI Container (Docker) image](https://github.com/distroless/apko):
 
+```shell
+docker run distroless.dev/apko version
 ```
-$ docker run distroless.dev/apko version
+```
      _      ____    _  __   ___
     / \    |  _ \  | |/ /  / _ \
    / _ \   | |_) | | ' /  | | | |
@@ -29,23 +29,22 @@ $ docker run distroless.dev/apko version
  /_/   \_\ |_|     |_|\_\  \___/
 apko
 
-GitVersion:    v0.5.0-20-g8cbefb9
-GitCommit:     8cbefb9bda9136e540193cc036067d9c3662b277
+GitVersion:    v0.5.0-67-g9084217
+GitCommit:     9084217c907232b8c0bb87fd99c3e65eaa581a5b
 GitTreeState:  clean
-BuildDate:     2022-07-27T21:11:55
-GoVersion:     go1.18.4
+BuildDate:     '1970-01-01T00:00:00Z'
+GoVersion:     go1.18.5
 Compiler:      gc
-Platform:      linux/arm64
+Platform:      linux/amd64
 ```
 
 To use the examples, you'll generally want to mount your current directory into the container e.g:
 
-```
-$ docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
-...
+```shell
+docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
 
-The above examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
+These examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
 
 Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
 
@@ -69,8 +68,10 @@ environment:
 ```
 We can build this with apko from any environment with apk tooling:
 
+```shell
+apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
-$ apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
+```
 ...
 2022/04/08 13:22:31 apko (aarch64): generating SBOM
 2022/04/08 13:22:31 building OCI image from layer '/tmp/apko-3027985148.tar.gz'
@@ -79,26 +80,45 @@ $ apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 2022/04/08 13:22:31 output OCI image file to apko-alpine.tar
 ```
 
-And load it into a Docker environment:
+or, with Docker:
 
+```shell
+docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
-$ docker load < apko-alpine.tar
+
+You can then load the generated tar image into a Docker environment:
+
+```shell
+docker load < apko-alpine.tar
+```
+```shell
 Loaded image: apko-alpine:test
-$ docker run -it apko-alpine:test
+```
+```shell
+docker run -it apko-alpine:test
+```
+```
 e289dc84c4ad:/# echo boo!
 boo!
 ```
 
-Or publish the image directly to a registry.
+You can also publish the image directly to a registry:
 
+```shell
+apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
 ```
-$ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
-...
+
+See the [docs](./docs/apko_file.md) for details of the file format and the [examples directory](./examples) for more, err, examples!
+
+## Debugging apko Builds
+
+To include debug-level information on apko builds, add `--debug` to your build command:
+
+```shell
+docker run --rm -v ${PWD}:/work distroless.dev/apko build --debug \
+  apko.yaml hello-minicli:test hello-minicli.tar \
+  -k melange.rsa.pub
 ```
-
-See the [docs](./docs/apko_file.md) for details of the file format and the [examples
-directory](./examples) for more, err, examples!
-
 
 ## Why
 
