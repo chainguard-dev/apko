@@ -102,7 +102,7 @@ e289dc84c4ad:/# echo boo!
 boo!
 ```
 
-You can slo publish the image directly to a registry:
+You can also publish the image directly to a registry:
 
 ```shell
 apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
