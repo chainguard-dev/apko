@@ -55,7 +55,7 @@ func TestDirFS(t *testing.T) {
 	data, err := io.ReadAll(inF)
 	require.NoError(t, err)
 
-	assert.Equal(t, data, []byte{'H', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', '\n'}, "motd should return Hello world")
+	assert.Equal(t, data, []byte("Hello world\n"), "motd should return Hello world")
 
 	otherdata, err := dir.ReadFile("./etc/motd")
 	require.NoError(t, err)
