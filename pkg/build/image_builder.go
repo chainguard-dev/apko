@@ -78,7 +78,7 @@ func (di *defaultBuildImplementation) UpdateLdconfig(o *options.Options, e *exec
 	}
 
 	// use proot + qemu to run ldconfig
-	if err := e.ExecuteChroot("/sbin/ldconfig", "--verbose"); err != nil {
+	if err := e.ExecuteChroot("/sbin/ldconfig", "-v"); err != nil {
 		return fmt.Errorf("failed to run ldconfig: %w", err)
 	}
 
