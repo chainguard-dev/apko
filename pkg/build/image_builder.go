@@ -63,3 +63,24 @@ func (di *defaultBuildImplementation) InstallBusyboxSymlinks(o *options.Options,
 
 	return nil
 }
+
+// Runs ldconfig, if appropriate.
+func (di *defaultBuildImplementation) UpdateLdconfig(o *options.Options, e *exec.Executor) error {
+	path := filepath.Join(o.WorkDir, "sbin", "ldconfig")
+
+	_, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return err
+	}
+
+	// use proot + qemu to run ldconfig
+	if err := e.ExecuteChroot("/sbin/ldconfig", "-v", "/lib"); err != nil {
+		return fmt.Errorf("failed to run ldconfig: %w", err)
+	}
+
+	return nil
+}

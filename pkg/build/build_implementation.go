@@ -45,6 +45,7 @@ type buildImplementation interface {
 	BuildTarball(*options.Options) (string, error)
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
+	UpdateLdconfig(*options.Options, *exec.Executor) error
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
 	MutatePaths(*options.Options, *types.ImageConfiguration) error
@@ -216,6 +217,11 @@ func buildImage(
 
 	if err := di.MutatePaths(o, ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
+	}
+
+	// maybe run ldconfig to update it (e.g. on glibc)
+	if err := di.UpdateLdconfig(o, e); err != nil {
+		return fmt.Errorf("failed to update ldconfig: %w", err)
 	}
 
 	// maybe install busybox symlinks
