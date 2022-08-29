@@ -74,7 +74,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
 		Name:    documentName,
-		Version: "SPDX-2.2",
+		Version: "SPDX-2.3",
 		CreationInfo: CreationInfo{
 			Created: opts.ImageInfo.SourceDateEpoch.Format(time.RFC3339),
 			Creators: []string{
@@ -174,6 +174,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		LicenseDeclared:  NOASSERTION,
 		DownloadLocation: NOASSERTION,
 		CopyrightText:    NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
 		Description:      "apko container image",
 		Checksums: []Checksum{
@@ -184,7 +185,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
+				Category: "PACKAGE-MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
@@ -219,7 +220,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
+				Category: "PACKAGE-MANAGER",
 				Locator: purl.NewPackageURL(
 					"apk", opts.OS.ID, pkg.Name, pkg.Version,
 					purl.QualifiersFromMap(
@@ -251,7 +252,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
+				Category: "PACKAGE-MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
@@ -315,6 +316,7 @@ type Package struct {
 	Originator           string                  `json:"originator,omitempty"`
 	SourceInfo           string                  `json:"sourceInfo,omitempty"`
 	CopyrightText        string                  `json:"copyrightText"`
+	PrimaryPurpose       string                  `json:"primaryPackagePurpose,omitempty"`
 	Checksums            []Checksum              `json:"checksums"`
 	ExternalRefs         []ExternalRef           `json:"externalRefs,omitempty"`
 	VerificationCode     PackageVerificationCode `json:"packageVerificationCode,omitempty"`
@@ -353,7 +355,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
 		Name:    documentName,
-		Version: "SPDX-2.2",
+		Version: "SPDX-2.3",
 		CreationInfo: CreationInfo{
 			Created: opts.ImageInfo.SourceDateEpoch.Format(time.RFC3339),
 			Creators: []string{
@@ -379,6 +381,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		SourceInfo:       "Generated at image build time by apko",
 		CopyrightText:    NOASSERTION,
 		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		Checksums: []Checksum{
 			{
 				Algorithm: "SHA256",
@@ -387,7 +390,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
+				Category: "PACKAGE-MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.DeepCopy().String(),
@@ -411,6 +414,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			LicenseDeclared:  NOASSERTION,
 			CopyrightText:    NOASSERTION,
 			DownloadLocation: NOASSERTION,
+			PrimaryPurpose:   "CONTAINER",
 			Checksums: []Checksum{
 				{
 					Algorithm: "SHA256",
@@ -419,7 +423,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			},
 			ExternalRefs: []ExternalRef{
 				{
-					Category: "PACKAGE_MANAGER",
+					Category: "PACKAGE-MANAGER",
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
@@ -473,6 +477,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		LicenseInfoFromFiles: []string{},
 		LicenseConcluded:     NOASSERTION,
 		LicenseDeclared:      NOASSERTION,
+		PrimaryPurpose:       "SOURCE",
 		Description:          "Image configuration source",
 		DownloadLocation:     vcsURL,
 		Checksums:            checksums,
@@ -487,7 +492,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{
 				{
-					Category: "PACKAGE_MANAGER",
+					Category: "PACKAGE-MANAGER",
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeGithub, org, strings.TrimSuffix(user, ".git"), version,
