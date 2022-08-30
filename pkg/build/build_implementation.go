@@ -219,14 +219,14 @@ func buildImage(
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	// maybe run ldconfig to update it (e.g. on glibc)
-	if err := di.UpdateLdconfig(o, e); err != nil {
-		return fmt.Errorf("failed to update ldconfig: %w", err)
-	}
-
 	// maybe install busybox symlinks
 	if err := di.InstallBusyboxSymlinks(o, e); err != nil {
 		return fmt.Errorf("failed to install busybox symlinks: %w", err)
+	}
+
+	// maybe run ldconfig to update it (e.g. on glibc)
+	if err := di.UpdateLdconfig(o, e); err != nil {
+		return fmt.Errorf("failed to update ldconfig: %w", err)
 	}
 
 	if err := di.GenerateOSRelease(o, ic); err != nil {
