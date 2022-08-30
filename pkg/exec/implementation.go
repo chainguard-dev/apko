@@ -29,13 +29,15 @@ type executorImplementation interface {
 
 type defaultBuildImplementation struct{}
 
-func monitorPipe(p io.ReadCloser, logger *logrus.Entry) {
+func monitorPipe(p io.ReadCloser, logger *logrus.Entry, finish chan struct{}) {
 	defer p.Close()
 
 	scanner := bufio.NewScanner(p)
 	for scanner.Scan() {
 		logger.Debugf("%s", scanner.Text())
 	}
+
+	finish <- struct{}{}
 }
 
 // Run
@@ -59,12 +61,18 @@ func (di *defaultBuildImplementation) Run(
 		return err
 	}
 
-	go monitorPipe(stdout, logger)
-	go monitorPipe(stderr, logger)
+	stdout_finish := make(chan struct{})
+	stderr_finish := make(chan struct{})
+
+	go monitorPipe(stdout, logger, stdout_finish)
+	go monitorPipe(stderr, logger, stderr_finish)
 
 	if err := cmd.Wait(); err != nil {
 		return err
 	}
+
+	<- stdout_finish
+	<- stderr_finish
 
 	return nil
 }
