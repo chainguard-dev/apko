@@ -61,18 +61,18 @@ func (di *defaultBuildImplementation) Run(
 		return err
 	}
 
-	stdout_finish := make(chan struct{})
-	stderr_finish := make(chan struct{})
+	stdoutFinish := make(chan struct{})
+	stderrFinish := make(chan struct{})
 
-	go monitorPipe(stdout, logger, stdout_finish)
-	go monitorPipe(stderr, logger, stderr_finish)
+	go monitorPipe(stdout, logger, stdoutFinish)
+	go monitorPipe(stderr, logger, stderrFinish)
 
 	if err := cmd.Wait(); err != nil {
 		return err
 	}
 
-	<- stdout_finish
-	<- stderr_finish
+	<-stdoutFinish
+	<-stderrFinish
 
 	return nil
 }
