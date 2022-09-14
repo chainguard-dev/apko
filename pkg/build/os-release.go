@@ -33,9 +33,15 @@ func maybeGenerateVendorReleaseFile(
 
 	path := filepath.Join(o.WorkDir, "etc", fmt.Sprintf("%s-release", ic.OSRelease.ID))
 
-	_, err := os.Stat(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	osReleaseExists := true
+	if _, err := os.Stat(path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		osReleaseExists = false
+	}
+	if osReleaseExists {
+		return ErrOSReleaseAlreadyPresent
 	}
 
 	w, err := os.Create(path)
@@ -61,9 +67,15 @@ func (di *defaultBuildImplementation) GenerateOSRelease(
 
 	path := filepath.Join(o.WorkDir, "etc", "os-release")
 
-	_, err := os.Stat(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	osReleaseExists := true
+	if _, err := os.Stat(path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		osReleaseExists = false
+	}
+	if osReleaseExists {
+		return ErrOSReleaseAlreadyPresent
 	}
 
 	w, err := os.Create(path)
