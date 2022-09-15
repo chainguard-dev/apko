@@ -33,15 +33,9 @@ func maybeGenerateVendorReleaseFile(
 
 	path := filepath.Join(o.WorkDir, "etc", fmt.Sprintf("%s-release", ic.OSRelease.ID))
 
-	osReleaseExists := true
-	if _, err := os.Stat(path); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		osReleaseExists = false
-	}
-	if osReleaseExists {
-		return ErrOSReleaseAlreadyPresent
+	_, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
 	w, err := os.Create(path)
@@ -74,7 +68,11 @@ func (di *defaultBuildImplementation) GenerateOSRelease(
 		}
 		osReleaseExists = false
 	}
-	if osReleaseExists {
+
+	// If /etc/os-release does not exist, return an error that it already exists.
+	// However, if the user is requesting an override, write over it anyway.
+	// TODO: better than checking for "apko-generated image"
+	if osReleaseExists && ic.OSRelease.Name == "apko-generated image" {
 		return ErrOSReleaseAlreadyPresent
 	}
 
