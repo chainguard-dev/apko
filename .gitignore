@@ -20,3 +20,9 @@ bin/
 .idea
 tmp/
 _output
+
+# Development files
+apko.yaml
+output.tar
+sbom-*.cdx
+sbom-*.spdx.json

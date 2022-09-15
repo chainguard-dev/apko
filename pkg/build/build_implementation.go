@@ -230,7 +230,11 @@ func buildImage(
 	}
 
 	if err := di.GenerateOSRelease(o, ic); err != nil {
-		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
+		if errors.Is(err, ErrOSReleaseAlreadyPresent) {
+			o.Logger().Warnf("did not generate /etc/os-release: %v", err)
+		} else {
+			return fmt.Errorf("failed to generate /etc/os-release: %w", err)
+		}
 	}
 
 	if err := di.WriteSupervisionTree(s6context, ic); err != nil {
