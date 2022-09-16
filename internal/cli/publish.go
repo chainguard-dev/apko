@@ -299,12 +299,12 @@ func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImag
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}

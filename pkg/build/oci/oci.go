@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -109,7 +110,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		annotations = map[string]string{}
 	}
 	if ic.VCSUrl != "" {
-		annotations["org.opencontainers.image.source"] = ic.VCSUrl
+		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
+			annotations["org.opencontainers.image.source"] = url
+			annotations["org.opencontainers.image.revision"] = hash
+		}
 	}
 
 	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
@@ -357,15 +361,15 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	return digest, v1Image, nil
 }
 
-func PublishIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, imgs, logger, tags...)
+func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, tags...)
 }
 
-func PublishDockerIndex(imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, imgs, logger, tags...)
+func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -400,6 +404,20 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, imgs map[types.Arc
 				Platform:  arch.ToOCIPlatform(),
 			},
 		})
+	}
+
+	annotations := ic.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	if ic.VCSUrl != "" {
+		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
+			annotations["org.opencontainers.image.source"] = url
+			annotations["org.opencontainers.image.revision"] = hash
+		}
+	}
+	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
+		idx = mutate.Annotations(idx, annotations).(oci.SignedImageIndex)
 	}
 
 	h, err := idx.Digest()
