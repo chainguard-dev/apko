@@ -146,6 +146,9 @@ func AdditionalTags(opts options.Options) ([]string, error) {
 			continue
 		}
 		version := pkg.Version
+		if opts.TagSuffix != "" {
+			version += opts.TagSuffix
+		}
 		opts.Log.Debugf("Found version, images will be tagged with %s", version)
 		return appendTag(opts, version)
 	}
