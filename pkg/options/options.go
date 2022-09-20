@@ -42,6 +42,7 @@ type Options struct {
 	Log                 *logrus.Logger
 	TempDirPath         string
 	PackageVersionTag   string
+	TagSuffix           string
 }
 
 var Default = Options{

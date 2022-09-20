@@ -187,3 +187,11 @@ func WithAnnotations(annotations map[string]string) Option {
 		return nil
 	}
 }
+
+// WithTagSuffix sets a tag suffix to use, e.g. `-glibc`.
+func WithTagSuffix(tagSuffix string) Option {
+	return func(bc *Context) error {
+		bc.Options.TagSuffix = tagSuffix
+		return nil
+	}
+}
