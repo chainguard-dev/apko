@@ -42,6 +42,7 @@ func publish() *cobra.Command {
 	var buildDate string
 	var sbomPath string
 	var packageVersionTag string
+	var tagSuffix string
 	var sbomFormats []string
 	var archstrs []string
 	var extraKeys []string
@@ -84,6 +85,7 @@ in a keychain.`,
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
 				build.WithPackageVersionTag(packageVersionTag),
+				build.WithTagSuffix(tagSuffix),
 			); err != nil {
 				return err
 			}
@@ -98,6 +100,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
+	cmd.Flags().StringVar(&tagSuffix, "tag-suffix", "", "suffix to use for automatically generated tags")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
