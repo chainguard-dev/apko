@@ -65,21 +65,21 @@ type ImageConfiguration struct {
 
 		// TBD: presently a map of service names and the command to run
 		Services map[interface{}]interface{}
-	}
-	Cmd      string
-	WorkDir  string `yaml:"work-dir"`
+	} `yaml:"entrypoint,omitempty"`
+	Cmd      string `yaml:"cmd,omitempty"`
+	WorkDir  string `yaml:"work-dir,omitempty"`
 	Accounts struct {
 		RunAs  string `yaml:"run-as"`
 		Users  []User
 		Groups []Group
-	}
-	Archs       []Architecture
-	Environment map[string]string
-	Paths       []PathMutation
-	OSRelease   OSRelease         `yaml:"os-release"`
-	VCSUrl      string            `yaml:"vcs-url"`
-	Annotations map[string]string `yaml:"annotations"`
-	Include     string
+	} `yaml:"accounts,omitempty"`
+	Archs       []Architecture    `yaml:"archs,omitempty"`
+	Environment map[string]string `yaml:"environment,omitempty"`
+	Paths       []PathMutation    `yaml:"paths,omitempty"`
+	OSRelease   OSRelease         `yaml:"os-release,omitempty"`
+	VCSUrl      string            `yaml:"vcs-url,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Include     string            `yaml:"include,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
