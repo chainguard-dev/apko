@@ -123,7 +123,9 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 
 	cfg = cfg.DeepCopy()
 	cfg.Author = "github.com/chainguard-dev/apko"
-	cfg.Architecture = arch.String()
+	platform := arch.ToOCIPlatform()
+	cfg.Architecture = platform.Architecture
+	cfg.Variant = platform.Variant
 	cfg.Created = v1.Time{Time: created}
 	cfg.Config.Labels = make(map[string]string)
 	cfg.OS = "linux"
