@@ -11,7 +11,6 @@ endif
 
 GOFILES ?= $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 
-RUNTIME_IMAGE ?= gcr.io/distroless/static
 # Set version variables for LDFLAGS
 GIT_TAG ?= dirty-tag
 GIT_VERSION ?= $(shell git describe --tags --always --dirty)

@@ -8,10 +8,10 @@ This page documents workarounds to run
 
 ## OCI Container (Docker)
 
-Use the [official container image](https://github.com/distroless/apko): 
+Use the [official container image](https://github.com/chainguard-images/apko):
 
 ```
-$ docker run -v $PWD:/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
+$ docker run -v $PWD:/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
 
 ## Lima
