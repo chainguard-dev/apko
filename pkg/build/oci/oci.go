@@ -105,20 +105,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
 	}
 
-	annotations := ic.Annotations
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	if ic.VCSUrl != "" {
-		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
-			annotations["org.opencontainers.image.source"] = url
-			annotations["org.opencontainers.image.revision"] = hash
-		}
-	}
-
-	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
-		v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
-	}
+	// TODO(jason): Also set annotations on the index. ggcr's
+	// pkg/v1/mutate.Annotations will drop the interface methods from
+	// oci.SignedImageIndex, so we may need to reimplement
+	// mutate.Annotations in ocimutate to keep it for now.
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
@@ -419,7 +409,7 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConf
 		}
 	}
 	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
-		idx = mutate.Annotations(idx, annotations).(oci.SignedImageIndex)
+		idx = mutate.Annotations(idx, annotations).(v1.ImageIndex)
 	}
 
 	h, err := idx.Digest()
