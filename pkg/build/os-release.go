@@ -55,10 +55,6 @@ func maybeGenerateVendorReleaseFile(
 func (di *defaultBuildImplementation) GenerateOSRelease(
 	o *options.Options, ic *types.ImageConfiguration,
 ) error {
-	if err := maybeGenerateVendorReleaseFile(o, ic); err != nil {
-		return err
-	}
-
 	path := filepath.Join(o.WorkDir, "etc", "os-release")
 
 	osReleaseExists := true
@@ -122,6 +118,10 @@ func (di *defaultBuildImplementation) GenerateOSRelease(
 		if err != nil {
 			return err
 		}
+	}
+
+	if err := maybeGenerateVendorReleaseFile(o, ic); err != nil {
+		return err
 	}
 
 	return nil
