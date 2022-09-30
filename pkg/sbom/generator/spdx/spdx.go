@@ -197,7 +197,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 }
 
 // apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Package, err error) {
+func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Package, err error) { //nolint: unparam // TODO: do we need to return the error?
 	p = Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
@@ -234,7 +234,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 }
 
 // LayerPackage returns a package describing the layer
-func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) {
+func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) { //nolint: unparam // TODO: do we need to return the error?
 	layerPackageName := opts.ImageInfo.LayerDigest
 	mainPkgID := stringToIdentifier(layerPackageName)
 

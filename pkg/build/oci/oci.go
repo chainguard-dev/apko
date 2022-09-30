@@ -371,7 +371,7 @@ func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture
 	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {

@@ -55,12 +55,12 @@ jobs:
                      }
                      ... on PullRequest {
                         createdAt
-                     }                     
+                     }
                   }
                 }
               }
             }' -f project=$PROJECT_ID -f issue=$ISSUE_ID > issue_data.json
-          
+
           echo 'ITEM_ID='$(jq '.data.addProjectNextItem.projectNextItem.id' issue_data.json) >> $GITHUB_ENV
           echo 'ITEM_CREATION_DATE='$(jq '.data.addProjectNextItem.projectNextItem.content.createdAt' issue_data.json) >> $GITHUB_ENV
       - name: Set created on field

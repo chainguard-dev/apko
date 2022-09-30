@@ -1,6 +1,6 @@
 module chainguard.dev/apko
 
-go 1.18
+go 1.19
 
 require (
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
