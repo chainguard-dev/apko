@@ -13,13 +13,13 @@ jobs:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v2.4.0
       - uses: actions/setup-go@268d8c0ca0432bb2cf416faae41297df9d262d7f # v2.2.0
         with:
-          go-version: 1.18
+          go-version: 1.19
           check-latest: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.1.0
         timeout-minutes: 5
         with:
-          version: v1.46.2
+          version: v1.49.0
 
       - run: |
           go mod tidy
