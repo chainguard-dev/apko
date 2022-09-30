@@ -21,6 +21,7 @@ import (
 type Context struct {
 	SourceDateEpoch time.Time
 	OverrideUIDGID  bool
+	Mode            int
 	UID             int
 	GID             int
 	OverrideUname   string
@@ -93,6 +94,15 @@ func WithSkipClose(skipClose bool) Option {
 func WithUseChecksums(useChecksums bool) Option {
 	return func(ctx *Context) error {
 		ctx.UseChecksums = useChecksums
+		return nil
+	}
+}
+
+// WithUseMode is used to copy over Permissions and
+// mode set during install
+func WithUseMode(mode int) Option {
+	return func(ctx *Context) error {
+		ctx.Mode = mode
 		return nil
 	}
 }
