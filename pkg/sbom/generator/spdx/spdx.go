@@ -89,10 +89,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Relationships: []Relationship{},
 	}
 	var imagePackage *Package
-	layerPackage, err := sx.layerPackage(opts)
-	if err != nil {
-		return fmt.Errorf("generating layer spdx package: %w", err)
-	}
+	layerPackage := sx.layerPackage(opts)
 
 	doc.DocumentDescribes = []string{layerPackage.ID}
 
@@ -120,10 +117,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	for _, pkg := range opts.Packages {
 		// add the package
-		p, err := sx.apkPackage(opts, pkg)
-		if err != nil {
-			return fmt.Errorf("generating apk package: %w", err)
-		}
+		p := sx.apkPackage(opts, pkg)
 		// Add the layer to the ID to avoid clashes
 		p.ID = stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
@@ -197,8 +191,8 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 }
 
 // apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Package, err error) { //nolint: unparam // TODO: do we need to return the error?
-	p = Package{
+func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Package {
+	return Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
 		)),
@@ -230,15 +224,14 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) (p Pa
 			},
 		},
 	}
-	return p, nil
 }
 
 // LayerPackage returns a package describing the layer
-func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) { //nolint: unparam // TODO: do we need to return the error?
+func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 	layerPackageName := opts.ImageInfo.LayerDigest
 	mainPkgID := stringToIdentifier(layerPackageName)
 
-	layerPackage := Package{
+	return &Package{
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
@@ -261,7 +254,6 @@ func (sx *SPDX) layerPackage(opts *options.Options) (p *Package, err error) { //
 			},
 		},
 	}
-	return &layerPackage, nil
 }
 
 type Document struct {
