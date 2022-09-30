@@ -16,10 +16,10 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to use the [OCI Container (Docker) image](https://github.com/distroless/apko):
+apko has a dependency on [apk-tools](https://gitlab.alpinelinux.org/alpine/apk-tools). If you're not running on Alpine Linux or another apk-based distribution, the quickest way to get apko running is to use the [OCI Container (Docker) image](https://github.com/chainguard-images/apko):
 
 ```shell
-docker run distroless.dev/apko version
+docker run cgr.dev/chainguard/apko version
 ```
 ```
      _      ____    _  __   ___
@@ -41,7 +41,7 @@ Platform:      linux/amd64
 To use the examples, you'll generally want to mount your current directory into the container e.g:
 
 ```shell
-docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
+docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
 
 These examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
@@ -83,7 +83,7 @@ apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 or, with Docker:
 
 ```shell
-docker run -v "$PWD":/work distroless.dev/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
+docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
 
 You can then load the generated tar image into a Docker environment:
@@ -115,7 +115,7 @@ See the [docs](./docs/apko_file.md) for details of the file format and the [exam
 To include debug-level information on apko builds, add `--debug` to your build command:
 
 ```shell
-docker run --rm -v ${PWD}:/work distroless.dev/apko build --debug \
+docker run --rm -v ${PWD}:/work cgr.dev/chainguard/apko build --debug \
   apko.yaml hello-minicli:test hello-minicli.tar \
   -k melange.rsa.pub
 ```
@@ -127,7 +127,7 @@ container images for their tooling. Speed is also a critical factor; Chainguard 
 rebuilt constantly in response to new versions and patches.
 
 The design of apko is heavily influenced by the [ko](https://github.com/google/ko) and
-[distroless](https://github.com/GoogleContainerTools/distroless) projects. 
+[distroless](https://github.com/GoogleContainerTools/distroless) projects.
 
 ## Declarative Nature
 

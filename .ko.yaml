@@ -14,7 +14,7 @@
 
 baseImageOverrides:
   # This self-hosts our own Alpine base image.
-  chainguard.dev/apko: ghcr.io/distroless/alpine-base:latest
+  chainguard.dev/apko: cgr.dev/chainguard/alpine-base
 
 builds:
 - id: apko
