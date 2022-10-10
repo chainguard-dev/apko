@@ -32,7 +32,7 @@ jobs:
 
     - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v2.4.0
 
-    - uses: sigstore/cosign-installer@ced07f21fb1da67979f539bbc6304c16c0677e76 # v2.3.0
+    - uses: sigstore/cosign-installer@7cc35d7fdbe70d4278a0c96779081e6fac665f88 # v2.3.0
 
     - uses: goreleaser/goreleaser-action@ff11ca24a9b39f2d36796d1fbd7a4e39c182630a # v2.8.1
       with:
@@ -66,7 +66,7 @@ jobs:
 
     - uses: imjasonh/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.4
 
-    - uses: sigstore/cosign-installer@ced07f21fb1da67979f539bbc6304c16c0677e76 # v2.3.0
+    - uses: sigstore/cosign-installer@7cc35d7fdbe70d4278a0c96779081e6fac665f88 # v2.3.0
 
     - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v2.4.0
 
@@ -105,7 +105,7 @@ jobs:
 
     - uses: imjasonh/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.4
 
-    - uses: sigstore/cosign-installer@ced07f21fb1da67979f539bbc6304c16c0677e76 # v2.3.0
+    - uses: sigstore/cosign-installer@7cc35d7fdbe70d4278a0c96779081e6fac665f88 # v2.3.0
 
     - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v2.4.0
 
