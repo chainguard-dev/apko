@@ -143,7 +143,14 @@ The combination of melange and apko cover the vast majority of use cases when bu
 images. In the cases where they are not a good fit, our recommendation is to build a base image with
 apko and melange, then use traditional tooling such as Dockerfiles for the final step.
 
-## Related work and resources
+## Support and Further Reading
+
+Tutorials and guides for apko can be found at the [Chainguard Academy](https://edu.chainguard.dev/open-source/apko/).
+
+For support, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko
+channel or [open an issue](https://github.com/chainguard-dev/apko/issue).
+ 
+## Related Work and Resources
 
 The [melange project](https://github.com/chainguard-dev/melange) is designed to produce apk packages to be used in apko.
 
@@ -151,3 +158,5 @@ The [ko](https://github.com/google/ko) project builds Go projects from source in
 
 The [kontain.me](https://github.com/imjasonh/kontain.me) service creates fresh container images on
 demand using different forms of declarative configuration (including ko and apko).
+
+
