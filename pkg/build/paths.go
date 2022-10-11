@@ -19,19 +19,37 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 type PathMutator func(*options.Options, types.PathMutation) error
 
 var pathMutators = map[string]PathMutator{
-	"directory":   mutateDirectory,
-	"empty-file":  mutateEmptyFile,
-	"hardlink":    mutateHardLink,
-	"symlink":     mutateSymLink,
-	"permissions": mutatePermissions,
+	"directory":    mutateDirectory,
+	"empty-file":   mutateEmptyFile,
+	"hardlink":     mutateHardLink,
+	"symlink":      mutateSymLink,
+	"permissions":  mutatePermissions,
+	"capabilities": mutateCapabilities,
+}
+
+func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
+	target := filepath.Join(o.WorkDir, mut.Path)
+	caps := mut.Capabilities
+	capString := strings.Join(caps, ",")
+
+	c, err := cap.FromText(capString)
+	if err != nil {
+		return err
+	}
+	if err := c.SetFile(target); err != nil {
+		return err
+	}
+	return nil
 }
 
 func mutatePermissions(o *options.Options, mut types.PathMutation) error {

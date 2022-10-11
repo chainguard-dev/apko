@@ -25,6 +25,7 @@ require (
 	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
 	golang.org/x/sync v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
+	kernel.org/pub/linux/libs/security/libcap/cap v1.2.66
 	sigs.k8s.io/release-utils v0.7.3
 )
 
@@ -123,4 +124,5 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.66 // indirect
 )

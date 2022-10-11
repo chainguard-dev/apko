@@ -35,13 +35,14 @@ type Group struct {
 }
 
 type PathMutation struct {
-	Path        string
-	Type        string
-	UID         uint32
-	GID         uint32
-	Permissions uint32
-	Source      string
-	Recursive   bool
+	Path         string
+	Type         string
+	UID          uint32
+	GID          uint32
+	Permissions  uint32
+	Source       string
+	Recursive    bool
+	Capabilities []string
 }
 
 type OSRelease struct {

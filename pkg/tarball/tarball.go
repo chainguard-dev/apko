@@ -97,12 +97,3 @@ func WithUseChecksums(useChecksums bool) Option {
 		return nil
 	}
 }
-
-// WithUseMode is used to copy over Permissions and
-// mode set during install
-func WithUseMode(mode int) Option {
-	return func(ctx *Context) error {
-		ctx.Mode = mode
-		return nil
-	}
-}
