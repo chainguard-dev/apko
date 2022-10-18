@@ -38,15 +38,25 @@ var pathMutators = map[string]PathMutator{
 }
 
 func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
+	fmt.Printf("Work directory is %v\n", o.WorkDir)
 	target := filepath.Join(o.WorkDir, mut.Path)
 	caps := mut.Capabilities
+	fmt.Printf("Setting Caps %v on %v\n", caps, target)
 	capString := strings.Join(caps, ",")
 
 	c, err := cap.FromText(capString)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Caps to set %v\n", c.String())
+
 	if err := c.SetFile(target); err != nil {
+		return err
+	}
+
+	cps, err := cap.GetFile(target)
+	fmt.Printf("Caps set now are %v\n", cps.String())
+	if err != nil {
 		return err
 	}
 	return nil

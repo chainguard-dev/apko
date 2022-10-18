@@ -27,6 +27,7 @@ import (
 	gzip "golang.org/x/build/pargzip"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
@@ -62,7 +63,6 @@ func hasHardlinks(fi fs.FileInfo) bool {
 func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
 	if stat := fi.Sys(); stat != nil {
 		si := stat.(*syscall.Stat_t)
-
 		// if we don't have inodes, we just assume the filesystem
 		// does not support hardlinks
 		if si == nil {
@@ -75,9 +75,25 @@ func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
 	return 0, fmt.Errorf("unable to stat underlying file")
 }
 
+func hasCapabilities(target string) (bool, *cap.Set, error) {
+	fmt.Printf("Testing Caps for %v\n", target)
+
+	cps, err := cap.GetFile(target)
+	if err != nil {
+		fmt.Printf("Error searching for Caps %v\n", err)
+		return false, nil, err
+	}
+
+	if cps.String() != "" {
+		fmt.Printf("Caps set now are %v\n", cps.String())
+		return true, cps, nil
+	}
+
+	return false, nil, nil
+}
+
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 	seenFiles := map[uint64]string{}
-
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		// skip the root path, superfluous
 		if path == "." {
@@ -121,7 +137,6 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Uid = ctx.UID
 			header.Gid = ctx.GID
 		}
-
 		if ctx.OverrideUname != "" {
 			header.Uname = ctx.OverrideUname
 		}
@@ -130,30 +145,52 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Gname = ctx.OverrideGname
 		}
 
-		if !info.IsDir() && hasHardlinks(info) {
+		header.PAXRecords = map[string]string{}
+
+		if !info.IsDir() {
 			inode, err := getInodeFromFileInfo(info)
 			if err != nil {
 				return err
 			}
 
-			if oldpath, ok := seenFiles[inode]; ok {
-				header.Typeflag = tar.TypeLink
-				header.Linkname = oldpath
-				header.Size = 0
-			} else {
-				seenFiles[inode] = header.Name
+			if hasHardlinks(info) {
+				if oldpath, ok := seenFiles[inode]; ok {
+					header.Typeflag = tar.TypeLink
+					header.Linkname = oldpath
+					header.Size = 0
+
+				} else {
+					seenFiles[inode] = header.Name
+				}
+			}
+
+			rlfs, ok := fsys.(apkofs.ReadLinkFS)
+			if !ok {
+				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
+			}
+
+			if link, err = rlfs.Readlink(path); err != nil {
+				return err
+			}
+			fmt.Printf("Searching for %v", link)
+			hasCap, caps, err := hasCapabilities(link)
+			if err != nil {
+
+				return err
+			}
+			if hasCap {
+				header.PAXRecords["security.capabilities"] = caps.String()
 			}
 		}
 
 		if ctx.UseChecksums {
-			header.PAXRecords = map[string]string{}
-
 			if link != "" {
 				linkDigest := sha1.Sum([]byte(link)) // nolint:gosec
 				linkChecksum := hex.EncodeToString(linkDigest[:])
 				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = linkChecksum
 			} else if info.Mode().IsRegular() {
 				data, err := fsys.Open(path)
+
 				if err != nil {
 					return err
 				}
@@ -175,6 +212,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 
 		if info.Mode().IsRegular() && header.Size > 0 {
 			data, err := fsys.Open(path)
+
 			if err != nil {
 				return err
 			}
