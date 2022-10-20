@@ -15,12 +15,16 @@
 package options
 
 import (
+	"fmt"
+	"net/url"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	purl "github.com/package-url/packageurl-go"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -49,6 +53,8 @@ type Options struct {
 	// Packages is alist of packages which will be listed in the SBOM
 	Packages []*repository.Package
 }
+
+type PurlQualifiers map[string]string
 
 type OSInfo struct {
 	Name    string
@@ -102,8 +108,8 @@ func (o *Options) IndexPurlName() string {
 
 // ImagePurlQualifiers returns the qualifiers for an image, the extra
 // data that goes into the purl quey string
-func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
-	qualifiers = map[string]string{}
+func (o *Options) ImagePurlQualifiers() (qualifiers PurlQualifiers) {
+	qualifiers = PurlQualifiers{}
 	if o.ImageInfo.Repository != "" {
 		qualifiers["repository_url"] = o.ImageInfo.Repository
 	}
@@ -120,9 +126,26 @@ func (o *Options) ImagePurlQualifiers() (qualifiers map[string]string) {
 	return qualifiers
 }
 
+// This function is here while a fix in the purl library gets merged
+// ref: https://github.com/package-url/packageurl-go/pull/22
+func (pq PurlQualifiers) String() string {
+	q := []purl.Qualifier{}
+	for k, v := range pq {
+		q = append(q, purl.Qualifier{Key: k, Value: v})
+	}
+
+	// sort for deterministic qualifier order
+	sort.Slice(q, func(i int, j int) bool { return q[i].Key < q[j].Key })
+	var s string
+	for _, qualifier := range q {
+		s += fmt.Sprintf("%s=%s", qualifier.Key, url.QueryEscape(qualifier.Value))
+	}
+	return s
+}
+
 // LayerPurlQualifiers reurns the qualifiers for the purl, they are based
 // on the image with the corresponding mediatype
-func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
+func (o *Options) LayerPurlQualifiers() (qualifiers PurlQualifiers) {
 	qualifiers = o.ImagePurlQualifiers()
 	switch o.ImageInfo.ImageMediaType {
 	case ggcrtypes.OCIManifestSchema1:
@@ -136,8 +159,8 @@ func (o *Options) LayerPurlQualifiers() (qualifiers map[string]string) {
 }
 
 // IndexPurlQualifiers returns the qualifiers for the multiarch index
-func (o *Options) IndexPurlQualifiers() map[string]string {
-	qualifiers := map[string]string{}
+func (o *Options) IndexPurlQualifiers() PurlQualifiers {
+	qualifiers := PurlQualifiers{}
 	if o.ImageInfo.Repository != "" {
 		qualifiers["repository_url"] = o.ImageInfo.Repository
 	}
@@ -148,7 +171,7 @@ func (o *Options) IndexPurlQualifiers() map[string]string {
 }
 
 // ArchImagePurlQualifiers returns the details
-func (o *Options) ArchImagePurlQualifiers(aii *ArchImageInfo) map[string]string {
+func (o *Options) ArchImagePurlQualifiers(aii *ArchImageInfo) PurlQualifiers {
 	qualifiers := o.IndexPurlQualifiers()
 	qualifiers["arch"] = aii.Arch.ToOCIPlatform().Architecture
 	qualifiers["os"] = aii.Arch.ToOCIPlatform().OS

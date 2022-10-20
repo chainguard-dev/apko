@@ -103,14 +103,14 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 	layerComponent := Component{
 		BOMRef: purl.NewPackageURL(
 			purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
-			purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
-		).String(),
+			nil, "",
+		).String() + "?" + opts.ImagePurlQualifiers().String(),
 		Name:        opts.OS.Name,
 		Description: "apko OS layer",
 		PUrl: purl.NewPackageURL(
 			purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
-			purl.QualifiersFromMap(opts.LayerPurlQualifiers()), "",
-		).String(),
+			nil, "",
+		).String() + "?" + opts.LayerPurlQualifiers().String(),
 		Version:    opts.OS.Version,
 		Type:       "operating-system",
 		Components: pkgComponents,
@@ -120,16 +120,16 @@ func (cdx *CycloneDX) Generate(opts *options.Options, path string) error {
 		imageComponent = Component{
 			BOMRef: purl.NewPackageURL(
 				purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
-				purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
-			).String(),
+				nil, "",
+			).String() + "?" + opts.ImagePurlQualifiers().String(),
 			Type: "container",
 			Name: "",
 			// Version:            "",
 			Description: "apko container image",
 			PUrl: purl.NewPackageURL(
 				purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
-				purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
-			).String(),
+				nil, "",
+			).String() + "?" + opts.ImagePurlQualifiers().String(),
 			Components: []Component{layerComponent},
 		}
 	}
@@ -213,8 +213,8 @@ type Hash struct {
 func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 	purlString := purl.NewPackageURL(
 		purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.String(),
-		purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
-	).String()
+		nil, "",
+	).String() + "?" + opts.IndexPurlQualifiers().String()
 
 	indexComponent := Component{
 		BOMRef:      purlString,
@@ -267,8 +267,8 @@ func (cdx *CycloneDX) GenerateIndex(opts *options.Options, path string) error {
 func (cdx *CycloneDX) archImageComponent(opts *options.Options, info options.ArchImageInfo) Component {
 	purlString := purl.NewPackageURL(
 		purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
-		purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&info)), "",
-	).String()
+		nil, "",
+	).String() + "?" + opts.ArchImagePurlQualifiers(&info).String()
 
 	return Component{
 		BOMRef: purlString,

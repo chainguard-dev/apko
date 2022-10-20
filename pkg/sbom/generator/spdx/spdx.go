@@ -150,7 +150,7 @@ func renderDoc(doc *Document, path string) error {
 
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
+	enc.SetEscapeHTML(true)
 
 	if err := enc.Encode(doc); err != nil {
 		return fmt.Errorf("encoding spdx sbom: %w", err)
@@ -183,8 +183,8 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
-					purl.QualifiersFromMap(opts.ImagePurlQualifiers()), "",
-				).String(),
+					nil, "",
+				).String() + "?" + opts.ImagePurlQualifiers().String(),
 			},
 		},
 	}
@@ -249,8 +249,8 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
-					purl.QualifiersFromMap(opts.LayerPurlQualifiers()), "",
-				).String(),
+					nil, "",
+				).String() + "?" + opts.LayerPurlQualifiers().String(),
 			},
 		},
 	}
@@ -386,8 +386,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.DeepCopy().String(),
-					purl.QualifiersFromMap(opts.IndexPurlQualifiers()), "",
-				).String(),
+					nil, "",
+				).String() + "?" + opts.IndexPurlQualifiers().String(),
 			},
 		},
 	}
@@ -419,8 +419,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
-						purl.QualifiersFromMap(opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i])), "",
-					).String(),
+						nil, "",
+					).String() + "?" + opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i]).String(),
 				},
 			},
 		})
