@@ -138,6 +138,9 @@ func (pq PurlQualifiers) String() string {
 	sort.Slice(q, func(i int, j int) bool { return q[i].Key < q[j].Key })
 	var s string
 	for _, qualifier := range q {
+		if s != "" {
+			s += "&"
+		}
 		s += fmt.Sprintf("%s=%s", qualifier.Key, url.QueryEscape(qualifier.Value))
 	}
 	return s
