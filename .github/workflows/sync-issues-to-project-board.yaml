@@ -1,0 +1,16 @@
+name: Add new and labeled issues to Images project
+
+on:
+  issues:
+    types:
+      - opened
+
+jobs:
+  add-to-project:
+    name: Add issue to project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@main
+        with:
+          project-url: https://github.com/orgs/chainguard-dev/projects/22
+          github-token: ${{ secrets.PROJECT_WRITER }}
