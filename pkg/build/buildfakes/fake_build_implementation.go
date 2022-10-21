@@ -329,7 +329,7 @@ func (fake *FakeBuildImplementation) BuildImageReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) c(arg1 *options.Options) (string, error) {
+func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options) (string, error) {
 	fake.buildTarballMutex.Lock()
 	ret, specificReturn := fake.buildTarballReturnsOnCall[len(fake.buildTarballArgsForCall)]
 	fake.buildTarballArgsForCall = append(fake.buildTarballArgsForCall, struct {
