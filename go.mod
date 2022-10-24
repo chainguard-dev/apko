@@ -19,7 +19,7 @@ require (
 	github.com/sigstore/cosign v1.13.1
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	gitlab.alpinelinux.org/alpine/go v0.6.0
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
