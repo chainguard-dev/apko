@@ -69,7 +69,7 @@ ko: ## Build images using ko
 ko-local:  ## Build images locally using ko
 	$(create_kocache_path)
 	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
-	KOCACHE=$(KOCACHE_PATH) ko build --bare --platform=linux/arm64  \
+	KOCACHE=$(KOCACHE_PATH) ko build --bare --platform=linux/amd64  \
 		--tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
 		chainguard.dev/apko
 

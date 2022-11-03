@@ -38,12 +38,10 @@ var pathMutators = map[string]PathMutator{
 }
 
 func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
-	o.Logger().
-		fmt.Printf("[DEBUG] [paths.go] Work directory is %v\n", o.WorkDir)
+
 	target := filepath.Join(o.WorkDir, mut.Path)
 	targetCaps := mut.Capabilities
-
-	fmt.Printf("[DEBUG] [paths.go] Target Caps %v on %v\n", targetCaps, target)
+	o.Logger().Infof("[DEBUG] [paths.go] Target Caps %v on %v\n", targetCaps, target)
 
 	targetCapString := strings.Join(targetCaps, ",")
 	currentSet, err := cap.GetFile(target)
