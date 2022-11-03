@@ -16,6 +16,7 @@ package fs
 
 import (
 	"io/fs"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 	"os"
 	"path/filepath"
 )
@@ -35,4 +36,22 @@ func (f *rlfs) Open(name string) (fs.File, error) {
 
 func (f *rlfs) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(filepath.Join(f.base, name))
+}
+
+func (f *rlfs) ReadCap(name string) (bool, string, error) {
+	target := filepath.Join(f.base, name)
+	//fmt.Printf("[fs.go ReadCap] DEBUG: Testing Caps for %v\n", target)
+
+	cps, err := cap.GetFile(target)
+	if err != nil {
+		//fmt.Printf("[fs.go ReadCap] DEBUG: No Caps %v\n", err)
+		return false, "", nil //return nil here since the cap don't exist
+	}
+
+	if cps.String() != "" {
+		//fmt.Printf("[fs.go ReadCap] DEBUG: Caps set now are %v\n", cps.String())
+		return true, cps.String(), nil
+	}
+
+	return false, "", nil
 }

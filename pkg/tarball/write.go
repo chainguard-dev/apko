@@ -27,7 +27,6 @@ import (
 	gzip "golang.org/x/build/pargzip"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
-	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
@@ -75,23 +74,6 @@ func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
 	return 0, fmt.Errorf("unable to stat underlying file")
 }
 
-func hasCapabilities(target string) (bool, *cap.Set, error) {
-	fmt.Printf("Testing Caps for %v\n", target)
-
-	cps, err := cap.GetFile(target)
-	if err != nil {
-		fmt.Printf("Error searching for Caps %v\n", err)
-		return false, nil, err
-	}
-
-	if cps.String() != "" {
-		fmt.Printf("Caps set now are %v\n", cps.String())
-		return true, cps, nil
-	}
-
-	return false, nil, nil
-}
-
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 	seenFiles := map[uint64]string{}
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
@@ -115,7 +97,6 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			if !ok {
 				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
 			}
-
 			if link, err = rlfs.Readlink(path); err != nil {
 				return err
 			}
@@ -145,7 +126,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Gname = ctx.OverrideGname
 		}
 
-		header.PAXRecords = map[string]string{}
+		PAXRecords := make(map[string]string)
 
 		if !info.IsDir() {
 			inode, err := getInodeFromFileInfo(info)
@@ -162,6 +143,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 				} else {
 					seenFiles[inode] = header.Name
 				}
+
 			}
 
 			rlfs, ok := fsys.(apkofs.ReadLinkFS)
@@ -169,17 +151,14 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
 			}
 
-			if link, err = rlfs.Readlink(path); err != nil {
-				return err
-			}
-			fmt.Printf("Searching for %v", link)
-			hasCap, caps, err := hasCapabilities(link)
+			hasCap, caps, err := rlfs.ReadCap(path)
 			if err != nil {
-
 				return err
 			}
+
 			if hasCap {
-				header.PAXRecords["security.capabilities"] = caps.String()
+				PAXRecords["security.capability"] = caps
+
 			}
 		}
 
@@ -187,7 +166,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			if link != "" {
 				linkDigest := sha1.Sum([]byte(link)) // nolint:gosec
 				linkChecksum := hex.EncodeToString(linkDigest[:])
-				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = linkChecksum
+				PAXRecords["APK-TOOLS.checksum.SHA1"] = linkChecksum
 			} else if info.Mode().IsRegular() {
 				data, err := fsys.Open(path)
 
@@ -202,9 +181,15 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 				}
 
 				fileChecksum := hex.EncodeToString(fileDigest.Sum(nil))
-				header.PAXRecords["APK-TOOLS.checksum.SHA1"] = fileChecksum
+				PAXRecords["APK-TOOLS.checksum.SHA1"] = fileChecksum
 			}
 		}
+
+		//fmt.Printf("[write.go] DEBUG PAX records for %v\n", path)
+		//
+		//fmt.Printf("[write.go] PAXRecords header %v\n", PAXRecords)
+
+		header.PAXRecords = PAXRecords
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
@@ -234,6 +219,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 
 // WriteArchive writes a tarball to the provided io.Writer.
 func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) error {
+
 	if err := ctx.writeArchiveFromFS(dst, src); err != nil {
 		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}

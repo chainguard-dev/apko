@@ -51,6 +51,7 @@ func (bc *Context) Summarize() {
 }
 
 func (bc *Context) BuildTarball() (string, error) {
+	fmt.Println("build./build.go BuildTarball")
 	return bc.impl.BuildTarball(&bc.Options)
 }
 
@@ -70,6 +71,7 @@ func (bc *Context) GenerateSBOM() error {
 
 func (bc *Context) BuildImage() error {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
+	fmt.Println("build/build.go BuildImage")
 	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.executor, bc.s6)
 }
 
@@ -78,6 +80,7 @@ func (bc *Context) Logger() *logrus.Entry {
 }
 
 func (bc *Context) BuildLayer() (string, error) {
+	fmt.Println("build/build.go BuildLayer")
 	bc.Summarize()
 
 	// build image filesystem

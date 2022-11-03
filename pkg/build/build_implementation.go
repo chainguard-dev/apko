@@ -21,12 +21,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
-	coci "github.com/sigstore/cosign/pkg/oci"
-	"sigs.k8s.io/release-utils/hash"
-
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
@@ -36,6 +30,12 @@ import (
 	"chainguard.dev/apko/pkg/sbom"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 	"chainguard.dev/apko/pkg/tarball"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	coci "github.com/sigstore/cosign/pkg/oci"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
+	"sigs.k8s.io/release-utils/hash"
 )
 
 //counterfeiter:generate . buildImplementation
@@ -217,6 +217,23 @@ func buildImage(
 
 	if err := di.MutatePaths(o, ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
+	}
+
+	for _, mut := range ic.Paths {
+		fmt.Printf("[DEBUG] build_implemenation.go Searching path %v\n", mut.Path)
+		if mut.Path == "/nginx-ingress-controller" {
+			fmt.Printf("[ERROR] build_implemenation.go Found ingress\n")
+			target := filepath.Join(o.WorkDir, mut.Path)
+			currentSet, err := cap.GetFile(target)
+			if err != nil {
+				fmt.Printf("[ERROR] currentSet  build_implemenation.go cap.GetFile(%v) %v\n", target, err)
+				os.Exit(200)
+			} else {
+				fmt.Printf("[INFO] currentSet  build_implemenation.go current set %v after return %v\n", target, currentSet.String())
+			}
+		} else {
+			continue
+		}
 	}
 
 	// maybe install busybox symlinks

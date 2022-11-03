@@ -23,6 +23,7 @@ type ReadLinkFS interface {
 	fs.FS
 
 	Readlink(name string) (string, error)
+	ReadCap(name string) (bool, string, error)
 }
 
 func DirFS(dir string) ReadLinkFS {
