@@ -220,16 +220,16 @@ func buildImage(
 	}
 
 	for _, mut := range ic.Paths {
-		fmt.Printf("[DEBUG] build_implemenation.go Searching path %v\n", mut.Path)
+		o.Logger().Debugf("[DEBUG] build_implemenation.go Searching path %v", mut.Path)
 		if mut.Path == "/nginx-ingress-controller" {
-			fmt.Printf("[ERROR] build_implemenation.go Found ingress\n")
+			o.Logger().Debugf("[ERROR] build_implemenation.go Found ingress")
 			target := filepath.Join(o.WorkDir, mut.Path)
 			currentSet, err := cap.GetFile(target)
 			if err != nil {
-				fmt.Printf("[ERROR] currentSet  build_implemenation.go cap.GetFile(%v) %v\n", target, err)
+				o.Logger().Debugf("[ERROR] currentSet  build_implemenation.go cap.GetFile(%v) %v", target, err)
 				os.Exit(200)
 			} else {
-				fmt.Printf("[INFO] currentSet  build_implemenation.go current set %v after return %v\n", target, currentSet.String())
+				o.Logger().Debugf("[INFO] currentSet  build_implemenation.go current set %v after return %v", target, currentSet.String())
 			}
 		} else {
 			continue

@@ -41,12 +41,12 @@ func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
 
 	target := filepath.Join(o.WorkDir, mut.Path)
 	targetCaps := mut.Capabilities
-	o.Logger().Infof("[DEBUG] [paths.go] Target Caps %v on %v\n", targetCaps, target)
+	o.Logger().Debugf("[DEBUG] [paths.go] Target Caps %v on %v", targetCaps, target)
 
 	targetCapString := strings.Join(targetCaps, ",")
 	currentSet, err := cap.GetFile(target)
 	if err != nil {
-		fmt.Printf("[ERROR] cap.GetFile(target) %v\n", err)
+		o.Logger().Debugf("[ERROR] cap.GetFile(target) %v", err)
 		if err.Error() == "no data available" {
 			currentSet = &cap.Set{}
 		} else {
@@ -55,25 +55,25 @@ func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
 	}
 	targetSet, err := cap.FromText(targetCapString)
 	if err != nil {
-		fmt.Printf("[ERROR] cap.FromText(targetCapString) %v\n", err)
+		o.Logger().Errorf("[ERROR] cap.FromText(targetCapString) %v", err)
 		return err
 	}
-	fmt.Printf("[INFO] Current Set caps %v\n", currentSet.String())
-	fmt.Printf("[INFO] Target Set caps %v\n", targetSet.String())
+	o.Logger().Debugf("[INFO] Current Set caps %v", currentSet.String())
+	o.Logger().Debugf("[INFO] Target Set caps %v", targetSet.String())
 
 	file, err := os.Open(target)
 	if err != nil {
-		fmt.Printf("[ERROR] opening target %v\n", err)
+		o.Logger().Errorf("[ERROR] opening target %v", err)
 		return err
 	}
 
 	if err := targetSet.SetFd(file); err != nil {
-		fmt.Printf("[ERROR] Error setting caps with SetFd on file %v %v\n", target, err)
+		o.Logger().Errorf("[ERROR] Error setting caps with SetFd on file %v %v", target, err)
 		return err
 	}
 
 	if err := file.Sync(); err != nil {
-		fmt.Printf("[ERROR] Error Syncing file target %v %v\n", target, err)
+		o.Logger().Errorf("[ERROR] Error Syncing file target %v %v", target, err)
 		return err
 	}
 
@@ -81,11 +81,11 @@ func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
 
 	currentSet, err = cap.GetFile(target)
 	if err != nil {
-		fmt.Printf("[ERROR] cap.GetFile(target) %v\n", err)
-		fmt.Printf("[ERROR] Error Syncing file target %v %v\n", target, err)
+		o.Logger().Debugf("[ERROR] cap.GetFile(target) %v", err)
+		o.Logger().Debugf("[ERROR] Error Syncing file target %v %v", target, err)
 		return err
 	} else {
-		fmt.Printf("[INFO] Current Set caps After setting %v\n", currentSet.String())
+		o.Logger().Debugf("[INFO] Current Set caps After setting %v", currentSet.String())
 		return nil
 	}
 }
@@ -210,15 +210,15 @@ func (di *defaultBuildImplementation) MutatePaths(
 			target := filepath.Join(o.WorkDir, mut.Path)
 			currentSet, err := cap.GetFile(target)
 			if err != nil {
-				fmt.Printf("[ERROR] paths.go cap.GetFile(target) %v\n", err)
+				o.Logger().Debugf("[ERROR] paths.go cap.GetFile(target) %v", err)
 			} else {
-				fmt.Printf("[INFO] paths.go current set after return %v", currentSet.String())
+				o.Logger().Debugf("[INFO] paths.go current set after return %v", currentSet.String())
 			}
 			mutSet, err := cap.GetFile(mut.Path)
 			if err != nil {
-				fmt.Printf("[ERROR] paths.go mutSet %v\n", err)
+				o.Logger().Debugf("[ERROR] paths.go mutSet %v", err)
 			} else {
-				fmt.Printf("[INFO] paths.go mutSet set after return %v", mutSet.String())
+				o.Logger().Debugf("[INFO] paths.go mutSet set after return %v", mutSet.String())
 			}
 		}
 	}
