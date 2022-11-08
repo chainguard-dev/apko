@@ -15,6 +15,7 @@
 package types
 
 import (
+	"fmt"
 	"runtime"
 	"sort"
 
@@ -83,6 +84,7 @@ type ImageConfiguration struct {
 }
 
 // Architecture represents a CPU architecture for the container image.
+// TODO(kaniini): Maybe this should be its own package at this point?
 type Architecture struct{ s string }
 
 func (a Architecture) String() string { return a.s }
@@ -168,6 +170,48 @@ func (a Architecture) ToQEmu() string {
 		return "arm"
 	default:
 		return a.s
+	}
+}
+
+func (a Architecture) ToTriplet(suffix string) string {
+	switch a {
+	case _386:
+		return fmt.Sprintf("i486-pc-linux-%s", suffix)
+	case amd64:
+		return fmt.Sprintf("x86_64-pc-linux-%s", suffix)
+	case arm64:
+		return fmt.Sprintf("aarch64-unknown-linux-%s", suffix)
+	case armv6:
+		return fmt.Sprintf("armv6-unknown-linux-%s", suffix)
+	case armv7:
+		return fmt.Sprintf("armv7-unknown-linux-%s", suffix)
+	case ppc64le:
+		return fmt.Sprintf("powerpc64le-unknown-linux-%s", suffix)
+	case s390x:
+		return fmt.Sprintf("s390x-ibm-linux-%s", suffix)
+	default:
+		return fmt.Sprintf("%s-unknown-linux-%s", a.ToQEmu(), suffix)
+	}
+}
+
+func (a Architecture) ToRustTriplet(suffix string) string {
+	switch a {
+	case _386:
+		return fmt.Sprintf("i686-unknown-linux-%s", suffix)
+	case amd64:
+		return fmt.Sprintf("x86_64-unknown-linux-%s", suffix)
+	case arm64:
+		return fmt.Sprintf("aarch64-unknown-linux-%s", suffix)
+	case armv6:
+		return fmt.Sprintf("armv6-unknown-linux-%s", suffix)
+	case armv7:
+		return fmt.Sprintf("armv7-unknown-linux-%s", suffix)
+	case ppc64le:
+		return fmt.Sprintf("powerpc64le-unknown-linux-%s", suffix)
+	case s390x:
+		return fmt.Sprintf("s390x-unknown-linux-%s", suffix)
+	default:
+		return fmt.Sprintf("%s-unknown-linux-%s", a.ToQEmu(), suffix)
 	}
 }
 
