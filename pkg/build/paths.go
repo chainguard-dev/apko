@@ -16,6 +16,7 @@ package build
 
 import (
 	"fmt"
+	"github.com/syndtr/gocapability/capability"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -23,7 +24,6 @@ import (
 
 	types "chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
-	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 type PathMutator func(*options.Options, types.PathMutation) error
@@ -40,54 +40,29 @@ var pathMutators = map[string]PathMutator{
 func mutateCapabilities(o *options.Options, mut types.PathMutation) error {
 
 	target := filepath.Join(o.WorkDir, mut.Path)
-	targetCaps := mut.Capabilities
-	o.Logger().Debugf("[DEBUG] [paths.go] Target Caps %v on %v", targetCaps, target)
+	o.Logger().Debugf("Setting caps for %v", target)
+	capSlice := mut.Capabilities
+	length := len(capSlice)
+	for i := 0; i < length; i++ {
+		o.Logger().Debugf("Setting %v", capSlice[i])
+		cap := strings.Split(capSlice[i], "=")
+		o.Logger().Debugf("Setting %v", cap[0])
+		o.Logger().Debugf("Setting %v", cap[1])
+		caps, err := capability.NewFile2(target)
+		if err != nil {
+			o.Logger().Errorf("Error Getting Cap file for %v, %v", target, err)
+			return err
+		}
 
-	targetCapString := strings.Join(targetCaps, ",")
-	currentSet, err := cap.GetFile(target)
-	if err != nil {
-		o.Logger().Debugf("[ERROR] cap.GetFile(target) %v", err)
-		if err.Error() == "no data available" {
-			currentSet = &cap.Set{}
-		} else {
+		caps.Set(capability.EFFECTIVE, capability.CAP_NET_BIND_SERVICE)
+
+		if err := caps.Apply(capability.EFFECTIVE); err != nil {
+			o.Logger().Errorf("could not apply caps: %v", err)
 			return err
 		}
 	}
-	targetSet, err := cap.FromText(targetCapString)
-	if err != nil {
-		o.Logger().Errorf("[ERROR] cap.FromText(targetCapString) %v", err)
-		return err
-	}
-	o.Logger().Debugf("[INFO] Current Set caps %v", currentSet.String())
-	o.Logger().Debugf("[INFO] Target Set caps %v", targetSet.String())
 
-	file, err := os.Open(target)
-	if err != nil {
-		o.Logger().Errorf("[ERROR] opening target %v", err)
-		return err
-	}
-
-	if err := targetSet.SetFd(file); err != nil {
-		o.Logger().Errorf("[ERROR] Error setting caps with SetFd on file %v %v", target, err)
-		return err
-	}
-
-	if err := file.Sync(); err != nil {
-		o.Logger().Errorf("[ERROR] Error Syncing file target %v %v", target, err)
-		return err
-	}
-
-	defer file.Close()
-
-	currentSet, err = cap.GetFile(target)
-	if err != nil {
-		o.Logger().Debugf("[ERROR] cap.GetFile(target) %v", err)
-		o.Logger().Debugf("[ERROR] Error Syncing file target %v %v", target, err)
-		return err
-	} else {
-		o.Logger().Debugf("[INFO] Current Set caps After setting %v", currentSet.String())
-		return nil
-	}
+	return nil
 }
 
 func mutatePermissions(o *options.Options, mut types.PathMutation) error {
@@ -207,19 +182,8 @@ func (di *defaultBuildImplementation) MutatePaths(
 			}
 		}
 		if mut.Path == "nginx-ingress-controller" {
-			target := filepath.Join(o.WorkDir, mut.Path)
-			currentSet, err := cap.GetFile(target)
-			if err != nil {
-				o.Logger().Debugf("[ERROR] paths.go cap.GetFile(target) %v", err)
-			} else {
-				o.Logger().Debugf("[INFO] paths.go current set after return %v", currentSet.String())
-			}
-			mutSet, err := cap.GetFile(mut.Path)
-			if err != nil {
-				o.Logger().Debugf("[ERROR] paths.go mutSet %v", err)
-			} else {
-				o.Logger().Debugf("[INFO] paths.go mutSet set after return %v", mutSet.String())
-			}
+			//target := filepath.Join(o.WorkDir, mut.Path)
+
 		}
 	}
 
