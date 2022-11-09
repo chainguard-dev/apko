@@ -19,7 +19,10 @@ package apk
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"golang.org/x/sync/errgroup"
@@ -146,11 +149,31 @@ func AdditionalTags(opts options.Options) ([]string, error) {
 			continue
 		}
 		version := pkg.Version
+		if version == "" {
+			opts.Log.Warningf("Version for package %s is empty", pkg.Name)
+			continue
+		}
 		if opts.TagSuffix != "" {
 			version += opts.TagSuffix
 		}
 		opts.Log.Debugf("Found version, images will be tagged with %s", version)
-		return appendTag(opts, version)
+
+		additionalTags, err := appendTag(opts, fmt.Sprintf("%s%s", opts.PackageVersionTagPrefix, version))
+		if err != nil {
+			return nil, err
+		}
+
+		if opts.PackageVersionTagStem && len(additionalTags) > 0 {
+			opts.Log.Debugf("Adding stemmed version tags")
+			stemmedTags, err := getStemmedVersionTags(opts, additionalTags[0], version)
+			if err != nil {
+				return nil, err
+			}
+			additionalTags = append(additionalTags, stemmedTags...)
+		}
+
+		opts.Log.Infof("Returning additional tags %v", additionalTags)
+		return additionalTags, nil
 	}
 	opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
 	return nil, nil
@@ -165,7 +188,6 @@ func appendTag(opts options.Options, newTag string) ([]string, error) {
 		}
 		newTags[i] = nt
 	}
-	opts.Log.Infof("Returning additional tags %v", newTags)
 	return newTags, nil
 }
 
@@ -175,6 +197,31 @@ func replaceTag(img, newTag string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s:%s", ref.Context(), newTag), nil
+}
+
+// TODO: use version parser from https://gitlab.alpinelinux.org/alpine/go/-/tree/master/version
+func getStemmedVersionTags(opts options.Options, origRef string, version string) ([]string, error) {
+	tags := []string{}
+	re := regexp.MustCompile("[.]+")
+	tmp := []string{}
+	for _, part := range re.Split(version, -1) {
+		tmp = append(tmp, part)
+		additionalTag := strings.Join(tmp, ".")
+		if additionalTag == version {
+			tmp := strings.Split(version, "-")
+			additionalTag = strings.Join(tmp[:len(tmp)-1], "-")
+		}
+		additionalTag, err := replaceTag(origRef,
+			fmt.Sprintf("%s%s", opts.PackageVersionTagPrefix, additionalTag))
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, additionalTag)
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[j] < tags[i]
+	})
+	return tags, nil
 }
 
 func (a *APK) SetImplementation(impl apkImplementation) {

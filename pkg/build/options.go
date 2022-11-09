@@ -116,6 +116,20 @@ func WithPackageVersionTag(pvt string) Option {
 	}
 }
 
+func WithPackageVersionTagStem(packageVersionTagStem bool) Option {
+	return func(bc *Context) error {
+		bc.Options.PackageVersionTagStem = packageVersionTagStem
+		return nil
+	}
+}
+
+func WithPackageVersionTagPrefix(packageVersionTagPrefix string) Option {
+	return func(bc *Context) error {
+		bc.Options.PackageVersionTagPrefix = packageVersionTagPrefix
+		return nil
+	}
+}
+
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
 		bc.Options.SBOMFormats = formats
