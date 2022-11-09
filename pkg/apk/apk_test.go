@@ -103,6 +103,11 @@ A:hello
 
 P:nginx
 A:priya
+
+P:boop
+V:10.45.6-r5
+A:bop
+
 `
 	if err := os.MkdirAll(filepath.Join(td, "lib/apk/db/"), 0755); err != nil {
 		require.Error(t, err, "mkdir all dirs failed")
@@ -111,10 +116,12 @@ A:priya
 		require.Error(t, err, "write file failed")
 	}
 	tests := []struct {
-		description       string
-		packageVersionTag string
-		tags              []string
-		expectedTags      []string
+		description             string
+		packageVersionTag       string
+		packageVersionTagStem   bool
+		packageVersionTagPrefix string
+		tags                    []string
+		expectedTags            []string
 	}{
 		{
 			description:       "tag with go",
@@ -124,24 +131,58 @@ A:priya
 		}, {
 			description:       "nginx has no version",
 			packageVersionTag: "nginx",
-			tags:              []string{"gcr.io/myimage/go:latest"},
+			tags:              []string{"gcr.io/myimage/nginx:latest"},
 			expectedTags:      nil,
+		},
+		{
+			description:           "tag with boop",
+			packageVersionTag:     "boop",
+			packageVersionTagStem: false,
+			tags:                  []string{"gcr.io/myimage/boop:latest"},
+			expectedTags:          []string{"gcr.io/myimage/boop:10.45.6-r5"},
+		},
+		{
+			description:           "tag with boop (stemmed)",
+			packageVersionTag:     "boop",
+			packageVersionTagStem: true,
+			tags:                  []string{"gcr.io/myimage/boop:latest"},
+			expectedTags: []string{
+				"gcr.io/myimage/boop:10.45.6-r5",
+				"gcr.io/myimage/boop:10.45.6",
+				"gcr.io/myimage/boop:10.45",
+				"gcr.io/myimage/boop:10",
+			},
+		},
+		{
+			description:             "tag with boop (stemmed and prefixed)",
+			packageVersionTag:       "boop",
+			packageVersionTagStem:   true,
+			packageVersionTagPrefix: "bam-",
+			tags:                    []string{"gcr.io/myimage/boop:latest"},
+			expectedTags: []string{
+				"gcr.io/myimage/boop:bam-10.45.6-r5",
+				"gcr.io/myimage/boop:bam-10.45.6",
+				"gcr.io/myimage/boop:bam-10.45",
+				"gcr.io/myimage/boop:bam-10",
+			},
 		},
 	}
 	for _, test := range tests {
-		t.Run(test.description, func(t *testing.T) {
+		t.Run(test.description, func(tt *testing.T) {
 			opts := options.Options{
-				PackageVersionTag: test.packageVersionTag,
-				Tags:              test.tags,
-				WorkDir:           td,
-				Log:               &logrus.Logger{},
+				PackageVersionTag:       test.packageVersionTag,
+				PackageVersionTagStem:   test.packageVersionTagStem,
+				PackageVersionTagPrefix: test.packageVersionTagPrefix,
+				Tags:                    test.tags,
+				WorkDir:                 td,
+				Log:                     &logrus.Logger{},
 			}
 			got, err := AdditionalTags(opts)
 			if err != nil {
-				require.Error(t, err, "additional tags failed")
+				require.NoError(tt, fmt.Errorf("additional tags failed: %w", err))
 			}
 			if d := cmp.Diff(got, test.expectedTags); d != "" {
-				require.Errorf(t, fmt.Errorf("does not match: %s", d), "actual does not match expected")
+				require.NoError(tt, fmt.Errorf("does not match: %s", d), "actual does not match expected")
 			}
 		})
 	}

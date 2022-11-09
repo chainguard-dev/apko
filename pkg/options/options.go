@@ -26,23 +26,25 @@ import (
 )
 
 type Options struct {
-	UseDockerMediaTypes bool
-	WantSBOM            bool
-	UseProot            bool
-	WithVCS             bool
-	WorkDir             string
-	TarballPath         string
-	Tags                []string
-	SourceDateEpoch     time.Time
-	SBOMPath            string
-	SBOMFormats         []string
-	ExtraKeyFiles       []string
-	ExtraRepos          []string
-	Arch                types.Architecture
-	Log                 *logrus.Logger
-	TempDirPath         string
-	PackageVersionTag   string
-	TagSuffix           string
+	UseDockerMediaTypes     bool
+	WantSBOM                bool
+	UseProot                bool
+	WithVCS                 bool
+	WorkDir                 string
+	TarballPath             string
+	Tags                    []string
+	SourceDateEpoch         time.Time
+	SBOMPath                string
+	SBOMFormats             []string
+	ExtraKeyFiles           []string
+	ExtraRepos              []string
+	Arch                    types.Architecture
+	Log                     *logrus.Logger
+	TempDirPath             string
+	PackageVersionTag       string
+	PackageVersionTagStem   bool
+	PackageVersionTagPrefix string
+	TagSuffix               string
 }
 
 var Default = Options{
