@@ -34,14 +34,21 @@ import (
 	"chainguard.dev/apko/pkg/s6"
 )
 
+// Context contains all of the information necessary to build an
+// OCI image. Includes the configurationfor the build,
+// the path to the config file, the executor for root jails and
+// architecture emulation, the s6 supervisor to add to the image,
+// build options, and the `buildImplementation`, which handles the actual build.
 type Context struct {
-	impl               buildImplementation
+	impl buildImplementation
+	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ImageConfiguration types.ImageConfiguration
-	ImageConfigFile    string
-	executor           *exec.Executor
-	s6                 *s6.Context
-	Assertions         []Assertion
-	Options            options.Options
+	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
+	ImageConfigFile string
+	executor        *exec.Executor
+	s6              *s6.Context
+	Assertions      []Assertion
+	Options         options.Options
 }
 
 func (bc *Context) Summarize() {
@@ -50,6 +57,9 @@ func (bc *Context) Summarize() {
 	bc.ImageConfiguration.Summarize(bc.Logger())
 }
 
+// BuildTarball calls the underlying implementation's BuildTarball
+// which takes the fully populated working directory and saves it to
+// an OCI image layer tar.gz file.
 func (bc *Context) BuildTarball() (string, error) {
 	return bc.impl.BuildTarball(&bc.Options)
 }
@@ -77,6 +87,13 @@ func (bc *Context) Logger() *logrus.Entry {
 	return bc.Options.Logger()
 }
 
+// BuildLayer given the context set up, including
+// build configuration and working directory,
+// lays out all of the packages in the working directory,
+// sets up the necessary user accounts and groups,
+// and sets everything up in the directory. Then
+// packages it all up into a standard OCI image layer
+// tar.gz file.
 func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
@@ -163,6 +180,9 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	return &bc, nil
 }
 
+// Refresh initializes the build process by calling the underlying implementation's
+// Refresh(), which includes getting the chroot/proot jailed process executor (and
+// possibly architecture emulator), sets those on the Context, and returns.
 func (bc *Context) Refresh() error {
 	s6, executor, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
