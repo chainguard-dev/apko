@@ -41,20 +41,35 @@ import (
 //counterfeiter:generate . buildImplementation
 
 type buildImplementation interface {
+	// Refresh initialize build, set options, and get a jail and emulation executor and s6 supervisor config
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
+	// BuildTarball build from the layout in a working directory to an OCI image layer tarball
 	BuildTarball(*options.Options) (string, error)
+	// GenerateSBOM generate a software-bill-of-materials for the image
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
+	// InstallBusyboxSymlinks add the symlinks for busybox
 	InstallBusyboxSymlinks(*options.Options, *exec.Executor) error
+	// UpdateLdconfig run ldconfig to create links and cache for shared libraries, see https://man7.org/linux/man-pages/man8/ldconfig.8.html
 	UpdateLdconfig(*options.Options, *exec.Executor) error
+	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
 	InitializeApk(*options.Options, *types.ImageConfiguration) error
+	// MutateAccounts set up the user accounts and groups in the working directory
 	MutateAccounts(*options.Options, *types.ImageConfiguration) error
+	// MutatePaths set permissions and ownership on files based on the ImageConfiguration
 	MutatePaths(*options.Options, *types.ImageConfiguration) error
+	// GenerateOSRelase generate /etc/os-release in the working directory
 	GenerateOSRelease(*options.Options, *types.ImageConfiguration) error
+	// ValidateImageConfiguration check that the supplied ImageConfiguration is valid
 	ValidateImageConfiguration(*types.ImageConfiguration) error
+	// BuildImage based on the ImageConfiguration, run all of the steps to generate the laid out paths in the working directory
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) error
+	// WriteSupervisionTree insert the configuration files and binaries in the working directory for s6 to operate
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
+	// GenerateIndexSBOM generate an SBOM for the index
 	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
+	// GenerateImageSBOM generate an SBOM for the image contents
 	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) error
+	// AdditionalTags generate additional tags for apk packages
 	AdditionalTags(*options.Options) error
 }
 
