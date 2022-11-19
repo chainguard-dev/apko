@@ -461,7 +461,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 	packageName = strings.TrimPrefix(packageName, "https://")
 
 	sourcePackage := Package{
-		ID:                   stringToIdentifier(vcsURL),
+		ID:                   fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
 		Name:                 packageName,
 		Version:              version,
 		FilesAnalyzed:        false,
