@@ -15,8 +15,11 @@
 package apk
 
 import (
+	"archive/tar"
 	"fmt"
+	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 
@@ -148,4 +151,55 @@ func TestLoadSystemKeyring(t *testing.T) {
 	// Otherwise test running using the systen keyring
 	_, err = di.LoadSystemKeyring(o)
 	require.NoError(t, err, "testing loading system keyring")
+}
+
+func TestInitCreateDeviceFiles(t *testing.T) {
+	// This test can only run as root because it needs to
+	// create device files
+	user, err := user.Current()
+	require.NoError(t, err)
+	if user.Uid != "0" {
+		return
+	}
+
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "dev"), os.FileMode(0o755)))
+	err = initCreateDeviceFiles(&options.Options{WorkDir: dir, Log: &logrus.Logger{}})
+	require.NoError(t, err)
+
+	// Check the device files
+	for _, f := range deviceFiles {
+		stat, err := os.Stat(filepath.Join(dir, f.name))
+		require.NoError(t, err)
+		require.Equal(t, f.perm.Perm(), stat.Mode().Perm())
+		require.Equal(t, false, stat.Mode().IsRegular())
+	}
+}
+
+func TestInitCreateFileSystem(t *testing.T) {
+	dir := t.TempDir()
+	err := initCreateFileSystem(&options.Options{WorkDir: dir, Log: &logrus.Logger{}})
+	require.NoError(t, err)
+	// Verify the filesystem is complete
+	for _, f := range fileSystem {
+		stat, err := os.Stat(filepath.Join(dir, f.name))
+		require.NoError(t, err)
+		require.Equal(t, f.isDir, stat.IsDir())
+		require.Equal(t, f.perm.Perm(), stat.Mode().Perm(), f.name)
+	}
+}
+
+func TestInitWriteScriptsTarball(t *testing.T) {
+	tarPath := "lib/apk/db/scripts.tar"
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.Dir(tarPath)), os.FileMode(0o755)))
+	err := initWriteScriptsTarball(&options.Options{WorkDir: dir, Log: &logrus.Logger{}})
+	require.NoError(t, err)
+
+	// Check the tarball can be read
+	tf, err := os.Open(filepath.Join(dir, tarPath))
+	require.NoError(t, err)
+	tr := tar.NewReader(tf)
+	_, err = tr.Next()
+	require.Equal(t, io.EOF, err)
 }
