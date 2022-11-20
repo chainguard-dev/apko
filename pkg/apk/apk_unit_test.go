@@ -178,7 +178,8 @@ func TestInitCreateDeviceFiles(t *testing.T) {
 
 func TestInitCreateFileSystem(t *testing.T) {
 	dir := t.TempDir()
-	err := initCreateFileSystem(&options.Options{WorkDir: dir, Log: &logrus.Logger{}})
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "etc/apk/"), os.FileMode(0o755)))
+	err := initCreateFileSystem(&options.Options{WorkDir: dir, Log: &logrus.Logger{}, Arch: types.ParseArchitecture("x86_64")})
 	require.NoError(t, err)
 	// Verify the filesystem is complete
 	for _, f := range fileSystem {

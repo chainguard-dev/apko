@@ -55,6 +55,8 @@ var fileSystem = []struct {
 	{"lib/apk/db/lock", os.FileMode(0o600), false},
 	{"lib/apk/db/scripts.tar", os.FileMode(0o644), false},
 	{"lib/apk/db/trigger", os.FileMode(0o644), false},
+	{"etc/apk/world", os.FileMode(0o644), false},
+	{"etc/apk/arch", os.FileMode(0o644), false},
 }
 
 var deviceFiles = []struct {
@@ -119,6 +121,14 @@ func initCreateFileSystem(o *options.Options) error {
 		if err := os.Chmod(filepath.Join(o.WorkDir, fileData.name), fileData.perm); err != nil {
 			return fmt.Errorf("chmodding %s: %w", fileData.name, err)
 		}
+	}
+
+	// Write the arch file
+	if err := os.WriteFile(
+		filepath.Join(o.WorkDir, "etc/apk/arch"),
+		[]byte(o.Arch.ToAPK()+"\n"), os.FileMode(0o644),
+	); err != nil {
+		return fmt.Errorf("writing arch file: %w", err)
 	}
 	return nil
 }
