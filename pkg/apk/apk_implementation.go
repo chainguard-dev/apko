@@ -16,6 +16,7 @@ package apk
 
 import (
 	"archive/tar"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -24,14 +25,50 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"go.lsp.dev/uri"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 )
+
+var fileSystem = []struct {
+	name  string
+	perm  os.FileMode
+	isDir bool
+}{
+
+	// Directories
+	{"dev", os.FileMode(0o755), true},
+	{"etc/apk", os.FileMode(0o755), true},
+	{"proc", os.FileMode(0o555), true},
+	{"tmp", os.FileMode(0o1777), true},
+	{"var/cache/misc/", os.FileMode(0o755), true},
+	{"var/cache/apk/", os.FileMode(0o755), true},
+	{"lib/apk/db/", os.FileMode(0o755), true},
+	// Empty files that can be created
+	{"lib/apk/db/installed", os.FileMode(0o644), false},
+	{"lib/apk/db/lock", os.FileMode(0o600), false},
+	{"lib/apk/db/scripts.tar", os.FileMode(0o644), false},
+	{"lib/apk/db/trigger", os.FileMode(0o644), false},
+}
+
+var deviceFiles = []struct {
+	name  string
+	perm  os.FileMode
+	major uint32
+	minor uint32
+}{
+	{"dev/console", os.FileMode(0o600), 5, 1},
+	{"dev/null", os.FileMode(0o666), 1, 3},
+	{"dev/random", os.FileMode(0o666), 1, 8},
+	{"dev/urandom", os.FileMode(0o666), 1, 9},
+	{"dev/zero", os.FileMode(0o666), 1, 5},
+}
 
 //counterfeiter:generate . apkImplementation
 
@@ -52,9 +89,77 @@ type apkDefaultImplementation struct{}
 // to the path of a working directory.
 func (di *apkDefaultImplementation) InitDB(o *options.Options, e exec.Executor) error {
 	o.Logger().Infof("initializing apk database")
-	return e.Execute(
-		"apk", "add", "--initdb", "--arch", o.Arch.ToAPK(), "--root", o.WorkDir,
+
+	if err := initCreateFileSystem(o); err != nil {
+		return fmt.Errorf("creating apk filesystem: %w", err)
+	}
+
+	if err := initCreateDeviceFiles(o); err != nil {
+		return fmt.Errorf("creating device files: %w", err)
+	}
+
+	if err := initWriteScriptsTarball(o); err != nil {
+		return fmt.Errorf("creating scripts tarball: %w", err)
+	}
+	return nil
+}
+
+func initCreateFileSystem(o *options.Options) error {
+	// Create the skeleton directories
+	for _, fileData := range fileSystem {
+		if fileData.isDir {
+			if err := os.MkdirAll(filepath.Join(o.WorkDir, fileData.name), fileData.perm); err != nil {
+				return fmt.Errorf("creating directory: %w", err)
+			}
+		} else {
+			if _, err := os.Create(filepath.Join(o.WorkDir, fileData.name)); err != nil {
+				return fmt.Errorf("touching new file %s: %w", fileData.name, err)
+			}
+		}
+		if err := os.Chmod(filepath.Join(o.WorkDir, fileData.name), fileData.perm); err != nil {
+			return fmt.Errorf("chmodding %s: %w", fileData.name, err)
+		}
+	}
+	return nil
+}
+
+// Creates the required device files in the apk filesystem
+func initCreateDeviceFiles(o *options.Options) error {
+	for _, devData := range deviceFiles {
+		if err := unix.Mknod(
+			filepath.Join(o.WorkDir, devData.name),
+			syscall.S_IFCHR,
+			int(unix.Mkdev(devData.major, devData.minor)),
+		); err != nil {
+			return fmt.Errorf("creating device file %s: %w", devData.name, err)
+		}
+		if err := os.Chmod(filepath.Join(o.WorkDir, devData.name), devData.perm); err != nil {
+			return fmt.Errorf("changing device file permissions")
+		}
+	}
+	return nil
+}
+
+// initWriteScriptsTarball Writes the empty script tarball
+func initWriteScriptsTarball(o *options.Options) error {
+	tarHeader, err := base64.StdEncoding.DecodeString(
+		strings.Join(
+			[]string{
+				strings.Repeat(strings.Repeat("A", 76)+"\n", 17),
+				strings.Repeat("A", 74), "==",
+			}, "",
+		),
 	)
+	if err != nil {
+		return fmt.Errorf("decoding tarball header: %w", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(o.WorkDir, "lib/apk/db/scripts.tar"),
+		tarHeader, os.FileMode(0o644),
+	); err != nil {
+		return fmt.Errorf("writing scripts tarball: %w", err)
+	}
+	return nil
 }
 
 // LoadSystemKeyring returns the keys found in the system keyring
