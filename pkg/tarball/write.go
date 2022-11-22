@@ -25,27 +25,17 @@ import (
 	"syscall"
 
 	gzip "golang.org/x/build/pargzip"
+	"golang.org/x/sys/unix"
 
 	apkofs "chainguard.dev/apko/pkg/fs"
 )
 
-func (ctx *Context) writeArchiveFromFS(dst io.Writer, fsys fs.FS) error {
-	gzw := gzip.NewWriter(dst)
-	defer gzw.Close()
-
-	tw := tar.NewWriter(gzw)
-	if !ctx.SkipClose {
-		defer tw.Close()
-	} else {
-		defer tw.Flush()
-	}
-
-	return ctx.writeTar(tw, fsys)
-}
-
 func hasHardlinks(fi fs.FileInfo) bool {
 	if stat := fi.Sys(); stat != nil {
-		si := stat.(*syscall.Stat_t)
+		si, ok := stat.(*syscall.Stat_t)
+		if !ok {
+			return false
+		}
 
 		// if we don't have inodes, we just assume the filesystem
 		// does not support hardlinks
@@ -77,6 +67,10 @@ func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
 
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 	seenFiles := map[uint64]string{}
+	// set this once, to make it easy to look up later
+	if ctx.overridePerms == nil {
+		ctx.overridePerms = map[string]tar.Header{}
+	}
 
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		// skip the root path, superfluous
@@ -93,21 +87,45 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			return err
 		}
 
-		var link string
+		var (
+			link         string
+			symlink      bool
+			major, minor uint32
+			isCharDevice bool
+		)
 		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
 			rlfs, ok := fsys.(apkofs.ReadLinkFS)
 			if !ok {
 				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
 			}
 
-			if link, err = rlfs.Readlink(path); err != nil {
+			if link, symlink, err = rlfs.Readlink(path); err != nil {
 				return err
 			}
+		}
+
+		if info.Mode()&os.ModeCharDevice == os.ModeCharDevice {
+			rlfs, ok := fsys.(apkofs.ReadnodFS)
+			if !ok {
+				return fmt.Errorf("read character device not supported by this fs: path (%s) %#v %#v", path, info, fsys)
+			}
+			isCharDevice = true
+			dev, err := rlfs.Readnod(path)
+			if err != nil {
+				return err
+			}
+			major = unix.Major(uint64(dev))
+			minor = unix.Minor(uint64(dev))
 		}
 
 		header, err := tar.FileInfoHeader(info, link)
 		if err != nil {
 			return err
+		}
+		// devices
+		if isCharDevice {
+			header.Devmajor = int64(major)
+			header.Devminor = int64(minor)
 		}
 		// work around some weirdness, without this we wind up with just the basename
 		header.Name = path
@@ -130,6 +148,25 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			header.Gname = ctx.OverrideGname
 		}
 
+		// look for the override perms with or without the leading /
+		if h, ok := ctx.overridePerms[header.Name]; ok {
+			header.Mode = h.Mode
+			header.Uid = h.Uid
+			header.Gid = h.Gid
+			header.Uname = h.Uname
+			header.Gname = h.Gname
+		}
+		if h, ok := ctx.overridePerms["/"+header.Name]; ok {
+			header.Mode = h.Mode
+			header.Uid = h.Uid
+			header.Gid = h.Gid
+			header.Uname = h.Uname
+			header.Gname = h.Gname
+		}
+
+		if link != "" && !symlink {
+			header.Typeflag = tar.TypeLink
+		}
 		if !info.IsDir() && hasHardlinks(info) {
 			inode, err := getInodeFromFileInfo(info)
 			if err != nil {
@@ -194,9 +231,21 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 	return nil
 }
 
-// WriteArchive writes a tarball to the provided io.Writer.
+// WriteArchive writes a tarball to the provided io.Writer from the provided fs.FS.
+// To override permissions, set the OverridePerms when creating the Context.
+// If you need to get multiple filesystems, merge them prior to calling WriteArchive.
 func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) error {
-	if err := ctx.writeArchiveFromFS(dst, src); err != nil {
+	gzw := gzip.NewWriter(dst)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	if !ctx.SkipClose {
+		defer tw.Close()
+	} else {
+		defer tw.Flush()
+	}
+
+	if err := ctx.writeTar(tw, src); err != nil {
 		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 

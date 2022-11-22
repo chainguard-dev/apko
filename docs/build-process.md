@@ -46,25 +46,18 @@ It involves several steps:
 1. `MutateAccounts()`: Create users and groups.
 1. Set file and directory permissions.
 1. Set the symlinks for busybox, as busybox is a single binary which determines what action to take based on the invoked path.
-1. Update ldconfig via `/sbin/ldconfig -v /lib`.
+1. Update ldconfig.
 1. Create the `/etc/os-release` file.
 1. If s6 is used for supervision, install it and create its configuration files.
 
-Note that some of these steps involve simply laying out files in a path or changing permissions. Those are
-straightforward and can be done directly in the working directory.
+Note that all of the steps involve some file manipulation.
 
-Other steps require executing commands, such as `ldconfig`. These expect to be working in directories
-based on `/`, and not relative to our working directory, e.g. `/tmp/foo/`. Some also
-expect to run as root.
-
-In order to make these appear to be running as root inside a root directory based on `/`, the commands
-are executed in a chroot jail. This is either using [proot](http://proot-me.github.io) or
-[chroot](https://linux.die.net/man/1/chroot).
-
-We use `proot` when one or more of the following is true:
-
-* We are not executing as root, since `chroot` requires running as root.
-* We are building for an architecture other than the architecture on which we are running, as `proot` has support for using qemu to emulate other architectures.
+* In the case of simply laying out files or changing permissions, this is straightforward and performed in the working directory.
+* In the case of apk commands, it uses the [pkg/apk/impl](../pkg/apk/impl/) implementation to lay out files directly.
+* In the case of `chown`/`chmod`, if it cannot do so directly - either because the underlying filesystem does not support it or because it is not running as root - it ignores the errors and keeps track of the intended ownership and permissions, adding them to the final layer tar stream.
+* In the case of `ldconfig`, it replicates the equivalent functionality by parsing the library ELF headers and creating the symlinks.
+* In the case of `busybox`, it creates symlinks to the busybox binary, based on a fixed list.
+* In the case of character devices, if it cannot do so directly - either because the underlying filesystem does not support it or because it is not running as root - it ignores the errors and keeps track of the intended files, adding them to the final layer tar stream.
 
 ## Managing apk
 

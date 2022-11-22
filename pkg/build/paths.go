@@ -15,6 +15,7 @@
 package build
 
 import (
+	"archive/tar"
 	"fmt"
 	"io/fs"
 	"os"
@@ -24,7 +25,7 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-type PathMutator func(*options.Options, types.PathMutation) error
+type PathMutator func(*options.Options, types.PathMutation) ([]tar.Header, error)
 
 var pathMutators = map[string]PathMutator{
 	"directory":   mutateDirectory,
@@ -34,26 +35,31 @@ var pathMutators = map[string]PathMutator{
 	"permissions": mutatePermissions,
 }
 
-func mutatePermissions(o *options.Options, mut types.PathMutation) error {
-	target := filepath.Join(o.WorkDir, mut.Path)
-	perms := fs.FileMode(mut.Permissions)
-
-	if err := os.Chmod(target, perms); err != nil {
-		return err
-	}
-
-	if err := os.Chown(target, int(mut.UID), int(mut.GID)); err != nil {
-		return err
-	}
-
-	return nil
+func mutatePermissions(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
+	return mutatePermissionsDirect(o.WorkDir, mut.Path, mut.Permissions, mut.UID, mut.GID)
 }
 
-func mutateDirectory(o *options.Options, mut types.PathMutation) error {
+func mutatePermissionsDirect(workdir, path string, perms, uid, gid uint32) ([]tar.Header, error) {
+	target := filepath.Join(workdir, path)
+
+	err1 := os.Chmod(target, fs.FileMode(perms))
+	err2 := os.Chown(target, int(uid), int(gid))
+	if err1 == nil && err2 == nil {
+		return nil, nil
+	}
+
+	// we had errors, so we need override info
+	return []tar.Header{
+		{Name: path, Mode: int64(perms), Uid: int(uid), Gid: int(gid)},
+	}, nil
+}
+
+func mutateDirectory(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
+	var headers []tar.Header
 	perms := fs.FileMode(mut.Permissions)
 
 	if err := os.MkdirAll(filepath.Join(o.WorkDir, mut.Path), perms); err != nil {
-		return err
+		return nil, err
 	}
 
 	if mut.Recursive {
@@ -61,19 +67,17 @@ func mutateDirectory(o *options.Options, mut types.PathMutation) error {
 			if err != nil {
 				return err
 			}
-			if err := os.Chmod(path, perms); err != nil {
-				return err
-			}
-			if err := os.Chown(path, int(mut.UID), int(mut.GID)); err != nil {
-				return err
+			h, err := mutatePermissionsDirect(o.WorkDir, path, mut.Permissions, mut.UID, mut.GID)
+			if err != nil {
+				headers = append(headers, h...)
 			}
 			return nil
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return headers, nil
 }
 
 func ensureParentDirectory(o *options.Options, mut types.PathMutation) error {
@@ -87,28 +91,30 @@ func ensureParentDirectory(o *options.Options, mut types.PathMutation) error {
 	return nil
 }
 
-func mutateEmptyFile(o *options.Options, mut types.PathMutation) error {
+func mutateEmptyFile(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
 	target := filepath.Join(o.WorkDir, mut.Path)
 
 	if err := ensureParentDirectory(o, mut); err != nil {
-		return err
+		return nil, err
 	}
 
 	file, err := os.Create(target)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
-	return nil
+	return nil, nil
 }
 
-func mutateHardLink(o *options.Options, mut types.PathMutation) error {
+func mutateHardLink(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
+	var headers []tar.Header
+
 	source := filepath.Join(o.WorkDir, mut.Source)
 	target := filepath.Join(o.WorkDir, mut.Path)
 
 	if err := ensureParentDirectory(o, mut); err != nil {
-		return err
+		return nil, err
 	}
 
 	// overwrite link if already exists
@@ -117,45 +123,64 @@ func mutateHardLink(o *options.Options, mut types.PathMutation) error {
 	}
 
 	if err := os.Link(source, target); err != nil {
-		return err
+		// what if hardlinking is not supported?
+		headers = append(headers, tar.Header{
+			Typeflag: tar.TypeLink,
+			Name:     mut.Path,
+			Linkname: mut.Source,
+		})
 	}
 
-	return nil
+	return headers, nil
 }
 
-func mutateSymLink(o *options.Options, mut types.PathMutation) error {
+func mutateSymLink(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
+	var headers []tar.Header
+
 	target := filepath.Join(o.WorkDir, mut.Path)
 
 	if err := ensureParentDirectory(o, mut); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := os.Symlink(mut.Source, target); err != nil {
-		return err
+		// what if symlinking is not supported?
+		headers = append(headers, tar.Header{
+			Typeflag: tar.TypeSymlink,
+			Name:     mut.Path,
+			Linkname: mut.Source,
+			Uid:      int(mut.UID),
+			Gid:      int(mut.GID),
+		})
 	}
 
-	return nil
+	return headers, nil
 }
 
 func (di *defaultBuildImplementation) MutatePaths(
 	o *options.Options, ic *types.ImageConfiguration,
-) error {
+) ([]tar.Header, error) {
+	var headers []tar.Header
 	for _, mut := range ic.Paths {
 		pm, ok := pathMutators[mut.Type]
 		if !ok {
-			return fmt.Errorf("unsupported path mutation type %q", mut.Type)
+			return nil, fmt.Errorf("unsupported path mutation type %q", mut.Type)
 		}
 
-		if err := pm(o, mut); err != nil {
-			return err
+		h, err := pm(o, mut)
+		if err != nil {
+			return nil, err
 		}
+		headers = append(headers, h...)
 
 		if mut.Type != "permissions" {
-			if err := mutatePermissions(o, mut); err != nil {
-				return err
+			h, err := mutatePermissions(o, mut)
+			if err != nil {
+				return nil, err
 			}
+			headers = append(headers, h...)
 		}
 	}
 
-	return nil
+	return headers, nil
 }

@@ -41,17 +41,11 @@ func (di *defaultBuildImplementation) appendGroup(
 	return append(groups, ge)
 }
 
-func (di *defaultBuildImplementation) appendUser(
-	o *options.Options, users []passwd.UserEntry, user types.User,
-) []passwd.UserEntry {
-	o.Logger().Printf("creating user %d(%s)", user.UID, user.UserName)
-
+func userToUserEntry(user types.User) passwd.UserEntry {
 	if user.GID == 0 {
-		o.Logger().Warnf("guessing unset GID for user %v", user)
 		user.GID = user.UID
 	}
-
-	ue := passwd.UserEntry{
+	return passwd.UserEntry{
 		UserName: user.UserName,
 		UID:      user.UID,
 		GID:      user.GID,
@@ -60,8 +54,6 @@ func (di *defaultBuildImplementation) appendUser(
 		Info:     "Account created by apko",
 		Shell:    "/bin/sh",
 	}
-
-	return append(users, ue)
 }
 
 func (di *defaultBuildImplementation) MutateAccounts(
@@ -101,12 +93,9 @@ func (di *defaultBuildImplementation) MutateAccounts(
 		}
 
 		for _, u := range ic.Accounts.Users {
-			uf.Entries = di.appendUser(o, uf.Entries, u)
-		}
+			ue := userToUserEntry(u)
+			uf.Entries = append(uf.Entries, ue)
 
-		// Make sure all users have home directories with the appropriate
-		// permissions.
-		for _, ue := range uf.Entries {
 			// This is what the home directory is set to for our homeless users.
 			if ue.HomeDir == "/dev/null" {
 				continue
@@ -130,18 +119,6 @@ func (di *defaultBuildImplementation) MutateAccounts(
 			} else if err := os.MkdirAll(targetHomedir, 0755); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
 			}
-
-			// If we are using proot, we don't have permission to do these things.
-			if !o.UseProot {
-				if err := os.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
-					return fmt.Errorf("chown(%d, %d) = %w", ue.UID, ue.GID, err)
-				} else if err := os.Chmod(targetHomedir, 0700); err != nil {
-					return fmt.Errorf("chmod %s %d = %w", ue.HomeDir, 0700, err)
-				}
-			}
-
-			// We have made sure that the directory exists, and if we created it
-			// then we ensured it has the correct permissions.
 		}
 
 		if err := uf.WriteFile(path); err != nil {

@@ -150,7 +150,6 @@ func (di *defaultSBOMImplementation) ReadReleaseData(opts *options.Options, path
 	}
 
 	info := osr.Parse(string(osReleaseData))
-	fmt.Printf("%+v", info)
 
 	opts.OS.Name = info.Name
 	opts.OS.ID = info.ID

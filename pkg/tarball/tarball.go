@@ -15,6 +15,7 @@
 package tarball
 
 import (
+	"archive/tar"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type Context struct {
 	OverrideGname   string
 	SkipClose       bool
 	UseChecksums    bool
+	overridePerms   map[string]tar.Header
 }
 
 type Option func(*Context) error
@@ -52,12 +54,24 @@ func WithSourceDateEpoch(t time.Time) Option {
 	}
 }
 
-// WithOverrideUIDGID sets the UID/GID to override with for Context.
+// WithOverrideUIDGID sets the UID/GID to override with for all files for Context.
 func WithOverrideUIDGID(uid, gid int) Option {
 	return func(ctx *Context) error {
 		ctx.OverrideUIDGID = true
 		ctx.UID = uid
 		ctx.GID = gid
+		return nil
+	}
+}
+
+// WithOverridePerms sets the UID/GID and file permissions to override with for specific files Context.
+func WithOverridePerms(files []tar.Header) Option {
+	return func(ctx *Context) error {
+		overrides := map[string]tar.Header{}
+		for _, f := range files {
+			overrides[f.Name] = f
+		}
+		ctx.overridePerms = overrides
 		return nil
 	}
 }

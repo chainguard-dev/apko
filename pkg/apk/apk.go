@@ -17,6 +17,7 @@ package apk
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
+	"archive/tar"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -27,83 +28,109 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"golang.org/x/sync/errgroup"
 
+	apkimpl "chainguard.dev/apko/pkg/apk/impl"
+	"chainguard.dev/apko/pkg/apk/impl/rwfs"
+	"chainguard.dev/apko/pkg/apk/impl/rwosfs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
 )
 
-// Programmatic wrapper around apk-tools.  For now, this is done with os.Exec(),
-// but this has been designed so that we can port it easily to use libapk-go once
-// it is ready.
-
-const (
-	DefaultKeyRingPath       = "/etc/apk/keys"
-	DefaultSystemKeyRingPath = "/usr/share/apk/keys/"
-)
+// Programmatic wrapper around apk-tools.
 
 type APK struct {
 	impl     apkImplementation
 	executor *exec.Executor
+	fs       rwfs.FS
 	Options  options.Options
 }
 
-func New() *APK {
+func New() (*APK, error) {
 	return NewWithOptions(options.Default)
 }
 
-func NewWithOptions(o options.Options) *APK {
-	a := &APK{
-		Options: o,
-		impl:    &apkDefaultImplementation{},
+func NewWithOptions(o options.Options) (*APK, error) {
+	opts := options.Default
+	if o.Log == nil {
+		o.Log = opts.Log
 	}
-	_ = a.buildExecutor()
-	return a
+
+	executor, err := buildExecutor(o)
+	if err != nil {
+		panic(err)
+	}
+	// note: apko ignores the mknod errors, because it does not care if the characters devices
+	// exist or not. apko does not execute the scripts, so they do not matter. This buys us flexibility
+	// to run without root privileges, or on platforms without character devices.
+	// When we package it all up, we ensure those devices are in the layer tar stream.
+	src, err := rwosfs.NewReadWriteFS(o.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+	apkImpl, _ := apkimpl.NewAPKImplementation(
+		apkimpl.WithFS(src),
+		apkimpl.WithLogger(o.Logger()),
+		apkimpl.WithArch(o.Arch.ToAPK()),
+		apkimpl.WithIgnoreMknodErrors(true),
+	)
+	a := &APK{
+		Options:  o,
+		impl:     apkImpl,
+		executor: executor,
+		fs:       src,
+	}
+	return a, nil
 }
 
 type Option func(*APK) error
 
-func (a *APK) buildExecutor() error {
+func buildExecutor(o options.Options) (*exec.Executor, error) {
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
-	execOpts := []exec.Option{exec.WithProot(a.Options.UseProot)}
-	if a.Options.UseProot && !a.Options.Arch.Compatible(hostArch) {
-		a.Options.Log.Printf("%q requires QEMU (not compatible with %q)", a.Options.Arch, hostArch)
-		execOpts = append(execOpts, exec.WithQemu(a.Options.Arch.ToQEmu()))
+	execOpts := []exec.Option{exec.WithProot(o.UseProot)}
+	if o.UseProot && !o.Arch.Compatible(hostArch) {
+		o.Log.Printf("%q requires QEMU (not compatible with %q)", o.Arch, hostArch)
+		execOpts = append(execOpts, exec.WithQemu(o.Arch.ToQEmu()))
 	}
 
-	executor, err := exec.New(a.Options.WorkDir, a.Options.Logger(), execOpts...)
-	if err != nil {
-		return fmt.Errorf("building executor: %w", err)
-	}
-	a.executor = executor
-	return nil
+	return exec.New(o.WorkDir, o.Logger(), execOpts...)
 }
 
 // Builds the image in Context.WorkDir according to the image configuration
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	// initialize apk
-	if err := a.impl.InitDB(&a.Options, *a.executor); err != nil {
+	// first set up required directories
+	baseDirs := []string{"/tmp", "/proc", "/dev", "/var", "/lib", "/etc"}
+	for _, d := range baseDirs {
+		if err := a.fs.MkdirAll(d, 0o755); err != nil {
+			return err
+		}
+	}
+	alpineVersions := parseOptionsFromRepositories(ic.Contents.Repositories)
+	if err := a.impl.InitDB(alpineVersions...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		if err := a.impl.InitKeyring(&a.Options, ic); err != nil {
+		if err := a.impl.InitKeyring(ic.Contents.Keyring, a.Options.ExtraKeyFiles); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := a.impl.InitRepositories(&a.Options, ic); err != nil {
+		repos := ic.Contents.Repositories
+		repos = append(repos, a.Options.ExtraRepos...)
+		if err := a.impl.SetRepositories(repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		if err := a.impl.InitWorld(&a.Options, ic); err != nil {
+		if err := a.impl.SetWorld(ic.Contents.Packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
@@ -114,22 +141,15 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	}
 
 	// sync reality with desired apk world
-	if err := a.impl.FixateWorld(&a.Options, a.executor); err != nil {
+	if err := a.impl.FixateWorld(false, true, false, &a.Options.SourceDateEpoch); err != nil {
 		return fmt.Errorf("failed to fixate apk world: %w", err)
 	}
 
-	eg.Go(func() error {
-		if err := a.impl.NormalizeScriptsTar(&a.Options); err != nil {
-			return fmt.Errorf("failed to normalize scripts.tar: %w", err)
-		}
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
 	return nil
+}
+
+func (a *APK) GetInstalled() ([]*apkimpl.InstalledPackage, error) {
+	return a.impl.GetInstalled()
 }
 
 // AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
@@ -226,4 +246,22 @@ func getStemmedVersionTags(opts options.Options, origRef string, version string)
 
 func (a *APK) SetImplementation(impl apkImplementation) {
 	a.impl = impl
+}
+
+func (a *APK) ListInitFiles() []tar.Header {
+	return a.impl.ListInitFiles()
+}
+
+var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
+
+func parseOptionsFromRepositories(repos []string) []string {
+	var versions = make([]string, 0)
+	for _, r := range repos {
+		parts := repoRE.FindStringSubmatch(r)
+		if len(parts) < 2 {
+			continue
+		}
+		versions = append(versions, parts[1])
+	}
+	return versions
 }

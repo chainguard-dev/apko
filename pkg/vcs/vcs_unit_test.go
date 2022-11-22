@@ -123,7 +123,7 @@ func TestOpenRepository(t *testing.T) {
 		{
 			// Subdirectory should work
 			shouldErr: false,
-			topDir:    "/tmp",
+			topDir:    os.TempDir(),
 			prepare: func() (string, error) {
 				dir := createTestRepo(t)
 				require.NoError(t, os.MkdirAll(filepath.Join(os.TempDir(), "a", "b"), os.FileMode(0o755)))
@@ -133,7 +133,7 @@ func TestOpenRepository(t *testing.T) {
 		{
 			// No repo until top
 			shouldErr: true,
-			topDir:    "/tmp",
+			topDir:    os.TempDir(),
 			prepare: func() (string, error) {
 				p := filepath.Join(os.TempDir(), "a", "b")
 				err := os.MkdirAll(p, os.FileMode(0o755))

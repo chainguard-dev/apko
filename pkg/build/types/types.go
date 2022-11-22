@@ -241,9 +241,9 @@ func ParseArchitecture(s string) Architecture {
 	switch s {
 	case "x86":
 		return _386
-	case "x86_64":
+	case "x86_64", "amd64":
 		return amd64
-	case "aarch64":
+	case "aarch64", "arm64":
 		return arm64
 	case "armhf":
 		return armv6

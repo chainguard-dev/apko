@@ -50,18 +50,18 @@ func TestInitialize(t *testing.T) {
 			msg:         "InitKeyring should fail",
 			shouldError: true,
 		},
-		{ // InitRepositories fails
+		{ // SetRepositories fails
 			prepare: func(fai *apkfakes.FakeApkImplementation) {
-				fai.InitRepositoriesReturns(fakeErr)
+				fai.SetRepositoriesReturns(fakeErr)
 			},
-			msg:         "InitRepositories should fail",
+			msg:         "SetRepositories should fail",
 			shouldError: true,
 		},
-		{ // InitWorld fails
+		{ // SetWorld fails
 			prepare: func(fai *apkfakes.FakeApkImplementation) {
-				fai.InitWorldReturns(fakeErr)
+				fai.SetWorldReturns(fakeErr)
 			},
-			msg:         "InitWorld should fail",
+			msg:         "SetWorld should fail",
 			shouldError: true,
 		},
 		{ // FixateWorld fails
@@ -71,20 +71,16 @@ func TestInitialize(t *testing.T) {
 			msg:         "FixateWorld should fail",
 			shouldError: true,
 		},
-		{ // NormalizeScriptsTar fails
-			prepare: func(fai *apkfakes.FakeApkImplementation) {
-				fai.NormalizeScriptsTarReturns(fakeErr)
-			},
-			msg:         "NormalizeScriptsTar should fail",
-			shouldError: true,
-		},
 	} {
 		mock := &apkfakes.FakeApkImplementation{}
 		tc.prepare(mock)
 
-		sut := New()
+		sut, err := NewWithOptions(options.Options{
+			WorkDir: t.TempDir(),
+		})
+		require.NoError(t, err)
 		sut.SetImplementation(mock)
-		err := sut.Initialize(&types.ImageConfiguration{})
+		err = sut.Initialize(&types.ImageConfiguration{})
 		if tc.shouldError {
 			require.Error(t, err, tc.msg)
 		} else {

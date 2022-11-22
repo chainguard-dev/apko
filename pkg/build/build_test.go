@@ -115,14 +115,6 @@ func TestBuildImage(t *testing.T) {
 			shouldError: true,
 		},
 		{
-			// InstallBusyboxSymlinks fails
-			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
-				fbi.InstallBusyboxSymlinksReturns(fakeErr)
-			},
-			msg:         "InstallBusyboxSymlinks fails",
-			shouldError: true,
-		},
-		{
 			// WriteSupervisionTree fails
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
 				fbi.WriteSupervisionTreeReturns(fakeErr)
@@ -137,7 +129,7 @@ func TestBuildImage(t *testing.T) {
 		sut, err := build.New("/mock")
 		require.NoError(t, err)
 		sut.SetImplementation(mock)
-		err = sut.BuildImage()
+		_, err = sut.BuildImage()
 		if tc.shouldError {
 			require.Error(t, err, tc.msg)
 		} else {

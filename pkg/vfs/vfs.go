@@ -21,8 +21,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // An INode contains overlay metadata for a filesystem entry that would
@@ -30,7 +31,7 @@ import (
 type INode struct {
 	Filename      string
 	Children      map[string]*INode
-	UnderlayINode syscall.Stat_t
+	UnderlayINode unix.Stat_t
 }
 
 // parseElements parses a path into components, and returns the current
@@ -156,7 +157,7 @@ func (i *INode) Chmod(path string, mode fs.FileMode) error {
 		newMode |= fs.ModeDir
 	}
 
-	node.UnderlayINode.Mode = uint32(newMode)
+	node.UnderlayINode.Mode = fileModeToStatMode(newMode)
 	return nil
 }
 

@@ -17,22 +17,37 @@ package fs
 import (
 	"io/fs"
 	"os"
-	"path/filepath"
 )
 
-type rlfs struct {
-	base string
-	f    fs.FS
+type ReadLinkFS interface {
+	fs.FS
+	Readlink(name string) (string, bool, error)
 }
 
-func (f *rlfs) Readlink(name string) (string, error) {
-	return os.Readlink(filepath.Join(f.base, name))
+type OpenReaderAtFS interface {
+	fs.FS
+	OpenReaderAt(name string) (File, error)
 }
 
-func (f *rlfs) Open(name string) (fs.File, error) {
-	return f.f.Open(name)
+type ReadnodFS interface {
+	fs.FS
+	Readnod(name string) (dev int, err error)
 }
 
-func (f *rlfs) Stat(name string) (fs.FileInfo, error) {
-	return os.Stat(filepath.Join(f.base, name))
+type OpenReaderAtReadLinkFS interface {
+	OpenReaderAtFS
+	ReadLinkFS
+}
+
+type OpenReaderAtReadLinkReadnodFS interface {
+	OpenReaderAtFS
+	ReadLinkFS
+	ReadnodFS
+}
+
+func DirFS(dir string) OpenReaderAtReadLinkReadnodFS {
+	return &readLinkNodFS{
+		base: dir,
+		f:    os.DirFS(dir),
+	}
 }
