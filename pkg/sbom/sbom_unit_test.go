@@ -31,12 +31,11 @@ import (
 var errFake = fmt.Errorf("synthetic error")
 
 func TestReadReleaseData(t *testing.T) {
-	osinfoData := `NAME="Alpine Linux"
-ID=alpine
-VERSION_ID=3.15.0
-PRETTY_NAME="Alpine Linux v3.15"
-HOME_URL="https://alpinelinux.org/"
-BUG_REPORT_URL="https://bugs.alpinelinux.org/"
+	osinfoData := `ID=wolfi
+NAME="Wolfi"
+PRETTY_NAME="Wolfi"
+VERSION_ID="20220914"
+HOME_URL="https://wolfi.dev"
 `
 	tdir := t.TempDir()
 	require.NoError(
@@ -50,9 +49,27 @@ BUG_REPORT_URL="https://bugs.alpinelinux.org/"
 	require.Error(t, di.ReadReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
 	opts := options.Options{}
 	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
-	require.Equal(t, "alpine", opts.OS.ID)
-	require.Equal(t, "Alpine Linux", opts.OS.Name)
-	require.Equal(t, "3.15.0", opts.OS.Version)
+	require.Equal(t, "wolfi", opts.OS.ID, "id")
+	require.Equal(t, "Wolfi", opts.OS.Name, "name")
+	require.Equal(t, "20220914", opts.OS.Version, "version")
+}
+
+func TestReadReleaseData_EmptyDefaults(t *testing.T) {
+	tdir := t.TempDir()
+	require.NoError(
+		t, os.WriteFile(
+			filepath.Join(tdir, "os-release"), nil, os.FileMode(0o644),
+		),
+	)
+	di := defaultSBOMImplementation{}
+
+	// Non existent file, should err
+	require.Error(t, di.ReadReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
+	opts := options.Options{}
+	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
+	require.Equal(t, "", opts.OS.ID, "id")
+	require.Equal(t, "", opts.OS.Name, "name")
+	require.Equal(t, "", opts.OS.Version, "version")
 }
 
 func TestReadPackageIndex(t *testing.T) {

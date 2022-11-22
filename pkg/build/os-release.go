@@ -62,6 +62,7 @@ func (di *defaultBuildImplementation) GenerateOSRelease(
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		o.Logger().Warnf("did not find /etc/os-release at %s", path)
 		osReleaseExists = false
 	}
 
