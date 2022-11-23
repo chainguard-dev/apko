@@ -37,7 +37,7 @@ var (
 
 var DefaultOptions = options.Options{
 	OS: options.OSInfo{
-		ID:      "alpine",
+		ID:      "unknown",
 		Name:    "Alpine Linux",
 		Version: "Unknown",
 	},

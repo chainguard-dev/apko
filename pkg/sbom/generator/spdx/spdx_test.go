@@ -35,8 +35,8 @@ var testOpts = &options.Options{
 		ID      string
 		Version string
 	}{
-		Name:    "alpine",
-		ID:      "alpine",
+		Name:    "unknown",
+		ID:      "unknown",
 		Version: "3.0",
 	},
 	FileName: "sbom",

@@ -136,7 +136,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.OSRelease.ID == "" {
-		ic.OSRelease.ID = "alpine"
+		ic.OSRelease.ID = "unknown"
 	}
 
 	if ic.OSRelease.Name == "" {
@@ -145,7 +145,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.OSRelease.VersionID == "" {
-		ic.OSRelease.VersionID = "3.16"
+		ic.OSRelease.VersionID = "unknown"
 	}
 
 	if ic.OSRelease.HomeURL == "" {
