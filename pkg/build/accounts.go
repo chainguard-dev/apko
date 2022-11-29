@@ -129,10 +129,15 @@ func (di *defaultBuildImplementation) MutateAccounts(
 				return fmt.Errorf("checking homedir exists: %w", err)
 			} else if err := os.MkdirAll(targetHomedir, 0755); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
-			} else if err := os.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
-				return fmt.Errorf("chown(%d, %d) = %w", ue.UID, ue.GID, err)
-			} else if err := os.Chmod(targetHomedir, 0700); err != nil {
-				return fmt.Errorf("chmod %s %d = %w", ue.HomeDir, 0700, err)
+			}
+
+			// If we are using proot, we don't have permission to do these things.
+			if !o.UseProot {
+				if err := os.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
+					return fmt.Errorf("chown(%d, %d) = %w", ue.UID, ue.GID, err)
+				} else if err := os.Chmod(targetHomedir, 0700); err != nil {
+					return fmt.Errorf("chmod %s %d = %w", ue.HomeDir, 0700, err)
+				}
 			}
 
 			// We have made sure that the directory exists, and if we created it
