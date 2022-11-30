@@ -45,6 +45,7 @@ type Options struct {
 	PackageVersionTagStem   bool
 	PackageVersionTagPrefix string
 	TagSuffix               string
+	Local                   bool
 }
 
 var Default = Options{

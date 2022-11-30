@@ -209,3 +209,11 @@ func WithTagSuffix(tagSuffix string) Option {
 		return nil
 	}
 }
+
+// WithLocal sets whether to publish image to local Docker daemon.
+func WithLocal(local bool) Option {
+	return func(bc *Context) error {
+		bc.Options.Local = local
+		return nil
+	}
+}
