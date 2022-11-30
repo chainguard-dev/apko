@@ -55,10 +55,10 @@ type OSRelease struct {
 
 type ImageConfiguration struct {
 	Contents struct {
-		Repositories []string
-		Keyring      []string
-		Packages     []string
-	}
+		Repositories []string `yaml:"repositories,omitempty"`
+		Keyring      []string `yaml:"keyring,omitempty"`
+		Packages     []string `yaml:"packages,omitempty"`
+	} `yaml:"contents,omitempty"`
 	Entrypoint struct {
 		Type          string
 		Command       string
