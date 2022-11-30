@@ -33,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -51,6 +52,11 @@ import (
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
+)
+
+const (
+	LocalDomain = "apko.local"
+	LocalRepo   = "cache"
 )
 
 var keychain = authn.NewMultiKeychain(
@@ -312,10 +318,34 @@ func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imag
 	return nil
 }
 
-func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, logger *logrus.Entry) (name.Digest, error) {
+func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger *logrus.Entry) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
+	}
+
+	if local {
+		localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, hash.Hex)
+		localSrcTag, err := name.NewTag(localSrcTagStr)
+		if err != nil {
+			return name.Digest{}, err
+		}
+		logger.Infof("saving OCI image locally: %s", localSrcTag.Name())
+		resp, err := daemon.Write(localSrcTag, image)
+		if err != nil {
+			logger.Errorf("docker daemon error: %s", strings.ReplaceAll(resp, "\n", "\\n"))
+			return name.Digest{}, fmt.Errorf("failed to save OCI image locally: %w", err)
+		}
+		logger.Debugf("docker daemon response: %s", strings.ReplaceAll(resp, "\n", "\\n"))
+		localDstTag, err := name.NewTag(imageRef)
+		if err != nil {
+			return name.Digest{}, err
+		}
+		logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
+		if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+			return name.Digest{}, err
+		}
+		return name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), hash))
 	}
 
 	// Write any attached SBOMs/signatures.
@@ -332,15 +362,15 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
 }
 
-func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
 }
 
-func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -354,24 +384,23 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	digest := name.Digest{}
 	for _, tag := range tags {
 		logger.Printf("publishing image tag %v", tag)
-		digest, err = publishTagFromImage(v1Image, tag, h, logger)
+		digest, err = publishTagFromImage(v1Image, tag, h, local, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
 	}
-
 	return digest, v1Image, nil
 }
 
-func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, tags...)
+func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, local, tags...)
 }
 
-func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, tags...)
+func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, local, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -412,6 +441,58 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 	// pkg/v1/mutate.Annotations will drop the interface methods from
 	// oci.SignedImageIndex, so we may need to reimplement
 	// mutate.Annotations in ocimutate to keep it for now.
+
+	// If attempting to save locally, pick the native architecture
+	// and use that cached image for local tags
+	// Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
+	if local {
+		im, err := idx.IndexManifest()
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+		goos, goarch := os.Getenv("GOOS"), os.Getenv("GOARCH")
+		if goos == "" {
+			goos = "linux"
+		}
+		if goarch == "" {
+			goarch = "amd64"
+		}
+		// Default to just using the first one in the list if we cannot match
+		useManifest := im.Manifests[0]
+		for _, manifest := range im.Manifests {
+			if manifest.Platform == nil {
+				continue
+			}
+			if manifest.Platform.OS != goos {
+				continue
+			}
+			if manifest.Platform.Architecture != goarch {
+				continue
+			}
+			useManifest = manifest
+		}
+		localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, useManifest.Digest.Hex)
+		logger.Printf("using best guess single-arch image for local tags: %s (%s/%s)", localSrcTagStr, goos, goarch)
+		localSrcTag, err := name.NewTag(localSrcTagStr)
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+		for _, tag := range tags {
+			localDstTag, err := name.NewTag(tag)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
+			logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
+			if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+				return name.Digest{}, nil, err
+			}
+		}
+		digest, err := name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), useManifest.Digest.String()))
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+		return digest, idx, nil
+	}
 
 	h, err := idx.Digest()
 	if err != nil {

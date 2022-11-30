@@ -53,6 +53,7 @@ func publish() *cobra.Command {
 	var debugEnabled bool
 	var withVCS bool
 	var writeSBOM bool
+	var local bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -90,6 +91,7 @@ in a keychain.`,
 				build.WithPackageVersionTagStem(packageVersionTagStem),
 				build.WithPackageVersionTagPrefix(packageVersionTagPrefix),
 				build.WithTagSuffix(tagSuffix),
+				build.WithLocal(local),
 			); err != nil {
 				return err
 			}
@@ -114,6 +116,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
+	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
 
 	return cmd
 }
@@ -222,6 +225,13 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		builtReferences = append(builtReferences, finalDigest.String())
 	}
 
+	// If saving local, exit early (no SBOMs etc.)
+	if bc.Options.Local {
+		bc.Logger().Printf("using local option, exiting early")
+		fmt.Println(strings.Split(finalDigest.String(), "@")[0])
+		return nil
+	}
+
 	for _, at := range additionalTags {
 		if err := oci.Copy(finalDigest.Name(), at); err != nil {
 			return err
@@ -286,7 +296,7 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 	if bc.Options.UseDockerMediaTypes {
 		imgDigest, img, err = oci.PublishDockerImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
@@ -294,7 +304,7 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 	} else {
 		imgDigest, img, err = oci.PublishImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Tags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
@@ -308,12 +318,12 @@ func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImag
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}
