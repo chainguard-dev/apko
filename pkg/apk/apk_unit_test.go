@@ -78,10 +78,14 @@ func TestInitKeyring(t *testing.T) {
 	// Create an image configuration
 	ic := &types.ImageConfiguration{
 		Contents: struct {
+			Repositories []string `yaml:"repositories,omitempty"`
+			Keyring      []string `yaml:"keyring,omitempty"`
+			Packages     []string `yaml:"packages,omitempty"`
+		}(struct {
 			Repositories []string
 			Keyring      []string
 			Packages     []string
-		}{},
+		}{}),
 	}
 
 	keyPath := filepath.Join(dir, "alpine-devel@lists.alpinelinux.org-5e69ca50.rsa.pub")
