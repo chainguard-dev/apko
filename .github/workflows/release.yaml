@@ -25,7 +25,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f # v2.2.0
+    - uses: actions/setup-go@d0a58c1c4d2b25278816e339b944508c875f3613 # v2.2.0
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
@@ -59,7 +59,7 @@ jobs:
       COSIGN_EXPERIMENTAL: "true"
 
     steps:
-    - uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f # v2.2.0
+    - uses: actions/setup-go@d0a58c1c4d2b25278816e339b944508c875f3613 # v2.2.0
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
@@ -98,7 +98,7 @@ jobs:
       packages: write
 
     steps:
-    - uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f # v2.2.0
+    - uses: actions/setup-go@d0a58c1c4d2b25278816e339b944508c875f3613 # v2.2.0
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
