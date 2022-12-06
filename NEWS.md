@@ -1,3 +1,34 @@
+# Changes from 0.5.0 to 0.6.0
+
+* Environment variables in the image configuration are now sorted
+  for reproducibility.
+
+* Tags can now be automatically generated based on a specified
+  package's version.  The tags will be stemmed if this feature is
+  used.
+
+* Support for tracking individual files in SBOMs has been added for
+  SPDX SBOMs.
+
+* SPDX SBOMs generated with apko are now compliant with the SPDX 2.3
+  specification.
+
+* Support for glibc-based images has been added, such as configuring
+  the dynamic linker cache via `ldconfig`.  This is needed for building
+  images for Wolfi.
+
+* Apko no longer clobbers `/etc/os-release` if it is already present,
+  unless an override is explicitly requested.
+
+* Support for adding suffixes to tags when publishing has been added
+  via the `--tag-suffix` option.
+
+* When using `proot`, apko no longer tries to `chown` or `chmod`
+  anything.
+
+* Support for publishing to the local Docker daemon has been added
+  via the `--local` option.
+
 # Changes from 0.4.0 to 0.5.0
 
 * Add support for including base configuration with the `include`
