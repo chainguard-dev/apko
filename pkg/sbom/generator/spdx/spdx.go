@@ -164,10 +164,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
-		LicenseConcluded: NOASSERTION,
-		LicenseDeclared:  NOASSERTION,
 		DownloadLocation: NOASSERTION,
-		CopyrightText:    NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
 		Description:      "apko container image",
@@ -200,12 +197,10 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Packa
 		Version:          pkg.Version,
 		FilesAnalyzed:    false,
 		LicenseConcluded: pkg.License,
-		LicenseDeclared:  NOASSERTION,
 		Description:      pkg.Description,
 		DownloadLocation: pkg.URL,
 		Originator:       pkg.Maintainer,
 		SourceInfo:       "Package info from apk database",
-		CopyrightText:    NOASSERTION,
 		Checksums: []Checksum{
 			{
 				Algorithm: "SHA1",
@@ -236,12 +231,9 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
-		LicenseConcluded: NOASSERTION,
-		LicenseDeclared:  NOASSERTION,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
 		Originator:       "",
-		CopyrightText:    NOASSERTION,
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
@@ -285,37 +277,37 @@ type CreationInfo struct {
 type File struct {
 	ID                string     `json:"SPDXID"`
 	Name              string     `json:"fileName"`
-	CopyrightText     string     `json:"copyrightText"`
+	CopyrightText     string     `json:"copyrightText,omitempty"`
 	NoticeText        string     `json:"noticeText,omitempty"`
-	LicenseConcluded  string     `json:"licenseConcluded"`
+	LicenseConcluded  string     `json:"licenseConcluded,omitempty"`
 	Description       string     `json:"description,omitempty"`
 	FileTypes         []string   `json:"fileTypes,omitempty"`
-	LicenseInfoInFile []string   `json:"licenseInfoInFiles"` // List of licenses
-	Checksums         []Checksum `json:"checksums"`
+	LicenseInfoInFile []string   `json:"licenseInfoInFiles,omitempty"` // List of licenses
+	Checksums         []Checksum `json:"checksums,omitempty"`
 }
 
 type Package struct {
-	ID                   string                  `json:"SPDXID"`
-	Name                 string                  `json:"name"`
-	Version              string                  `json:"versionInfo,omitempty"`
-	FilesAnalyzed        bool                    `json:"filesAnalyzed"`
-	HasFiles             []string                `json:"hasFiles,omitempty"`
-	LicenseInfoFromFiles []string                `json:"licenseInfoFromFiles,omitempty"`
-	LicenseConcluded     string                  `json:"licenseConcluded"`
-	LicenseDeclared      string                  `json:"licenseDeclared"`
-	Description          string                  `json:"description,omitempty"`
-	DownloadLocation     string                  `json:"downloadLocation,omitempty"`
-	Originator           string                  `json:"originator,omitempty"`
-	SourceInfo           string                  `json:"sourceInfo,omitempty"`
-	CopyrightText        string                  `json:"copyrightText"`
-	PrimaryPurpose       string                  `json:"primaryPackagePurpose,omitempty"`
-	Checksums            []Checksum              `json:"checksums"`
-	ExternalRefs         []ExternalRef           `json:"externalRefs,omitempty"`
-	VerificationCode     PackageVerificationCode `json:"packageVerificationCode,omitempty"`
+	ID                   string                   `json:"SPDXID"`
+	Name                 string                   `json:"name"`
+	Version              string                   `json:"versionInfo,omitempty"`
+	FilesAnalyzed        bool                     `json:"filesAnalyzed"`
+	HasFiles             []string                 `json:"hasFiles,omitempty"`
+	LicenseInfoFromFiles []string                 `json:"licenseInfoFromFiles,omitempty"`
+	LicenseConcluded     string                   `json:"licenseConcluded,omitempty"`
+	LicenseDeclared      string                   `json:"licenseDeclared,omitempty"`
+	Description          string                   `json:"description,omitempty"`
+	DownloadLocation     string                   `json:"downloadLocation,omitempty"`
+	Originator           string                   `json:"originator,omitempty"`
+	SourceInfo           string                   `json:"sourceInfo,omitempty"`
+	CopyrightText        string                   `json:"copyrightText,omitempty"`
+	PrimaryPurpose       string                   `json:"primaryPackagePurpose,omitempty"`
+	Checksums            []Checksum               `json:"checksums,omitempty"`
+	ExternalRefs         []ExternalRef            `json:"externalRefs,omitempty"`
+	VerificationCode     *PackageVerificationCode `json:"packageVerificationCode,omitempty"`
 }
 
 type PackageVerificationCode struct {
-	Value         string   `json:"packageVerificationCodeValue"`
+	Value         string   `json:"packageVerificationCodeValue,omitempty"`
 	ExcludedFiles []string `json:"packageVerificationCodeExcludedFiles,omitempty"`
 }
 
@@ -367,11 +359,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
 		FilesAnalyzed:    false,
-		LicenseConcluded: NOASSERTION,
-		LicenseDeclared:  NOASSERTION,
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
-		CopyrightText:    NOASSERTION,
 		DownloadLocation: NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		Checksums: []Checksum{
@@ -402,9 +391,6 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
 			FilesAnalyzed:    false,
-			LicenseConcluded: NOASSERTION,
-			LicenseDeclared:  NOASSERTION,
-			CopyrightText:    NOASSERTION,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
 			Checksums: []Checksum{
@@ -467,14 +453,11 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		FilesAnalyzed:        false,
 		HasFiles:             []string{},
 		LicenseInfoFromFiles: []string{},
-		LicenseConcluded:     NOASSERTION,
-		LicenseDeclared:      NOASSERTION,
 		PrimaryPurpose:       "SOURCE",
 		Description:          "Image configuration source",
 		DownloadLocation:     vcsURL,
 		Checksums:            checksums,
 		ExternalRefs:         []ExternalRef{},
-		VerificationCode:     PackageVerificationCode{},
 	}
 
 	// If this is a github package, add a purl to it:
