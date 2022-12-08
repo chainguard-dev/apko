@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/release-utils/version"
 
 	purl "github.com/package-url/packageurl-go"
+	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -150,14 +151,19 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
 	path := filepath.Join(
-		opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		// remove the epoch remover
+		opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, strings.TrimSuffix(p.Version, "-r0")),
 	)
+
+	// Check if apk installed an SBOM
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			logrus.Infof("SBOM for %s-%s not found in %s", p.Name, p.Version, path)
 			return nil
 		}
-		return fmt.Errorf("checking for an internal SBOM in apk filesysten: %w", err)
+		return fmt.Errorf("checking for an internal SBOM in apk filesystem: %w", err)
 	}
+	logrus.Infof("composing %s into image SBOM", path)
 
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
@@ -165,22 +171,79 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return fmt.Errorf("parsing internal sbom: %w", err)
 	}
 
-	// Copy the apk's relationships and packages into sbom
-	doc.Relationships = append(doc.Relationships, internalDoc.Relationships...)
+	targetElementIDs := []string{}
 
-	// Finally, we add the packages and files into the new SBOM
-	doc.Packages = append(doc.Packages, internalDoc.Packages...)
-	doc.Files = append(doc.Files, internalDoc.Files...)
-
+	// Cycle the top level elements...
 	for _, elementID := range internalDoc.DocumentDescribes {
-		// Add the described elements in the internal elements to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: p.ID,
-			Type:    "CONTAINS",
-			Related: elementID,
-		})
+		// ... searching for a 1st level package
+		for _, pkg := range internalDoc.Packages {
+			// that matches the name
+			if pkg.ID == elementID && p.Name == pkg.Name {
+				targetElementIDs = append(targetElementIDs, pkg.ID)
+				logrus.Infof("Found package %s describing %s", pkg.ID, p.Name)
+			}
+		}
+
+		// Copy the targetElementIDs
+		copiedElements := &map[string]struct{}{}
+		for _, id := range targetElementIDs {
+			if err := copySBOMElement(id, internalDoc, doc, copiedElements); err != nil {
+				return fmt.Errorf("copying element: %w", err)
+			}
+
+			// Replace the apko defined package with the enriched
+			// apk package
+
+			// doc.DocumentDescribes = append(doc.DocumentDescribes, id)
+		}
 	}
 
+	return nil
+}
+
+func copySBOMElement(spdxid string, sourceDoc, targetDoc *Document, copiedElements *map[string]struct{}) error {
+	if _, ok := (*copiedElements)[spdxid]; ok {
+		return nil
+	}
+
+	logrus.Infof(" Copying SBOM element %s to targetSBOM", spdxid)
+
+	// Check if we're dealing with a package
+	copied := false
+	for _, p := range sourceDoc.Packages {
+		if p.ID == spdxid {
+			targetDoc.Packages = append(targetDoc.Packages, p)
+			copied = true
+			break
+		}
+	}
+
+	if !copied {
+		for _, f := range sourceDoc.Files {
+			if f.ID == spdxid {
+				targetDoc.Files = append(targetDoc.Files, f)
+				copied = true
+				break
+			}
+		}
+	}
+
+	if !copied {
+		return fmt.Errorf("unable to find element %s in source document", spdxid)
+	}
+
+	(*copiedElements)[spdxid] = struct{}{}
+
+	// Now tranfer all related elements.
+	for _, r := range sourceDoc.Relationships {
+		if r.Element == spdxid {
+			if err := copySBOMElement(r.Related, sourceDoc, targetDoc, copiedElements); err != nil {
+				return fmt.Errorf("copying element to target SBOM: %w", err)
+			}
+			// If successful add the relationships to the target doc
+			targetDoc.Relationships = append(targetDoc.Relationships, r)
+		}
+	}
 	return nil
 }
 
