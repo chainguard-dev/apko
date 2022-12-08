@@ -149,6 +149,40 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	return nil
 }
 
+// replacePackage replaces a package with ID originalID with newID
+func replacePackage(doc *Document, originalID, newID string) {
+	// First check if package is described at the top of the SBOM
+	for i := range doc.DocumentDescribes {
+		if doc.DocumentDescribes[i] == originalID {
+			doc.DocumentDescribes[i] = newID
+			break
+		}
+	}
+
+	// Now, look at all relationships and replace
+	for i := range doc.Relationships {
+		if doc.Relationships[i].Element == originalID {
+			doc.Relationships[i].Element = newID
+		}
+		if doc.Relationships[i].Related == originalID {
+			doc.Relationships[i].Related = newID
+		}
+	}
+
+	// Remove the old ID from the package list
+	newPackages := []Package{}
+	replaced := false
+	for _, r := range doc.Packages {
+		if r.ID != originalID {
+			newPackages = append(newPackages, r)
+			replaced = true
+		}
+	}
+	if replaced {
+		doc.Packages = newPackages
+	}
+}
+
 func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
 	path := filepath.Join(
 		// remove the epoch remover
@@ -163,12 +197,12 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		}
 		return fmt.Errorf("checking for an internal SBOM in apk filesystem: %w", err)
 	}
-	logrus.Infof("composing %s into image SBOM", path)
+	logrus.Infof("composing packages from %s into image SBOM", path)
 
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
-		// TODO: Maybe don't fail if internal SBOM is not right
-		return fmt.Errorf("parsing internal sbom: %w", err)
+		// TODO: Log error parsing apk SBOM
+		return nil
 	}
 
 	targetElementIDs := []string{}
@@ -191,10 +225,14 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 				return fmt.Errorf("copying element: %w", err)
 			}
 
-			// Replace the apko defined package with the enriched
-			// apk package
-
-			// doc.DocumentDescribes = append(doc.DocumentDescribes, id)
+			// Search for a package in the new SBOM describing the same thing
+			for _, pkg := range doc.Packages {
+				// TODO: Think if we need to match version too
+				if pkg.Name == p.Name {
+					replacePackage(doc, pkg.ID, id)
+					break
+				}
+			}
 		}
 	}
 
