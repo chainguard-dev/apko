@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/release-utils/version"
 
 	purl "github.com/package-url/packageurl-go"
-	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -183,21 +182,47 @@ func replacePackage(doc *Document, originalID, newID string) {
 	}
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
-	path := filepath.Join(
-		// remove the epoch remover
-		opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, strings.TrimSuffix(p.Version, "-r0")),
-	)
-
-	// Check if apk installed an SBOM
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			logrus.Infof("SBOM for %s-%s not found in %s", p.Name, p.Version, path)
-			return nil
+// locateApkSBOM returns the SBOM
+func locateApkSBOM(opts *options.Options, p *Package) (string, error) {
+	re := regexp.MustCompile(`-r\d+$`)
+	for _, s := range []string{
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
+		),
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
+		),
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		),
+	} {
+		info, err := os.Stat(s)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 		}
-		return fmt.Errorf("checking for an internal SBOM in apk filesystem: %w", err)
+
+		if info.IsDir() {
+			return "", fmt.Errorf("directory found at SBOM path %s", s)
+		}
+		return s, nil
 	}
-	logrus.Infof("composing packages from %s into image SBOM", path)
+
+	return "", nil
+}
+
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
+	// Check if apk installed an SBOM
+	path, err := locateApkSBOM(opts, p)
+	if err != nil {
+		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+	}
+	if path == "" {
+		return nil
+	}
+
+	// TODO: Logf("composing packages from %s into image SBOM", path)
 
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
@@ -214,7 +239,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 			// that matches the name
 			if pkg.ID == elementID && p.Name == pkg.Name {
 				targetElementIDs = append(targetElementIDs, pkg.ID)
-				logrus.Infof("Found package %s describing %s", pkg.ID, p.Name)
+				// TODO: Logf("Found package %s describing %s", pkg.ID, p.Name)
 			}
 		}
 
@@ -244,7 +269,7 @@ func copySBOMElement(spdxid string, sourceDoc, targetDoc *Document, copiedElemen
 		return nil
 	}
 
-	logrus.Infof(" Copying SBOM element %s to targetSBOM", spdxid)
+	// TODO: Logf(" Copying SBOM element %s to targetSBOM", spdxid)
 
 	// Check if we're dealing with a package
 	copied := false
