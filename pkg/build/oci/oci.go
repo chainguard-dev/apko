@@ -362,15 +362,15 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags...)
 }
 
-func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
+func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags...)
 }
 
-func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -382,25 +382,35 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	}
 
 	digest := name.Digest{}
-	for _, tag := range tags {
-		logger.Printf("publishing image tag %v", tag)
-		digest, err = publishTagFromImage(v1Image, tag, h, local, logger)
+	if shouldPushTags {
+		for _, tag := range tags {
+			logger.Printf("publishing image tag %v", tag)
+			digest, err = publishTagFromImage(v1Image, tag, h, local, logger)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
+		}
+	} else {
+		logger.Println("publishing image without tag (digest only)")
+		digestOnly := fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())
+		digest, err = publishTagFromImage(v1Image, digestOnly, h, local, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
 	}
+
 	return digest, v1Image, nil
 }
 
-func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, local, tags...)
+func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, local, shouldPushTags, tags...)
 }
 
-func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, local, tags...)
+func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, local, shouldPushTags, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -500,9 +510,18 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 	}
 
 	digest := name.Digest{}
-	for _, tag := range tags {
-		logger.Printf("publishing index tag %v", tag)
-		digest, err = publishTagFromIndex(idx, tag, h, logger)
+	if shouldPushTags {
+		for _, tag := range tags {
+			logger.Printf("publishing index tag %v", tag)
+			digest, err = publishTagFromIndex(idx, tag, h, logger)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
+		}
+	} else {
+		logger.Println("publishing index without tag (digest only)")
+		digestOnly := fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())
+		digest, err = publishTagFromIndex(idx, digestOnly, h, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}

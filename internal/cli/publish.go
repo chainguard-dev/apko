@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -54,6 +55,7 @@ func publish() *cobra.Command {
 	var withVCS bool
 	var writeSBOM bool
 	var local bool
+	var stageTags string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -92,6 +94,7 @@ in a keychain.`,
 				build.WithPackageVersionTagPrefix(packageVersionTagPrefix),
 				build.WithTagSuffix(tagSuffix),
 				build.WithLocal(local),
+				build.WithStageTags(stageTags),
 			); err != nil {
 				return err
 			}
@@ -117,6 +120,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
+	cmd.Flags().StringVar(&stageTags, "stage-tags", "", "path to file to write list of tags to instead of publishing them")
 
 	return cmd
 }
@@ -225,17 +229,40 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		builtReferences = append(builtReferences, finalDigest.String())
 	}
 
+	if bc.Options.StageTags != "" {
+		allTags := bc.Options.Tags
+		allTags = append(allTags, additionalTags...)
+		tmp := map[string]bool{}
+		for _, tag := range allTags {
+			if !strings.Contains(tag, ":") {
+				tag = fmt.Sprintf("%s:latest", tag)
+			}
+			tmp[tag] = true
+		}
+		sortedUniqueTags := make([]string, 0, len(tmp))
+		for k := range tmp {
+			sortedUniqueTags = append(sortedUniqueTags, k)
+		}
+		sort.Strings(sortedUniqueTags)
+		bc.Logger().Printf("Writing list of tags to %s (%d total)", bc.Options.StageTags, len(sortedUniqueTags))
+
+		//nolint:gosec // Make tags file readable by non-root
+		if err := os.WriteFile(bc.Options.StageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0666); err != nil {
+			return fmt.Errorf("failed to write tags: %w", err)
+		}
+	} else {
+		for _, at := range additionalTags {
+			if err := oci.Copy(finalDigest.Name(), at); err != nil {
+				return err
+			}
+		}
+	}
+
 	// If saving local, exit early (no SBOMs etc.)
 	if bc.Options.Local {
 		bc.Logger().Printf("using local option, exiting early")
 		fmt.Println(strings.Split(finalDigest.String(), "@")[0])
 		return nil
-	}
-
-	for _, at := range additionalTags {
-		if err := oci.Copy(finalDigest.Name(), at); err != nil {
-			return err
-		}
 	}
 
 	bc.Options.SBOMFormats = formats
@@ -291,10 +318,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 // publishImage publishes a specific architecture image
 func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
+	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
 		imgDigest, img, err = oci.PublishDockerImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, bc.Options.Tags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
@@ -302,7 +330,7 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 	} else {
 		imgDigest, img, err = oci.PublishImageFromLayer(
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, bc.Options.Tags...,
+			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
 		)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
@@ -315,13 +343,14 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImage) (
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
+	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}
