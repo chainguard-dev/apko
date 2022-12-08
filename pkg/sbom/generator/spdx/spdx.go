@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
 
 const NOASSERTION = "NOASSERTION"
+const apkSBOMdir = "/var/lib/db/sbom"
 
 type SPDX struct{}
 
@@ -86,6 +88,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
 		Packages:      []Package{},
+		Files:         []File{},
 		Relationships: []Relationship{},
 	}
 	var imagePackage *Package
@@ -131,6 +134,11 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			Type:    "CONTAINS",
 			Related: p.ID,
 		})
+
+		// Check to see if the apk contains an sbom describing itself
+		if err := sx.ProcessInternalApkSBOM(opts, doc, &p); err != nil {
+			return fmt.Errorf("parsing internal apk SBOM: %w", err)
+		}
 	}
 
 	if err := renderDoc(doc, path); err != nil {
@@ -138,6 +146,182 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	return nil
+}
+
+// replacePackage replaces a package with ID originalID with newID
+func replacePackage(doc *Document, originalID, newID string) {
+	// First check if package is described at the top of the SBOM
+	for i := range doc.DocumentDescribes {
+		if doc.DocumentDescribes[i] == originalID {
+			doc.DocumentDescribes[i] = newID
+			break
+		}
+	}
+
+	// Now, look at all relationships and replace
+	for i := range doc.Relationships {
+		if doc.Relationships[i].Element == originalID {
+			doc.Relationships[i].Element = newID
+		}
+		if doc.Relationships[i].Related == originalID {
+			doc.Relationships[i].Related = newID
+		}
+	}
+
+	// Remove the old ID from the package list
+	newPackages := []Package{}
+	replaced := false
+	for _, r := range doc.Packages {
+		if r.ID != originalID {
+			newPackages = append(newPackages, r)
+			replaced = true
+		}
+	}
+	if replaced {
+		doc.Packages = newPackages
+	}
+}
+
+// locateApkSBOM returns the SBOM
+func locateApkSBOM(opts *options.Options, p *Package) (string, error) {
+	re := regexp.MustCompile(`-r\d+$`)
+	for _, s := range []string{
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
+		),
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
+		),
+		filepath.Join(
+			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		),
+	} {
+		info, err := os.Stat(s)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+		}
+
+		if info.IsDir() {
+			return "", fmt.Errorf("directory found at SBOM path %s", s)
+		}
+		return s, nil
+	}
+
+	return "", nil
+}
+
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
+	// Check if apk installed an SBOM
+	path, err := locateApkSBOM(opts, p)
+	if err != nil {
+		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+	}
+	if path == "" {
+		return nil
+	}
+
+	// TODO: Logf("composing packages from %s into image SBOM", path)
+
+	internalDoc, err := sx.ParseInternalSBOM(opts, path)
+	if err != nil {
+		// TODO: Log error parsing apk SBOM
+		return nil
+	}
+
+	targetElementIDs := []string{}
+
+	// Cycle the top level elements...
+	for _, elementID := range internalDoc.DocumentDescribes {
+		// ... searching for a 1st level package
+		for _, pkg := range internalDoc.Packages {
+			// that matches the name
+			if pkg.ID == elementID && p.Name == pkg.Name {
+				targetElementIDs = append(targetElementIDs, pkg.ID)
+				// TODO: Logf("Found package %s describing %s", pkg.ID, p.Name)
+			}
+		}
+
+		// Copy the targetElementIDs
+		copiedElements := &map[string]struct{}{}
+		for _, id := range targetElementIDs {
+			if err := copySBOMElement(id, internalDoc, doc, copiedElements); err != nil {
+				return fmt.Errorf("copying element: %w", err)
+			}
+
+			// Search for a package in the new SBOM describing the same thing
+			for _, pkg := range doc.Packages {
+				// TODO: Think if we need to match version too
+				if pkg.Name == p.Name {
+					replacePackage(doc, pkg.ID, id)
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func copySBOMElement(spdxid string, sourceDoc, targetDoc *Document, copiedElements *map[string]struct{}) error {
+	if _, ok := (*copiedElements)[spdxid]; ok {
+		return nil
+	}
+
+	// TODO: Logf(" Copying SBOM element %s to targetSBOM", spdxid)
+
+	// Check if we're dealing with a package
+	copied := false
+	for _, p := range sourceDoc.Packages {
+		if p.ID == spdxid {
+			targetDoc.Packages = append(targetDoc.Packages, p)
+			copied = true
+			break
+		}
+	}
+
+	if !copied {
+		for _, f := range sourceDoc.Files {
+			if f.ID == spdxid {
+				targetDoc.Files = append(targetDoc.Files, f)
+				copied = true
+				break
+			}
+		}
+	}
+
+	if !copied {
+		return fmt.Errorf("unable to find element %s in source document", spdxid)
+	}
+
+	(*copiedElements)[spdxid] = struct{}{}
+
+	// Now tranfer all related elements.
+	for _, r := range sourceDoc.Relationships {
+		if r.Element == spdxid {
+			if err := copySBOMElement(r.Related, sourceDoc, targetDoc, copiedElements); err != nil {
+				return fmt.Errorf("copying element to target SBOM: %w", err)
+			}
+			// If successful add the relationships to the target doc
+			targetDoc.Relationships = append(targetDoc.Relationships, r)
+		}
+	}
+	return nil
+}
+
+// ParseInternalSBOM opens an SBOM inside apks and
+func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
+	internalSBOM := &Document{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
+	}
+
+	if err := json.Unmarshal(data, internalSBOM); err != nil {
+		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+	}
+	return internalSBOM, nil
 }
 
 // renderDoc marshals a document to json and writes it to disk
