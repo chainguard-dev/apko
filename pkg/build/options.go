@@ -217,3 +217,11 @@ func WithLocal(local bool) Option {
 		return nil
 	}
 }
+
+// WithStageTags prevents tagging, and innstead writes all tags to the filename provided.
+func WithStageTags(stageTags string) Option {
+	return func(bc *Context) error {
+		bc.Options.StageTags = stageTags
+		return nil
+	}
+}
