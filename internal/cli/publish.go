@@ -294,10 +294,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("generating index SBOM: %w", err)
 		}
 
-		if _, err := oci.PostAttachSBOM(
-			idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
-		); err != nil {
-			return fmt.Errorf("attaching sboms to index: %w", err)
+		if idx != nil {
+			if _, err := oci.PostAttachSBOM(
+				idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+			); err != nil {
+				return fmt.Errorf("attaching sboms to index: %w", err)
+			}
 		}
 	}
 
