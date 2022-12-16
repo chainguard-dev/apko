@@ -360,7 +360,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE-MANAGER",
+				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
@@ -393,7 +393,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Packa
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE-MANAGER",
+				Category: "PACKAGE_MANAGER",
 				Locator: purl.NewPackageURL(
 					"apk", opts.OS.ID, pkg.Name, pkg.Version,
 					purl.QualifiersFromMap(
@@ -421,7 +421,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE-MANAGER",
+				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
@@ -555,7 +555,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE-MANAGER",
+				Category: "PACKAGE_MANAGER",
 				Type:     "purl",
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.DeepCopy().String(),
@@ -585,7 +585,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			},
 			ExternalRefs: []ExternalRef{
 				{
-					Category: "PACKAGE-MANAGER",
+					Category: "PACKAGE_MANAGER",
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
@@ -651,7 +651,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{
 				{
-					Category: "PACKAGE-MANAGER",
+					Category: "PACKAGE_MANAGER",
 					Type:     "purl",
 					Locator: purl.NewPackageURL(
 						purl.TypeGithub, org, strings.TrimSuffix(user, ".git"), version,
