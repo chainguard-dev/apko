@@ -383,7 +383,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Packa
 		LicenseConcluded: pkg.License,
 		Description:      pkg.Description,
 		DownloadLocation: pkg.URL,
-		Originator:       pkg.Maintainer,
+		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
 		SourceInfo:       "Package info from apk database",
 		Checksums: []Checksum{
 			{
