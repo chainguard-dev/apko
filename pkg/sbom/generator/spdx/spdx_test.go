@@ -131,7 +131,7 @@ func TestSourcePackage(t *testing.T) {
 
 	// Verify the purl
 	require.Len(t, doc.Packages[0].ExternalRefs, 1)
-	require.Equal(t, doc.Packages[0].ExternalRefs[0].Category, "PACKAGE-MANAGER")
+	require.Equal(t, doc.Packages[0].ExternalRefs[0].Category, "PACKAGE_MANAGER")
 	require.Equal(t, doc.Packages[0].ExternalRefs[0].Type, "purl")
 	require.Equal(
 		t, doc.Packages[0].ExternalRefs[0].Locator,
