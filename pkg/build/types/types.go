@@ -182,9 +182,9 @@ func (a Architecture) ToTriplet(suffix string) string {
 	case arm64:
 		return fmt.Sprintf("aarch64-unknown-linux-%s", suffix)
 	case armv6:
-		return fmt.Sprintf("armv6-unknown-linux-%s", suffix)
+		return fmt.Sprintf("arm-unknown-linux-%seabihf", suffix)
 	case armv7:
-		return fmt.Sprintf("armv7-unknown-linux-%s", suffix)
+		return fmt.Sprintf("armv7-unknown-linux-%seabihf", suffix)
 	case ppc64le:
 		return fmt.Sprintf("powerpc64le-unknown-linux-%s", suffix)
 	case s390x:
@@ -203,9 +203,9 @@ func (a Architecture) ToRustTriplet(suffix string) string {
 	case arm64:
 		return fmt.Sprintf("aarch64-unknown-linux-%s", suffix)
 	case armv6:
-		return fmt.Sprintf("armv6-unknown-linux-%s", suffix)
+		return fmt.Sprintf("armv6-unknown-linux-%seabihf", suffix)
 	case armv7:
-		return fmt.Sprintf("armv7-unknown-linux-%s", suffix)
+		return fmt.Sprintf("armv7-unknown-linux-%seabihf", suffix)
 	case ppc64le:
 		return fmt.Sprintf("powerpc64le-unknown-linux-%s", suffix)
 	case s390x:
