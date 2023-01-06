@@ -26,7 +26,6 @@ linters:
   - errorlint
   - forbidigo
   - gofmt
-  - goheader
   - goimports
   - gosec
   - gocritic
