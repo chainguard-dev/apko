@@ -1,4 +1,4 @@
-// Copyright 2022 Chainguard, Inc.
+// Copyright 2022, 2023 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ func TestReadReleaseData(t *testing.T) {
 	osinfoData := `ID=wolfi
 NAME="Wolfi"
 PRETTY_NAME="Wolfi"
-VERSION_ID="20220914"
+VERSION_ID="2022, 20230914"
 HOME_URL="https://wolfi.dev"
 `
 	tdir := t.TempDir()
@@ -51,7 +51,7 @@ HOME_URL="https://wolfi.dev"
 	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
 	require.Equal(t, "wolfi", opts.OS.ID, "id")
 	require.Equal(t, "Wolfi", opts.OS.Name, "name")
-	require.Equal(t, "20220914", opts.OS.Version, "version")
+	require.Equal(t, "2022, 20230914", opts.OS.Version, "version")
 }
 
 func TestReadReleaseData_EmptyDefaults(t *testing.T) {
