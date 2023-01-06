@@ -111,7 +111,7 @@ func (di *apkDefaultImplementation) InitKeyring(o *options.Options, ic *types.Im
 	if len(keyFiles) == 0 {
 		keyFiles, err = di.LoadSystemKeyring(o)
 		if err != nil {
-			return fmt.Errorf("opening system keyring: %w", err)
+			o.Logger().Warnf("opening system keyring: %s", err)
 		}
 	}
 
