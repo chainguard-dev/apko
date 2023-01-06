@@ -1,4 +1,4 @@
-// Copyright 2022 Chainguard, Inc.
+// Copyright 2022, 2023 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ func TestStringToIdentifier(t *testing.T) {
 		"alpine",
 		"kindest/node:v1.21.1",
 		"v1.16.15@sha256:a89c771f7de234e6547d43695c7ab047809ffc71a0c3b65aa54eda051c45ed20",
-		"k8s.gcr.io/ingress-nginx/e2e-test-runner:v20220110-gfd820db46@sha256:273f7d9b1b2297cd96b4d51600e45d932186a1cc79d00d179dfb43654112fe8f",
+		"k8s.gcr.io/ingress-nginx/e2e-test-runner:v2022, 20230110-gfd820db46@sha256:273f7d9b1b2297cd96b4d51600e45d932186a1cc79d00d179dfb43654112fe8f",
 	} {
 		fmt.Println(stringToIdentifier(tc))
 		require.True(t, validIDRe.MatchString(stringToIdentifier(tc)))
