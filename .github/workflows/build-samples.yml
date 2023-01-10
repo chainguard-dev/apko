@@ -1,0 +1,56 @@
+name: Build Images
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  build-nginx-on-all-arches:
+    name: build-nginx-all-arches
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, "386", armv7, aarch64, riscv64, s390x, ppc64le]
+
+    steps:
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v2.4.0
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v2.1.5
+        with:
+          go-version: 1.19
+          check-latest: true
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2.1.0
+
+      - name: build
+        run: |
+          make apko
+          ./apko version
+
+      - name: build image
+        run: |
+          docker run --rm -v $(pwd):/src -w /src alpine:3.17 ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --build-arch ${{ matrix.arch }}
+
+  build-all-examples-one-arch:
+    name: build-all-examples-amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v2.4.0
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v2.1.5
+        with:
+          go-version: 1.19
+          check-latest: true
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2.1.0
+
+      - name: build
+        run: |
+          make apko
+          ./apko version
+
+      - name: build images
+        run: |
+          for cfg in $(find ./examples/ -name '*.yaml'); do
+            name=$(basename ${cfg} .yaml)
+            docker run --rm -v $(pwd):/src -w /src alpine:3.17 ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --build-arch amd64
+          done
