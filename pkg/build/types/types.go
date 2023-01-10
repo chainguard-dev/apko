@@ -184,7 +184,7 @@ func (a Architecture) ToTriplet(suffix string) string {
 	case armv6:
 		return fmt.Sprintf("arm-unknown-linux-%seabihf", suffix)
 	case armv7:
-		return fmt.Sprintf("armv7-unknown-linux-%seabihf", suffix)
+		return fmt.Sprintf("armv7l-unknown-linux-%seabihf", suffix)
 	case ppc64le:
 		return fmt.Sprintf("powerpc64le-unknown-linux-%s", suffix)
 	case s390x:
