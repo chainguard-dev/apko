@@ -111,6 +111,11 @@ func mutateHardLink(o *options.Options, mut types.PathMutation) error {
 		return err
 	}
 
+	// overwrite link if already exists
+	if _, err := os.Lstat(target); err == nil {
+		os.Remove(target)
+	}
+
 	if err := os.Link(source, target); err != nil {
 		return err
 	}
