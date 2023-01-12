@@ -200,7 +200,7 @@ func (di *apkDefaultImplementation) FixateWorld(o *options.Options, e *exec.Exec
 	o.Logger().Infof("synchronizing with desired apk world")
 
 	args := []string{
-		"fix", "--root", o.WorkDir, "--no-cache",
+		"fix", "--root", o.WorkDir, "--no-scripts", "--no-cache",
 		"--update-cache", "--arch", o.Arch.ToAPK(),
 	}
 
