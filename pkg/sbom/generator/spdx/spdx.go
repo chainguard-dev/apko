@@ -36,8 +36,12 @@ import (
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
 
-const NOASSERTION = "NOASSERTION"
-const apkSBOMdir = "/var/lib/db/sbom"
+const (
+	NOASSERTION          = "NOASSERTION"
+	ExtRefPackageManager = "PACKAGE-MANAGER"
+	ExtRefTypePurl       = "purl"
+	apkSBOMdir           = "/var/lib/db/sbom"
+)
 
 type SPDX struct{}
 
@@ -360,8 +364,8 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
-				Type:     "purl",
+				Category: ExtRefPackageManager,
+				Type:     ExtRefTypePurl,
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
 					nil, "",
@@ -393,13 +397,13 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Packa
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
+				Category: ExtRefPackageManager,
 				Locator: purl.NewPackageURL(
 					"apk", opts.OS.ID, pkg.Name, pkg.Version,
 					purl.QualifiersFromMap(
 						map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()},
 					), "").String(),
-				Type: "purl",
+				Type: ExtRefTypePurl,
 			},
 		},
 	}
@@ -421,8 +425,8 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
-				Type:     "purl",
+				Category: ExtRefPackageManager,
+				Type:     ExtRefTypePurl,
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
 					nil, "",
@@ -555,8 +559,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		},
 		ExternalRefs: []ExternalRef{
 			{
-				Category: "PACKAGE_MANAGER",
-				Type:     "purl",
+				Category: ExtRefPackageManager,
+				Type:     ExtRefTypePurl,
 				Locator: purl.NewPackageURL(
 					purl.TypeOCI, "", opts.IndexPurlName(), opts.ImageInfo.IndexDigest.DeepCopy().String(),
 					nil, "",
@@ -585,8 +589,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			},
 			ExternalRefs: []ExternalRef{
 				{
-					Category: "PACKAGE_MANAGER",
-					Type:     "purl",
+					Category: ExtRefPackageManager,
+					Type:     ExtRefTypePurl,
 					Locator: purl.NewPackageURL(
 						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
 						nil, "",
@@ -651,8 +655,8 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{
 				{
-					Category: "PACKAGE_MANAGER",
-					Type:     "purl",
+					Category: ExtRefPackageManager,
+					Type:     ExtRefTypePurl,
 					Locator: purl.NewPackageURL(
 						purl.TypeGithub, org, strings.TrimSuffix(user, ".git"), version,
 						nil, "",
