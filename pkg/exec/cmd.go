@@ -24,18 +24,8 @@ import (
 func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 	var cmd *exec.Cmd
 
-	if e.UseProot {
-		baseargs := []string{"-S", e.WorkDir}
-		if e.UseQemu != "" {
-			baseargs = append(baseargs, "-q", e.UseQemu)
-		}
-		baseargs = append(baseargs, name)
-		arg = append(baseargs, arg...)
-		cmd = exec.Command("proot", arg...)
-	} else {
-		arg = append([]string{e.WorkDir, name}, arg...)
-		cmd = exec.Command("chroot", arg...)
-	}
+	arg = append([]string{e.WorkDir, name}, arg...)
+	cmd = exec.Command("chroot", arg...)
 
 	return e.impl.Run(cmd, name, e.Log)
 }
@@ -43,11 +33,6 @@ func (e *Executor) ExecuteChroot(name string, arg ...string) error {
 // Execute executes the named program with the given arguments.
 func (e *Executor) Execute(name string, arg ...string) error {
 	logname := name
-
-	if e.UseProot {
-		arg = append([]string{"-0", name}, arg...)
-		name = "proot"
-	}
 
 	cmd := exec.Command(name, arg...)
 	return e.impl.Run(cmd, logname, e.Log)
