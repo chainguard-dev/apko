@@ -29,7 +29,6 @@ import (
 type Options struct {
 	UseDockerMediaTypes     bool
 	WantSBOM                bool
-	UseProot                bool
 	WithVCS                 bool
 	WorkDir                 string
 	TarballPath             string
@@ -65,7 +64,6 @@ var Default = Options{
 func (o *Options) Summarize(logger *logrus.Entry) {
 	logger.Printf("  working directory: %s", o.WorkDir)
 	logger.Printf("  tarball path: %s", o.TarballPath)
-	logger.Printf("  use proot: %t", o.UseProot)
 	logger.Printf("  source date: %s", o.SourceDateEpoch)
 	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
 	logger.Printf("  SBOM output path: %s", o.SBOMPath)

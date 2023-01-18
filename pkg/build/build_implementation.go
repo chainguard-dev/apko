@@ -81,13 +81,11 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
 
-	execOpts := []exec.Option{exec.WithProot(o.UseProot)}
-	if o.UseProot && !o.Arch.Compatible(hostArch) {
-		o.Logger().Debugf("%q requires QEMU (not compatible with %q)", o.Arch, hostArch)
-		execOpts = append(execOpts, exec.WithQemu(o.Arch.ToQEmu()))
+	if !o.Arch.Compatible(hostArch) {
+		o.Logger().Warnf("%q requires QEMU binfmt emulation to be configured (not compatible with %q)", o.Arch, hostArch)
 	}
 
-	executor, err := exec.New(o.WorkDir, o.Logger(), execOpts...)
+	executor, err := exec.New(o.WorkDir, o.Logger())
 	if err != nil {
 		return nil, nil, err
 	}

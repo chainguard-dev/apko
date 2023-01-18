@@ -38,7 +38,6 @@ import (
 
 func publish() *cobra.Command {
 	var imageRefs string
-	var useProot bool
 	var useDockerMediaTypes bool
 	var buildDate string
 	var sbomPath string
@@ -77,7 +76,6 @@ in a keychain.`,
 			}
 			if err := PublishCmd(cmd.Context(), imageRefs, archs,
 				build.WithConfig(args[0]),
-				build.WithProot(useProot),
 				build.WithDockerMediatypes(useDockerMediaTypes),
 				build.WithTags(args[1:]...),
 				build.WithBuildDate(buildDate),
@@ -103,7 +101,6 @@ in a keychain.`,
 	}
 
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
-	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")

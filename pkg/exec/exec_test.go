@@ -55,7 +55,6 @@ func TestExecute(t *testing.T) {
 		sut.SetImplementation(&impl)
 		// Test with and without proot
 		for b := range map[bool]struct{}{false: {}, true: {}} {
-			sut.UseProot = b
 			sut.Execute("command")
 		}
 	}
@@ -89,7 +88,6 @@ func TestExecuteChroot(t *testing.T) {
 
 		// Test with and without proot
 		for b := range map[bool]struct{}{false: {}, true: {}} {
-			sut.UseProot = b
 			sut.ExecuteChroot("command")
 		}
 	}

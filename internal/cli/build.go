@@ -30,7 +30,6 @@ import (
 )
 
 func buildCmd() *cobra.Command {
-	var useProot bool
 	var useDockerMediaTypes bool
 	var debugEnabled bool
 	var withVCS bool
@@ -70,7 +69,6 @@ bill of materials) describing the image contents.
 			}
 			return BuildCmd(cmd.Context(), args[1], args[2],
 				build.WithConfig(args[0]),
-				build.WithProot(useProot),
 				build.WithDockerMediatypes(useDockerMediaTypes),
 				build.WithBuildDate(buildDate),
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
@@ -86,7 +84,6 @@ bill of materials) describing the image contents.
 		},
 	}
 
-	cmd.Flags().BoolVar(&useProot, "use-proot", false, "use proot to simulate privileged operations")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
