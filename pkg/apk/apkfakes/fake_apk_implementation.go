@@ -2,19 +2,21 @@
 package apkfakes
 
 import (
+	"archive/tar"
 	"sync"
+	"time"
 
-	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/exec"
-	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/apk/impl"
 )
 
 type FakeApkImplementation struct {
-	FixateWorldStub        func(*options.Options, *exec.Executor) error
+	FixateWorldStub        func(bool, bool, bool, *time.Time) error
 	fixateWorldMutex       sync.RWMutex
 	fixateWorldArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *exec.Executor
+		arg1 bool
+		arg2 bool
+		arg3 bool
+		arg4 *time.Time
 	}
 	fixateWorldReturns struct {
 		result1 error
@@ -22,11 +24,46 @@ type FakeApkImplementation struct {
 	fixateWorldReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitDBStub        func(*options.Options, exec.Executor) error
+	GetInstalledStub        func() ([]*impl.InstalledPackage, error)
+	getInstalledMutex       sync.RWMutex
+	getInstalledArgsForCall []struct {
+	}
+	getInstalledReturns struct {
+		result1 []*impl.InstalledPackage
+		result2 error
+	}
+	getInstalledReturnsOnCall map[int]struct {
+		result1 []*impl.InstalledPackage
+		result2 error
+	}
+	GetRepositoriesStub        func() ([]string, error)
+	getRepositoriesMutex       sync.RWMutex
+	getRepositoriesArgsForCall []struct {
+	}
+	getRepositoriesReturns struct {
+		result1 []string
+		result2 error
+	}
+	getRepositoriesReturnsOnCall map[int]struct {
+		result1 []string
+		result2 error
+	}
+	GetWorldStub        func() ([]string, error)
+	getWorldMutex       sync.RWMutex
+	getWorldArgsForCall []struct {
+	}
+	getWorldReturns struct {
+		result1 []string
+		result2 error
+	}
+	getWorldReturnsOnCall map[int]struct {
+		result1 []string
+		result2 error
+	}
+	InitDBStub        func(...string) error
 	initDBMutex       sync.RWMutex
 	initDBArgsForCall []struct {
-		arg1 *options.Options
-		arg2 exec.Executor
+		arg1 []string
 	}
 	initDBReturns struct {
 		result1 error
@@ -34,11 +71,11 @@ type FakeApkImplementation struct {
 	initDBReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitKeyringStub        func(*options.Options, *types.ImageConfiguration) error
+	InitKeyringStub        func([]string, []string) error
 	initKeyringMutex       sync.RWMutex
 	initKeyringArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+		arg1 []string
+		arg2 []string
 	}
 	initKeyringReturns struct {
 		result1 error
@@ -46,72 +83,57 @@ type FakeApkImplementation struct {
 	initKeyringReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitRepositoriesStub        func(*options.Options, *types.ImageConfiguration) error
-	initRepositoriesMutex       sync.RWMutex
-	initRepositoriesArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+	ListInitFilesStub        func() []tar.Header
+	listInitFilesMutex       sync.RWMutex
+	listInitFilesArgsForCall []struct {
 	}
-	initRepositoriesReturns struct {
+	listInitFilesReturns struct {
+		result1 []tar.Header
+	}
+	listInitFilesReturnsOnCall map[int]struct {
+		result1 []tar.Header
+	}
+	SetRepositoriesStub        func([]string) error
+	setRepositoriesMutex       sync.RWMutex
+	setRepositoriesArgsForCall []struct {
+		arg1 []string
+	}
+	setRepositoriesReturns struct {
 		result1 error
 	}
-	initRepositoriesReturnsOnCall map[int]struct {
+	setRepositoriesReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitWorldStub        func(*options.Options, *types.ImageConfiguration) error
-	initWorldMutex       sync.RWMutex
-	initWorldArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+	SetWorldStub        func([]string) error
+	setWorldMutex       sync.RWMutex
+	setWorldArgsForCall []struct {
+		arg1 []string
 	}
-	initWorldReturns struct {
+	setWorldReturns struct {
 		result1 error
 	}
-	initWorldReturnsOnCall map[int]struct {
-		result1 error
-	}
-	LoadSystemKeyringStub        func(*options.Options, ...string) ([]string, error)
-	loadSystemKeyringMutex       sync.RWMutex
-	loadSystemKeyringArgsForCall []struct {
-		arg1 *options.Options
-		arg2 []string
-	}
-	loadSystemKeyringReturns struct {
-		result1 []string
-		result2 error
-	}
-	loadSystemKeyringReturnsOnCall map[int]struct {
-		result1 []string
-		result2 error
-	}
-	NormalizeScriptsTarStub        func(*options.Options) error
-	normalizeScriptsTarMutex       sync.RWMutex
-	normalizeScriptsTarArgsForCall []struct {
-		arg1 *options.Options
-	}
-	normalizeScriptsTarReturns struct {
-		result1 error
-	}
-	normalizeScriptsTarReturnsOnCall map[int]struct {
+	setWorldReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeApkImplementation) FixateWorld(arg1 *options.Options, arg2 *exec.Executor) error {
+func (fake *FakeApkImplementation) FixateWorld(arg1 bool, arg2 bool, arg3 bool, arg4 *time.Time) error {
 	fake.fixateWorldMutex.Lock()
 	ret, specificReturn := fake.fixateWorldReturnsOnCall[len(fake.fixateWorldArgsForCall)]
 	fake.fixateWorldArgsForCall = append(fake.fixateWorldArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *exec.Executor
-	}{arg1, arg2})
+		arg1 bool
+		arg2 bool
+		arg3 bool
+		arg4 *time.Time
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.FixateWorldStub
 	fakeReturns := fake.fixateWorldReturns
-	fake.recordInvocation("FixateWorld", []interface{}{arg1, arg2})
+	fake.recordInvocation("FixateWorld", []interface{}{arg1, arg2, arg3, arg4})
 	fake.fixateWorldMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1
@@ -125,17 +147,17 @@ func (fake *FakeApkImplementation) FixateWorldCallCount() int {
 	return len(fake.fixateWorldArgsForCall)
 }
 
-func (fake *FakeApkImplementation) FixateWorldCalls(stub func(*options.Options, *exec.Executor) error) {
+func (fake *FakeApkImplementation) FixateWorldCalls(stub func(bool, bool, bool, *time.Time) error) {
 	fake.fixateWorldMutex.Lock()
 	defer fake.fixateWorldMutex.Unlock()
 	fake.FixateWorldStub = stub
 }
 
-func (fake *FakeApkImplementation) FixateWorldArgsForCall(i int) (*options.Options, *exec.Executor) {
+func (fake *FakeApkImplementation) FixateWorldArgsForCall(i int) (bool, bool, bool, *time.Time) {
 	fake.fixateWorldMutex.RLock()
 	defer fake.fixateWorldMutex.RUnlock()
 	argsForCall := fake.fixateWorldArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeApkImplementation) FixateWorldReturns(result1 error) {
@@ -161,19 +183,186 @@ func (fake *FakeApkImplementation) FixateWorldReturnsOnCall(i int, result1 error
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) InitDB(arg1 *options.Options, arg2 exec.Executor) error {
+func (fake *FakeApkImplementation) GetInstalled() ([]*impl.InstalledPackage, error) {
+	fake.getInstalledMutex.Lock()
+	ret, specificReturn := fake.getInstalledReturnsOnCall[len(fake.getInstalledArgsForCall)]
+	fake.getInstalledArgsForCall = append(fake.getInstalledArgsForCall, struct {
+	}{})
+	stub := fake.GetInstalledStub
+	fakeReturns := fake.getInstalledReturns
+	fake.recordInvocation("GetInstalled", []interface{}{})
+	fake.getInstalledMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeApkImplementation) GetInstalledCallCount() int {
+	fake.getInstalledMutex.RLock()
+	defer fake.getInstalledMutex.RUnlock()
+	return len(fake.getInstalledArgsForCall)
+}
+
+func (fake *FakeApkImplementation) GetInstalledCalls(stub func() ([]*impl.InstalledPackage, error)) {
+	fake.getInstalledMutex.Lock()
+	defer fake.getInstalledMutex.Unlock()
+	fake.GetInstalledStub = stub
+}
+
+func (fake *FakeApkImplementation) GetInstalledReturns(result1 []*impl.InstalledPackage, result2 error) {
+	fake.getInstalledMutex.Lock()
+	defer fake.getInstalledMutex.Unlock()
+	fake.GetInstalledStub = nil
+	fake.getInstalledReturns = struct {
+		result1 []*impl.InstalledPackage
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) GetInstalledReturnsOnCall(i int, result1 []*impl.InstalledPackage, result2 error) {
+	fake.getInstalledMutex.Lock()
+	defer fake.getInstalledMutex.Unlock()
+	fake.GetInstalledStub = nil
+	if fake.getInstalledReturnsOnCall == nil {
+		fake.getInstalledReturnsOnCall = make(map[int]struct {
+			result1 []*impl.InstalledPackage
+			result2 error
+		})
+	}
+	fake.getInstalledReturnsOnCall[i] = struct {
+		result1 []*impl.InstalledPackage
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) GetRepositories() ([]string, error) {
+	fake.getRepositoriesMutex.Lock()
+	ret, specificReturn := fake.getRepositoriesReturnsOnCall[len(fake.getRepositoriesArgsForCall)]
+	fake.getRepositoriesArgsForCall = append(fake.getRepositoriesArgsForCall, struct {
+	}{})
+	stub := fake.GetRepositoriesStub
+	fakeReturns := fake.getRepositoriesReturns
+	fake.recordInvocation("GetRepositories", []interface{}{})
+	fake.getRepositoriesMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeApkImplementation) GetRepositoriesCallCount() int {
+	fake.getRepositoriesMutex.RLock()
+	defer fake.getRepositoriesMutex.RUnlock()
+	return len(fake.getRepositoriesArgsForCall)
+}
+
+func (fake *FakeApkImplementation) GetRepositoriesCalls(stub func() ([]string, error)) {
+	fake.getRepositoriesMutex.Lock()
+	defer fake.getRepositoriesMutex.Unlock()
+	fake.GetRepositoriesStub = stub
+}
+
+func (fake *FakeApkImplementation) GetRepositoriesReturns(result1 []string, result2 error) {
+	fake.getRepositoriesMutex.Lock()
+	defer fake.getRepositoriesMutex.Unlock()
+	fake.GetRepositoriesStub = nil
+	fake.getRepositoriesReturns = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) GetRepositoriesReturnsOnCall(i int, result1 []string, result2 error) {
+	fake.getRepositoriesMutex.Lock()
+	defer fake.getRepositoriesMutex.Unlock()
+	fake.GetRepositoriesStub = nil
+	if fake.getRepositoriesReturnsOnCall == nil {
+		fake.getRepositoriesReturnsOnCall = make(map[int]struct {
+			result1 []string
+			result2 error
+		})
+	}
+	fake.getRepositoriesReturnsOnCall[i] = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) GetWorld() ([]string, error) {
+	fake.getWorldMutex.Lock()
+	ret, specificReturn := fake.getWorldReturnsOnCall[len(fake.getWorldArgsForCall)]
+	fake.getWorldArgsForCall = append(fake.getWorldArgsForCall, struct {
+	}{})
+	stub := fake.GetWorldStub
+	fakeReturns := fake.getWorldReturns
+	fake.recordInvocation("GetWorld", []interface{}{})
+	fake.getWorldMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeApkImplementation) GetWorldCallCount() int {
+	fake.getWorldMutex.RLock()
+	defer fake.getWorldMutex.RUnlock()
+	return len(fake.getWorldArgsForCall)
+}
+
+func (fake *FakeApkImplementation) GetWorldCalls(stub func() ([]string, error)) {
+	fake.getWorldMutex.Lock()
+	defer fake.getWorldMutex.Unlock()
+	fake.GetWorldStub = stub
+}
+
+func (fake *FakeApkImplementation) GetWorldReturns(result1 []string, result2 error) {
+	fake.getWorldMutex.Lock()
+	defer fake.getWorldMutex.Unlock()
+	fake.GetWorldStub = nil
+	fake.getWorldReturns = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) GetWorldReturnsOnCall(i int, result1 []string, result2 error) {
+	fake.getWorldMutex.Lock()
+	defer fake.getWorldMutex.Unlock()
+	fake.GetWorldStub = nil
+	if fake.getWorldReturnsOnCall == nil {
+		fake.getWorldReturnsOnCall = make(map[int]struct {
+			result1 []string
+			result2 error
+		})
+	}
+	fake.getWorldReturnsOnCall[i] = struct {
+		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeApkImplementation) InitDB(arg1 ...string) error {
 	fake.initDBMutex.Lock()
 	ret, specificReturn := fake.initDBReturnsOnCall[len(fake.initDBArgsForCall)]
 	fake.initDBArgsForCall = append(fake.initDBArgsForCall, struct {
-		arg1 *options.Options
-		arg2 exec.Executor
-	}{arg1, arg2})
+		arg1 []string
+	}{arg1})
 	stub := fake.InitDBStub
 	fakeReturns := fake.initDBReturns
-	fake.recordInvocation("InitDB", []interface{}{arg1, arg2})
+	fake.recordInvocation("InitDB", []interface{}{arg1})
 	fake.initDBMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1...)
 	}
 	if specificReturn {
 		return ret.result1
@@ -187,17 +376,17 @@ func (fake *FakeApkImplementation) InitDBCallCount() int {
 	return len(fake.initDBArgsForCall)
 }
 
-func (fake *FakeApkImplementation) InitDBCalls(stub func(*options.Options, exec.Executor) error) {
+func (fake *FakeApkImplementation) InitDBCalls(stub func(...string) error) {
 	fake.initDBMutex.Lock()
 	defer fake.initDBMutex.Unlock()
 	fake.InitDBStub = stub
 }
 
-func (fake *FakeApkImplementation) InitDBArgsForCall(i int) (*options.Options, exec.Executor) {
+func (fake *FakeApkImplementation) InitDBArgsForCall(i int) []string {
 	fake.initDBMutex.RLock()
 	defer fake.initDBMutex.RUnlock()
 	argsForCall := fake.initDBArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
 }
 
 func (fake *FakeApkImplementation) InitDBReturns(result1 error) {
@@ -223,16 +412,26 @@ func (fake *FakeApkImplementation) InitDBReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) InitKeyring(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+func (fake *FakeApkImplementation) InitKeyring(arg1 []string, arg2 []string) error {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	var arg2Copy []string
+	if arg2 != nil {
+		arg2Copy = make([]string, len(arg2))
+		copy(arg2Copy, arg2)
+	}
 	fake.initKeyringMutex.Lock()
 	ret, specificReturn := fake.initKeyringReturnsOnCall[len(fake.initKeyringArgsForCall)]
 	fake.initKeyringArgsForCall = append(fake.initKeyringArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
+		arg1 []string
+		arg2 []string
+	}{arg1Copy, arg2Copy})
 	stub := fake.InitKeyringStub
 	fakeReturns := fake.initKeyringReturns
-	fake.recordInvocation("InitKeyring", []interface{}{arg1, arg2})
+	fake.recordInvocation("InitKeyring", []interface{}{arg1Copy, arg2Copy})
 	fake.initKeyringMutex.Unlock()
 	if stub != nil {
 		return stub(arg1, arg2)
@@ -249,13 +448,13 @@ func (fake *FakeApkImplementation) InitKeyringCallCount() int {
 	return len(fake.initKeyringArgsForCall)
 }
 
-func (fake *FakeApkImplementation) InitKeyringCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+func (fake *FakeApkImplementation) InitKeyringCalls(stub func([]string, []string) error) {
 	fake.initKeyringMutex.Lock()
 	defer fake.initKeyringMutex.Unlock()
 	fake.InitKeyringStub = stub
 }
 
-func (fake *FakeApkImplementation) InitKeyringArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+func (fake *FakeApkImplementation) InitKeyringArgsForCall(i int) ([]string, []string) {
 	fake.initKeyringMutex.RLock()
 	defer fake.initKeyringMutex.RUnlock()
 	argsForCall := fake.initKeyringArgsForCall[i]
@@ -285,19 +484,17 @@ func (fake *FakeApkImplementation) InitKeyringReturnsOnCall(i int, result1 error
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) InitRepositories(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
-	fake.initRepositoriesMutex.Lock()
-	ret, specificReturn := fake.initRepositoriesReturnsOnCall[len(fake.initRepositoriesArgsForCall)]
-	fake.initRepositoriesArgsForCall = append(fake.initRepositoriesArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
-	stub := fake.InitRepositoriesStub
-	fakeReturns := fake.initRepositoriesReturns
-	fake.recordInvocation("InitRepositories", []interface{}{arg1, arg2})
-	fake.initRepositoriesMutex.Unlock()
+func (fake *FakeApkImplementation) ListInitFiles() []tar.Header {
+	fake.listInitFilesMutex.Lock()
+	ret, specificReturn := fake.listInitFilesReturnsOnCall[len(fake.listInitFilesArgsForCall)]
+	fake.listInitFilesArgsForCall = append(fake.listInitFilesArgsForCall, struct {
+	}{})
+	stub := fake.ListInitFilesStub
+	fakeReturns := fake.listInitFilesReturns
+	fake.recordInvocation("ListInitFiles", []interface{}{})
+	fake.listInitFilesMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub()
 	}
 	if specificReturn {
 		return ret.result1
@@ -305,185 +502,56 @@ func (fake *FakeApkImplementation) InitRepositories(arg1 *options.Options, arg2 
 	return fakeReturns.result1
 }
 
-func (fake *FakeApkImplementation) InitRepositoriesCallCount() int {
-	fake.initRepositoriesMutex.RLock()
-	defer fake.initRepositoriesMutex.RUnlock()
-	return len(fake.initRepositoriesArgsForCall)
+func (fake *FakeApkImplementation) ListInitFilesCallCount() int {
+	fake.listInitFilesMutex.RLock()
+	defer fake.listInitFilesMutex.RUnlock()
+	return len(fake.listInitFilesArgsForCall)
 }
 
-func (fake *FakeApkImplementation) InitRepositoriesCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
-	fake.initRepositoriesMutex.Lock()
-	defer fake.initRepositoriesMutex.Unlock()
-	fake.InitRepositoriesStub = stub
+func (fake *FakeApkImplementation) ListInitFilesCalls(stub func() []tar.Header) {
+	fake.listInitFilesMutex.Lock()
+	defer fake.listInitFilesMutex.Unlock()
+	fake.ListInitFilesStub = stub
 }
 
-func (fake *FakeApkImplementation) InitRepositoriesArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
-	fake.initRepositoriesMutex.RLock()
-	defer fake.initRepositoriesMutex.RUnlock()
-	argsForCall := fake.initRepositoriesArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeApkImplementation) InitRepositoriesReturns(result1 error) {
-	fake.initRepositoriesMutex.Lock()
-	defer fake.initRepositoriesMutex.Unlock()
-	fake.InitRepositoriesStub = nil
-	fake.initRepositoriesReturns = struct {
-		result1 error
+func (fake *FakeApkImplementation) ListInitFilesReturns(result1 []tar.Header) {
+	fake.listInitFilesMutex.Lock()
+	defer fake.listInitFilesMutex.Unlock()
+	fake.ListInitFilesStub = nil
+	fake.listInitFilesReturns = struct {
+		result1 []tar.Header
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) InitRepositoriesReturnsOnCall(i int, result1 error) {
-	fake.initRepositoriesMutex.Lock()
-	defer fake.initRepositoriesMutex.Unlock()
-	fake.InitRepositoriesStub = nil
-	if fake.initRepositoriesReturnsOnCall == nil {
-		fake.initRepositoriesReturnsOnCall = make(map[int]struct {
-			result1 error
+func (fake *FakeApkImplementation) ListInitFilesReturnsOnCall(i int, result1 []tar.Header) {
+	fake.listInitFilesMutex.Lock()
+	defer fake.listInitFilesMutex.Unlock()
+	fake.ListInitFilesStub = nil
+	if fake.listInitFilesReturnsOnCall == nil {
+		fake.listInitFilesReturnsOnCall = make(map[int]struct {
+			result1 []tar.Header
 		})
 	}
-	fake.initRepositoriesReturnsOnCall[i] = struct {
-		result1 error
+	fake.listInitFilesReturnsOnCall[i] = struct {
+		result1 []tar.Header
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) InitWorld(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
-	fake.initWorldMutex.Lock()
-	ret, specificReturn := fake.initWorldReturnsOnCall[len(fake.initWorldArgsForCall)]
-	fake.initWorldArgsForCall = append(fake.initWorldArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
-	stub := fake.InitWorldStub
-	fakeReturns := fake.initWorldReturns
-	fake.recordInvocation("InitWorld", []interface{}{arg1, arg2})
-	fake.initWorldMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
+func (fake *FakeApkImplementation) SetRepositories(arg1 []string) error {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeApkImplementation) InitWorldCallCount() int {
-	fake.initWorldMutex.RLock()
-	defer fake.initWorldMutex.RUnlock()
-	return len(fake.initWorldArgsForCall)
-}
-
-func (fake *FakeApkImplementation) InitWorldCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
-	fake.initWorldMutex.Lock()
-	defer fake.initWorldMutex.Unlock()
-	fake.InitWorldStub = stub
-}
-
-func (fake *FakeApkImplementation) InitWorldArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
-	fake.initWorldMutex.RLock()
-	defer fake.initWorldMutex.RUnlock()
-	argsForCall := fake.initWorldArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeApkImplementation) InitWorldReturns(result1 error) {
-	fake.initWorldMutex.Lock()
-	defer fake.initWorldMutex.Unlock()
-	fake.InitWorldStub = nil
-	fake.initWorldReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeApkImplementation) InitWorldReturnsOnCall(i int, result1 error) {
-	fake.initWorldMutex.Lock()
-	defer fake.initWorldMutex.Unlock()
-	fake.InitWorldStub = nil
-	if fake.initWorldReturnsOnCall == nil {
-		fake.initWorldReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.initWorldReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyring(arg1 *options.Options, arg2 ...string) ([]string, error) {
-	fake.loadSystemKeyringMutex.Lock()
-	ret, specificReturn := fake.loadSystemKeyringReturnsOnCall[len(fake.loadSystemKeyringArgsForCall)]
-	fake.loadSystemKeyringArgsForCall = append(fake.loadSystemKeyringArgsForCall, struct {
-		arg1 *options.Options
-		arg2 []string
-	}{arg1, arg2})
-	stub := fake.LoadSystemKeyringStub
-	fakeReturns := fake.loadSystemKeyringReturns
-	fake.recordInvocation("LoadSystemKeyring", []interface{}{arg1, arg2})
-	fake.loadSystemKeyringMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2...)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyringCallCount() int {
-	fake.loadSystemKeyringMutex.RLock()
-	defer fake.loadSystemKeyringMutex.RUnlock()
-	return len(fake.loadSystemKeyringArgsForCall)
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyringCalls(stub func(*options.Options, ...string) ([]string, error)) {
-	fake.loadSystemKeyringMutex.Lock()
-	defer fake.loadSystemKeyringMutex.Unlock()
-	fake.LoadSystemKeyringStub = stub
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyringArgsForCall(i int) (*options.Options, []string) {
-	fake.loadSystemKeyringMutex.RLock()
-	defer fake.loadSystemKeyringMutex.RUnlock()
-	argsForCall := fake.loadSystemKeyringArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyringReturns(result1 []string, result2 error) {
-	fake.loadSystemKeyringMutex.Lock()
-	defer fake.loadSystemKeyringMutex.Unlock()
-	fake.LoadSystemKeyringStub = nil
-	fake.loadSystemKeyringReturns = struct {
-		result1 []string
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeApkImplementation) LoadSystemKeyringReturnsOnCall(i int, result1 []string, result2 error) {
-	fake.loadSystemKeyringMutex.Lock()
-	defer fake.loadSystemKeyringMutex.Unlock()
-	fake.LoadSystemKeyringStub = nil
-	if fake.loadSystemKeyringReturnsOnCall == nil {
-		fake.loadSystemKeyringReturnsOnCall = make(map[int]struct {
-			result1 []string
-			result2 error
-		})
-	}
-	fake.loadSystemKeyringReturnsOnCall[i] = struct {
-		result1 []string
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeApkImplementation) NormalizeScriptsTar(arg1 *options.Options) error {
-	fake.normalizeScriptsTarMutex.Lock()
-	ret, specificReturn := fake.normalizeScriptsTarReturnsOnCall[len(fake.normalizeScriptsTarArgsForCall)]
-	fake.normalizeScriptsTarArgsForCall = append(fake.normalizeScriptsTarArgsForCall, struct {
-		arg1 *options.Options
-	}{arg1})
-	stub := fake.NormalizeScriptsTarStub
-	fakeReturns := fake.normalizeScriptsTarReturns
-	fake.recordInvocation("NormalizeScriptsTar", []interface{}{arg1})
-	fake.normalizeScriptsTarMutex.Unlock()
+	fake.setRepositoriesMutex.Lock()
+	ret, specificReturn := fake.setRepositoriesReturnsOnCall[len(fake.setRepositoriesArgsForCall)]
+	fake.setRepositoriesArgsForCall = append(fake.setRepositoriesArgsForCall, struct {
+		arg1 []string
+	}{arg1Copy})
+	stub := fake.SetRepositoriesStub
+	fakeReturns := fake.setRepositoriesReturns
+	fake.recordInvocation("SetRepositories", []interface{}{arg1Copy})
+	fake.setRepositoriesMutex.Unlock()
 	if stub != nil {
 		return stub(arg1)
 	}
@@ -493,44 +561,110 @@ func (fake *FakeApkImplementation) NormalizeScriptsTar(arg1 *options.Options) er
 	return fakeReturns.result1
 }
 
-func (fake *FakeApkImplementation) NormalizeScriptsTarCallCount() int {
-	fake.normalizeScriptsTarMutex.RLock()
-	defer fake.normalizeScriptsTarMutex.RUnlock()
-	return len(fake.normalizeScriptsTarArgsForCall)
+func (fake *FakeApkImplementation) SetRepositoriesCallCount() int {
+	fake.setRepositoriesMutex.RLock()
+	defer fake.setRepositoriesMutex.RUnlock()
+	return len(fake.setRepositoriesArgsForCall)
 }
 
-func (fake *FakeApkImplementation) NormalizeScriptsTarCalls(stub func(*options.Options) error) {
-	fake.normalizeScriptsTarMutex.Lock()
-	defer fake.normalizeScriptsTarMutex.Unlock()
-	fake.NormalizeScriptsTarStub = stub
+func (fake *FakeApkImplementation) SetRepositoriesCalls(stub func([]string) error) {
+	fake.setRepositoriesMutex.Lock()
+	defer fake.setRepositoriesMutex.Unlock()
+	fake.SetRepositoriesStub = stub
 }
 
-func (fake *FakeApkImplementation) NormalizeScriptsTarArgsForCall(i int) *options.Options {
-	fake.normalizeScriptsTarMutex.RLock()
-	defer fake.normalizeScriptsTarMutex.RUnlock()
-	argsForCall := fake.normalizeScriptsTarArgsForCall[i]
+func (fake *FakeApkImplementation) SetRepositoriesArgsForCall(i int) []string {
+	fake.setRepositoriesMutex.RLock()
+	defer fake.setRepositoriesMutex.RUnlock()
+	argsForCall := fake.setRepositoriesArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeApkImplementation) NormalizeScriptsTarReturns(result1 error) {
-	fake.normalizeScriptsTarMutex.Lock()
-	defer fake.normalizeScriptsTarMutex.Unlock()
-	fake.NormalizeScriptsTarStub = nil
-	fake.normalizeScriptsTarReturns = struct {
+func (fake *FakeApkImplementation) SetRepositoriesReturns(result1 error) {
+	fake.setRepositoriesMutex.Lock()
+	defer fake.setRepositoriesMutex.Unlock()
+	fake.SetRepositoriesStub = nil
+	fake.setRepositoriesReturns = struct {
 		result1 error
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) NormalizeScriptsTarReturnsOnCall(i int, result1 error) {
-	fake.normalizeScriptsTarMutex.Lock()
-	defer fake.normalizeScriptsTarMutex.Unlock()
-	fake.NormalizeScriptsTarStub = nil
-	if fake.normalizeScriptsTarReturnsOnCall == nil {
-		fake.normalizeScriptsTarReturnsOnCall = make(map[int]struct {
+func (fake *FakeApkImplementation) SetRepositoriesReturnsOnCall(i int, result1 error) {
+	fake.setRepositoriesMutex.Lock()
+	defer fake.setRepositoriesMutex.Unlock()
+	fake.SetRepositoriesStub = nil
+	if fake.setRepositoriesReturnsOnCall == nil {
+		fake.setRepositoriesReturnsOnCall = make(map[int]struct {
 			result1 error
 		})
 	}
-	fake.normalizeScriptsTarReturnsOnCall[i] = struct {
+	fake.setRepositoriesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeApkImplementation) SetWorld(arg1 []string) error {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.setWorldMutex.Lock()
+	ret, specificReturn := fake.setWorldReturnsOnCall[len(fake.setWorldArgsForCall)]
+	fake.setWorldArgsForCall = append(fake.setWorldArgsForCall, struct {
+		arg1 []string
+	}{arg1Copy})
+	stub := fake.SetWorldStub
+	fakeReturns := fake.setWorldReturns
+	fake.recordInvocation("SetWorld", []interface{}{arg1Copy})
+	fake.setWorldMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeApkImplementation) SetWorldCallCount() int {
+	fake.setWorldMutex.RLock()
+	defer fake.setWorldMutex.RUnlock()
+	return len(fake.setWorldArgsForCall)
+}
+
+func (fake *FakeApkImplementation) SetWorldCalls(stub func([]string) error) {
+	fake.setWorldMutex.Lock()
+	defer fake.setWorldMutex.Unlock()
+	fake.SetWorldStub = stub
+}
+
+func (fake *FakeApkImplementation) SetWorldArgsForCall(i int) []string {
+	fake.setWorldMutex.RLock()
+	defer fake.setWorldMutex.RUnlock()
+	argsForCall := fake.setWorldArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeApkImplementation) SetWorldReturns(result1 error) {
+	fake.setWorldMutex.Lock()
+	defer fake.setWorldMutex.Unlock()
+	fake.SetWorldStub = nil
+	fake.setWorldReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeApkImplementation) SetWorldReturnsOnCall(i int, result1 error) {
+	fake.setWorldMutex.Lock()
+	defer fake.setWorldMutex.Unlock()
+	fake.SetWorldStub = nil
+	if fake.setWorldReturnsOnCall == nil {
+		fake.setWorldReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setWorldReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -540,18 +674,22 @@ func (fake *FakeApkImplementation) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.fixateWorldMutex.RLock()
 	defer fake.fixateWorldMutex.RUnlock()
+	fake.getInstalledMutex.RLock()
+	defer fake.getInstalledMutex.RUnlock()
+	fake.getRepositoriesMutex.RLock()
+	defer fake.getRepositoriesMutex.RUnlock()
+	fake.getWorldMutex.RLock()
+	defer fake.getWorldMutex.RUnlock()
 	fake.initDBMutex.RLock()
 	defer fake.initDBMutex.RUnlock()
 	fake.initKeyringMutex.RLock()
 	defer fake.initKeyringMutex.RUnlock()
-	fake.initRepositoriesMutex.RLock()
-	defer fake.initRepositoriesMutex.RUnlock()
-	fake.initWorldMutex.RLock()
-	defer fake.initWorldMutex.RUnlock()
-	fake.loadSystemKeyringMutex.RLock()
-	defer fake.loadSystemKeyringMutex.RUnlock()
-	fake.normalizeScriptsTarMutex.RLock()
-	defer fake.normalizeScriptsTarMutex.RUnlock()
+	fake.listInitFilesMutex.RLock()
+	defer fake.listInitFilesMutex.RUnlock()
+	fake.setRepositoriesMutex.RLock()
+	defer fake.setRepositoriesMutex.RUnlock()
+	fake.setWorldMutex.RLock()
+	defer fake.setWorldMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

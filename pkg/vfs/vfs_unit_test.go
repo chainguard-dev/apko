@@ -20,9 +20,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestVFS(t *testing.T) {
+	var (
+		st1            *syscall.Stat_t
+		st2            *unix.Stat_t
+		ok1, ok2       bool
+		uid, gid, mode uint32
+	)
 	dir, err := DirFS("testdata")
 	require.NoError(t, err)
 
@@ -44,10 +51,16 @@ func TestVFS(t *testing.T) {
 	fi, err := vfs.Stat("./etc/motd")
 	require.NoError(t, err)
 
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	require.True(t, ok, "must present a Stat_t")
-
-	assert.NotEqual(t, st.Uid, uint32(65532), "Uid should not be 65532")
+	sys := fi.Sys()
+	st1, ok1 = sys.(*syscall.Stat_t)
+	st2, ok2 = sys.(*unix.Stat_t)
+	require.True(t, ok1 || ok2, "must present a Stat_t")
+	if ok1 {
+		uid = st1.Uid
+	} else {
+		uid = st2.Uid
+	}
+	assert.NotEqual(t, uid, uint32(65532), "Uid should not be 65532")
 
 	err = vfs.Chown("./etc/motd", 65532, 65532)
 	require.NoError(t, err)
@@ -55,11 +68,20 @@ func TestVFS(t *testing.T) {
 	fi, err = vfs.Stat("./etc/motd")
 	require.NoError(t, err)
 
-	st, ok = fi.Sys().(*syscall.Stat_t)
-	require.True(t, ok, "must present a Stat_t")
+	sys = fi.Sys()
+	st1, ok1 = sys.(*syscall.Stat_t)
+	st2, ok2 = sys.(*unix.Stat_t)
+	require.True(t, ok1 || ok2, "must present a Stat_t")
 
-	assert.Equal(t, st.Uid, uint32(65532), "Uid must be 65532")
-	assert.Equal(t, st.Gid, uint32(65532), "Gid must be 65532")
+	if ok1 {
+		uid = st1.Uid
+		gid = st1.Gid
+	} else {
+		uid = st2.Uid
+		gid = st2.Gid
+	}
+	assert.Equal(t, uid, uint32(65532), "Uid must be 65532")
+	assert.Equal(t, gid, uint32(65532), "Gid must be 65532")
 
 	dentry, err = vfs.ReadDir("./etc")
 	require.NoError(t, err)
@@ -70,11 +92,21 @@ func TestVFS(t *testing.T) {
 	fi, err = dentry[0].Info()
 	require.NoError(t, err)
 
-	st, ok = fi.Sys().(*syscall.Stat_t)
-	require.True(t, ok, "must present a Stat_t")
+	sys = fi.Sys()
+	st1, ok1 = sys.(*syscall.Stat_t)
+	st2, ok2 = sys.(*unix.Stat_t)
+	require.True(t, ok1 || ok2, "must present a Stat_t")
 
-	require.Equal(t, st.Uid, uint32(65532), "Uid must be 65532")
-	require.Equal(t, st.Gid, uint32(65532), "Gid must be 65532")
+	if ok1 {
+		uid = st1.Uid
+		gid = st1.Gid
+	} else {
+		uid = st2.Uid
+		gid = st2.Gid
+	}
+
+	require.Equal(t, uid, uint32(65532), "Uid must be 65532")
+	require.Equal(t, gid, uint32(65532), "Gid must be 65532")
 
 	err = vfs.Chmod("./etc/motd", 0755)
 	require.NoError(t, err)
@@ -82,8 +114,16 @@ func TestVFS(t *testing.T) {
 	fi, err = vfs.Stat("./etc/motd")
 	require.NoError(t, err)
 
-	st, ok = fi.Sys().(*syscall.Stat_t)
-	require.True(t, ok, "must present a Stat_t")
+	sys = fi.Sys()
+	st1, ok1 = sys.(*syscall.Stat_t)
+	st2, ok2 = sys.(*unix.Stat_t)
+	require.True(t, ok1 || ok2, "must present a Stat_t")
 
-	require.Equal(t, st.Mode&0755, uint32(0755), "must have mode 0755")
+	if ok1 {
+		mode = uint32(st1.Mode) //nolint:unconvert // mode is uint32 on linux, uint16 on darwin
+	} else {
+		mode = uint32(st2.Mode) //nolint:unconvert // mode is uint32 on linux, uint16 on darwin
+	}
+
+	require.Equal(t, uint32(mode&0755), uint32(0755), "must have mode 0755") //nolint:unconvert // mode is uint32 on linux, uint16 on darwin
 }

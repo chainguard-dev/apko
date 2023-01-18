@@ -17,6 +17,7 @@ package options
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
@@ -58,6 +59,7 @@ var Default = Options{
 		Hooks: make(logrus.LevelHooks),
 		Level: logrus.InfoLevel,
 	},
+	Arch: types.ParseArchitecture(runtime.GOARCH),
 }
 
 func (o *Options) Summarize(logger *logrus.Entry) {
