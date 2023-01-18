@@ -53,10 +53,7 @@ func TestExecute(t *testing.T) {
 		impl := execfakes.FakeExecutorImplementation{}
 		tc.prepare(&impl)
 		sut.SetImplementation(&impl)
-		// Test with and without proot
-		for b := range map[bool]struct{}{false: {}, true: {}} {
-			sut.Execute("command")
-		}
+		sut.Execute("command")
 	}
 }
 
@@ -85,10 +82,6 @@ func TestExecuteChroot(t *testing.T) {
 		impl := execfakes.FakeExecutorImplementation{}
 		tc.prepare(&impl)
 		sut.SetImplementation(&impl)
-
-		// Test with and without proot
-		for b := range map[bool]struct{}{false: {}, true: {}} {
-			sut.ExecuteChroot("command")
-		}
+		sut.ExecuteChroot("command")
 	}
 }
