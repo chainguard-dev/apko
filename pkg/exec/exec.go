@@ -24,10 +24,10 @@ import (
 )
 
 type Executor struct {
-	impl     executorImplementation
-	WorkDir  string
-	UseQemu  string
-	Log      *logrus.Entry
+	impl    executorImplementation
+	WorkDir string
+	UseQemu string
+	Log     *logrus.Entry
 }
 
 type Option func(*Executor) error

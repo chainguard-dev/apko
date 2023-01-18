@@ -38,9 +38,9 @@ import (
 // Programmatic wrapper around apk-tools.
 
 type APK struct {
-	impl     apkImplementation
-	fs       rwfs.FS
-	Options  options.Options
+	impl    apkImplementation
+	fs      rwfs.FS
+	Options options.Options
 }
 
 func New() (*APK, error) {
@@ -68,9 +68,9 @@ func NewWithOptions(o options.Options) (*APK, error) {
 		apkimpl.WithIgnoreMknodErrors(true),
 	)
 	a := &APK{
-		Options:  o,
-		impl:     apkImpl,
-		fs:       src,
+		Options: o,
+		impl:    apkImpl,
+		fs:      src,
 	}
 	return a, nil
 }
