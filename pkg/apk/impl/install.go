@@ -25,6 +25,21 @@ import (
 	"path/filepath"
 )
 
+// writeOneFile writes one file from the APK given the tar header and tar reader.
+func (a *APKImplementation) writeOneFile(header *tar.Header, tr *tar.Reader) error {
+	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode().Perm())
+	if err != nil {
+		return fmt.Errorf("error creating file %s: %w", header.Name, err)
+	}
+	defer f.Close()
+
+	if _, err := io.CopyN(f, tr, header.Size); err != nil {
+		return fmt.Errorf("unable to write content for %s: %w", header.Name, err)
+	}
+
+	return nil
+}
+
 // installAPKFiles install the files from the APK and return the list of installed files
 // and their permissions. Returns a tar.Header because it is a convenient existing
 // struct that has all of the fields we need.
@@ -51,13 +66,8 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 				return nil, fmt.Errorf("error creating directory %s: %w", header.Name, err)
 			}
 		case tar.TypeReg:
-			f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode().Perm())
-			if err != nil {
-				return nil, fmt.Errorf("error creating file %s: %w", header.Name, err)
-			}
-			defer f.Close()
-			if _, err := io.CopyN(f, tr, header.Size); err != nil {
-				return nil, fmt.Errorf("unable to write content for %s: %w", header.Name, err)
+			if err := a.writeOneFile(header, tr); err != nil {
+				return nil, err
 			}
 		case tar.TypeSymlink:
 			// some underlying filesystems and some memfs that we use in tests do not support symlinks.
@@ -85,7 +95,7 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 		linkTarget, _ := sanitizeArchivePath(filepath.Dir(header.Name), header.Linkname)
 		target, err = a.fs.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode().Perm())
 		if err != nil {
-			return nil, fmt.Errorf("error creating file %s: %w", header.Name, err)
+			return nil, fmt.Errorf("error creating file (hardlink) %s: %w", header.Name, err)
 		}
 		defer target.Close()
 		source, err = a.fs.OpenFile(linkTarget, os.O_RDONLY, 0)
