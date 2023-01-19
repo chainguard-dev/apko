@@ -22,11 +22,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"gitlab.alpinelinux.org/alpine/go/repository"
+	"go.lsp.dev/uri"
 )
 
 // SetRepositories sets the contents of /etc/apk/repositories file.
@@ -85,16 +88,48 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 	for _, repoURI := range repos {
 		repoBase := fmt.Sprintf("%s/%s", repoURI, arch)
 		u := fmt.Sprintf("%s/%s", repoBase, indexFilename)
-		res, err := http.Get(u) // nolint:gosec // we know what we are doing here
+
+		// Normalize the repo as a URI, so that local paths
+		// are translated into file:// URLs, allowing them to be parsed
+		// into a url.URL{}.
+		var (
+			b     []byte
+			asURI uri.URI
+		)
+		if strings.HasPrefix(u, "https://") {
+			asURI, _ = uri.Parse(u)
+		} else {
+			asURI = uri.New(u)
+		}
+		asURL, err := url.Parse(string(asURI))
 		if err != nil {
-			return nil, fmt.Errorf("unable to get repository index at %s: %w", u, err)
+			return nil, fmt.Errorf("failed to parse repo as URI: %w", err)
 		}
-		defer res.Body.Close()
-		buf := bytes.NewBuffer(nil)
-		if _, err := io.Copy(buf, res.Body); err != nil {
-			return nil, fmt.Errorf("unable to read repository index at %s: %w", u, err)
+
+		switch asURL.Scheme {
+		case "file":
+			b, err = os.ReadFile(u)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read repository %s: %w", u, err)
+			}
+		case "https":
+			client := a.client
+			if client == nil {
+				client = &http.Client{}
+			}
+			res, err := client.Get(asURL.String()) // nolint:gosec // we know what we are doing here
+			if err != nil {
+				return nil, fmt.Errorf("unable to get repository index at %s: %w", u, err)
+			}
+			defer res.Body.Close()
+			buf := bytes.NewBuffer(nil)
+			if _, err := io.Copy(buf, res.Body); err != nil {
+				return nil, fmt.Errorf("unable to read repository index at %s: %w", u, err)
+			}
+			b = buf.Bytes()
+		default:
+			return nil, fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
 		}
-		b := buf.Bytes()
 
 		// validate the signature
 		if !ignoreSignatures {
