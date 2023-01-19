@@ -44,14 +44,6 @@ func WithConfig(configFile string) Option {
 	}
 }
 
-// WithProot enables proot for rootless image builds.
-func WithProot(enable bool) Option {
-	return func(bc *Context) error {
-		bc.Options.UseProot = enable
-		return nil
-	}
-}
-
 // WithTags sets the tags for the build context.
 func WithTags(tags ...string) Option {
 	return func(bc *Context) error {

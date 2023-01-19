@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -32,7 +31,6 @@ import (
 	"chainguard.dev/apko/pkg/apk/impl/rwfs"
 	"chainguard.dev/apko/pkg/apk/impl/rwosfs"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
 )
@@ -40,10 +38,9 @@ import (
 // Programmatic wrapper around apk-tools.
 
 type APK struct {
-	impl     apkImplementation
-	executor *exec.Executor
-	fs       rwfs.FS
-	Options  options.Options
+	impl    apkImplementation
+	fs      rwfs.FS
+	Options options.Options
 }
 
 func New() (*APK, error) {
@@ -56,10 +53,6 @@ func NewWithOptions(o options.Options) (*APK, error) {
 		o.Log = opts.Log
 	}
 
-	executor, err := buildExecutor(o)
-	if err != nil {
-		panic(err)
-	}
 	// note: apko ignores the mknod errors, because it does not care if the characters devices
 	// exist or not. apko does not execute the scripts, so they do not matter. This buys us flexibility
 	// to run without root privileges, or on platforms without character devices.
@@ -75,26 +68,14 @@ func NewWithOptions(o options.Options) (*APK, error) {
 		apkimpl.WithIgnoreMknodErrors(true),
 	)
 	a := &APK{
-		Options:  o,
-		impl:     apkImpl,
-		executor: executor,
-		fs:       src,
+		Options: o,
+		impl:    apkImpl,
+		fs:      src,
 	}
 	return a, nil
 }
 
 type Option func(*APK) error
-
-func buildExecutor(o options.Options) (*exec.Executor, error) {
-	hostArch := types.ParseArchitecture(runtime.GOARCH)
-	execOpts := []exec.Option{exec.WithProot(o.UseProot)}
-	if o.UseProot && !o.Arch.Compatible(hostArch) {
-		o.Log.Printf("%q requires QEMU (not compatible with %q)", o.Arch, hostArch)
-		execOpts = append(execOpts, exec.WithQemu(o.Arch.ToQEmu()))
-	}
-
-	return exec.New(o.WorkDir, o.Logger(), execOpts...)
-}
 
 // Builds the image in Context.WorkDir according to the image configuration
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
