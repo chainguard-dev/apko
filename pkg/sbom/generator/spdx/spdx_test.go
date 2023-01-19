@@ -131,8 +131,8 @@ func TestSourcePackage(t *testing.T) {
 
 	// Verify the purl
 	require.Len(t, doc.Packages[0].ExternalRefs, 1)
-	require.Equal(t, doc.Packages[0].ExternalRefs[0].Category, "PACKAGE_MANAGER")
-	require.Equal(t, doc.Packages[0].ExternalRefs[0].Type, "purl")
+	require.Equal(t, doc.Packages[0].ExternalRefs[0].Category, ExtRefPackageManager)
+	require.Equal(t, doc.Packages[0].ExternalRefs[0].Type, ExtRefTypePurl)
 	require.Equal(
 		t, doc.Packages[0].ExternalRefs[0].Locator,
 		"pkg:github/distroless/example@868f0dc23e721039f9669b56d01ea4b897f2fb24",
