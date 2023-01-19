@@ -338,7 +338,7 @@ func (a *APKImplementation) InitKeyring(keyFiles, extraKeyFiles []string) (err e
 			var data []byte
 			switch asURL.Scheme {
 			case "file":
-				data, err = a.fs.ReadFile(element)
+				data, err = os.ReadFile(element)
 				if err != nil {
 					return fmt.Errorf("failed to read apk key: %w", err)
 				}
@@ -529,20 +529,52 @@ func (a *APKImplementation) installPackage(pkg *repository.RepositoryPackage, ca
 	a.logger.Infof("installing %s (%s)", pkg.Name, pkg.Version)
 
 	u := pkg.Url()
-	client := a.client
-	if client == nil {
-		client = &http.Client{}
+
+	// Normalize the repo as a URI, so that local paths
+	// are translated into file:// URLs, allowing them to be parsed
+	// into a url.URL{}.
+	var (
+		r     io.Reader
+		asURI uri.URI
+	)
+	if strings.HasPrefix(u, "https://") {
+		asURI, _ = uri.Parse(u)
+	} else {
+		asURI = uri.New(u)
 	}
-	res, err := client.Get(u)
+	asURL, err := url.Parse(string(asURI))
 	if err != nil {
-		return fmt.Errorf("unable to get package apk at %s: %w", u, err)
+		return fmt.Errorf("failed to parse package as URI: %w", err)
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get package apk at %s: %v", u, res.Status)
+
+	switch asURL.Scheme {
+	case "file":
+		f, err := os.Open(u)
+		if err != nil {
+			return fmt.Errorf("failed to read repository package apk %s: %w", u, err)
+		}
+		defer f.Close()
+		r = f
+	case "https":
+		client := a.client
+		if client == nil {
+			client = &http.Client{}
+		}
+		res, err := client.Get(u)
+		if err != nil {
+			return fmt.Errorf("unable to get package apk at %s: %w", u, err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return fmt.Errorf("unable to get package apk at %s: %v", u, res.Status)
+		}
+		r = res.Body
+	default:
+		return fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
 	}
+
 	// install the apk file
-	expanded, err := expandApk(res.Body)
+	expanded, err := expandApk(r)
 	if err != nil {
 		return fmt.Errorf("unable to expand apk for package %s: %w", pkg.Name, err)
 	}
