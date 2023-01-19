@@ -124,12 +124,13 @@ func TestInitKeyring(t *testing.T) {
 	a, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 
-	dir := "/foo/bar/keys"
-	err = src.MkdirAll(dir, 0o755)
+	dir, err := os.MkdirTemp("", "apko")
 	require.NoError(t, err)
 
 	keyPath := filepath.Join(dir, "alpine-devel@lists.alpinelinux.org-5e69ca50.rsa.pub")
-	src.WriteFile(keyPath, []byte(testDemoKey), 0o644)
+	err = os.WriteFile(keyPath, []byte(testDemoKey), 0o644)
+	require.NoError(t, err)
+
 	// Add a local file and a remote key
 	keyfiles := []string{
 		keyPath, "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",

@@ -338,7 +338,7 @@ func (a *APKImplementation) InitKeyring(keyFiles, extraKeyFiles []string) (err e
 			var data []byte
 			switch asURL.Scheme {
 			case "file":
-				data, err = a.fs.ReadFile(element)
+				data, err = os.ReadFile(element)
 				if err != nil {
 					return fmt.Errorf("failed to read apk key: %w", err)
 				}
