@@ -430,7 +430,10 @@ func installBusyboxLinks(root fs.FS) (fs.FS, error) {
 	// does busybox exist? if not, do not bother with symlinks
 	f, err := root.Open("/bin/busybox")
 	if err != nil {
-		return memfsImpl, err
+		if !errors.Is(err, os.ErrNotExist) {
+			return memfsImpl, err
+		}
+		return memfsImpl, nil
 	}
 	f.Close()
 	for _, link := range busyboxLinks {
