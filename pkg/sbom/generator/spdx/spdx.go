@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -30,6 +29,7 @@ import (
 
 	purl "github.com/package-url/packageurl-go"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -43,10 +43,12 @@ const (
 	apkSBOMdir           = "/var/lib/db/sbom"
 )
 
-type SPDX struct{}
+type SPDX struct {
+	fs apkfs.FullFS
+}
 
-func New() SPDX {
-	return SPDX{}
+func New(fs apkfs.FullFS) SPDX {
+	return SPDX{fs}
 }
 
 func (sx *SPDX) Key() string {
@@ -187,20 +189,14 @@ func replacePackage(doc *Document, originalID, newID string) {
 }
 
 // locateApkSBOM returns the SBOM
-func locateApkSBOM(opts *options.Options, p *Package) (string, error) {
+func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		filepath.Join(
-			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		),
-		filepath.Join(
-			opts.WorkDir, fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		),
-		filepath.Join(
-			opts.WorkDir, fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
-		),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
+		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
 	} {
-		info, err := os.Stat(s)
+		info, err := fsys.Stat(s)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -218,7 +214,7 @@ func locateApkSBOM(opts *options.Options, p *Package) (string, error) {
 
 func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(opts, p)
+	path, err := locateApkSBOM(sx.fs, p)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
@@ -317,7 +313,7 @@ func copySBOMElement(spdxid string, sourceDoc, targetDoc *Document, copiedElemen
 // ParseInternalSBOM opens an SBOM inside apks and
 func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
-	data, err := os.ReadFile(path)
+	data, err := sx.fs.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}

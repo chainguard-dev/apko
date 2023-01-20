@@ -2,9 +2,10 @@
 package buildfakes
 
 import (
-	"archive/tar"
+	fsa "io/fs"
 	"sync"
 
+	"chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
@@ -14,10 +15,11 @@ import (
 )
 
 type FakeBuildImplementation struct {
-	AdditionalTagsStub        func(*options.Options) error
+	AdditionalTagsStub        func(fs.FullFS, *options.Options) error
 	additionalTagsMutex       sync.RWMutex
 	additionalTagsArgsForCall []struct {
-		arg1 *options.Options
+		arg1 fs.FullFS
+		arg2 *options.Options
 	}
 	additionalTagsReturns struct {
 		result1 error
@@ -25,7 +27,7 @@ type FakeBuildImplementation struct {
 	additionalTagsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	BuildImageStub        func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) ([]tar.Header, error)
+	BuildImageStub        func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) (fsa.FS, error)
 	buildImageMutex       sync.RWMutex
 	buildImageArgsForCall []struct {
 		arg1 *options.Options
@@ -34,18 +36,18 @@ type FakeBuildImplementation struct {
 		arg4 *s6.Context
 	}
 	buildImageReturns struct {
-		result1 []tar.Header
+		result1 fsa.FS
 		result2 error
 	}
 	buildImageReturnsOnCall map[int]struct {
-		result1 []tar.Header
+		result1 fsa.FS
 		result2 error
 	}
-	BuildTarballStub        func(*options.Options, []tar.Header) (string, error)
+	BuildTarballStub        func(*options.Options, fsa.FS) (string, error)
 	buildTarballMutex       sync.RWMutex
 	buildTarballArgsForCall []struct {
 		arg1 *options.Options
-		arg2 []tar.Header
+		arg2 fsa.FS
 	}
 	buildTarballReturns struct {
 		result1 string
@@ -82,11 +84,12 @@ type FakeBuildImplementation struct {
 	generateIndexSBOMReturnsOnCall map[int]struct {
 		result1 error
 	}
-	GenerateOSReleaseStub        func(*options.Options, *types.ImageConfiguration) error
+	GenerateOSReleaseStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	generateOSReleaseMutex       sync.RWMutex
 	generateOSReleaseArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
 	}
 	generateOSReleaseReturns struct {
 		result1 error
@@ -106,11 +109,12 @@ type FakeBuildImplementation struct {
 	generateSBOMReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InitializeApkStub        func(*options.Options, *types.ImageConfiguration) error
+	InitializeApkStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	initializeApkMutex       sync.RWMutex
 	initializeApkArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
 	}
 	initializeApkReturns struct {
 		result1 error
@@ -118,11 +122,45 @@ type FakeBuildImplementation struct {
 	initializeApkReturnsOnCall map[int]struct {
 		result1 error
 	}
-	MutateAccountsStub        func(*options.Options, *types.ImageConfiguration) error
+	InstallBusyboxLinksStub        func(fs.FullFS) error
+	installBusyboxLinksMutex       sync.RWMutex
+	installBusyboxLinksArgsForCall []struct {
+		arg1 fs.FullFS
+	}
+	installBusyboxLinksReturns struct {
+		result1 error
+	}
+	installBusyboxLinksReturnsOnCall map[int]struct {
+		result1 error
+	}
+	InstallCharDevicesStub        func(fs.FullFS) error
+	installCharDevicesMutex       sync.RWMutex
+	installCharDevicesArgsForCall []struct {
+		arg1 fs.FullFS
+	}
+	installCharDevicesReturns struct {
+		result1 error
+	}
+	installCharDevicesReturnsOnCall map[int]struct {
+		result1 error
+	}
+	InstallLdconfigLinksStub        func(fs.FullFS) error
+	installLdconfigLinksMutex       sync.RWMutex
+	installLdconfigLinksArgsForCall []struct {
+		arg1 fs.FullFS
+	}
+	installLdconfigLinksReturns struct {
+		result1 error
+	}
+	installLdconfigLinksReturnsOnCall map[int]struct {
+		result1 error
+	}
+	MutateAccountsStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	mutateAccountsMutex       sync.RWMutex
 	mutateAccountsArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
 	}
 	mutateAccountsReturns struct {
 		result1 error
@@ -130,19 +168,18 @@ type FakeBuildImplementation struct {
 	mutateAccountsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	MutatePathsStub        func(*options.Options, *types.ImageConfiguration) ([]tar.Header, error)
+	MutatePathsStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	mutatePathsMutex       sync.RWMutex
 	mutatePathsArgsForCall []struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
 	}
 	mutatePathsReturns struct {
-		result1 []tar.Header
-		result2 error
+		result1 error
 	}
 	mutatePathsReturnsOnCall map[int]struct {
-		result1 []tar.Header
-		result2 error
+		result1 error
 	}
 	RefreshStub        func(*options.Options) (*s6.Context, *exec.Executor, error)
 	refreshMutex       sync.RWMutex
@@ -186,18 +223,19 @@ type FakeBuildImplementation struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeBuildImplementation) AdditionalTags(arg1 *options.Options) error {
+func (fake *FakeBuildImplementation) AdditionalTags(arg1 fs.FullFS, arg2 *options.Options) error {
 	fake.additionalTagsMutex.Lock()
 	ret, specificReturn := fake.additionalTagsReturnsOnCall[len(fake.additionalTagsArgsForCall)]
 	fake.additionalTagsArgsForCall = append(fake.additionalTagsArgsForCall, struct {
-		arg1 *options.Options
-	}{arg1})
+		arg1 fs.FullFS
+		arg2 *options.Options
+	}{arg1, arg2})
 	stub := fake.AdditionalTagsStub
 	fakeReturns := fake.additionalTagsReturns
-	fake.recordInvocation("AdditionalTags", []interface{}{arg1})
+	fake.recordInvocation("AdditionalTags", []interface{}{arg1, arg2})
 	fake.additionalTagsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -211,17 +249,17 @@ func (fake *FakeBuildImplementation) AdditionalTagsCallCount() int {
 	return len(fake.additionalTagsArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) AdditionalTagsCalls(stub func(*options.Options) error) {
+func (fake *FakeBuildImplementation) AdditionalTagsCalls(stub func(fs.FullFS, *options.Options) error) {
 	fake.additionalTagsMutex.Lock()
 	defer fake.additionalTagsMutex.Unlock()
 	fake.AdditionalTagsStub = stub
 }
 
-func (fake *FakeBuildImplementation) AdditionalTagsArgsForCall(i int) *options.Options {
+func (fake *FakeBuildImplementation) AdditionalTagsArgsForCall(i int) (fs.FullFS, *options.Options) {
 	fake.additionalTagsMutex.RLock()
 	defer fake.additionalTagsMutex.RUnlock()
 	argsForCall := fake.additionalTagsArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeBuildImplementation) AdditionalTagsReturns(result1 error) {
@@ -247,7 +285,7 @@ func (fake *FakeBuildImplementation) AdditionalTagsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) BuildImage(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 *exec.Executor, arg4 *s6.Context) ([]tar.Header, error) {
+func (fake *FakeBuildImplementation) BuildImage(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 *exec.Executor, arg4 *s6.Context) (fsa.FS, error) {
 	fake.buildImageMutex.Lock()
 	ret, specificReturn := fake.buildImageReturnsOnCall[len(fake.buildImageArgsForCall)]
 	fake.buildImageArgsForCall = append(fake.buildImageArgsForCall, struct {
@@ -275,7 +313,7 @@ func (fake *FakeBuildImplementation) BuildImageCallCount() int {
 	return len(fake.buildImageArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) BuildImageCalls(stub func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) ([]tar.Header, error)) {
+func (fake *FakeBuildImplementation) BuildImageCalls(stub func(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) (fsa.FS, error)) {
 	fake.buildImageMutex.Lock()
 	defer fake.buildImageMutex.Unlock()
 	fake.BuildImageStub = stub
@@ -288,47 +326,42 @@ func (fake *FakeBuildImplementation) BuildImageArgsForCall(i int) (*options.Opti
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeBuildImplementation) BuildImageReturns(result1 []tar.Header, result2 error) {
+func (fake *FakeBuildImplementation) BuildImageReturns(result1 fsa.FS, result2 error) {
 	fake.buildImageMutex.Lock()
 	defer fake.buildImageMutex.Unlock()
 	fake.BuildImageStub = nil
 	fake.buildImageReturns = struct {
-		result1 []tar.Header
+		result1 fsa.FS
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) BuildImageReturnsOnCall(i int, result1 []tar.Header, result2 error) {
+func (fake *FakeBuildImplementation) BuildImageReturnsOnCall(i int, result1 fsa.FS, result2 error) {
 	fake.buildImageMutex.Lock()
 	defer fake.buildImageMutex.Unlock()
 	fake.BuildImageStub = nil
 	if fake.buildImageReturnsOnCall == nil {
 		fake.buildImageReturnsOnCall = make(map[int]struct {
-			result1 []tar.Header
+			result1 fsa.FS
 			result2 error
 		})
 	}
 	fake.buildImageReturnsOnCall[i] = struct {
-		result1 []tar.Header
+		result1 fsa.FS
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options, arg2 []tar.Header) (string, error) {
-	var arg2Copy []tar.Header
-	if arg2 != nil {
-		arg2Copy = make([]tar.Header, len(arg2))
-		copy(arg2Copy, arg2)
-	}
+func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options, arg2 fsa.FS) (string, error) {
 	fake.buildTarballMutex.Lock()
 	ret, specificReturn := fake.buildTarballReturnsOnCall[len(fake.buildTarballArgsForCall)]
 	fake.buildTarballArgsForCall = append(fake.buildTarballArgsForCall, struct {
 		arg1 *options.Options
-		arg2 []tar.Header
-	}{arg1, arg2Copy})
+		arg2 fsa.FS
+	}{arg1, arg2})
 	stub := fake.BuildTarballStub
 	fakeReturns := fake.buildTarballReturns
-	fake.recordInvocation("BuildTarball", []interface{}{arg1, arg2Copy})
+	fake.recordInvocation("BuildTarball", []interface{}{arg1, arg2})
 	fake.buildTarballMutex.Unlock()
 	if stub != nil {
 		return stub(arg1, arg2)
@@ -345,13 +378,13 @@ func (fake *FakeBuildImplementation) BuildTarballCallCount() int {
 	return len(fake.buildTarballArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*options.Options, []tar.Header) (string, error)) {
+func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*options.Options, fsa.FS) (string, error)) {
 	fake.buildTarballMutex.Lock()
 	defer fake.buildTarballMutex.Unlock()
 	fake.BuildTarballStub = stub
 }
 
-func (fake *FakeBuildImplementation) BuildTarballArgsForCall(i int) (*options.Options, []tar.Header) {
+func (fake *FakeBuildImplementation) BuildTarballArgsForCall(i int) (*options.Options, fsa.FS) {
 	fake.buildTarballMutex.RLock()
 	defer fake.buildTarballMutex.RUnlock()
 	argsForCall := fake.buildTarballArgsForCall[i]
@@ -511,19 +544,20 @@ func (fake *FakeBuildImplementation) GenerateIndexSBOMReturnsOnCall(i int, resul
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) GenerateOSRelease(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+func (fake *FakeBuildImplementation) GenerateOSRelease(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.generateOSReleaseMutex.Lock()
 	ret, specificReturn := fake.generateOSReleaseReturnsOnCall[len(fake.generateOSReleaseArgsForCall)]
 	fake.generateOSReleaseArgsForCall = append(fake.generateOSReleaseArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
 	stub := fake.GenerateOSReleaseStub
 	fakeReturns := fake.generateOSReleaseReturns
-	fake.recordInvocation("GenerateOSRelease", []interface{}{arg1, arg2})
+	fake.recordInvocation("GenerateOSRelease", []interface{}{arg1, arg2, arg3})
 	fake.generateOSReleaseMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -537,17 +571,17 @@ func (fake *FakeBuildImplementation) GenerateOSReleaseCallCount() int {
 	return len(fake.generateOSReleaseArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) GenerateOSReleaseCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+func (fake *FakeBuildImplementation) GenerateOSReleaseCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) error) {
 	fake.generateOSReleaseMutex.Lock()
 	defer fake.generateOSReleaseMutex.Unlock()
 	fake.GenerateOSReleaseStub = stub
 }
 
-func (fake *FakeBuildImplementation) GenerateOSReleaseArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+func (fake *FakeBuildImplementation) GenerateOSReleaseArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
 	fake.generateOSReleaseMutex.RLock()
 	defer fake.generateOSReleaseMutex.RUnlock()
 	argsForCall := fake.generateOSReleaseArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeBuildImplementation) GenerateOSReleaseReturns(result1 error) {
@@ -635,19 +669,20 @@ func (fake *FakeBuildImplementation) GenerateSBOMReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) InitializeApk(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+func (fake *FakeBuildImplementation) InitializeApk(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.initializeApkMutex.Lock()
 	ret, specificReturn := fake.initializeApkReturnsOnCall[len(fake.initializeApkArgsForCall)]
 	fake.initializeApkArgsForCall = append(fake.initializeApkArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
 	stub := fake.InitializeApkStub
 	fakeReturns := fake.initializeApkReturns
-	fake.recordInvocation("InitializeApk", []interface{}{arg1, arg2})
+	fake.recordInvocation("InitializeApk", []interface{}{arg1, arg2, arg3})
 	fake.initializeApkMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -661,17 +696,17 @@ func (fake *FakeBuildImplementation) InitializeApkCallCount() int {
 	return len(fake.initializeApkArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) InitializeApkCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+func (fake *FakeBuildImplementation) InitializeApkCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) error) {
 	fake.initializeApkMutex.Lock()
 	defer fake.initializeApkMutex.Unlock()
 	fake.InitializeApkStub = stub
 }
 
-func (fake *FakeBuildImplementation) InitializeApkArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+func (fake *FakeBuildImplementation) InitializeApkArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
 	fake.initializeApkMutex.RLock()
 	defer fake.initializeApkMutex.RUnlock()
 	argsForCall := fake.initializeApkArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeBuildImplementation) InitializeApkReturns(result1 error) {
@@ -697,19 +732,203 @@ func (fake *FakeBuildImplementation) InitializeApkReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) MutateAccounts(arg1 *options.Options, arg2 *types.ImageConfiguration) error {
+func (fake *FakeBuildImplementation) InstallBusyboxLinks(arg1 fs.FullFS) error {
+	fake.installBusyboxLinksMutex.Lock()
+	ret, specificReturn := fake.installBusyboxLinksReturnsOnCall[len(fake.installBusyboxLinksArgsForCall)]
+	fake.installBusyboxLinksArgsForCall = append(fake.installBusyboxLinksArgsForCall, struct {
+		arg1 fs.FullFS
+	}{arg1})
+	stub := fake.InstallBusyboxLinksStub
+	fakeReturns := fake.installBusyboxLinksReturns
+	fake.recordInvocation("InstallBusyboxLinks", []interface{}{arg1})
+	fake.installBusyboxLinksMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) InstallBusyboxLinksCallCount() int {
+	fake.installBusyboxLinksMutex.RLock()
+	defer fake.installBusyboxLinksMutex.RUnlock()
+	return len(fake.installBusyboxLinksArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) InstallBusyboxLinksCalls(stub func(fs.FullFS) error) {
+	fake.installBusyboxLinksMutex.Lock()
+	defer fake.installBusyboxLinksMutex.Unlock()
+	fake.InstallBusyboxLinksStub = stub
+}
+
+func (fake *FakeBuildImplementation) InstallBusyboxLinksArgsForCall(i int) fs.FullFS {
+	fake.installBusyboxLinksMutex.RLock()
+	defer fake.installBusyboxLinksMutex.RUnlock()
+	argsForCall := fake.installBusyboxLinksArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeBuildImplementation) InstallBusyboxLinksReturns(result1 error) {
+	fake.installBusyboxLinksMutex.Lock()
+	defer fake.installBusyboxLinksMutex.Unlock()
+	fake.InstallBusyboxLinksStub = nil
+	fake.installBusyboxLinksReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallBusyboxLinksReturnsOnCall(i int, result1 error) {
+	fake.installBusyboxLinksMutex.Lock()
+	defer fake.installBusyboxLinksMutex.Unlock()
+	fake.InstallBusyboxLinksStub = nil
+	if fake.installBusyboxLinksReturnsOnCall == nil {
+		fake.installBusyboxLinksReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.installBusyboxLinksReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevices(arg1 fs.FullFS) error {
+	fake.installCharDevicesMutex.Lock()
+	ret, specificReturn := fake.installCharDevicesReturnsOnCall[len(fake.installCharDevicesArgsForCall)]
+	fake.installCharDevicesArgsForCall = append(fake.installCharDevicesArgsForCall, struct {
+		arg1 fs.FullFS
+	}{arg1})
+	stub := fake.InstallCharDevicesStub
+	fakeReturns := fake.installCharDevicesReturns
+	fake.recordInvocation("InstallCharDevices", []interface{}{arg1})
+	fake.installCharDevicesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevicesCallCount() int {
+	fake.installCharDevicesMutex.RLock()
+	defer fake.installCharDevicesMutex.RUnlock()
+	return len(fake.installCharDevicesArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevicesCalls(stub func(fs.FullFS) error) {
+	fake.installCharDevicesMutex.Lock()
+	defer fake.installCharDevicesMutex.Unlock()
+	fake.InstallCharDevicesStub = stub
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevicesArgsForCall(i int) fs.FullFS {
+	fake.installCharDevicesMutex.RLock()
+	defer fake.installCharDevicesMutex.RUnlock()
+	argsForCall := fake.installCharDevicesArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevicesReturns(result1 error) {
+	fake.installCharDevicesMutex.Lock()
+	defer fake.installCharDevicesMutex.Unlock()
+	fake.InstallCharDevicesStub = nil
+	fake.installCharDevicesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallCharDevicesReturnsOnCall(i int, result1 error) {
+	fake.installCharDevicesMutex.Lock()
+	defer fake.installCharDevicesMutex.Unlock()
+	fake.InstallCharDevicesStub = nil
+	if fake.installCharDevicesReturnsOnCall == nil {
+		fake.installCharDevicesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.installCharDevicesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinks(arg1 fs.FullFS) error {
+	fake.installLdconfigLinksMutex.Lock()
+	ret, specificReturn := fake.installLdconfigLinksReturnsOnCall[len(fake.installLdconfigLinksArgsForCall)]
+	fake.installLdconfigLinksArgsForCall = append(fake.installLdconfigLinksArgsForCall, struct {
+		arg1 fs.FullFS
+	}{arg1})
+	stub := fake.InstallLdconfigLinksStub
+	fakeReturns := fake.installLdconfigLinksReturns
+	fake.recordInvocation("InstallLdconfigLinks", []interface{}{arg1})
+	fake.installLdconfigLinksMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinksCallCount() int {
+	fake.installLdconfigLinksMutex.RLock()
+	defer fake.installLdconfigLinksMutex.RUnlock()
+	return len(fake.installLdconfigLinksArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinksCalls(stub func(fs.FullFS) error) {
+	fake.installLdconfigLinksMutex.Lock()
+	defer fake.installLdconfigLinksMutex.Unlock()
+	fake.InstallLdconfigLinksStub = stub
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinksArgsForCall(i int) fs.FullFS {
+	fake.installLdconfigLinksMutex.RLock()
+	defer fake.installLdconfigLinksMutex.RUnlock()
+	argsForCall := fake.installLdconfigLinksArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinksReturns(result1 error) {
+	fake.installLdconfigLinksMutex.Lock()
+	defer fake.installLdconfigLinksMutex.Unlock()
+	fake.InstallLdconfigLinksStub = nil
+	fake.installLdconfigLinksReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallLdconfigLinksReturnsOnCall(i int, result1 error) {
+	fake.installLdconfigLinksMutex.Lock()
+	defer fake.installLdconfigLinksMutex.Unlock()
+	fake.InstallLdconfigLinksStub = nil
+	if fake.installLdconfigLinksReturnsOnCall == nil {
+		fake.installLdconfigLinksReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.installLdconfigLinksReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) MutateAccounts(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.mutateAccountsMutex.Lock()
 	ret, specificReturn := fake.mutateAccountsReturnsOnCall[len(fake.mutateAccountsArgsForCall)]
 	fake.mutateAccountsArgsForCall = append(fake.mutateAccountsArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
 	stub := fake.MutateAccountsStub
 	fakeReturns := fake.mutateAccountsReturns
-	fake.recordInvocation("MutateAccounts", []interface{}{arg1, arg2})
+	fake.recordInvocation("MutateAccounts", []interface{}{arg1, arg2, arg3})
 	fake.mutateAccountsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -723,17 +942,17 @@ func (fake *FakeBuildImplementation) MutateAccountsCallCount() int {
 	return len(fake.mutateAccountsArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) MutateAccountsCalls(stub func(*options.Options, *types.ImageConfiguration) error) {
+func (fake *FakeBuildImplementation) MutateAccountsCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) error) {
 	fake.mutateAccountsMutex.Lock()
 	defer fake.mutateAccountsMutex.Unlock()
 	fake.MutateAccountsStub = stub
 }
 
-func (fake *FakeBuildImplementation) MutateAccountsArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+func (fake *FakeBuildImplementation) MutateAccountsArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
 	argsForCall := fake.mutateAccountsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeBuildImplementation) MutateAccountsReturns(result1 error) {
@@ -759,24 +978,25 @@ func (fake *FakeBuildImplementation) MutateAccountsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) MutatePaths(arg1 *options.Options, arg2 *types.ImageConfiguration) ([]tar.Header, error) {
+func (fake *FakeBuildImplementation) MutatePaths(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.mutatePathsMutex.Lock()
 	ret, specificReturn := fake.mutatePathsReturnsOnCall[len(fake.mutatePathsArgsForCall)]
 	fake.mutatePathsArgsForCall = append(fake.mutatePathsArgsForCall, struct {
-		arg1 *options.Options
-		arg2 *types.ImageConfiguration
-	}{arg1, arg2})
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
 	stub := fake.MutatePathsStub
 	fakeReturns := fake.mutatePathsReturns
-	fake.recordInvocation("MutatePaths", []interface{}{arg1, arg2})
+	fake.recordInvocation("MutatePaths", []interface{}{arg1, arg2, arg3})
 	fake.mutatePathsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1
 }
 
 func (fake *FakeBuildImplementation) MutatePathsCallCount() int {
@@ -785,43 +1005,40 @@ func (fake *FakeBuildImplementation) MutatePathsCallCount() int {
 	return len(fake.mutatePathsArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) MutatePathsCalls(stub func(*options.Options, *types.ImageConfiguration) ([]tar.Header, error)) {
+func (fake *FakeBuildImplementation) MutatePathsCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) error) {
 	fake.mutatePathsMutex.Lock()
 	defer fake.mutatePathsMutex.Unlock()
 	fake.MutatePathsStub = stub
 }
 
-func (fake *FakeBuildImplementation) MutatePathsArgsForCall(i int) (*options.Options, *types.ImageConfiguration) {
+func (fake *FakeBuildImplementation) MutatePathsArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
 	fake.mutatePathsMutex.RLock()
 	defer fake.mutatePathsMutex.RUnlock()
 	argsForCall := fake.mutatePathsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeBuildImplementation) MutatePathsReturns(result1 []tar.Header, result2 error) {
+func (fake *FakeBuildImplementation) MutatePathsReturns(result1 error) {
 	fake.mutatePathsMutex.Lock()
 	defer fake.mutatePathsMutex.Unlock()
 	fake.MutatePathsStub = nil
 	fake.mutatePathsReturns = struct {
-		result1 []tar.Header
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
-func (fake *FakeBuildImplementation) MutatePathsReturnsOnCall(i int, result1 []tar.Header, result2 error) {
+func (fake *FakeBuildImplementation) MutatePathsReturnsOnCall(i int, result1 error) {
 	fake.mutatePathsMutex.Lock()
 	defer fake.mutatePathsMutex.Unlock()
 	fake.MutatePathsStub = nil
 	if fake.mutatePathsReturnsOnCall == nil {
 		fake.mutatePathsReturnsOnCall = make(map[int]struct {
-			result1 []tar.Header
-			result2 error
+			result1 error
 		})
 	}
 	fake.mutatePathsReturnsOnCall[i] = struct {
-		result1 []tar.Header
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeBuildImplementation) Refresh(arg1 *options.Options) (*s6.Context, *exec.Executor, error) {
@@ -1033,6 +1250,12 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.generateSBOMMutex.RUnlock()
 	fake.initializeApkMutex.RLock()
 	defer fake.initializeApkMutex.RUnlock()
+	fake.installBusyboxLinksMutex.RLock()
+	defer fake.installBusyboxLinksMutex.RUnlock()
+	fake.installCharDevicesMutex.RLock()
+	defer fake.installCharDevicesMutex.RUnlock()
+	fake.installLdconfigLinksMutex.RLock()
+	defer fake.installLdconfigLinksMutex.RUnlock()
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
 	fake.mutatePathsMutex.RLock()

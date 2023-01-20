@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memfs
+package fs
 
 import (
 	"bytes"
@@ -22,12 +22,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/blang/vfs"
 	origMemfs "github.com/blang/vfs/memfs"
 	"golang.org/x/sys/unix"
-
-	rwfs "chainguard.dev/apko/pkg/apk/impl/rwfs"
 )
 
 const (
@@ -35,15 +35,15 @@ const (
 	linkFlagHardlink = 'h'
 )
 
-func New() *MemFS {
-	return &MemFS{origMemfs.Create()}
+func NewMemFS() FullFS {
+	return &memFS{origMemfs.Create()}
 }
 
-type MemFS struct {
+type memFS struct {
 	*origMemfs.MemFS
 }
 
-func (m *MemFS) MkdirAll(path string, perm fs.FileMode) error {
+func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
 	dir, err := m.Stat(path)
 	if err == nil {
@@ -86,15 +86,23 @@ func (m *MemFS) MkdirAll(path string, perm fs.FileMode) error {
 	return nil
 }
 
-func (m *MemFS) Open(name string) (fs.File, error) {
-	f, err := m.MemFS.OpenFile(name, os.O_RDONLY, 0o644)
+func (m *memFS) Open(name string) (fs.File, error) {
+	return m.OpenFile(name, os.O_RDONLY, 0o644)
+}
+
+func (m *memFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
+	// m.MemFS does not support symlinks, so we need to give it a resolved path.
+	// That means walking through all of the parts until we get to the end, and
+	// giving it the actual path to the file.
+	truename, err := m.walkSymlinks(name)
 	if err != nil {
 		return nil, err
 	}
-	return &memFile{File: f, fs: m.MemFS}, nil
+	return m.openFile(truename, flag, perm)
 }
 
-func (m *MemFS) OpenFile(name string, flag int, perm fs.FileMode) (rwfs.File, error) {
+// openFile opens a file, but assumes all symlinks in the interim path have been resolved.
+func (m *memFS) openFile(name string, flag int, perm fs.FileMode) (*memFile, error) {
 	f, err := m.MemFS.OpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
@@ -102,7 +110,7 @@ func (m *MemFS) OpenFile(name string, flag int, perm fs.FileMode) (rwfs.File, er
 	return &memFile{f, m.MemFS}, nil
 }
 
-func (m *MemFS) ReadFile(name string) ([]byte, error) {
+func (m *memFS) ReadFile(name string) ([]byte, error) {
 	f, err := m.OpenFile(name, os.O_RDONLY, 0o644)
 	if err != nil {
 		return nil, err
@@ -115,7 +123,7 @@ func (m *MemFS) ReadFile(name string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (m *MemFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
+func (m *memFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	f, err := m.OpenFile(name, os.O_RDWR|os.O_CREATE, mode)
 	if err != nil {
 		return err
@@ -127,7 +135,7 @@ func (m *MemFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	return nil
 }
 
-func (m *MemFS) ReadDir(name string) ([]fs.DirEntry, error) {
+func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	fi, err := m.MemFS.ReadDir(name)
 	if err != nil {
 		return nil, err
@@ -138,7 +146,19 @@ func (m *MemFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	return de, nil
 }
-func (m *MemFS) Mknod(path string, mode uint32, dev int) error {
+
+func (m *memFS) OpenReaderAt(name string) (File, error) {
+	return m.open(name)
+}
+func (m *memFS) open(name string) (*memFile, error) {
+	f, err := m.MemFS.OpenFile(name, os.O_RDONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	return &memFile{File: f, fs: m.MemFS}, nil
+}
+
+func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 	file, err := m.OpenFile(
 		path,
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
@@ -153,7 +173,7 @@ func (m *MemFS) Mknod(path string, mode uint32, dev int) error {
 	return binary.Write(file, binary.LittleEndian, devNumbers)
 }
 
-func (m *MemFS) Readnod(name string) (dev int, err error) {
+func (m *memFS) Readnod(name string) (dev int, err error) {
 	file, err := m.Open(name)
 	if err != nil {
 		return 0, err
@@ -174,13 +194,23 @@ func (m *MemFS) Readnod(name string) (dev int, err error) {
 	return int(unix.Mkdev(devNumbers[0], devNumbers[1])), nil
 }
 
-func (m *MemFS) Symlink(oldname, newname string) error {
+func (m *memFS) Chmod(path string, perm fs.FileMode) error {
+	return nil
+}
+func (m *memFS) Chown(path string, uid int, gid int) error {
+	return nil
+}
+func (m *memFS) Create(name string) (File, error) {
+	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC, 0o666)
+}
+
+func (m *memFS) Symlink(oldname, newname string) error {
 	return m.multilink(true, oldname, newname)
 }
-func (m *MemFS) Link(oldname, newname string) error {
+func (m *memFS) Link(oldname, newname string) error {
 	return m.multilink(false, oldname, newname)
 }
-func (m *MemFS) multilink(symlink bool, oldname, newname string) error {
+func (m *memFS) multilink(symlink bool, oldname, newname string) error {
 	file, err := m.OpenFile(
 		newname,
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
@@ -198,28 +228,75 @@ func (m *MemFS) multilink(symlink bool, oldname, newname string) error {
 	return err
 }
 
-func (m *MemFS) Readlink(name string) (target string, symlink bool, err error) {
-	file, err := m.Open(name)
+func (m *memFS) Readlink(name string) (target string, symlink bool, err error) {
+	truename, err := m.walkSymlinks(filepath.Dir(name))
 	if err != nil {
-		return
+		return "", false, err
+	}
+	return m.readLink(filepath.Join(truename, filepath.Base(name)))
+}
+
+// readLink reads the link target directly from the memfs.
+func (m *memFS) readLink(name string) (string, bool, error) {
+	file, err := m.openFile(name, os.O_RDONLY, 0o644)
+	if err != nil {
+		return "", false, err
 	}
 	defer file.Close()
 	fi, err := file.Stat()
 	if err != nil {
-		return
-	}
-	if fi.Mode()&os.ModeSymlink != os.ModeSymlink {
-		return target, symlink, fmt.Errorf("%s not a link", name)
+		return "", false, err
 	}
 	buf := make([]byte, fi.Size())
 	if _, err = file.Read(buf); err != nil {
-		return target, symlink, err
+		return "", false, err
 	}
 	// first 2 bytes are the link type ("h" or "s") and a separator ":"
 	if len(buf) < 3 {
-		return target, symlink, fmt.Errorf("invalid link %s", name)
+		return "", false, fmt.Errorf("invalid link %s", name)
 	}
 	return string(buf[2:]), buf[0] == linkFlagSymlink, nil
+}
+
+func (m *memFS) walkSymlinks(path string) (string, error) {
+	var final string
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		if seg == "" {
+			continue
+		}
+		// see if this section exists; if it is not a symlink, just add it
+		segmentName := filepath.Join(final, seg)
+		fi, err := m.Stat(segmentName)
+		// we can ignore the last segment not existing
+		if err != nil {
+			if i == len(segments)-1 {
+				final = filepath.Join(final, seg)
+				continue
+			}
+			return "", err
+		}
+		// not a symlink, so just append it
+		if fi.Mode()&os.ModeSymlink != os.ModeSymlink {
+			final = filepath.Join(final, seg)
+		} else {
+			// it is a symlink, so resolve it
+			target, _, err := m.readLink(segmentName)
+			// what if it was not found?
+			switch {
+			case err != nil && i != len(segments)-1:
+				// we can handle the last one not existing, but no interim one
+				return "", err
+			case strings.HasPrefix(target, "/"):
+				// was it an absolute path?
+				final = target
+			default:
+				// relative path, so add it to the current path
+				final = filepath.Join(final, target)
+			}
+		}
+	}
+	return final, nil
 }
 
 type memFile struct {

@@ -17,24 +17,23 @@ package s6
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 )
 
 func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
-	svbase := filepath.Join(sc.WorkDir, "sv")
+	svbase := "sv"
 	svcdir := filepath.Join(svbase, name)
 	sc.Log.Debugf("  supervision dir: %s", svcdir)
 
-	if err := os.MkdirAll(svcdir, 0755); err != nil {
+	if err := sc.fs.MkdirAll(svcdir, 0755); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
 	}
 
-	if err := os.Chmod(svcdir, 0777); err != nil { // nolint:gosec
+	if err := sc.fs.Chmod(svcdir, 0777); err != nil { // nolint:gosec
 		return svcdir, fmt.Errorf("could not set permissions on supervision dir: %w", err)
 	}
 
-	if err := os.Chmod(svbase, 0777); err != nil { // nolint:gosec
+	if err := sc.fs.Chmod(svbase, 0777); err != nil { // nolint:gosec
 		return svcdir, fmt.Errorf("could not set permissions on base supervision dir: %w", err)
 	}
 
@@ -42,13 +41,14 @@ func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
 }
 
 func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
-	file, err := os.Create(filepath.Join(svcdir, "run"))
+	filename := filepath.Join(svcdir, "run")
+	file, err := sc.fs.Create(filename)
 	if err != nil {
 		return fmt.Errorf("could not create runfile: %w", err)
 	}
 	defer file.Close()
 
-	if err := os.Chmod(file.Name(), 0755); err != nil {
+	if err := sc.fs.Chmod(filename, 0755); err != nil {
 		return fmt.Errorf("could not set permissions on runfile: %w", err)
 	}
 

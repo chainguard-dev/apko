@@ -13,7 +13,15 @@
 // limitations under the License.
 package build
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+)
 
 var (
 	busyboxList = `
@@ -322,3 +330,23 @@ var (
 
 	busyboxLinks = strings.Fields(busyboxList)
 )
+
+func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS) error {
+	// does busybox exist? if not, do not bother with symlinks
+	if _, err := fsys.Stat("/bin/busybox"); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	for _, link := range busyboxLinks {
+		dir := filepath.Dir(link)
+		if err := fsys.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+		if err := fsys.Symlink("/bin/busybox", link); err != nil {
+			return fmt.Errorf("creating busybox link %s: %w", link, err)
+		}
+	}
+	return nil
+}

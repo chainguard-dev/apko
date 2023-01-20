@@ -21,6 +21,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 // UserEntry contains the parsed data from an /etc/passwd entry.
@@ -37,14 +39,15 @@ type UserEntry struct {
 // UserFile contains the entries from an /etc/passwd file.
 type UserFile struct {
 	Entries []UserEntry
+	fsys    apkfs.FullFS
 }
 
 // ReadOrCreateUserFile parses an /etc/passwd file into a UserFile.
 // An empty file is created if /etc/passwd is missing.
-func ReadOrCreateUserFile(filePath string) (UserFile, error) {
-	uf := UserFile{}
+func ReadOrCreateUserFile(fsys apkfs.FullFS, filePath string) (UserFile, error) {
+	uf := UserFile{fsys: fsys}
 
-	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
+	file, err := fsys.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return uf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
@@ -79,7 +82,7 @@ func (uf *UserFile) Load(r io.Reader) error {
 
 // WriteFile writes an /etc/passwd file from a UserFile.
 func (uf *UserFile) WriteFile(filePath string) error {
-	file, err := os.Create(filePath)
+	file, err := uf.fsys.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("unable to open %s for writing: %w", filePath, err)
 	}

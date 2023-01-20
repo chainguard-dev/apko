@@ -17,6 +17,7 @@ package generator
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
 	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
@@ -32,16 +33,16 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
-func Generators() map[string]Generator {
+func Generators(fsys apkfs.FullFS) map[string]Generator {
 	generators := map[string]Generator{}
 
-	sx := spdx.New()
+	sx := spdx.New(fsys)
 	generators[sx.Key()] = &sx
 
-	cdx := cyclonedx.New()
+	cdx := cyclonedx.New(fsys)
 	generators[cdx.Key()] = &cdx
 
-	idb := idb.New()
+	idb := idb.New(fsys)
 	generators[idb.Key()] = &idb
 
 	return generators

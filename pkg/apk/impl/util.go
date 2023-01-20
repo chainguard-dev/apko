@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package rwosfs implements a read-write fs.FS filesystem.
-// It extends os.DirFS to make it read-write.
-package rwosfs
+package impl
+
+func uniqify[T comparable](s []T) []T {
+	seen := make(map[T]struct{}, len(s))
+	uniq := make([]T, 0, len(s))
+	for _, v := range s {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+
+		uniq = append(uniq, v)
+		seen[v] = struct{}{}
+	}
+
+	return uniq
+}

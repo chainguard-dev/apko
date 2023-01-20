@@ -16,6 +16,7 @@ package options
 
 import (
 	"fmt"
+	"io/fs"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -35,8 +36,8 @@ type Options struct {
 
 	ImageInfo ImageInfo
 
-	// Working directory,inherited from buid context
-	WorkDir string
+	// Working directory,inherited from build context
+	FS fs.FS
 
 	// The reference of the generated image. Used for naming and purls
 	ImageReference string

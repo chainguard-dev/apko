@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apkfakes"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -74,9 +75,10 @@ func TestInitialize(t *testing.T) {
 	} {
 		mock := &apkfakes.FakeApkImplementation{}
 		tc.prepare(mock)
-
-		sut, err := NewWithOptions(options.Options{
-			WorkDir: t.TempDir(),
+		workDir := t.TempDir()
+		fsys := apkfs.DirFS(workDir)
+		sut, err := NewWithOptions(fsys, options.Options{
+			WorkDir: workDir,
 		})
 		require.NoError(t, err)
 		sut.SetImplementation(mock)
@@ -173,7 +175,8 @@ A:bop
 				WorkDir:                 td,
 				Log:                     &logrus.Logger{},
 			}
-			got, err := AdditionalTags(opts)
+			fsys := apkfs.DirFS(td)
+			got, err := AdditionalTags(fsys, opts)
 			if err != nil {
 				require.NoError(tt, fmt.Errorf("additional tags failed: %w", err))
 			}

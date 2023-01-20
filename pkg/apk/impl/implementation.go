@@ -33,26 +33,21 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	rwfs "chainguard.dev/apko/pkg/apk/impl/rwfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 type APKImplementation struct {
 	arch              string
 	version           string
 	logger            Logger
-	fs                rwfs.FS
+	fs                apkfs.FullFS
 	executor          Executor
 	ignoreMknodErrors bool
 	client            *http.Client
 }
 
-// func NewAPKImplementation(fs rwfs.FS, logger Logger, arch string, executor Executor, ignoreMknodErrors bool) (*APKImplementation, error) {
 func NewAPKImplementation(options ...Option) (*APKImplementation, error) {
-	var err error
-	opt, err := defaultOpts()
-	if err != nil {
-		return nil, err
-	}
+	opt := defaultOpts()
 	for _, o := range options {
 		if err := o(opt); err != nil {
 			return nil, err

@@ -16,13 +16,23 @@ package passwd
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func TestParser(t *testing.T) {
-	uf, err := ReadOrCreateUserFile("testdata/passwd")
+	fsys := apkfs.NewMemFS()
+	passwd, err := os.ReadFile("testdata/passwd")
+	require.NoError(t, err)
+	err = fsys.MkdirAll("etc", 0o755)
+	require.NoError(t, err)
+	err = fsys.WriteFile("etc/passwd", passwd, 0o600)
+	require.NoError(t, err)
+	uf, err := ReadOrCreateUserFile(fsys, "etc/passwd")
 	require.NoError(t, err)
 
 	for _, ue := range uf.Entries {
@@ -37,7 +47,14 @@ func TestParser(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
-	uf, err := ReadOrCreateUserFile("testdata/passwd")
+	fsys := apkfs.NewMemFS()
+	passwd, err := os.ReadFile("testdata/passwd")
+	require.NoError(t, err)
+	err = fsys.MkdirAll("etc", 0o755)
+	require.NoError(t, err)
+	err = fsys.WriteFile("etc/passwd", passwd, 0o600)
+	require.NoError(t, err)
+	uf, err := ReadOrCreateUserFile(fsys, "etc/passwd")
 	require.NoError(t, err)
 
 	w := &bytes.Buffer{}

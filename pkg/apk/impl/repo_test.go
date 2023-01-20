@@ -22,11 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 
-	memfs "chainguard.dev/apko/pkg/apk/impl/memfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func TestGetRepositoryIndexes(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	err := src.MkdirAll("etc/apk", 0755)
 	require.NoError(t, err, "unable to mkdir /etc/apk")
 	err = src.WriteFile(reposFilePath, []byte("https://dl-cdn.alpinelinux.org/alpine/v3.16/main"), 0644)

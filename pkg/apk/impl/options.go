@@ -20,8 +20,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"chainguard.dev/apko/pkg/apk/impl/rwfs"
-	rwosfs "chainguard.dev/apko/pkg/apk/impl/rwosfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 type opts struct {
@@ -29,7 +28,7 @@ type opts struct {
 	executor          Executor
 	arch              string
 	ignoreMknodErrors bool
-	fs                rwfs.FS
+	fs                apkfs.FullFS
 	version           string
 }
 
@@ -77,18 +76,15 @@ func WithIgnoreMknodErrors(ignore bool) Option {
 }
 
 // WithFS sets the filesystem to use. If not provided, will use the OS filesystem based at root /.
-func WithFS(fs rwfs.FS) Option {
+func WithFS(fs apkfs.FullFS) Option {
 	return func(o *opts) error {
 		o.fs = fs
 		return nil
 	}
 }
 
-func defaultOpts() (*opts, error) {
-	fs, err := rwosfs.NewReadWriteFS("/")
-	if err != nil {
-		return nil, err
-	}
+func defaultOpts() *opts {
+	fs := apkfs.DirFS("/")
 	discardLogger := logrus.New()
 	discardLogger.Out = io.Discard
 	logger := discardLogger
@@ -98,5 +94,5 @@ func defaultOpts() (*opts, error) {
 		arch:              ArchToAPK(runtime.GOARCH),
 		ignoreMknodErrors: false,
 		fs:                fs,
-	}, nil
+	}
 }

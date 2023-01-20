@@ -16,7 +16,6 @@ package build
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 )
 
@@ -24,9 +23,9 @@ type Assertion func(*Context) error
 
 func RequirePasswdFile(optional bool) Assertion {
 	return func(bc *Context) error {
-		path := filepath.Join(bc.Options.WorkDir, "etc", "passwd")
+		path := filepath.Join("etc", "passwd")
 
-		_, err := os.Stat(path)
+		_, err := bc.fs.Stat(path)
 		if err != nil {
 			if optional {
 				bc.Logger().Warnf("%s is missing", path)
@@ -40,9 +39,9 @@ func RequirePasswdFile(optional bool) Assertion {
 
 func RequireGroupFile(optional bool) Assertion {
 	return func(bc *Context) error {
-		path := filepath.Join(bc.Options.WorkDir, "etc", "group")
+		path := filepath.Join("etc", "group")
 
-		_, err := os.Stat(path)
+		_, err := bc.fs.Stat(path)
 		if err != nil {
 			if optional {
 				bc.Logger().Warnf("%s is missing", path)

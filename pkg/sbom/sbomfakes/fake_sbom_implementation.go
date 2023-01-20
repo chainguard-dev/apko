@@ -2,6 +2,7 @@
 package sbomfakes
 
 import (
+	"io/fs"
 	"sync"
 
 	"chainguard.dev/apko/pkg/sbom/generator"
@@ -62,11 +63,12 @@ type FakeSbomImplementation struct {
 	readLayerTarballReturnsOnCall map[int]struct {
 		result1 error
 	}
-	ReadPackageIndexStub        func(*options.Options, string) ([]*repository.Package, error)
+	ReadPackageIndexStub        func(fs.FS, *options.Options, string) ([]*repository.Package, error)
 	readPackageIndexMutex       sync.RWMutex
 	readPackageIndexArgsForCall []struct {
-		arg1 *options.Options
-		arg2 string
+		arg1 fs.FS
+		arg2 *options.Options
+		arg3 string
 	}
 	readPackageIndexReturns struct {
 		result1 []*repository.Package
@@ -76,11 +78,12 @@ type FakeSbomImplementation struct {
 		result1 []*repository.Package
 		result2 error
 	}
-	ReadReleaseDataStub        func(*options.Options, string) error
+	ReadReleaseDataStub        func(fs.FS, *options.Options, string) error
 	readReleaseDataMutex       sync.RWMutex
 	readReleaseDataArgsForCall []struct {
-		arg1 *options.Options
-		arg2 string
+		arg1 fs.FS
+		arg2 *options.Options
+		arg3 string
 	}
 	readReleaseDataReturns struct {
 		result1 error
@@ -346,19 +349,20 @@ func (fake *FakeSbomImplementation) ReadLayerTarballReturnsOnCall(i int, result1
 	}{result1}
 }
 
-func (fake *FakeSbomImplementation) ReadPackageIndex(arg1 *options.Options, arg2 string) ([]*repository.Package, error) {
+func (fake *FakeSbomImplementation) ReadPackageIndex(arg1 fs.FS, arg2 *options.Options, arg3 string) ([]*repository.Package, error) {
 	fake.readPackageIndexMutex.Lock()
 	ret, specificReturn := fake.readPackageIndexReturnsOnCall[len(fake.readPackageIndexArgsForCall)]
 	fake.readPackageIndexArgsForCall = append(fake.readPackageIndexArgsForCall, struct {
-		arg1 *options.Options
-		arg2 string
-	}{arg1, arg2})
+		arg1 fs.FS
+		arg2 *options.Options
+		arg3 string
+	}{arg1, arg2, arg3})
 	stub := fake.ReadPackageIndexStub
 	fakeReturns := fake.readPackageIndexReturns
-	fake.recordInvocation("ReadPackageIndex", []interface{}{arg1, arg2})
+	fake.recordInvocation("ReadPackageIndex", []interface{}{arg1, arg2, arg3})
 	fake.readPackageIndexMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -372,17 +376,17 @@ func (fake *FakeSbomImplementation) ReadPackageIndexCallCount() int {
 	return len(fake.readPackageIndexArgsForCall)
 }
 
-func (fake *FakeSbomImplementation) ReadPackageIndexCalls(stub func(*options.Options, string) ([]*repository.Package, error)) {
+func (fake *FakeSbomImplementation) ReadPackageIndexCalls(stub func(fs.FS, *options.Options, string) ([]*repository.Package, error)) {
 	fake.readPackageIndexMutex.Lock()
 	defer fake.readPackageIndexMutex.Unlock()
 	fake.ReadPackageIndexStub = stub
 }
 
-func (fake *FakeSbomImplementation) ReadPackageIndexArgsForCall(i int) (*options.Options, string) {
+func (fake *FakeSbomImplementation) ReadPackageIndexArgsForCall(i int) (fs.FS, *options.Options, string) {
 	fake.readPackageIndexMutex.RLock()
 	defer fake.readPackageIndexMutex.RUnlock()
 	argsForCall := fake.readPackageIndexArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeSbomImplementation) ReadPackageIndexReturns(result1 []*repository.Package, result2 error) {
@@ -411,19 +415,20 @@ func (fake *FakeSbomImplementation) ReadPackageIndexReturnsOnCall(i int, result1
 	}{result1, result2}
 }
 
-func (fake *FakeSbomImplementation) ReadReleaseData(arg1 *options.Options, arg2 string) error {
+func (fake *FakeSbomImplementation) ReadReleaseData(arg1 fs.FS, arg2 *options.Options, arg3 string) error {
 	fake.readReleaseDataMutex.Lock()
 	ret, specificReturn := fake.readReleaseDataReturnsOnCall[len(fake.readReleaseDataArgsForCall)]
 	fake.readReleaseDataArgsForCall = append(fake.readReleaseDataArgsForCall, struct {
-		arg1 *options.Options
-		arg2 string
-	}{arg1, arg2})
+		arg1 fs.FS
+		arg2 *options.Options
+		arg3 string
+	}{arg1, arg2, arg3})
 	stub := fake.ReadReleaseDataStub
 	fakeReturns := fake.readReleaseDataReturns
-	fake.recordInvocation("ReadReleaseData", []interface{}{arg1, arg2})
+	fake.recordInvocation("ReadReleaseData", []interface{}{arg1, arg2, arg3})
 	fake.readReleaseDataMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -437,17 +442,17 @@ func (fake *FakeSbomImplementation) ReadReleaseDataCallCount() int {
 	return len(fake.readReleaseDataArgsForCall)
 }
 
-func (fake *FakeSbomImplementation) ReadReleaseDataCalls(stub func(*options.Options, string) error) {
+func (fake *FakeSbomImplementation) ReadReleaseDataCalls(stub func(fs.FS, *options.Options, string) error) {
 	fake.readReleaseDataMutex.Lock()
 	defer fake.readReleaseDataMutex.Unlock()
 	fake.ReadReleaseDataStub = stub
 }
 
-func (fake *FakeSbomImplementation) ReadReleaseDataArgsForCall(i int) (*options.Options, string) {
+func (fake *FakeSbomImplementation) ReadReleaseDataArgsForCall(i int) (fs.FS, *options.Options, string) {
 	fake.readReleaseDataMutex.RLock()
 	defer fake.readReleaseDataMutex.RUnlock()
 	argsForCall := fake.readReleaseDataArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeSbomImplementation) ReadReleaseDataReturns(result1 error) {

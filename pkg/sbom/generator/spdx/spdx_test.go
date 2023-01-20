@@ -26,6 +26,7 @@ import (
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/command"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -59,7 +60,8 @@ var testOpts = &options.Options{
 
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
-	sx := New()
+	fsys := apkfs.NewMemFS()
+	sx := New(fsys)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
 	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)
@@ -70,7 +72,8 @@ func TestReproducible(t *testing.T) {
 	// Create two sboms based on the same input and ensure
 	// they are identical
 	dir := t.TempDir()
-	sx := New()
+	fsys := apkfs.NewMemFS()
+	sx := New(fsys)
 	d := [][]byte{}
 	for i := 0; i < 2; i++ {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
@@ -94,9 +97,10 @@ func TestValidateSPDX(t *testing.T) {
 		return
 	}
 	dir := t.TempDir()
-	sx := New()
+	fsys := apkfs.NewMemFS()
+	sx := New(fsys)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(testOpts, dir)
+	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 	require.NoError(t, command.New(

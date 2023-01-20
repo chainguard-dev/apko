@@ -21,12 +21,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	apkofs "chainguard.dev/apko/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 // original alpine ldconfig available at https://git.alpinelinux.org/aports/tree/main/musl/ldconfig
 
-func ldconfig(vfs apkofs.OpenReaderAtFS, libdirs ...string) (map[string]string, error) {
+func ldconfig(vfs apkfs.OpenReaderAtFS, libdirs ...string) (map[string]string, error) {
 	links := make(map[string]string)
 	for _, libdir := range libdirs {
 		entries, err := fs.ReadDir(vfs, libdir)
@@ -79,7 +79,7 @@ func ldconfig(vfs apkofs.OpenReaderAtFS, libdirs ...string) (map[string]string, 
 	return links, nil
 }
 
-func getSoname(vfs apkofs.OpenReaderAtFS, path string) (string, error) {
+func getSoname(vfs apkfs.OpenReaderAtFS, path string) (string, error) {
 	file, err := vfs.OpenReaderAt(path)
 	if err != nil {
 		return "", fmt.Errorf("unable to open file %s: %w", path, err)
@@ -99,4 +99,21 @@ func getSoname(vfs apkofs.OpenReaderAtFS, path string) (string, error) {
 		return "", nil
 	}
 	return dynStrings[0], nil
+}
+
+func (di *defaultBuildImplementation) InstallLdconfigLinks(fsys apkfs.FullFS) error {
+	linksMap, err := ldconfig(fsys, "/lib")
+	if err != nil {
+		return err
+	}
+	for link, target := range linksMap {
+		dir := filepath.Dir(link)
+		if err := fsys.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+		if err := fsys.Symlink(target, link); err != nil {
+			return fmt.Errorf("creating link %s -> %s: %w", link, target, err)
+		}
+	}
+	return nil
 }

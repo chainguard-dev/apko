@@ -18,13 +18,15 @@ package sbom
 
 import (
 	"fmt"
-	"os"
+	"io"
+	"io/fs"
 	"path/filepath"
 
 	osr "github.com/dominodatalab/os-release"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -54,18 +56,18 @@ type SBOM struct {
 	Options    options.Options
 }
 
-func New() *SBOM {
+func New(fs apkfs.FullFS) *SBOM {
 	return &SBOM{
-		Generators: generator.Generators(),
+		Generators: generator.Generators(fs),
 		impl:       &defaultSBOMImplementation{},
 		Options:    DefaultOptions,
 	}
 }
 
 // NewWithWorkDir returns a new sbom object with a working dir preset
-func NewWithWorkDir(path string, a types.Architecture) *SBOM {
-	s := New()
-	s.Options.WorkDir = path
+func NewWithFS(fs apkfs.FullFS, a types.Architecture) *SBOM {
+	s := New(fs)
+	s.Options.FS = fs
 	s.Options.FileName = fmt.Sprintf("sbom-%s", a.ToAPK())
 	return s
 }
@@ -76,7 +78,7 @@ func (s *SBOM) SetImplementation(impl sbomImplementation) {
 
 func (s *SBOM) ReadReleaseData() error {
 	if err := s.impl.ReadReleaseData(
-		&s.Options, filepath.Join(s.Options.WorkDir, osReleasePath),
+		s.Options.FS, &s.Options, osReleasePath,
 	); err != nil {
 		return fmt.Errorf("reading release data: %w", err)
 	}
@@ -87,7 +89,7 @@ func (s *SBOM) ReadReleaseData() error {
 // and returns a slice of the installed packages
 func (s *SBOM) ReadPackageIndex() error {
 	pks, err := s.impl.ReadPackageIndex(
-		&s.Options, filepath.Join(s.Options.WorkDir, packageIndexPath),
+		s.Options.FS, &s.Options, packageIndexPath,
 	)
 	if err != nil {
 		return fmt.Errorf("reading apk package index: %w", err)
@@ -132,8 +134,8 @@ func (s *SBOM) ReadLayerTarball(path string) error {
 
 //counterfeiter:generate . sbomImplementation
 type sbomImplementation interface {
-	ReadReleaseData(*options.Options, string) error
-	ReadPackageIndex(*options.Options, string) ([]*repository.Package, error)
+	ReadReleaseData(fs.FS, *options.Options, string) error
+	ReadPackageIndex(fs.FS, *options.Options, string) ([]*repository.Package, error)
 	Generate(*options.Options, map[string]generator.Generator) ([]string, error)
 	CheckGenerators(*options.Options, map[string]generator.Generator) error
 	GenerateIndex(*options.Options, map[string]generator.Generator) ([]string, error)
@@ -143,8 +145,13 @@ type sbomImplementation interface {
 type defaultSBOMImplementation struct{}
 
 // readReleaseDataInternal reads the information from /etc/os-release
-func (di *defaultSBOMImplementation) ReadReleaseData(opts *options.Options, path string) error {
-	osReleaseData, err := os.ReadFile(path)
+func (di *defaultSBOMImplementation) ReadReleaseData(fsys fs.FS, opts *options.Options, path string) error {
+	f, err := fsys.Open(path)
+	if err != nil {
+		return fmt.Errorf("opening os-release: %w", err)
+	}
+	defer f.Close()
+	osReleaseData, err := io.ReadAll(f)
 	if err != nil {
 		return fmt.Errorf("reading os-release: %w", err)
 	}
@@ -159,13 +166,13 @@ func (di *defaultSBOMImplementation) ReadReleaseData(opts *options.Options, path
 
 // readPackageIndex parses the apk database passed in the path
 func (di *defaultSBOMImplementation) ReadPackageIndex(
-	opts *options.Options, path string,
+	fsys fs.FS, opts *options.Options, path string,
 ) (packages []*repository.Package, err error) {
-	return ReadPackageIndex(opts, path)
+	return ReadPackageIndex(fsys, opts, path)
 }
 
-func ReadPackageIndex(opts *options.Options, path string) (packages []*repository.Package, err error) {
-	installedDB, err := os.Open(path)
+func ReadPackageIndex(fsys fs.FS, opts *options.Options, path string) (packages []*repository.Package, err error) {
+	installedDB, err := fsys.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening APK installed db: %w", err)
 	}

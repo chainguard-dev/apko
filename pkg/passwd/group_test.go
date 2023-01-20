@@ -19,10 +19,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func TestGroupParser(t *testing.T) {
-	gf, err := ReadOrCreateGroupFile("testdata/group")
+	fsys := apkfs.DirFS("testdata")
+	gf, err := ReadOrCreateGroupFile(fsys, "group")
 	require.NoError(t, err)
 
 	for _, ge := range gf.Entries {
@@ -37,7 +40,8 @@ func TestGroupParser(t *testing.T) {
 }
 
 func TestGroupWriter(t *testing.T) {
-	gf, err := ReadOrCreateGroupFile("testdata/group")
+	fsys := apkfs.DirFS("testdata")
+	gf, err := ReadOrCreateGroupFile(fsys, "group")
 	require.NoError(t, err)
 
 	w := &bytes.Buffer{}

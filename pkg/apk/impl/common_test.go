@@ -20,8 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	memfs "chainguard.dev/apko/pkg/apk/impl/memfs"
-	rwfs "chainguard.dev/apko/pkg/apk/impl/rwfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 type testLocalTransport struct {
@@ -46,9 +45,9 @@ func (t *testLocalTransport) RoundTrip(request *http.Request) (*http.Response, e
 	}, nil
 }
 
-func testGetTestAPK() (*APKImplementation, rwfs.FS, error) {
+func testGetTestAPK() (*APKImplementation, apkfs.FullFS, error) {
 	// load it all into memory so that we don't change any of our test data
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	filesystem := os.DirFS("testdata/root")
 	if walkErr := fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if path == "." {
