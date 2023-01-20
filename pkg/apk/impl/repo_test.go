@@ -199,3 +199,21 @@ func TestGetPackageDependencies(t *testing.T) {
 		require.True(t, reflect.DeepEqual(expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, expected)
 	})
 }
+
+// Make sure that higher semver versions rise to the top
+func TestVersionHieracrchy(t *testing.T) {
+	repo := repository.Repository{}
+	index := repo.WithIndex(&repository.ApkIndex{
+		Packages: []*repository.Package{
+			{Name: "multi-versioner", Version: "1.2.9"},
+			{Name: "multi-versioner", Version: "1.1.4"},
+			{Name: "multi-versioner", Version: "1.2.5"},
+			{Name: "multi-versioner", Version: "1.3.0"},
+			{Name: "multi-versioner", Version: "1.2.4"},
+		},
+	})
+	resolver := NewPkgResolver([]*repository.RepositoryWithIndex{index})
+	pkg, ok := resolver.nameMap["multi-versioner"]
+	require.True(t, ok, "found multi-versioner in nameMap")
+	require.Equal(t, "1.3.0", pkg.Version, "multi-versioner has correct version")
+}

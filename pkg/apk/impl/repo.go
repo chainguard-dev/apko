@@ -220,7 +220,16 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 	// create a map of every package to its RepositoryPackage
 	for _, index := range indexes {
 		for _, pkg := range index.Packages() {
-			if _, ok := pkgNameMap[pkg.Name]; !ok {
+			existingPkg, ok := pkgNameMap[pkg.Name]
+			if !ok {
+				pkgNameMap[pkg.Name] = pkg
+				continue
+			}
+			// If the map already has an existing package by this name,
+			// keep checking in case there is a newer version
+			oldVersion, _ := parseVersion(existingPkg.Version)
+			newVersion, _ := parseVersion(pkg.Version)
+			if compareVersions(newVersion, oldVersion) == greater {
 				pkgNameMap[pkg.Name] = pkg
 			}
 		}
