@@ -17,6 +17,7 @@ package impl
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -312,4 +313,49 @@ func resolvePackageNameVersion(name string) (string, string, versionDependency) 
 	}
 	// we have no =, < or >, so we just return the name
 	return name, "", versionNone
+}
+
+func getBestVersion(versions []string, version string, compare versionDependency) string {
+	// go through all potential versions, save the ones that meet the constraints,
+	// then take the highest
+	var passed []string
+	for _, v := range versions {
+		if compare == versionNone {
+			passed = append(passed, v)
+			continue
+		}
+		actualVersion, err := parseVersion(v)
+		// skip invalid ones
+		if err != nil {
+			continue
+		}
+		requiredVersion, err := parseVersion(version)
+		// if the required version is invalid, we can't compare, so we return no matches
+		if err != nil {
+			return ""
+		}
+		versionRelationship := compareVersions(actualVersion, requiredVersion)
+		if compare.satisfies(versionRelationship) {
+			passed = append(passed, v)
+		}
+	}
+	if len(passed) == 0 {
+		return ""
+	}
+	if len(passed) == 1 {
+		return passed[0]
+	}
+
+	sort.Slice(passed, func(i, j int) bool {
+		actualVersion, err := parseVersion(passed[i])
+		if err != nil {
+			return false
+		}
+		requiredVersion, err := parseVersion(passed[j])
+		if err != nil {
+			return false
+		}
+		return compareVersions(actualVersion, requiredVersion) == greater
+	})
+	return passed[0]
 }

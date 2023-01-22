@@ -90,3 +90,24 @@ func TestParseVersion(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveVersion(t *testing.T) {
+	versions := []string{"1.2.3-r0", "1.3.6-r0", "1.2.8-r0", "1.7.1-r0", "1.7.1-r1", "2.0.6-r0"}
+	tests := []struct {
+		version     string
+		compare     versionDependency
+		want        string
+		description string
+	}{
+		{"1.2.3-r0", versionEqual, "1.2.3-r0", "exact version match"},
+		{"1.2.3-r10000", versionEqual, "", "exact version no match"},
+		{"2.0.0", versionGreater, "2.0.6-r0", "greater than version match"},
+		{"2.0.0", versionGreaterEqual, "2.0.6-r0", "greater than or equal to version match"},
+		{"3.0.0", versionGreaterEqual, "", "greater than or equal to version no match"},
+		{"", versionNone, "2.0.6-r0", "no requirement should get highest version"},
+	}
+	for _, tt := range tests {
+		found := getBestVersion(versions, tt.version, tt.compare)
+		require.Equal(t, found, tt.want, "version resolver gets correct version")
+	}
+}
