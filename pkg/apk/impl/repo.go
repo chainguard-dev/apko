@@ -264,7 +264,14 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 		name, version, compare := resolvePackageNameVersion(pkgName)
 		pkg, ok := p.nameMap[name]
 		if !ok {
-			return nil, nil, fmt.Errorf("could not find package %s in indexes", pkgName)
+			trueName, ok := p.providesMap[name]
+			if !ok {
+				return nil, nil, fmt.Errorf("could not find package %s in indexes", pkgName)
+			}
+			pkg, ok = p.nameMap[trueName]
+			if !ok {
+				return nil, nil, fmt.Errorf("could not find package %s in indexes", pkgName)
+			}
 		}
 
 		if compare != versionNone {
@@ -355,7 +362,14 @@ func (p *PkgResolver) getPackageDependencies(pkg string, parents map[string]bool
 	}
 	ref, ok := p.nameMap[pkg]
 	if !ok {
-		return nil, nil, fmt.Errorf("package %s not found in indexes", pkg)
+		trueName, ok := p.providesMap[pkg]
+		if !ok {
+			return nil, nil, fmt.Errorf("package %s not found in indexes", pkg)
+		}
+		ref, ok = p.nameMap[trueName]
+		if !ok {
+			return nil, nil, fmt.Errorf("package %s not found in indexes", pkg)
+		}
 	}
 
 	// each dependency has only one of two possibilities:
