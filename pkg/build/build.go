@@ -17,8 +17,8 @@ package build
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
-	"archive/tar"
 	"fmt"
+	"io/fs"
 	"os"
 	"runtime"
 	"strconv"
@@ -29,6 +29,7 @@ import (
 	coci "github.com/sigstore/cosign/pkg/oci"
 	"github.com/sirupsen/logrus"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
@@ -50,6 +51,7 @@ type Context struct {
 	s6              *s6.Context
 	Assertions      []Assertion
 	Options         options.Options
+	fs              apkfs.FullFS
 }
 
 func (bc *Context) Summarize() {
@@ -61,8 +63,8 @@ func (bc *Context) Summarize() {
 // BuildTarball calls the underlying implementation's BuildTarball
 // which takes the fully populated working directory and saves it to
 // an OCI image layer tar.gz file.
-func (bc *Context) BuildTarball(overrides []tar.Header) (string, error) {
-	return bc.impl.BuildTarball(&bc.Options, overrides)
+func (bc *Context) BuildTarball() (string, error) {
+	return bc.impl.BuildTarball(&bc.Options, bc.fs)
 }
 
 func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
@@ -79,9 +81,12 @@ func (bc *Context) GenerateSBOM() error {
 	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
 }
 
-func (bc *Context) BuildImage() ([]tar.Header, error) {
+func (bc *Context) BuildImage() (fs.FS, error) {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	return buildImage(bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6)
+	if err := buildImage(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
+		return nil, err
+	}
+	return bc.fs, nil
 }
 
 func (bc *Context) Logger() *logrus.Entry {
@@ -99,24 +104,23 @@ func (bc *Context) BuildLayer() (string, error) {
 	bc.Summarize()
 
 	// build image filesystem
-	overrides, err := bc.BuildImage()
-	if err != nil {
+	if _, err := bc.BuildImage(); err != nil {
 		return "", err
 	}
 
-	return bc.ImageLayoutToLayer(overrides)
+	return bc.ImageLayoutToLayer()
 }
 
 // ImageLayoutToLayer given an already built-out
-// image in a directory from BuildImage(), create
+// image in an fs from BuildImage(), create
 // an OCI image layer tgz.
-func (bc *Context) ImageLayoutToLayer(overrides []tar.Header) (string, error) {
+func (bc *Context) ImageLayoutToLayer() (string, error) {
 	// run any assertions defined
 	if err := bc.runAssertions(); err != nil {
 		return "", err
 	}
 
-	layerTarGZ, err := bc.BuildTarball(overrides)
+	layerTarGZ, err := bc.BuildTarball()
 	// build layer tarball
 	if err != nil {
 		return "", err
@@ -148,9 +152,13 @@ func (bc *Context) runAssertions() error {
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
 func New(workDir string, opts ...Option) (*Context, error) {
+	fs := apkfs.DirFS(workDir)
 	bc := Context{
 		Options: options.Default,
-		impl:    &defaultBuildImplementation{},
+		impl: &defaultBuildImplementation{
+			workdirFS: fs,
+		},
+		fs: fs,
 	}
 	bc.Options.WorkDir = workDir
 

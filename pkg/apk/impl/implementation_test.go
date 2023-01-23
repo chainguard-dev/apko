@@ -27,7 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	memfs "chainguard.dev/apko/pkg/apk/impl/memfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 var testDemoKey = `-----BEGIN PUBLIC KEY-----
@@ -42,7 +42,7 @@ QwIDAQAB
 `
 
 func TestInitDB(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	apk, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	baseDirs := []string{"/tmp", "/proc", "/dev", "/var", "/lib", "/etc"}
@@ -77,7 +77,7 @@ func TestInitDB(t *testing.T) {
 }
 
 func TestSetWorld(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	apk, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
@@ -99,7 +99,7 @@ func TestSetWorld(t *testing.T) {
 }
 
 func TestSetRepositories(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	apk, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
@@ -120,7 +120,7 @@ func TestSetRepositories(t *testing.T) {
 }
 
 func TestInitKeyring(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	a, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 
@@ -163,7 +163,7 @@ func TestInitKeyring(t *testing.T) {
 
 func TestLoadSystemKeyring(t *testing.T) {
 	t.Run("non-existent dir", func(t *testing.T) {
-		src := memfs.New()
+		src := apkfs.NewMemFS()
 		a, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 
@@ -172,7 +172,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 		require.Error(t, err)
 	})
 	t.Run("empty dir", func(t *testing.T) {
-		src := memfs.New()
+		src := apkfs.NewMemFS()
 		a, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 
@@ -193,7 +193,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			arch := ArchToAPK(runtime.GOARCH)
-			src := memfs.New()
+			src := apkfs.NewMemFS()
 			a, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 			require.NoError(t, err)
 

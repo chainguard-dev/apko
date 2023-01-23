@@ -27,7 +27,7 @@ import (
 	gzip "golang.org/x/build/pargzip"
 	"golang.org/x/sys/unix"
 
-	apkofs "chainguard.dev/apko/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func hasHardlinks(fi fs.FileInfo) bool {
@@ -94,7 +94,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 			isCharDevice bool
 		)
 		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-			rlfs, ok := fsys.(apkofs.ReadLinkFS)
+			rlfs, ok := fsys.(apkfs.ReadLinkFS)
 			if !ok {
 				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
 			}
@@ -105,7 +105,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 		}
 
 		if info.Mode()&os.ModeCharDevice == os.ModeCharDevice {
-			rlfs, ok := fsys.(apkofs.ReadnodFS)
+			rlfs, ok := fsys.(apkfs.ReadnodFS)
 			if !ok {
 				return fmt.Errorf("read character device not supported by this fs: path (%s) %#v %#v", path, info, fsys)
 			}

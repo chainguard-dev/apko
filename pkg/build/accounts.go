@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/passwd"
@@ -57,16 +58,16 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 }
 
 func (di *defaultBuildImplementation) MutateAccounts(
-	o *options.Options, ic *types.ImageConfiguration,
+	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
 ) error {
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {
 		// Mutate the /etc/groups file
 		eg.Go(func() error {
-			path := filepath.Join(o.WorkDir, "etc", "group")
+			path := filepath.Join("etc", "group")
 
-			gf, err := passwd.ReadOrCreateGroupFile(path)
+			gf, err := passwd.ReadOrCreateGroupFile(fsys, path)
 			if err != nil {
 				return err
 			}
@@ -75,7 +76,7 @@ func (di *defaultBuildImplementation) MutateAccounts(
 				gf.Entries = di.appendGroup(o, gf.Entries, g)
 			}
 
-			if err := gf.WriteFile(path); err != nil {
+			if err := gf.WriteFile(fsys, path); err != nil {
 				return err
 			}
 
@@ -85,9 +86,9 @@ func (di *defaultBuildImplementation) MutateAccounts(
 
 	// Mutate the /etc/passwd file
 	eg.Go(func() error {
-		path := filepath.Join(o.WorkDir, "etc", "passwd")
+		path := filepath.Join("etc", "passwd")
 
-		uf, err := passwd.ReadOrCreateUserFile(path)
+		uf, err := passwd.ReadOrCreateUserFile(fsys, path)
 		if err != nil {
 			return err
 		}
@@ -102,10 +103,10 @@ func (di *defaultBuildImplementation) MutateAccounts(
 			}
 			// Create a version of the user's home directory rooted at our
 			// working directory.
-			targetHomedir := filepath.Join(o.WorkDir, ue.HomeDir)
+			targetHomedir := ue.HomeDir
 
 			// Make sure a directory exists with the path we expect.
-			if fi, err := os.Stat(targetHomedir); err == nil {
+			if fi, err := fsys.Stat(targetHomedir); err == nil {
 				if !fi.IsDir() {
 					return fmt.Errorf("%s home directory %s exists, but is not a directory", ue.UserName, ue.HomeDir)
 				}
@@ -116,7 +117,7 @@ func (di *defaultBuildImplementation) MutateAccounts(
 				continue
 			} else if !os.IsNotExist(err) {
 				return fmt.Errorf("checking homedir exists: %w", err)
-			} else if err := os.MkdirAll(targetHomedir, 0755); err != nil {
+			} else if err := fsys.MkdirAll(targetHomedir, 0755); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
 			}
 		}

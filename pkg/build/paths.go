@@ -15,17 +15,16 @@
 package build
 
 import (
-	"archive/tar"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 )
 
-type PathMutator func(*options.Options, types.PathMutation) ([]tar.Header, error)
+type PathMutator func(apkfs.FullFS, *options.Options, types.PathMutation) error
 
 var pathMutators = map[string]PathMutator{
 	"directory":   mutateDirectory,
@@ -35,152 +34,128 @@ var pathMutators = map[string]PathMutator{
 	"permissions": mutatePermissions,
 }
 
-func mutatePermissions(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
-	return mutatePermissionsDirect(o.WorkDir, mut.Path, mut.Permissions, mut.UID, mut.GID)
+func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	return mutatePermissionsDirect(fsys, mut.Path, mut.Permissions, mut.UID, mut.GID)
 }
 
-func mutatePermissionsDirect(workdir, path string, perms, uid, gid uint32) ([]tar.Header, error) {
-	target := filepath.Join(workdir, path)
+func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uint32) error {
+	target := path
 
-	err1 := os.Chmod(target, fs.FileMode(perms))
-	err2 := os.Chown(target, int(uid), int(gid))
-	if err1 == nil && err2 == nil {
-		return nil, nil
+	if err := fsys.Chmod(target, fs.FileMode(perms)); err != nil {
+		return err
 	}
-
-	// we had errors, so we need override info
-	return []tar.Header{
-		{Name: path, Mode: int64(perms), Uid: int(uid), Gid: int(gid)},
-	}, nil
+	if err := fsys.Chown(target, int(uid), int(gid)); err != nil {
+		return err
+	}
+	return nil
 }
 
-func mutateDirectory(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
-	var headers []tar.Header
+func mutateDirectory(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
 	perms := fs.FileMode(mut.Permissions)
 
-	if err := os.MkdirAll(filepath.Join(o.WorkDir, mut.Path), perms); err != nil {
-		return nil, err
+	if err := fsys.MkdirAll(mut.Path, perms); err != nil {
+		return err
 	}
 
 	if mut.Recursive {
-		if err := filepath.WalkDir(filepath.Join(o.WorkDir, mut.Path), func(path string, d fs.DirEntry, err error) error {
+		if err := fs.WalkDir(fsys, mut.Path, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			h, err := mutatePermissionsDirect(o.WorkDir, path, mut.Permissions, mut.UID, mut.GID)
-			if err != nil {
-				headers = append(headers, h...)
+			if err := mutatePermissionsDirect(fsys, path, mut.Permissions, mut.UID, mut.GID); err != nil {
+				return err
 			}
 			return nil
 		}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return headers, nil
+	return nil
 }
 
-func ensureParentDirectory(o *options.Options, mut types.PathMutation) error {
-	target := filepath.Join(o.WorkDir, mut.Path)
+func ensureParentDirectory(fsys apkfs.FullFS, mut types.PathMutation) error {
+	target := mut.Path
 	parent := filepath.Dir(target)
 
-	if err := os.MkdirAll(parent, 0755); err != nil {
+	if err := fsys.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func mutateEmptyFile(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
-	target := filepath.Join(o.WorkDir, mut.Path)
+func mutateEmptyFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	target := mut.Path
 
-	if err := ensureParentDirectory(o, mut); err != nil {
-		return nil, err
+	if err := ensureParentDirectory(fsys, mut); err != nil {
+		return err
 	}
 
-	file, err := os.Create(target)
+	file, err := fsys.Create(target)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer file.Close()
 
-	return nil, nil
+	return nil
 }
 
-func mutateHardLink(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
-	var headers []tar.Header
+func mutateHardLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	source := mut.Source
+	target := mut.Path
 
-	source := filepath.Join(o.WorkDir, mut.Source)
-	target := filepath.Join(o.WorkDir, mut.Path)
-
-	if err := ensureParentDirectory(o, mut); err != nil {
-		return nil, err
+	if err := ensureParentDirectory(fsys, mut); err != nil {
+		return err
 	}
 
 	// overwrite link if already exists
-	if _, err := os.Lstat(target); err == nil {
-		os.Remove(target)
+	if _, err := fsys.Lstat(target); err == nil {
+		if err := fsys.Remove(target); err != nil {
+			return fmt.Errorf("unable to remove old link: %w", err)
+		}
 	}
 
-	if err := os.Link(source, target); err != nil {
-		// what if hardlinking is not supported?
-		headers = append(headers, tar.Header{
-			Typeflag: tar.TypeLink,
-			Name:     mut.Path,
-			Linkname: mut.Source,
-		})
+	if err := fsys.Link(source, target); err != nil {
+		return err
 	}
 
-	return headers, nil
+	return nil
 }
 
-func mutateSymLink(o *options.Options, mut types.PathMutation) ([]tar.Header, error) {
-	var headers []tar.Header
+func mutateSymLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	target := mut.Path
 
-	target := filepath.Join(o.WorkDir, mut.Path)
-
-	if err := ensureParentDirectory(o, mut); err != nil {
-		return nil, err
+	if err := ensureParentDirectory(fsys, mut); err != nil {
+		return err
 	}
 
-	if err := os.Symlink(mut.Source, target); err != nil {
-		// what if symlinking is not supported?
-		headers = append(headers, tar.Header{
-			Typeflag: tar.TypeSymlink,
-			Name:     mut.Path,
-			Linkname: mut.Source,
-			Uid:      int(mut.UID),
-			Gid:      int(mut.GID),
-		})
+	if err := fsys.Symlink(mut.Source, target); err != nil {
+		return err
 	}
 
-	return headers, nil
+	return nil
 }
 
 func (di *defaultBuildImplementation) MutatePaths(
-	o *options.Options, ic *types.ImageConfiguration,
-) ([]tar.Header, error) {
-	var headers []tar.Header
+	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
+) error {
 	for _, mut := range ic.Paths {
 		pm, ok := pathMutators[mut.Type]
 		if !ok {
-			return nil, fmt.Errorf("unsupported path mutation type %q", mut.Type)
+			return fmt.Errorf("unsupported path mutation type %q", mut.Type)
 		}
 
-		h, err := pm(o, mut)
-		if err != nil {
-			return nil, err
+		if err := pm(fsys, o, mut); err != nil {
+			return err
 		}
-		headers = append(headers, h...)
 
 		if mut.Type != "permissions" {
-			h, err := mutatePermissions(o, mut)
-			if err != nil {
-				return nil, err
+			if err := mutatePermissions(fsys, o, mut); err != nil {
+				return err
 			}
-			headers = append(headers, h...)
 		}
 	}
 
-	return headers, nil
+	return nil
 }

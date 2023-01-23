@@ -63,7 +63,7 @@ func TestBuildLayer(t *testing.T) {
 	} {
 		mock := buildfakes.FakeBuildImplementation{}
 		tc.prepare(&mock)
-		sut, err := build.New("/mock")
+		sut, err := build.New(t.TempDir())
 		sut.Options.WantSBOM = true
 		require.NoError(t, err)
 		sut.SetImplementation(&mock)
@@ -125,8 +125,7 @@ func TestBuildImage(t *testing.T) {
 	} {
 		mock := &buildfakes.FakeBuildImplementation{}
 		tc.prepare(mock)
-
-		sut, err := build.New("/mock")
+		sut, err := build.New(t.TempDir())
 		require.NoError(t, err)
 		sut.SetImplementation(mock)
 		_, err = sut.BuildImage()

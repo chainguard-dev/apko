@@ -16,18 +16,20 @@ package idb
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
 // IDB treats the APK installed DB as an SBOM, which can be used with
 // `apk audit` to check an image for runtime deviations.
-type IDB struct{}
+type IDB struct {
+	fs apkfs.FullFS
+}
 
-func New() IDB {
-	return IDB{}
+func New(fs apkfs.FullFS) IDB {
+	return IDB{fs}
 }
 
 func (i *IDB) Key() string {
@@ -41,14 +43,14 @@ func (i *IDB) Ext() string {
 // Generate copies the IDB from the work directory and saves it as
 // an SBOM.
 func (i *IDB) Generate(opts *options.Options, path string) error {
-	idbPath := filepath.Join(opts.WorkDir, "lib", "apk", "db", "installed")
+	idbPath := filepath.Join("lib", "apk", "db", "installed")
 
-	idbData, err := os.ReadFile(idbPath)
+	idbData, err := i.fs.ReadFile(idbPath)
 	if err != nil {
 		return fmt.Errorf("reading installed db for copying: %w", err)
 	}
 
-	if err := os.WriteFile(path, idbData, 0o600); err != nil {
+	if err := i.fs.WriteFile(path, idbData, 0o600); err != nil {
 		return fmt.Errorf("copying installed db: %w", err)
 	}
 

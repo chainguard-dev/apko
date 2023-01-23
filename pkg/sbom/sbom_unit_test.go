@@ -17,9 +17,9 @@ package sbom
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
 
@@ -37,36 +37,36 @@ PRETTY_NAME="Wolfi"
 VERSION_ID="2022, 20230914"
 HOME_URL="https://wolfi.dev"
 `
-	tdir := t.TempDir()
+	fsys := apkfs.NewMemFS()
 	require.NoError(
-		t, os.WriteFile(
-			filepath.Join(tdir, "os-release"), []byte(osinfoData), os.FileMode(0o644),
+		t, fsys.WriteFile(
+			"os-release", []byte(osinfoData), os.FileMode(0o644),
 		),
 	)
 	di := defaultSBOMImplementation{}
 
 	// Non existent file, should err
-	require.Error(t, di.ReadReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
+	require.Error(t, di.ReadReleaseData(fsys, &options.Options{}, "non-existent"))
 	opts := options.Options{}
-	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
+	require.NoError(t, di.ReadReleaseData(fsys, &opts, "os-release"))
 	require.Equal(t, "wolfi", opts.OS.ID, "id")
 	require.Equal(t, "Wolfi", opts.OS.Name, "name")
 	require.Equal(t, "2022, 20230914", opts.OS.Version, "version")
 }
 
 func TestReadReleaseData_EmptyDefaults(t *testing.T) {
-	tdir := t.TempDir()
+	fsys := apkfs.NewMemFS()
 	require.NoError(
-		t, os.WriteFile(
-			filepath.Join(tdir, "os-release"), nil, os.FileMode(0o644),
+		t, fsys.WriteFile(
+			"os-release", nil, os.FileMode(0o644),
 		),
 	)
 	di := defaultSBOMImplementation{}
 
 	// Non existent file, should err
-	require.Error(t, di.ReadReleaseData(&options.Options{}, filepath.Join(tdir, "non-existent")))
+	require.Error(t, di.ReadReleaseData(fsys, &options.Options{}, "non-existent"))
 	opts := options.Options{}
-	require.NoError(t, di.ReadReleaseData(&opts, filepath.Join(tdir, "os-release")))
+	require.NoError(t, di.ReadReleaseData(fsys, &opts, "os-release"))
 	require.Equal(t, "", opts.OS.ID, "id")
 	require.Equal(t, "", opts.OS.Name, "name")
 	require.Equal(t, "", opts.OS.Version, "version")
@@ -121,17 +121,17 @@ a:0:0:755
 Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
 
 `
-	tdir := t.TempDir()
+	fsys := apkfs.NewMemFS()
 	require.NoError(
-		t, os.WriteFile(
-			filepath.Join(tdir, "installed"), []byte(sampleDB), os.FileMode(0o644),
+		t, fsys.WriteFile(
+			"installed", []byte(sampleDB), os.FileMode(0o644),
 		),
 	)
 
 	// Write an invalid DB
 	require.NoError(
-		t, os.WriteFile(
-			filepath.Join(tdir, "installed-corrupt"),
+		t, fsys.WriteFile(
+			"installed-corrupt",
 			[]byte("sldkjflskdjflsjdflkjsdlfkjsldfkj\nskdjfhksjdhfkjhsdkfjhksdjhf"),
 			os.FileMode(0o644),
 		),
@@ -141,11 +141,11 @@ Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
 
 	// Non existent file must fail
 	opts := &options.Options{}
-	_, err := di.ReadPackageIndex(opts, filepath.Join(tdir, "non-existent"))
+	_, err := di.ReadPackageIndex(fsys, opts, "non-existent")
 	require.Error(t, err)
-	_, err = di.ReadPackageIndex(opts, filepath.Join(tdir, "installed-corrupt"))
+	_, err = di.ReadPackageIndex(fsys, opts, "installed-corrupt")
 	require.Error(t, err)
-	pkg, err := di.ReadPackageIndex(opts, filepath.Join(tdir, "installed"))
+	pkg, err := di.ReadPackageIndex(fsys, opts, "installed")
 	require.NoError(t, err)
 	require.NotNil(t, pkg)
 	require.Len(t, pkg, 2)

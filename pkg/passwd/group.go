@@ -21,6 +21,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 // GroupEntry describes a single line in /etc/group.
@@ -38,10 +40,10 @@ type GroupFile struct {
 
 // ReadOrCreateGroupFile parses an /etc/group file into a GroupFile.
 // An empty file is created if /etc/group is missing.
-func ReadOrCreateGroupFile(filePath string) (GroupFile, error) {
+func ReadOrCreateGroupFile(fsys apkfs.FullFS, filePath string) (GroupFile, error) {
 	gf := GroupFile{}
 
-	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
+	file, err := fsys.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return gf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
@@ -75,8 +77,8 @@ func (gf *GroupFile) Load(r io.Reader) error {
 }
 
 // WriteFile writes an /etc/passwd file from a GroupFile.
-func (gf *GroupFile) WriteFile(filePath string) error {
-	file, err := os.Create(filePath)
+func (gf *GroupFile) WriteFile(fsys apkfs.FullFS, filePath string) error {
+	file, err := fsys.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("unable to open %s for writing: %w", filePath, err)
 	}

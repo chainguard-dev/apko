@@ -20,11 +20,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	memfs "chainguard.dev/apko/pkg/apk/impl/memfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func TestGetWorld(t *testing.T) {
-	src := memfs.New()
+	src := apkfs.NewMemFS()
 	err := src.MkdirAll("etc/apk", 0755)
 	require.NoError(t, err, "unable to mkdir /etc/apk")
 	packages := []string{"package1", "package2", "package3"}

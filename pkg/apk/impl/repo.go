@@ -305,6 +305,8 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 		conflicts = append(conflicts, confs...)
 	}
 
+	conflicts = uniqify(conflicts)
+
 	return toInstall, conflicts, nil
 }
 

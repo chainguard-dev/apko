@@ -19,7 +19,7 @@ package apk
 import (
 	"archive/tar"
 	"fmt"
-	"path/filepath"
+	"io/fs"
 	"regexp"
 	"sort"
 	"strings"
@@ -28,8 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apkimpl "chainguard.dev/apko/pkg/apk/impl"
-	"chainguard.dev/apko/pkg/apk/impl/rwfs"
-	"chainguard.dev/apko/pkg/apk/impl/rwosfs"
+	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
@@ -39,30 +38,24 @@ import (
 
 type APK struct {
 	impl    apkImplementation
-	fs      rwfs.FS
+	fs      apkfs.FullFS
 	Options options.Options
 }
 
 func New() (*APK, error) {
-	return NewWithOptions(options.Default)
+	return NewWithOptions(apkfs.DirFS("/"), options.Default)
 }
 
-func NewWithOptions(o options.Options) (*APK, error) {
+func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 	opts := options.Default
 	if o.Log == nil {
 		o.Log = opts.Log
 	}
 
-	// note: apko ignores the mknod errors, because it does not care if the characters devices
-	// exist or not. apko does not execute the scripts, so they do not matter. This buys us flexibility
-	// to run without root privileges, or on platforms without character devices.
-	// When we package it all up, we ensure those devices are in the layer tar stream.
-	src, err := rwosfs.NewReadWriteFS(o.WorkDir)
-	if err != nil {
-		return nil, err
-	}
+	// apko does not execute the scripts, so they do not matter. This buys us flexibility
+	// to run without root privileges, or even on non-Linux.
 	apkImpl, _ := apkimpl.NewAPKImplementation(
-		apkimpl.WithFS(src),
+		apkimpl.WithFS(fsys),
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),
 		apkimpl.WithIgnoreMknodErrors(true),
@@ -70,7 +63,7 @@ func NewWithOptions(o options.Options) (*APK, error) {
 	a := &APK{
 		Options: o,
 		impl:    apkImpl,
-		fs:      src,
+		fs:      fsys,
 	}
 	return a, nil
 }
@@ -136,12 +129,12 @@ func (a *APK) GetInstalled() ([]*apkimpl.InstalledPackage, error) {
 // AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
 // If --package-version-tag is set to a package name (e.g. go), then this function
 // returns a list of all images that should be published with the associated version of that package tagged (e.g. 1.18)
-func AdditionalTags(opts options.Options) ([]string, error) {
+func AdditionalTags(fsys fs.FS, opts options.Options) ([]string, error) {
 	if opts.PackageVersionTag == "" {
 		return nil, nil
 	}
-	dbPath := filepath.Join(opts.WorkDir, "lib/apk/db/installed")
-	pkgs, err := sbom.ReadPackageIndex(&sbom.DefaultOptions, dbPath)
+	dbPath := "lib/apk/db/installed"
+	pkgs, err := sbom.ReadPackageIndex(fsys, &sbom.DefaultOptions, dbPath)
 	if err != nil {
 		return nil, err
 	}
