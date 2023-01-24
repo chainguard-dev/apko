@@ -116,21 +116,21 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 	// dep4, dep5, dep1, dep6, foo, libq, dep3, busybox, dep2
 	var (
 		packages = []*repository.Package{
-			{Name: "package1", Dependencies: []string{"dep1", "dep2", "dep3"}},
-			{Name: "dep1", Dependencies: []string{"dep4", "dep5"}},
-			{Name: "dep2", Dependencies: []string{"dep3", "/bin/sh"}},
-			{Name: "dep3", Dependencies: []string{"dep6", "cmd:/bin/foo", "so:libq.so.1"}},
-			{Name: "dep4", Dependencies: []string{}},
-			{Name: "dep5", Dependencies: []string{}},
-			{Name: "dep6", Dependencies: []string{}},
-			{Name: "dep7", Dependencies: []string{}},
-			{Name: "dep8", Dependencies: []string{"dep8"}},
-			{Name: "libq", Dependencies: []string{}, Provides: []string{"so:libq.so.1"}},
-			{Name: "foo", Dependencies: []string{}, Provides: []string{"cmd:/bin/foo"}},
-			{Name: "busybox", Dependencies: []string{}},
-			{Name: "unused", Dependencies: []string{}},
-			{Name: "package2", Dependencies: []string{"dep2", "dep7"}},
-			{Name: "package3", Dependencies: []string{"dep8"}},
+			{Name: "package1", Version: "1.0.0", Dependencies: []string{"dep1", "dep2", "dep3"}},
+			{Name: "dep1", Version: "1.0.0", Dependencies: []string{"dep4", "dep5"}},
+			{Name: "dep2", Version: "1.0.0", Dependencies: []string{"dep3", "/bin/sh"}},
+			{Name: "dep3", Version: "1.0.0", Dependencies: []string{"dep6", "cmd:/bin/foo", "so:libq.so.1"}},
+			{Name: "dep4", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "dep5", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "dep6", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "dep7", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "dep8", Version: "1.0.0", Dependencies: []string{"dep8"}},
+			{Name: "libq", Version: "1.0.0", Dependencies: []string{}, Provides: []string{"so:libq.so.1"}},
+			{Name: "foo", Version: "1.0.0", Dependencies: []string{}, Provides: []string{"cmd:/bin/foo"}},
+			{Name: "busybox", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "unused", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "package2", Version: "1.0.0", Dependencies: []string{"dep2", "dep7"}},
+			{Name: "package3", Version: "1.0.0", Dependencies: []string{"dep8"}},
 		}
 		repoPackages = make([]*repository.RepositoryPackage, 0, len(packages))
 	)
@@ -174,7 +174,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		_, index := testGetPackagesAndIndex()
 
 		resolver := NewPkgResolver(index)
-		pkgs, _, err := resolver.GetPackageDependencies("package1")
+		_, pkgs, _, err := resolver.GetPackageWithDependencies("package1")
 		require.NoErrorf(t, err, "unable to get dependencies")
 
 		var actual = make([]string, 0, len(pkgs))
@@ -189,7 +189,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		_, index := testGetPackagesAndIndex()
 
 		resolver := NewPkgResolver(index)
-		pkgs, _, err := resolver.GetPackageDependencies("package3")
+		_, pkgs, _, err := resolver.GetPackageWithDependencies("package3")
 		require.NoErrorf(t, err, "unable to get dependencies")
 
 		var actual = make([]string, 0, len(pkgs))
@@ -200,20 +200,24 @@ func TestGetPackageDependencies(t *testing.T) {
 	})
 }
 
-// Make sure that higher semver versions rise to the top
-func TestVersionHieracrchy(t *testing.T) {
+// Make sure that all versions exist
+func TestVersionHierarchy(t *testing.T) {
 	repo := repository.Repository{}
 	index := repo.WithIndex(&repository.ApkIndex{
 		Packages: []*repository.Package{
-			{Name: "multi-versioner", Version: "1.2.9"},
-			{Name: "multi-versioner", Version: "1.1.4"},
-			{Name: "multi-versioner", Version: "1.2.5"},
-			{Name: "multi-versioner", Version: "1.3.0"},
-			{Name: "multi-versioner", Version: "1.2.4"},
+			{Name: "multi-versioner", Version: "1.2.3-r0"},
+			{Name: "multi-versioner", Version: "1.3.6-r0"},
+			{Name: "multi-versioner", Version: "1.2.8-r0"},
+			{Name: "multi-versioner", Version: "1.7.1-r0"},
+			{Name: "multi-versioner", Version: "1.7.1-r1"},
+			{Name: "multi-versioner", Version: "2.0.6-r0"},
 		},
 	})
 	resolver := NewPkgResolver([]*repository.RepositoryWithIndex{index})
-	pkg, ok := resolver.nameMap["multi-versioner"]
+	pkgWithVersions, ok := resolver.nameMap["multi-versioner"]
 	require.True(t, ok, "found multi-versioner in nameMap")
-	require.Equal(t, "1.3.0", pkg.Version, "multi-versioner has correct version")
+	for version, pkg := range pkgWithVersions {
+		require.True(t, pkg.Version != "", "multi-versioner has version")
+		require.Equal(t, version, pkg.Version, "multi-versioner has correct version")
+	}
 }
