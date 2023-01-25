@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -29,10 +30,58 @@ import (
 func DirFS(dir string) FullFS {
 	memfs := NewMemFS()
 	m := memfs.(*memFS)
-	return &dirFS{
+	f := &dirFS{
 		base:      dir,
 		overrides: m,
 	}
+	// need to populate the overrides with appropriate info
+	root := os.DirFS(dir)
+
+	_ = fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		mode := fi.Mode()
+		perm := mode.Perm()
+		switch mode.Type() {
+		case fs.ModeDir:
+			fullPerm := os.ModeDir | perm
+			err = f.overrides.Mkdir(path, fullPerm)
+		case fs.ModeSymlink:
+			var target string
+			target, err = os.Readlink(filepath.Join(dir, path))
+			if err != nil {
+				err = f.overrides.Symlink(target, path)
+			}
+		case fs.ModeCharDevice:
+			var dev int
+			sys := fi.Sys()
+			st1, ok1 := sys.(*syscall.Stat_t)
+			st2, ok2 := sys.(*unix.Stat_t)
+			switch {
+			case ok1:
+				dev = int(st1.Rdev)
+			case ok2:
+				dev = int(st2.Rdev)
+			default:
+				return fmt.Errorf("unsupported type %T", sys)
+			}
+			err = f.overrides.Mknod(path, uint32(unix.S_IFCHR|mode), dev)
+		default:
+			var memFile File
+			memFile, err = f.overrides.OpenFile(path, os.O_CREATE, perm)
+			if memFile != nil {
+				_ = memFile.Close()
+			}
+		}
+		return err
+	})
+
+	return f
 }
 
 // dirFS represents a FullFS implementation based on a directory on disk.
