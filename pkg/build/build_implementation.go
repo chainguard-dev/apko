@@ -144,6 +144,10 @@ func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *
 		return fmt.Errorf("reading layer tar: %w", err)
 	}
 
+	if err := s.ReadReleaseData(); err != nil {
+		return fmt.Errorf("getting os-release: %w", err)
+	}
+
 	if err := s.ReadPackageIndex(); err != nil {
 		return fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
