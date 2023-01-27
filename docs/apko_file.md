@@ -101,7 +101,8 @@ Details of each field can be found below.
 There are multiple possible child elements:
 
  - `repositories` defines a list of alpine repositories to look in for packages. These can be either
-   URLs or file paths. File paths should start with `@local` e.g: `@local /github/workspace/packages`
+   URLs or file paths. File paths should start with a label like `@local` e.g: `@local /github/workspace/packages`.
+   Notice that you need to package name under `packages` with the label e.g `- alpine-baselayout@local`.
  - `packages` defines a list of alpine packages to install inside the image
  - `keyring` PGP keys to add to the keyring for verifying packages.
 
