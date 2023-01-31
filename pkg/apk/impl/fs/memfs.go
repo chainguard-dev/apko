@@ -201,7 +201,7 @@ func (m *memFS) Chown(path string, uid int, gid int) error {
 	return nil
 }
 func (m *memFS) Create(name string) (File, error) {
-	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC, 0o666)
+	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o666)
 }
 
 func (m *memFS) Symlink(oldname, newname string) error {

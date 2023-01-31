@@ -76,3 +76,64 @@ func TestMissingDir(t *testing.T) {
 	err := fs.WriteFile("foo/bar/world", []byte("world"), 0o600)
 	require.Error(t, err, "expected error writing file foo/bar/world when foo/bar dir does not exist")
 }
+
+func TestCaseInsensitive(t *testing.T) {
+	var (
+		err error
+	)
+	files := []struct {
+		path    string
+		dir     bool
+		perms   os.FileMode
+		content []byte
+		onDisk  bool // whether it should be on the local filesystem
+	}{
+		{"a/b", true, 0o755, nil, true},
+		{"a/b/c", false, 0o644, []byte("hello lower lower"), true},
+		{"a/b/C", false, 0o644, []byte("hello lower upper"), false},
+		{"a/B", true, 0o755, nil, false},
+		{"a/B/c", false, 0o644, []byte("hello upper lower"), false},
+	}
+
+	dir := t.TempDir()
+	// force underlying filesystem to be treated as case insensitive
+	fs := DirFS(dir, DirFSWithCaseSensitive(false))
+	require.NotNil(t, fs, "fs should be created")
+
+	// create the files in the fs
+	for _, f := range files {
+		if f.dir {
+			err = fs.MkdirAll(f.path, f.perms)
+			require.NoError(t, err, "error creating dir %s", f.path)
+		} else {
+			err = fs.WriteFile(f.path, f.content, f.perms)
+			require.NoError(t, err, "error creating file %s", f.path)
+		}
+	}
+
+	// check the files in the fs
+	for _, f := range files {
+		if f.dir {
+			continue
+		}
+		content, err := fs.ReadFile(f.path)
+		require.NoError(t, err, "error reading file %s", f.path)
+		require.Equal(t, string(f.content), string(content), "content of %s should be %s", f.path, f.content)
+	}
+
+	// check the files in the filesystem
+	for _, f := range files {
+		if !f.onDisk {
+			continue
+		}
+		if f.dir {
+			fi, err := os.Stat(filepath.Join(dir, f.path))
+			require.NoError(t, err, "error stating file %s", f.path)
+			require.True(t, fi.IsDir(), "file %s should be a dir", f.path)
+		} else {
+			content, err := os.ReadFile(filepath.Join(dir, f.path))
+			require.NoError(t, err, "error reading file %s", f.path)
+			require.Equal(t, string(f.content), string(content), "content of %s should be %s", f.path, f.content)
+		}
+	}
+}

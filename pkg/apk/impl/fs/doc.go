@@ -22,5 +22,6 @@
 // capabilities, such as Chown when running as non-root. These can be special
 // files on disk, kept in-memory, or even coloured strips on the computer, as long as the
 // writes and reads are consistent.
+// All implementations are expected to be case-sensitive.
 
 package fs
