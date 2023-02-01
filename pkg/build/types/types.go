@@ -53,27 +53,33 @@ type OSRelease struct {
 	BugReportURL string `yaml:"bug-report-url"`
 }
 
-type ImageConfiguration struct {
-	Contents struct {
-		Repositories []string `yaml:"repositories,omitempty"`
-		Keyring      []string `yaml:"keyring,omitempty"`
-		Packages     []string `yaml:"packages,omitempty"`
-	} `yaml:"contents,omitempty"`
-	Entrypoint struct {
-		Type          string
-		Command       string
-		ShellFragment string `yaml:"shell-fragment"`
+type ImageContents struct {
+	Repositories []string `yaml:"repositories,omitempty"`
+	Keyring      []string `yaml:"keyring,omitempty"`
+	Packages     []string `yaml:"packages,omitempty"`
+}
 
-		// TBD: presently a map of service names and the command to run
-		Services map[interface{}]interface{}
-	} `yaml:"entrypoint,omitempty"`
-	Cmd      string `yaml:"cmd,omitempty"`
-	WorkDir  string `yaml:"work-dir,omitempty"`
-	Accounts struct {
-		RunAs  string `yaml:"run-as"`
-		Users  []User
-		Groups []Group
-	} `yaml:"accounts,omitempty"`
+type ImageEntrypoint struct {
+	Type          string
+	Command       string
+	ShellFragment string `yaml:"shell-fragment"`
+
+	// TBD: presently a map of service names and the command to run
+	Services map[interface{}]interface{}
+}
+
+type ImageAccounts struct {
+	RunAs  string `yaml:"run-as"`
+	Users  []User
+	Groups []Group
+}
+
+type ImageConfiguration struct {
+	Contents    ImageContents     `yaml:"contents,omitempty"`
+	Entrypoint  ImageEntrypoint   `yaml:"entrypoint,omitempty"`
+	Cmd         string            `yaml:"cmd,omitempty"`
+	WorkDir     string            `yaml:"work-dir,omitempty"`
+	Accounts    ImageAccounts     `yaml:"accounts,omitempty"`
 	Archs       []Architecture    `yaml:"archs,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Paths       []PathMutation    `yaml:"paths,omitempty"`
