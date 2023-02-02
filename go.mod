@@ -21,6 +21,7 @@ require (
 	github.com/sigstore/cosign v1.13.1
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
+	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	gitlab.alpinelinux.org/alpine/go v0.6.0
 	go.lsp.dev/uri v0.3.0
@@ -110,7 +111,6 @@ require (
 	github.com/sigstore/rekor v0.12.1 // indirect
 	github.com/sigstore/sigstore v1.4.4 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/theupdateframework/go-tuf v0.5.2-0.20220930112810-3890c1e7ace4 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect

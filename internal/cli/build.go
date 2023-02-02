@@ -20,6 +20,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+
+	"github.com/spf13/pflag"
 
 	"github.com/spf13/cobra"
 
@@ -90,12 +93,21 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
-	cmd.Flags().StringSliceVar(&buildArch, "build-arch", []string{runtime.GOARCH}, "architecture to build for -- default is Go runtime architecture")
+	_ = cmd.Flags().MarkDeprecated("build-arch", "use --arch instead")
+	cmd.Flags().StringSliceVar(&buildArch, "arch", []string{runtime.GOARCH}, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 
+	cmd.Flags().SetNormalizeFunc(normalizeBuildArch)
 	return cmd
+}
+
+func normalizeBuildArch(f *pflag.FlagSet, name string) pflag.NormalizedName {
+	if strings.EqualFold(name, "build-arch") {
+		name = "arch"
+	}
+	return pflag.NormalizedName(name)
 }
 
 func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, opts ...build.Option) error {
