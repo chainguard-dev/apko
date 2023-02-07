@@ -499,18 +499,22 @@ func (f *dirFS) caseSensitiveOnDisk(p string) bool {
 }
 
 // createOnDisk given a path p, determine if it should be created on disk, and, if relevant,
-// add it to the caseMap.
-func (f *dirFS) createOnDisk(p string) (createOnDisk bool) {
+// add it to the caseMap. If the file already exists on disk, also returns true.
+// This func is responsible solely for determining if you _should_ created it on disk.
+// If that would cause a conflict, that is up to the calling routing to figure out.
+func (f *dirFS) createOnDisk(p string) bool {
 	f.caseMapMutex.Lock()
 	defer f.caseMapMutex.Unlock()
 	key := strings.ToLower(p)
 	if f.caseMap == nil {
-		createOnDisk = true
-	} else if _, ok := f.caseMap[key]; !ok {
-		createOnDisk = true
-		f.caseMap[key] = p
+		return true
 	}
-	return
+	result, ok := f.caseMap[key]
+	if !ok {
+		f.caseMap[key] = p
+		return true
+	}
+	return result == p
 }
 
 // removeOnDisk given a path p, determine if it should be removed from disk, and, if relevant,
