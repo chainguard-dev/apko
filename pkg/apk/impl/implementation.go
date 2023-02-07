@@ -219,7 +219,10 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 		case err != nil && !errors.Is(err, fs.ErrExist):
 			return fmt.Errorf("failed to create directory %s: %w", e.path, err)
 		case err != nil && errors.Is(err, fs.ErrExist):
-			stat, _ := a.fs.Stat(e.path)
+			stat, err := a.fs.Stat(e.path)
+			if err != nil {
+				return fmt.Errorf("failed to stat directory %s: %w", e.path, err)
+			}
 			if !stat.IsDir() {
 				return fmt.Errorf("failed to create directory %s: already exists as file", e.path)
 			}
