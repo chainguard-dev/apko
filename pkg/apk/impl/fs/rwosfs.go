@@ -30,6 +30,7 @@ import (
 type dirFSOpts struct {
 	caseSensitive    bool
 	caseSensitiveSet bool
+	mkdir            bool
 }
 
 // DirFSOption is an option for DirFS
@@ -47,6 +48,15 @@ func DirFSWithCaseSensitive(caseSensitive bool) DirFSOption {
 	}
 }
 
+// WithCreateDir allows you to specify whether the underlying directory
+// should be created if it does not exist. Default is false.
+func WithCreateDir(createDir bool) DirFSOption {
+	return func(opts *dirFSOpts) error {
+		opts.mkdir = true
+		return nil
+	}
+}
+
 func DirFS(dir string, opts ...DirFSOption) FullFS {
 	var options dirFSOpts
 	for _, opt := range opts {
@@ -57,6 +67,22 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 
 	memfs := NewMemFS()
 	m := memfs.(*memFS)
+
+	// check if the underlying filesystem is case-sensitive
+	fi, err := os.Stat(dir)
+	switch {
+	case err != nil && !os.IsNotExist(err):
+		return nil
+	case err != nil && os.IsNotExist(err):
+		if !options.mkdir {
+			return nil
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil
+		}
+	case !fi.IsDir():
+		return nil
+	}
 
 	var caseSensitive bool
 	if options.caseSensitiveSet {

@@ -134,18 +134,14 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return err
 	}
 
-	if len(bc.Options.SBOMFormats) > 0 {
-		bc.Options.WantSBOM = true
-	} else {
-		bc.Options.WantSBOM = false
-	}
-
 	if len(archs) == 0 {
 		archs = types.AllArchs
 	}
 	if len(bc.ImageConfiguration.Archs) == 0 {
 		bc.ImageConfiguration.Archs = archs
 	}
+	// save the final set we will build
+	archs = bc.ImageConfiguration.Archs
 	bc.Logger().Infof(
 		"Publishing images for %d architectures: %+v",
 		len(bc.ImageConfiguration.Archs),
@@ -179,13 +175,23 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	mtx := sync.Mutex{}
 
-	for _, arch := range bc.ImageConfiguration.Archs {
+	for _, arch := range archs {
 		arch := arch
-		bc := *bc
+		// working directory for this architecture
+		wd := filepath.Join(workDir, arch.ToAPK())
+		bc, err := build.New(wd, opts...)
+		if err != nil {
+			return err
+		}
+
+		// we do not generate SBOMs for each arch, only possibly for final image
+		bc.Options.SBOMFormats = []string{}
+		bc.Options.WantSBOM = false
+		bc.ImageConfiguration.Archs = archs
 
 		errg.Go(func() error {
 			bc.Options.Arch = arch
-			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
+			bc.Options.WorkDir = wd
 
 			if err := bc.Refresh(); err != nil {
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
@@ -199,7 +205,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			// defer os.Remove(layerTarGZ)
 
 			var img coci.SignedImage
-			finalDigest, img, err = publishImage(&bc, layerTarGZ, arch)
+			finalDigest, img, err = publishImage(bc, layerTarGZ, arch)
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
