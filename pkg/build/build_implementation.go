@@ -138,7 +138,8 @@ func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *
 		return nil
 	}
 
-	s := newSBOM(di.workdirFS, o, ic)
+	archWorkdirFS := apkfs.DirFS(o.WorkDir, apkfs.WithCreateDir(true))
+	s := newSBOM(archWorkdirFS, o, ic)
 
 	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
 		return fmt.Errorf("reading layer tar: %w", err)

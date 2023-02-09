@@ -158,6 +158,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var errg errgroup.Group
 	workDir := bc.Options.WorkDir
 	imgs := map[types.Architecture]coci.SignedImage{}
+	archWorkdirs := map[types.Architecture]string{}
+	archTarballs := map[types.Architecture]string{}
 
 	// This is a hack to skip the SBOM generation during
 	// image build. Will be removed when global options are a thing.
@@ -190,6 +192,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		bc.ImageConfiguration.Archs = archs
 
 		errg.Go(func() error {
+			archWorkdirs[arch] = wd
+
 			bc.Options.Arch = arch
 			bc.Options.WorkDir = wd
 
@@ -201,6 +205,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
+			archTarballs[arch] = layerTarGZ
 			// TODO(kaniini): clean up everything correctly for multitag scenario
 			// defer os.Remove(layerTarGZ)
 
@@ -279,8 +284,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		for arch, img := range imgs {
 			bc.Options.WantSBOM = true
 			bc.Options.Arch = arch
-			bc.Options.TarballPath = filepath.Join(bc.Options.TempDir(), bc.Options.TarballFileName())
-			bc.Options.WorkDir = filepath.Join(workDir, arch.ToAPK())
+			bc.Options.TarballPath = archTarballs[arch]
+			bc.Options.WorkDir = archWorkdirs[arch]
 
 			if err := bc.GenerateImageSBOM(arch, img); err != nil {
 				return fmt.Errorf("generating sbom for %s: %w", arch, err)
