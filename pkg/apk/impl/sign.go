@@ -64,9 +64,6 @@ func SignIndex(logger *log.Logger, signingKey string, indexFile string) error {
 
 	// prepare control.tar.gz
 	multitarctx, err := tarball.NewContext(
-		tarball.WithOverrideUIDGID(0, 0),
-		tarball.WithOverrideUname("root"),
-		tarball.WithOverrideGname("root"),
 		tarball.WithSkipClose(true),
 	)
 	if err != nil {

@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	"chainguard.dev/apko/pkg/passwd"
 )
 
 func hasHardlinks(fi fs.FileInfo) bool {
@@ -65,7 +66,13 @@ func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
 	return 0, fmt.Errorf("unable to stat underlying file")
 }
 
-func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
+func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]string) error {
+	if users == nil {
+		users = map[int]string{}
+	}
+	if groups == nil {
+		groups = map[int]string{}
+	}
 	seenFiles := map[uint64]string{}
 	// set this once, to make it easy to look up later
 	if ctx.overridePerms == nil {
@@ -134,6 +141,13 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS) error {
 		header.AccessTime = ctx.SourceDateEpoch
 		header.ModTime = ctx.SourceDateEpoch
 		header.ChangeTime = ctx.SourceDateEpoch
+
+		if name, ok := users[header.Uid]; ok {
+			header.Uname = name
+		}
+		if name, ok := groups[header.Gid]; ok {
+			header.Gname = name
+		}
 
 		if ctx.OverrideUIDGID {
 			header.Uid = ctx.UID
@@ -245,7 +259,18 @@ func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) error {
 		defer tw.Flush()
 	}
 
-	if err := ctx.writeTar(tw, src); err != nil {
+	// get the uname and gname maps
+	usersFile, _ := passwd.ReadUserFile(src, "etc/passwd")
+	groupsFile, _ := passwd.ReadGroupFile(src, "etc/group")
+	users := map[int]string{}
+	groups := map[int]string{}
+	for _, u := range usersFile.Entries {
+		users[int(u.UID)] = u.UserName
+	}
+	for _, g := range groupsFile.Entries {
+		groups[int(g.GID)] = g.GroupName
+	}
+	if err := ctx.writeTar(tw, src, users, groups); err != nil {
 		return fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 

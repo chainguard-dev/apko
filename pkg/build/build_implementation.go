@@ -115,9 +115,6 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 	// we use a general override of 0,0 for all files, but the specific overrides, that come from the installed package DB, come later
 	tw, err := tarball.NewContext(
 		tarball.WithSourceDateEpoch(o.SourceDateEpoch),
-		tarball.WithOverrideUIDGID(0, 0),
-		tarball.WithOverrideUname("root"),
-		tarball.WithOverrideGname("root"),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to construct tarball build context: %w", err)

@@ -15,6 +15,7 @@
 package fs
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -36,11 +37,16 @@ const (
 )
 
 func NewMemFS() FullFS {
-	return &memFS{origMemfs.Create()}
+	return &memFS{origMemfs.Create(), map[string]*ownership{}}
 }
 
+type ownership struct {
+	uid, gid int
+	perms    fs.FileMode
+}
 type memFS struct {
 	*origMemfs.MemFS
+	perms map[string]*ownership // used only for overrides
 }
 
 func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
@@ -107,7 +113,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode) (*memFile, err
 	if err != nil {
 		return nil, err
 	}
-	return &memFile{f, m.MemFS}, nil
+	return &memFile{f, m}, nil
 }
 
 func (m *memFS) ReadFile(name string) ([]byte, error) {
@@ -142,6 +148,10 @@ func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	var de = make([]fs.DirEntry, 0, len(fi))
 	for _, f := range fi {
+		// what if we had overrides for ownership or permissions?
+		if o, ok := m.perms[standardizePath(filepath.Join(name, f.Name()))]; ok {
+			f = &memFileInfo{f, o.perms, o.uid, o.gid}
+		}
 		de = append(de, fs.FileInfoToDirEntry(f))
 	}
 	return de, nil
@@ -155,7 +165,7 @@ func (m *memFS) open(name string) (*memFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &memFile{File: f, fs: m.MemFS}, nil
+	return &memFile{File: f, fs: m}, nil
 }
 
 func (m *memFS) Mknod(path string, mode uint32, dev int) error {
@@ -195,9 +205,35 @@ func (m *memFS) Readnod(name string) (dev int, err error) {
 }
 
 func (m *memFS) Chmod(path string, perm fs.FileMode) error {
+	p := standardizePath(path)
+	o, ok := m.perms[p]
+	if !ok {
+		// take any existing perms from the memfs; we are overring uid/gid anyways
+		fi, err := m.MemFS.Stat(path)
+		if err != nil {
+			return err
+		}
+		o = &ownership{perms: fi.Mode()}
+		m.perms[p] = o
+	}
+	// perms must reflect the file type as well
+	o.perms = perm | (o.perms & os.ModeType)
 	return nil
 }
 func (m *memFS) Chown(path string, uid int, gid int) error {
+	p := standardizePath(path)
+	o, ok := m.perms[p]
+	if !ok {
+		// take any existing perms from the memfs; we are overring uid/gid anyways
+		fi, err := m.MemFS.Stat(path)
+		if err != nil {
+			return err
+		}
+		o = &ownership{perms: fi.Mode()}
+		m.perms[p] = o
+	}
+	o.uid = uid
+	o.gid = gid
 	return nil
 }
 func (m *memFS) Create(name string) (File, error) {
@@ -301,9 +337,43 @@ func (m *memFS) walkSymlinks(path string) (string, error) {
 
 type memFile struct {
 	vfs.File
-	fs *origMemfs.MemFS
+	fs *memFS
 }
 
 func (f *memFile) Stat() (fs.FileInfo, error) {
-	return f.fs.Stat(f.Name())
+	fi, err := f.fs.MemFS.Stat(f.Name())
+	if err != nil {
+		return nil, err
+	}
+	// what if we had overrides for ownership or permissions?
+	o, ok := f.fs.perms[f.Name()]
+	if !ok {
+		return fi, nil
+	}
+	return &memFileInfo{fi, o.perms, o.uid, o.gid}, nil
+}
+
+type memFileInfo struct {
+	fs.FileInfo
+	mode     fs.FileMode
+	uid, gid int
+}
+
+func (f *memFileInfo) Mode() fs.FileMode {
+	return f.mode
+}
+
+func (f *memFileInfo) Sys() any {
+	return &tar.Header{
+		Mode: int64(f.mode),
+		Uid:  f.uid,
+		Gid:  f.gid,
+	}
+}
+
+func standardizePath(p string) string {
+	if p[0] == '/' {
+		p = p[1:]
+	}
+	return p
 }

@@ -45,7 +45,7 @@ func (m *MultiTar) Append(ctx *Context, src fs.FS, extra ...io.Writer) error {
 
 	tw := tar.NewWriter(io.MultiWriter(all...))
 
-	if err := ctx.writeTar(tw, src); err != nil {
+	if err := ctx.writeTar(tw, src, nil, nil); err != nil {
 		return err
 	}
 

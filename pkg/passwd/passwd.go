@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -48,6 +49,24 @@ func ReadOrCreateUserFile(fsys apkfs.FullFS, filePath string) (UserFile, error) 
 	uf := UserFile{fsys: fsys}
 
 	file, err := fsys.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return uf, fmt.Errorf("failed to open %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	if err := uf.Load(file); err != nil {
+		return uf, err
+	}
+
+	return uf, nil
+}
+
+// ReadUserFile parses an /etc/passwd file into a UserFile.
+// If it is missing, returns an error.
+func ReadUserFile(fsys fs.FS, filePath string) (UserFile, error) {
+	uf := UserFile{}
+
+	file, err := fsys.Open(filePath)
 	if err != nil {
 		return uf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
