@@ -25,7 +25,7 @@ import (
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	coci "github.com/sigstore/cosign/pkg/oci"
+	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"

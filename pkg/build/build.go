@@ -26,7 +26,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
-	coci "github.com/sigstore/cosign/pkg/oci"
+	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
