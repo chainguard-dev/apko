@@ -457,8 +457,10 @@ func (f *dirFS) Symlink(oldname, newname string) error {
 func (f *dirFS) MkdirAll(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
-	if err := os.MkdirAll(filepath.Join(f.base, name), fullPerm); err != nil {
-		return err
+	if f.createOnDisk(name) {
+		if err := os.MkdirAll(filepath.Join(f.base, name), fullPerm); err != nil {
+			return err
+		}
 	}
 	return f.overrides.MkdirAll(name, fullPerm)
 }
@@ -466,7 +468,7 @@ func (f *dirFS) MkdirAll(name string, perm fs.FileMode) error {
 func (f *dirFS) Mkdir(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
-	if f.caseSensitiveOnDisk(name) {
+	if f.createOnDisk(name) {
 		if err := os.Mkdir(filepath.Join(f.base, name), fullPerm); err != nil {
 			return err
 		}
@@ -517,6 +519,7 @@ func (f *dirFS) caseSensitiveOnDisk(p string) bool {
 	if f.caseMap == nil {
 		return true
 	}
+	p = standardizePath(p)
 	result, ok := f.caseMap[strings.ToLower(p)]
 	if !ok {
 		return true
@@ -531,6 +534,7 @@ func (f *dirFS) caseSensitiveOnDisk(p string) bool {
 func (f *dirFS) createOnDisk(p string) bool {
 	f.caseMapMutex.Lock()
 	defer f.caseMapMutex.Unlock()
+	p = standardizePath(p)
 	key := strings.ToLower(p)
 	if f.caseMap == nil {
 		return true

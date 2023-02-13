@@ -17,6 +17,7 @@ package s6
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -25,32 +26,19 @@ func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
 	svcdir := filepath.Join(svbase, name)
 	sc.Log.Debugf("  supervision dir: %s", svcdir)
 
-	if err := sc.fs.MkdirAll(svcdir, 0755); err != nil {
+	if err := sc.fs.MkdirAll(svcdir, 0777); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
 	}
-
-	if err := sc.fs.Chmod(svcdir, 0777); err != nil { // nolint:gosec
-		return svcdir, fmt.Errorf("could not set permissions on supervision dir: %w", err)
-	}
-
-	if err := sc.fs.Chmod(svbase, 0777); err != nil { // nolint:gosec
-		return svcdir, fmt.Errorf("could not set permissions on base supervision dir: %w", err)
-	}
-
 	return svcdir, nil
 }
 
 func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
 	filename := filepath.Join(svcdir, "run")
-	file, err := sc.fs.Create(filename)
+	file, err := sc.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return fmt.Errorf("could not create runfile: %w", err)
 	}
 	defer file.Close()
-
-	if err := sc.fs.Chmod(filename, 0755); err != nil {
-		return fmt.Errorf("could not set permissions on runfile: %w", err)
-	}
 
 	fmt.Fprintf(file, "#!/bin/execlineb\n%s\n", command)
 

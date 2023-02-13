@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -44,6 +45,24 @@ func ReadOrCreateGroupFile(fsys apkfs.FullFS, filePath string) (GroupFile, error
 	gf := GroupFile{}
 
 	file, err := fsys.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return gf, fmt.Errorf("failed to open %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	if err := gf.Load(file); err != nil {
+		return gf, err
+	}
+
+	return gf, nil
+}
+
+// ReadGroupFile parses an /etc/group file into a GroupFile.
+// If /etc/group is missing, returns an error
+func ReadGroupFile(fsys fs.FS, filePath string) (GroupFile, error) {
+	gf := GroupFile{}
+
+	file, err := fsys.Open(filePath)
 	if err != nil {
 		return gf, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}

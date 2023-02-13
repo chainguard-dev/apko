@@ -117,8 +117,12 @@ func (di *defaultBuildImplementation) MutateAccounts(
 				continue
 			} else if !os.IsNotExist(err) {
 				return fmt.Errorf("checking homedir exists: %w", err)
-			} else if err := fsys.MkdirAll(targetHomedir, 0755); err != nil {
+			}
+			if err := fsys.MkdirAll(targetHomedir, 0755); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
+			}
+			if err := fsys.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
+				return fmt.Errorf("chowning homedir: %w", err)
 			}
 		}
 
