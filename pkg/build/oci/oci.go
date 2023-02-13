@@ -15,6 +15,7 @@
 package oci
 
 import (
+	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
@@ -66,6 +67,13 @@ var keychain = authn.NewMultiKeychain(
 	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
 	github.Keychain,
 )
+
+func BuildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, logger *logrus.Entry, opts options.Options) (oci.SignedImage, error) {
+	return buildImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
+}
+func BuildDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, logger *logrus.Entry, opts options.Options) (oci.SignedImage, error) {
+	return buildImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
+}
 
 func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
 	imageType := humanReadableImageType(mediaType)
@@ -548,6 +556,152 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return ref.Context().Digest(hash.String()), nil
+}
+
+// BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
+// Uses the standard OCI media type for the image index.
+// Returns the digest and the path to the combined tar.gz.
+func BuildIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
+	return buildIndexWithMediaType(outfile, ggcrtypes.OCIImageIndex, ic, imgs, logger)
+}
+
+// BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
+// Uses the legacy docker media type for the image index, i.e. multiarch manifest.
+// Returns the digest and the path to the combined tar.gz.
+func BuildDockerIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
+	return buildIndexWithMediaType(outfile, ggcrtypes.DockerManifestList, ic, imgs, logger)
+}
+
+func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
+	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
+	tagsToImages := make(map[name.Tag]v1.Image)
+	archs := make([]types.Architecture, 0, len(imgs))
+	for arch := range imgs {
+		archs = append(archs, arch)
+	}
+	sort.Slice(archs, func(i, j int) bool {
+		return archs[i].String() < archs[j].String()
+	})
+	for _, arch := range archs {
+		logger.Printf("adding %s to index", arch)
+		img := imgs[arch]
+		mt, err := img.MediaType()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get mediatype for image: %w", err)
+		}
+
+		h, err := img.Digest()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to compute digest for image: %w", err)
+		}
+
+		size, err := img.Size()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to compute size for image: %w", err)
+		}
+		tag, err := name.NewTag(arch.String())
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to create tag for image: %w", err)
+		}
+		tagsToImages[tag] = img
+		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
+			Add: img,
+			Descriptor: v1.Descriptor{
+				MediaType: mt,
+				Digest:    h,
+				Size:      size,
+				Platform:  arch.ToOCIPlatform(),
+			},
+		})
+	}
+	f, err := os.OpenFile(outfile, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("failed to open outfile %s: %w", outfile, err)
+	}
+	defer f.Close()
+	h, err := idx.Digest()
+	if err != nil {
+		return name.Digest{}, err
+	}
+	digest, err := name.NewDigest(fmt.Sprintf("%s@%s", "image", h.String()))
+	if err != nil {
+		return name.Digest{}, err
+	}
+	if err := v1tar.MultiWrite(tagsToImages, f); err != nil {
+		return name.Digest{}, fmt.Errorf("failed to write index to tgz: %w", err)
+	}
+
+	// to append to a tar archive, you need to find the last file in the archive
+	if _, err = f.Seek(0, io.SeekStart); err != nil {
+		return name.Digest{}, fmt.Errorf("failed to seek beginning of file: %w", err)
+	}
+
+	tr := tar.NewReader(f)
+	var lastFileSize, lastStreamPos int64
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to read tar header: %w", err)
+		}
+		lastStreamPos, err = f.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get current position in file: %w", err)
+		}
+		lastFileSize = hdr.Size
+	}
+	const blockSize = 512
+	newOffset := lastStreamPos + lastFileSize
+	newOffset += blockSize - (newOffset % blockSize) // shift to next-nearest block boundary
+	if _, err := f.Seek(newOffset, io.SeekStart); err != nil {
+		return name.Digest{}, fmt.Errorf("failed to seek to new offset: %w", err)
+	}
+
+	tw := tar.NewWriter(f)
+	defer tw.Close()
+
+	// write each manifest file
+	for _, arch := range archs {
+		img := imgs[arch]
+		raw, err := img.RawManifest()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get raw manifest: %w", err)
+		}
+		dig, err := img.Digest()
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("failed to get digest for manifest: %w", err)
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Name: dig.String(),
+			Size: int64(len(raw)),
+			Mode: 0o644,
+		}); err != nil {
+			return name.Digest{}, fmt.Errorf("failed to write manifest header: %w", err)
+		}
+		if _, err := tw.Write(raw); err != nil {
+			return name.Digest{}, fmt.Errorf("failed to write manifest: %w", err)
+		}
+	}
+
+	// Write the index.json
+	index, err := idx.RawManifest()
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("failed to get raw index: %w", err)
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "index.json",
+		Size: int64(len(index)),
+		Mode: 0o644,
+	}); err != nil {
+		return name.Digest{}, fmt.Errorf("failed to write index.json header: %w", err)
+	}
+	if _, err := tw.Write(index); err != nil {
+		return name.Digest{}, fmt.Errorf("failed to write index.json: %w", err)
+	}
+
+	return digest, nil
 }
 
 func writePeripherals(tag name.Reference, logger *logrus.Entry, opt ...remote.Option) walk.Fn {

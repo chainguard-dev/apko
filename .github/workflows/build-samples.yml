@@ -28,7 +28,7 @@ jobs:
 
       - name: build image
         run: |
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --build-arch ${{ matrix.arch }}
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --arch ${{ matrix.arch }}
 
   build-all-examples-one-arch:
     name: build-all-examples-amd64
@@ -52,5 +52,5 @@ jobs:
         run: |
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
-            ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --build-arch amd64
+            ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --arch amd64
           done
