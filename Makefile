@@ -12,6 +12,7 @@ endif
 GOFILES ?= $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 
 # Set version variables for LDFLAGS
+IMAGE_TAG ?= latest
 GIT_TAG ?= dirty-tag
 GIT_VERSION ?= $(shell git describe --tags --always --dirty)
 GIT_HASH ?= $(shell git rev-parse HEAD)
@@ -61,7 +62,7 @@ ko: ## Build images using ko
 	$(create_kocache_path)
 	$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--platform=all --tags $(GIT_VERSION) --tags $(GIT_HASH) \
+		--platform=all --tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) \
 		chainguard.dev/apko))
 	@echo Image Digest $(DIGEST)
 
@@ -70,7 +71,7 @@ ko-local:  ## Build images locally using ko
 	$(create_kocache_path)
 	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
 	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
+		--tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
 		chainguard.dev/apko
 
 .PHONY: ko-apply

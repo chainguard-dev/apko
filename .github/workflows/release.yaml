@@ -77,8 +77,9 @@ jobs:
     - name: Publish/Sign apko image
       run: |
         # If not a tagged release, override image tag to "canary"
+        export IMAGE_TAG=${GITHUB_REF#refs/tags/}
         if [[ $GITHUB_REF != refs/tags/* ]]; then
-          export GIT_VERSION=canary
+          export IMAGE_TAG=canary
         fi
         make sign-image
 
@@ -116,8 +117,9 @@ jobs:
     - name: Generate Tekton Task
       run: |
         # If not a tagged release, override image tag to "canary"
+        export IMAGE_TAG=${GITHUB_REF#refs/tags/}
         if [[ $GITHUB_REF != refs/tags/* ]]; then
-          export GIT_VERSION=canary
+          export IMAGE_TAG=canary
         fi
         make ko-resolve
 
