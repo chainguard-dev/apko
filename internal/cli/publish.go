@@ -134,11 +134,17 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return err
 	}
 
-	if len(archs) == 0 {
-		archs = types.AllArchs
-	}
-	if len(bc.ImageConfiguration.Archs) == 0 {
+	// cases:
+	// - archs set: use those archs
+	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
+	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs
+	switch {
+	case len(archs) != 0:
 		bc.ImageConfiguration.Archs = archs
+	case len(bc.ImageConfiguration.Archs) != 0:
+		// do nothing
+	default:
+		bc.ImageConfiguration.Archs = types.AllArchs
 	}
 	// save the final set we will build
 	archs = bc.ImageConfiguration.Archs
