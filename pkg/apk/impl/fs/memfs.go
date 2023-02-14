@@ -259,6 +259,10 @@ func (m *memFS) multilink(symlink bool, oldname, newname string) error {
 	if symlink {
 		linkType = linkFlagSymlink
 	}
+	// hardlinks in tar always are absolute paths, so we need to include the base /
+	if !symlink {
+		oldname = filepath.Clean(fmt.Sprintf("%c%s", filepath.Separator, oldname))
+	}
 	// save the target in the file itself
 	_, err = file.Write([]byte(fmt.Sprintf("%c:%s", linkType, oldname)))
 	return err
@@ -269,29 +273,41 @@ func (m *memFS) Readlink(name string) (target string, symlink bool, err error) {
 	if err != nil {
 		return "", false, err
 	}
-	return m.readLink(filepath.Join(truename, filepath.Base(name)))
+	return m.readSymlink(filepath.Join(truename, filepath.Base(name)))
 }
 
-// readLink reads the link target directly from the memfs.
-func (m *memFS) readLink(name string) (string, bool, error) {
+// readHardlink reads the hardlink target directly from the memfs.
+func (m *memFS) readHardlink(name string) (string, bool, error) {
+	target, linkType, err := m.readLinkBase(name)
+	return target, linkType == linkFlagHardlink, err
+}
+
+// readSymlink reads the symlink target directly from the memfs.
+func (m *memFS) readSymlink(name string) (string, bool, error) {
+	target, linkType, err := m.readLinkBase(name)
+	return target, linkType == linkFlagSymlink, err
+}
+
+// readLinkBase reads the link base target directly from the memfs.
+func (m *memFS) readLinkBase(name string) (string, byte, error) {
 	file, err := m.openFile(name, os.O_RDONLY, 0o644)
 	if err != nil {
-		return "", false, err
+		return "", 0, err
 	}
 	defer file.Close()
 	fi, err := file.Stat()
 	if err != nil {
-		return "", false, err
+		return "", 0, err
 	}
 	buf := make([]byte, fi.Size())
 	if _, err = file.Read(buf); err != nil {
-		return "", false, err
+		return "", 0, err
 	}
 	// first 2 bytes are the link type ("h" or "s") and a separator ":"
 	if len(buf) < 3 {
-		return "", false, fmt.Errorf("invalid link %s", name)
+		return "", 0, fmt.Errorf("invalid link %s", name)
 	}
-	return string(buf[2:]), buf[0] == linkFlagSymlink, nil
+	return string(buf[2:]), buf[0], nil
 }
 
 func (m *memFS) walkSymlinks(path string) (string, error) {
@@ -317,7 +333,7 @@ func (m *memFS) walkSymlinks(path string) (string, error) {
 			final = filepath.Join(final, seg)
 		} else {
 			// it is a symlink, so resolve it
-			target, _, err := m.readLink(segmentName)
+			target, _, err := m.readSymlink(segmentName)
 			// what if it was not found?
 			switch {
 			case err != nil && i != len(segments)-1:
