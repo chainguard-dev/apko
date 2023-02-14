@@ -1,3 +1,7 @@
+# Changes from 0.6.0 to 0.6.1
+
+* Backport cosign v2 changes to the 0.6.x branch.
+
 # Changes from 0.5.0 to 0.6.0
 
 * Environment variables in the image configuration are now sorted
