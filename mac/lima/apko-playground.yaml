@@ -16,12 +16,12 @@
 #     limactl delete -f apko-playground
 #
 images:
-- location: https://github.com/lima-vm/alpine-lima/releases/download/v0.2.9/alpine-lima-std-3.14.3-x86_64.iso
+- location: https://github.com/lima-vm/alpine-lima/releases/download/v0.2.27/alpine-lima-std-3.17.0-x86_64.iso
   arch: "x86_64"
-  digest: "sha512:fb51cbfe7e6779324adfd835d55a4fa0b702ed66529fe218eb3a9595df8cb31d60d20f8e440674b5dba0f3e43c639a0078828afe36060d245d74ab16f9ce3485"
-- location: https://github.com/lima-vm/alpine-lima/releases/download/v0.2.9/alpine-lima-std-3.14.3-aarch64.iso
+  digest: "sha512:07b88838734de63edf302a531aaf57f5a48ec31b31b8a95740faa4fac11852b375c5c83180ff34311ee284b8123536b86b70f0606591b1986e9af2268f3ea675"
+- location: https://github.com/lima-vm/alpine-lima/releases/download/v0.2.27/alpine-lima-std-3.17.0-aarch64.iso
   arch: "aarch64"
-  digest: "sha512:58ebe295031d7f0010500bde6d9c47b5a3affe6a76ce5a42f400346e954fbb24bdb35ede5e0998e1f9491273821fcc734ba0d50de830c0264e1ba997c245e1e5"
+  digest: "sha512:b8028c96385ea5be499e37c142cb9e9d9c861f2647ff7f8cceaf867961ef8878e34a8ba0e8cfe2e01ac082191048e7acc30534782b13c5ec4bea53dad5919c33"
 cpus: 1
 memory: 2GiB
 disk: 10GiB
@@ -33,7 +33,6 @@ containerd:
 mounts:
 # Allow access to things like ~/.docker/config.json and cloud credentials etc.
 - location: "~"
-
 provision:
 - mode: system
   script: |
