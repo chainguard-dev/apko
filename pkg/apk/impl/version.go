@@ -345,17 +345,20 @@ func getBestVersion(versions []string, version string, compare versionDependency
 	if len(passed) == 1 {
 		return passed[0]
 	}
+	SortVersions(passed)
+	return passed[0]
+}
 
-	sort.Slice(passed, func(i, j int) bool {
-		actualVersion, err := parseVersion(passed[i])
+func SortVersions(versions []string) {
+	sort.Slice(versions, func(i, j int) bool {
+		actualVersion, err := parseVersion(versions[i])
 		if err != nil {
 			return false
 		}
-		requiredVersion, err := parseVersion(passed[j])
+		requiredVersion, err := parseVersion(versions[j])
 		if err != nil {
 			return false
 		}
 		return compareVersions(actualVersion, requiredVersion) == greater
 	})
-	return passed[0]
 }

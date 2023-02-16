@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gitlab.alpinelinux.org/alpine/go/repository"
@@ -395,7 +396,10 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 				// no one provides it, return an error
 				return nil, nil, fmt.Errorf("could not find package either named %s or that provides %s for %s", dep, dep, pkg.Name)
 			}
-			var isSelf bool
+			var (
+				isSelf          bool
+				originProviders []*repository.RepositoryPackage
+			)
 			for _, provider := range providers {
 				// if my package can provide this dependency, then already satisfied
 				if provider.Name == pkg.Name {
@@ -403,17 +407,32 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 					break
 				}
 				if provider.Origin == pkg.Origin {
-					depPkg = provider
-					break
+					originProviders = append(originProviders, provider)
 				}
 			}
 			if isSelf {
 				continue
 			}
-			// TODO: add some better logic to determine which one we will use
-			if depPkg == nil {
-				depPkg = providers[0]
+			// first see if there are any providers from the same origin, then restrict
+			// to those
+			if len(originProviders) > 0 {
+				providers = originProviders
 			}
+			// TODO: handle if the providers are not just different versions, but different packages
+			// sort providers by version
+			// we are going to do this in reverse order
+			sort.Slice(providers, func(i, j int) bool {
+				iVersion, err := parseVersion(providers[i].Version)
+				if err != nil {
+					return false
+				}
+				jVersion, err := parseVersion(providers[j].Version)
+				if err != nil {
+					return false
+				}
+				return compareVersions(iVersion, jVersion) == greater
+			})
+			depPkg = providers[0]
 		}
 		// and then recurse to its children
 		// each child gets the parental chain, but should not affect any others,
