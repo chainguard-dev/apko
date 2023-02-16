@@ -205,14 +205,14 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 type PkgResolver struct {
 	indexes     []*repository.RepositoryWithIndex
 	nameMap     map[string]map[string]*repository.RepositoryPackage
-	providesMap map[string]string
+	providesMap map[string][]*repository.RepositoryPackage
 }
 
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
 func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 	var (
 		pkgNameMap     = map[string]map[string]*repository.RepositoryPackage{}
-		pkgProvidesMap = map[string]string{}
+		pkgProvidesMap = map[string][]*repository.RepositoryPackage{}
 	)
 	p := &PkgResolver{
 		indexes: indexes,
@@ -229,17 +229,19 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 		}
 	}
 	// create a map of every provided file to its package
-	for pkgName, pkgVersions := range pkgNameMap {
+	for _, pkgVersions := range pkgNameMap {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
 				name, _, compare := resolvePackageNameVersion(provide)
 				if _, ok := pkgProvidesMap[name]; !ok {
-					pkgProvidesMap[name] = pkgName
+					pkgProvidesMap[name] = []*repository.RepositoryPackage{}
 				}
+				pkgProvidesMap[name] = append(pkgProvidesMap[name], pkg)
 				if compare != versionNone {
 					if _, ok := pkgProvidesMap[provide]; !ok {
-						pkgProvidesMap[provide] = pkg.Name
+						pkgProvidesMap[provide] = []*repository.RepositoryPackage{}
 					}
+					pkgProvidesMap[provide] = append(pkgProvidesMap[provide], pkg)
 				}
 			}
 		}
@@ -285,29 +287,25 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string) (pkg *repositor
 
 	name, version, compare := resolvePackageNameVersion(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
-
-	if !ok {
-		trueName, ok := p.providesMap[name]
-		if !ok {
+	if ok {
+		// pkgsWithVersions contains a map of all versions of the package
+		// get the one that most matches what was requested
+		versions := make([]string, 0, 10)
+		for version := range pkgsWithVersions {
+			versions = append(versions, version)
+		}
+		targetVersion := getBestVersion(versions, version, compare)
+		if targetVersion == "" {
+			return nil, nil, nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
+		}
+		pkg = pkgsWithVersions[targetVersion]
+	} else {
+		pkgList, ok := p.providesMap[name]
+		if !ok || len(pkgList) == 0 {
 			return nil, nil, nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
-		pkgsWithVersions, ok = p.nameMap[trueName]
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("looking for %s, found provided by %s, but could not find %s in indexes", pkgName, trueName, trueName)
-		}
+		pkg = pkgList[0]
 	}
-
-	// pkgsWithVersions contains a map of all versions of the package
-	// get the one that most matches what was requested
-	versions := make([]string, 0, 10)
-	for version := range pkgsWithVersions {
-		versions = append(versions, version)
-	}
-	targetVersion := getBestVersion(versions, version, compare)
-	if targetVersion == "" {
-		return nil, nil, nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
-	}
-	pkg = pkgsWithVersions[targetVersion]
 
 	deps, conflicts, err := p.getPackageDependencies(pkg, parents)
 	if err != nil {
@@ -378,33 +376,45 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 		name, version, compare := resolvePackageNameVersion(dep)
 		// first see if it is a name of a package
 		depPkgWithVersions, ok := p.nameMap[name]
-		if !ok {
+		if ok {
+			// pkgsWithVersions contains a map of all versions of the package
+			// get the one that most matches what was requested
+			var versions []string
+			for version := range depPkgWithVersions {
+				versions = append(versions, version)
+			}
+			targetVersion := getBestVersion(versions, version, compare)
+			if targetVersion == "" {
+				return nil, nil, fmt.Errorf("could not find package %s in indexes: %w", dep, err)
+			}
+			depPkg = depPkgWithVersions[targetVersion]
+		} else {
 			// it was not the name of a package, see if some package provides this
-			provider, ok := p.providesMap[name]
-			if !ok {
+			providers, ok := p.providesMap[name]
+			if !ok || len(providers) == 0 {
 				// no one provides it, return an error
 				return nil, nil, fmt.Errorf("could not find package either named %s or that provides %s for %s", dep, dep, pkg.Name)
 			}
-			depPkgWithVersions, ok = p.nameMap[provider]
-			if !ok {
-				return nil, nil, fmt.Errorf("required dependency %s is provided by package %s, which could not be found", name, provider)
+			var isSelf bool
+			for _, provider := range providers {
+				// if my package can provide this dependency, then already satisfied
+				if provider.Name == pkg.Name {
+					isSelf = true
+					break
+				}
+				if provider.Origin == pkg.Origin {
+					depPkg = provider
+					break
+				}
 			}
-			name = provider
+			if isSelf {
+				continue
+			}
+			// TODO: add some better logic to determine which one we will use
+			if depPkg == nil {
+				depPkg = providers[0]
+			}
 		}
-		if name == pkg.Name {
-			continue
-		}
-		// pkgsWithVersions contains a map of all versions of the package
-		// get the one that most matches what was requested
-		var versions []string
-		for version := range depPkgWithVersions {
-			versions = append(versions, version)
-		}
-		targetVersion := getBestVersion(versions, version, compare)
-		if targetVersion == "" {
-			return nil, nil, fmt.Errorf("could not find package %s in indexes: %w", dep, err)
-		}
-		depPkg = depPkgWithVersions[targetVersion]
 		// and then recurse to its children
 		// each child gets the parental chain, but should not affect any others,
 		// so we duplicate the map for the child
