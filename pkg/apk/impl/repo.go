@@ -264,14 +264,14 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 			return nil, nil, err
 		}
 		for _, dep := range deps {
-			if subPkg, ok := dependenciesMap[dep.Name]; !ok {
+			if _, ok := dependenciesMap[dep.Name]; !ok {
 				toInstall = append(toInstall, dep)
-				dependenciesMap[dep.Name] = subPkg
+				dependenciesMap[dep.Name] = dep
 			}
 		}
-		if subPkg, ok := dependenciesMap[pkgName]; !ok {
+		if _, ok := dependenciesMap[pkgName]; !ok {
 			toInstall = append(toInstall, pkg)
-			dependenciesMap[pkgName] = subPkg
+			dependenciesMap[pkgName] = pkg
 		}
 		conflicts = append(conflicts, confs...)
 	}
