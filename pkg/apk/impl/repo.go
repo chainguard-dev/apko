@@ -256,22 +256,22 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 // indexes. Does not filter for installed already or not.
 func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
 	var (
-		dependenciesMap = map[string]bool{}
+		dependenciesMap = map[string]*repository.RepositoryPackage{}
 	)
 	for _, pkgName := range packages {
-		pkg, deps, confs, err := p.GetPackageWithDependencies(pkgName)
+		pkg, deps, confs, err := p.GetPackageWithDependencies(pkgName, dependenciesMap)
 		if err != nil {
 			return nil, nil, err
 		}
 		for _, dep := range deps {
-			if _, ok := dependenciesMap[dep.Name]; !ok {
+			if subPkg, ok := dependenciesMap[dep.Name]; !ok {
 				toInstall = append(toInstall, dep)
-				dependenciesMap[dep.Name] = true
+				dependenciesMap[dep.Name] = subPkg
 			}
 		}
-		if _, ok := dependenciesMap[pkgName]; !ok {
+		if subPkg, ok := dependenciesMap[pkgName]; !ok {
 			toInstall = append(toInstall, pkg)
-			dependenciesMap[pkgName] = true
+			dependenciesMap[pkgName] = subPkg
 		}
 		conflicts = append(conflicts, confs...)
 	}
@@ -283,8 +283,15 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 
 // GetPackageDependencies get all of the dependencies for a single package as well as looking
 // up the package itself and resolving its version, based on the indexes.
-func (p *PkgResolver) GetPackageWithDependencies(pkgName string) (pkg *repository.RepositoryPackage, dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
+// Requires the existing set because the logic for resolving dependencies between competing
+// options may depend on whether or not one already is installed.
+// Must not modify the existing map directly.
+func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[string]*repository.RepositoryPackage) (pkg *repository.RepositoryPackage, dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
 	parents := make(map[string]bool)
+	localExisting := make(map[string]*repository.RepositoryPackage)
+	for k, v := range existing {
+		localExisting[k] = v
+	}
 
 	name, version, compare := resolvePackageNameVersion(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
@@ -308,7 +315,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string) (pkg *repositor
 		pkg = pkgList[0]
 	}
 
-	deps, conflicts, err := p.getPackageDependencies(pkg, parents)
+	deps, conflicts, err := p.getPackageDependencies(pkg, parents, localExisting)
 	if err != nil {
 		return
 	}
@@ -351,7 +358,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string) (pkg *repositor
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, parents map[string]bool) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, parents map[string]bool, existing map[string]*repository.RepositoryPackage) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
 	// check if the package we are checking is one of our parents, avoid cyclical graphs
 	if _, ok := parents[pkg.Name]; ok {
 		return nil, nil, nil
@@ -396,42 +403,19 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 				// no one provides it, return an error
 				return nil, nil, fmt.Errorf("could not find package either named %s or that provides %s for %s", dep, dep, pkg.Name)
 			}
-			var (
-				isSelf          bool
-				originProviders []*repository.RepositoryPackage
-			)
+			var isSelf bool
 			for _, provider := range providers {
 				// if my package can provide this dependency, then already satisfied
 				if provider.Name == pkg.Name {
 					isSelf = true
 					break
 				}
-				if provider.Origin == pkg.Origin {
-					originProviders = append(originProviders, provider)
-				}
 			}
 			if isSelf {
 				continue
 			}
-			// first see if there are any providers from the same origin, then restrict
-			// to those
-			if len(originProviders) > 0 {
-				providers = originProviders
-			}
-			// TODO: handle if the providers are not just different versions, but different packages
-			// sort providers by version
 			// we are going to do this in reverse order
-			sort.Slice(providers, func(i, j int) bool {
-				iVersion, err := parseVersion(providers[i].Version)
-				if err != nil {
-					return false
-				}
-				jVersion, err := parseVersion(providers[j].Version)
-				if err != nil {
-					return false
-				}
-				return compareVersions(iVersion, jVersion) == greater
-			})
+			sortPackages(providers, pkg, existing)
 			depPkg = providers[0]
 		}
 		// and then recurse to its children
@@ -442,7 +426,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			childParents[k] = true
 		}
 		childParents[pkg.Name] = true
-		subDeps, confs, err := p.getPackageDependencies(depPkg, childParents)
+		subDeps, confs, err := p.getPackageDependencies(depPkg, childParents, existing)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -450,6 +434,75 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 		dependencies = append(dependencies, subDeps...)
 		dependencies = append(dependencies, depPkg)
 		conflicts = append(conflicts, confs...)
+		for _, dep := range subDeps {
+			existing[dep.Name] = dep
+		}
 	}
 	return dependencies, conflicts, nil
+}
+
+// sortPackages sorts a slice of packages in descending order of preference, based on
+// matching origin to a provided comparison package, whether or not one of the packages
+// already is installed, the versions, and whether an origin already exists.
+func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.RepositoryPackage, existing map[string]*repository.RepositoryPackage) {
+	// get existing origins
+	existingOrigins := map[string]bool{}
+	for _, pkg := range existing {
+		if pkg != nil && pkg.Origin != "" {
+			existingOrigins[pkg.Origin] = true
+		}
+	}
+	sort.Slice(pkgs, func(i, j int) bool {
+		if compare != nil {
+			// matching repository
+			pkgRepo := compare.Repository().Uri
+			iRepo := pkgs[i].Repository().Uri
+			jRepo := pkgs[j].Repository().Uri
+			if iRepo == pkgRepo && jRepo != pkgRepo {
+				return true
+			}
+			if jRepo == pkgRepo && iRepo != pkgRepo {
+				return false
+			}
+			// matching origin with compare
+			pkgOrigin := compare.Origin
+			iOrigin := pkgs[i].Origin
+			jOrigin := pkgs[j].Origin
+			if iOrigin == pkgOrigin && jOrigin != pkgOrigin {
+				return true
+			}
+			if jOrigin == pkgOrigin && iOrigin != pkgOrigin {
+				return false
+			}
+		}
+		// see if one already is installed
+		iMatched, iOk := existing[pkgs[i].Name]
+		jMatched, jOk := existing[pkgs[j].Name]
+		if iOk && !jOk && iMatched.Version == pkgs[i].Version {
+			return true
+		}
+		if jOk && !iOk && jMatched.Version == pkgs[j].Version {
+			return false
+		}
+		// see if an origin already is installed
+		iOriginMatched := existingOrigins[pkgs[i].Origin]
+		jOriginMatched := existingOrigins[pkgs[j].Origin]
+		if iOriginMatched && !jOriginMatched {
+			return true
+		}
+		if jOriginMatched && !iOriginMatched {
+			return false
+		}
+		// both matched or both did not, so just compare versions
+		// version priority
+		iVersion, err := parseVersion(pkgs[i].Version)
+		if err != nil {
+			return false
+		}
+		jVersion, err := parseVersion(pkgs[j].Version)
+		if err != nil {
+			return false
+		}
+		return compareVersions(iVersion, jVersion) == greater
+	})
 }
