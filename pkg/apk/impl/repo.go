@@ -233,17 +233,16 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 	for _, pkgVersions := range pkgNameMap {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
-				name, _, compare := resolvePackageNameVersion(provide)
+				name, version, _ := resolvePackageNameVersion(provide)
+				targetPkg := pkgNameMap[name]
+				if targetPkg == nil {
+					targetPkg = map[string]*repository.RepositoryPackage{}
+				}
+				targetPkg[version] = pkg
 				if _, ok := pkgProvidesMap[name]; !ok {
 					pkgProvidesMap[name] = []*repository.RepositoryPackage{}
 				}
 				pkgProvidesMap[name] = append(pkgProvidesMap[name], pkg)
-				if compare != versionNone {
-					if _, ok := pkgProvidesMap[provide]; !ok {
-						pkgProvidesMap[provide] = []*repository.RepositoryPackage{}
-					}
-					pkgProvidesMap[provide] = append(pkgProvidesMap[provide], pkg)
-				}
 			}
 		}
 	}
