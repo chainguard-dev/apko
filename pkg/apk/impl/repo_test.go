@@ -241,6 +241,11 @@ func TestSortPackages(t *testing.T) {
 			{&repository.Package{Name: "package1", Version: "2.0.1"}, "http://a.b.com", 0},
 			{&repository.Package{Name: "package1", Version: "1.2.0"}, "http://a.b.com", 1},
 		}, nil, nil},
+		{"just names", []repoPkgBase{
+			{&repository.Package{Name: "package1", Version: "1.0.0"}, "http://a.b.com", 1},
+			{&repository.Package{Name: "package2", Version: "1.0.0"}, "http://a.b.com", 2},
+			{&repository.Package{Name: "earlier", Version: "1.0.0"}, "http://a.b.com", 0},
+		}, nil, nil},
 		{"just origins", []repoPkgBase{
 			{&repository.Package{Name: "package1", Version: "1.0.0", Origin: "c"}, "http://a.b.com", 2},
 			{&repository.Package{Name: "package1", Version: "2.0.1", Origin: "b"}, "http://a.b.com", 1},

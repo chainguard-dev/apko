@@ -502,6 +502,11 @@ func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.Repo
 		if err != nil {
 			return false
 		}
-		return compareVersions(iVersion, jVersion) == greater
+		versions := compareVersions(iVersion, jVersion)
+		if versions != equal {
+			return versions == greater
+		}
+		// if versions are equal, compare names
+		return pkgs[i].Name < pkgs[j].Name
 	})
 }
