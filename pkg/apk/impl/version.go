@@ -357,7 +357,7 @@ func SortVersions(versions []string) {
 		}
 		requiredVersion, err := parseVersion(versions[j])
 		if err != nil {
-			return false
+			return true
 		}
 		return compareVersions(actualVersion, requiredVersion) == greater
 	})
