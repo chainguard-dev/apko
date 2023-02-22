@@ -238,7 +238,20 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 				if targetPkg == nil {
 					targetPkg = map[string]*repository.RepositoryPackage{}
 				}
-				targetPkg[version] = pkg
+				// did we already have a package for this version? If so, take the highest available.
+				existingPkg, ok := targetPkg[version]
+				if !ok {
+					targetPkg[version] = pkg
+				} else {
+					// both matched or both did not, so just compare versions
+					// version priority
+					existingVersion, errE := parseVersion(existingPkg.Version)
+					newVersion, errN := parseVersion(pkg.Version)
+					// if either is invalid, leave them alone
+					if errE == nil && errN == nil && compareVersions(newVersion, existingVersion) == greater {
+						targetPkg[version] = pkg
+					}
+				}
 				if _, ok := pkgProvidesMap[name]; !ok {
 					pkgProvidesMap[name] = []*repository.RepositoryPackage{}
 				}
