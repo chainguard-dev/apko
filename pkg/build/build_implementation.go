@@ -26,6 +26,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"sigs.k8s.io/release-utils/hash"
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
@@ -50,6 +51,10 @@ type buildImplementation interface {
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
 	InitializeApk(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
+	// InstallPackages install the packages
+	InstallPackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
+	// ResolvePackages resolve the names and versions of packages to be installed
+	ResolvePackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error)
 	// MutateAccounts set up the user accounts and groups in the working directory
 	MutateAccounts(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
 	// MutatePaths set permissions and ownership on files based on the ImageConfiguration
@@ -203,6 +208,22 @@ func (di *defaultBuildImplementation) InitializeApk(fsys apkfs.FullFS, o *option
 	return apk.Initialize(ic)
 }
 
+func (di *defaultBuildImplementation) InstallPackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	if err != nil {
+		return err
+	}
+	return apk.Install()
+}
+
+func (di *defaultBuildImplementation) ResolvePackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return apk.ResolvePackages()
+}
+
 func (di *defaultBuildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Options) error {
 	at, err := chainguardAPK.AdditionalTags(fsys, *o)
 	if err != nil {
@@ -247,6 +268,10 @@ func buildImage(
 		return fmt.Errorf("initializing apk: %w", err)
 	}
 
+	if err := di.InstallPackages(fsys, o, ic); err != nil {
+		return fmt.Errorf("installing apk packages: %w", err)
+	}
+
 	if err := di.AdditionalTags(fsys, o); err != nil {
 		return fmt.Errorf("adding additional tags: %w", err)
 	}
@@ -289,6 +314,28 @@ func buildImage(
 	o.Logger().Infof("finished building filesystem in %s", o.WorkDir)
 
 	return nil
+}
+
+func buildPackageList(
+	fsys apkfs.FullFS, di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
+) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	o.Logger().Infof("doing pre-flight checks")
+	if err := di.ValidateImageConfiguration(ic); err != nil {
+		return toInstall, conflicts, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	o.Logger().Infof("building apk info in %s", o.WorkDir)
+
+	if err := di.InitializeApk(fsys, o, ic); err != nil {
+		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
+	}
+
+	if toInstall, conflicts, err = di.ResolvePackages(fsys, o, ic); err != nil {
+		return toInstall, conflicts, fmt.Errorf("installing apk packages: %w", err)
+	}
+	o.Logger().Infof("finished gathering apk info in %s", o.WorkDir)
+
+	return toInstall, conflicts, err
 }
 
 func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) *sbom.SBOM {

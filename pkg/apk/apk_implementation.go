@@ -18,6 +18,8 @@ import (
 	"archive/tar"
 	"time"
 
+	"gitlab.alpinelinux.org/alpine/go/repository"
+
 	apkimpl "chainguard.dev/apko/pkg/apk/impl"
 )
 
@@ -37,6 +39,9 @@ type apkImplementation interface {
 	GetWorld() ([]string, error)
 	// FixateWorld use the world file to set the state of the system, including any dependencies.
 	FixateWorld(cache, updateCache, executeScripts bool, sourceDateEpoch *time.Time) error
+	// ResolveWorld use the world file to determine the target state of the system, including any dependencies.
+	// Does not install or remove any packages.
+	ResolveWorld() (toInstall []*repository.RepositoryPackage, conflicts []string, err error)
 	// SetRepositories sets the repositories to use. Replaces any existing ones.
 	SetRepositories(repos []string) error
 	// GetRepositories gets the list of repositories in use.

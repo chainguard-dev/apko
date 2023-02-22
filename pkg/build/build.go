@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
@@ -87,6 +88,11 @@ func (bc *Context) BuildImage() (fs.FS, error) {
 		return nil, err
 	}
 	return bc.fs, nil
+}
+
+func (bc *Context) BuildPackageList() (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	// TODO(puerco): Point to final interface (see comment on buildImage fn)
+	return buildPackageList(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration)
 }
 
 func (bc *Context) Logger() *logrus.Entry {

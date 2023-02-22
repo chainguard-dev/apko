@@ -383,7 +383,26 @@ func (a *APKImplementation) InitKeyring(keyFiles, extraKeyFiles []string) (err e
 	return eg.Wait()
 }
 
-// Force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
+// ResolveWorld determine the target state for the requested dependencies in /etc/apk/world. Do not install anything.
+func (a *APKImplementation) ResolveWorld() (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	a.logger.Infof("determining desired apk world")
+
+	// to fix the world, we need to:
+	// 1. Get the apkIndexes for each repository for the target arch
+	indexes, err := a.getRepositoryIndexes(false)
+	if err != nil {
+		return toInstall, conflicts, fmt.Errorf("error getting repository indexes: %w", err)
+	}
+	// 2. Get the dependency tree for each package from the world file
+	directPkgs, err := a.GetWorld()
+	if err != nil {
+		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
+	}
+	resolver := NewPkgResolver(indexes)
+	return resolver.GetPackagesWithDependencies(directPkgs)
+}
+
+// FixateWorld force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
 func (a *APKImplementation) FixateWorld(cache, updateCache, executeScripts bool, sourceDateEpoch *time.Time) error {
 	/*
 		equivalent of: "apk fix --arch arch --root root"
@@ -401,17 +420,7 @@ func (a *APKImplementation) FixateWorld(cache, updateCache, executeScripts bool,
 	defer func() {
 		_ = a.unlock()
 	}()
-	indexes, err := a.getRepositoryIndexes(false)
-	if err != nil {
-		return fmt.Errorf("error getting repository indexes: %w", err)
-	}
-	// 2. Get the dependency tree for each package from the world file
-	directPkgs, err := a.GetWorld()
-	if err != nil {
-		return fmt.Errorf("error getting world packages: %w", err)
-	}
-	resolver := NewPkgResolver(indexes)
-	allpkgs, conflicts, err := resolver.GetPackagesWithDependencies(directPkgs)
+	allpkgs, conflicts, err := a.ResolveWorld()
 	if err != nil {
 		return fmt.Errorf("error getting package dependencies: %w", err)
 	}
