@@ -270,6 +270,16 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 	var (
 		dependenciesMap = map[string]*repository.RepositoryPackage{}
 	)
+	// first get the explicitly named packages
+	for _, pkgName := range packages {
+		pkg, err := p.getPackage(pkgName)
+		if err != nil {
+			return nil, nil, err
+		}
+		// do not add it to toInstall, as we want to have it in the correct order with dependencies
+		dependenciesMap[pkgName] = pkg
+	}
+	// now get the dependencies for each package
 	for _, pkgName := range packages {
 		pkg, deps, confs, err := p.GetPackageWithDependencies(pkgName, dependenciesMap)
 		if err != nil {
@@ -281,8 +291,8 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 				dependenciesMap[dep.Name] = dep
 			}
 		}
+		toInstall = append(toInstall, pkg)
 		if _, ok := dependenciesMap[pkgName]; !ok {
-			toInstall = append(toInstall, pkg)
 			dependenciesMap[pkgName] = pkg
 		}
 		conflicts = append(conflicts, confs...)
@@ -293,7 +303,7 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 	return toInstall, conflicts, nil
 }
 
-// GetPackageDependencies get all of the dependencies for a single package as well as looking
+// GetPackageWithDependencies get all of the dependencies for a single package as well as looking
 // up the package itself and resolving its version, based on the indexes.
 // Requires the existing set because the logic for resolving dependencies between competing
 // options may depend on whether or not one already is installed.
@@ -305,26 +315,9 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		localExisting[k] = v
 	}
 
-	name, version, compare := resolvePackageNameVersion(pkgName)
-	pkgsWithVersions, ok := p.nameMap[name]
-	if ok {
-		// pkgsWithVersions contains a map of all versions of the package
-		// get the one that most matches what was requested
-		versions := make([]string, 0, 10)
-		for version := range pkgsWithVersions {
-			versions = append(versions, version)
-		}
-		targetVersion := getBestVersion(versions, version, compare)
-		if targetVersion == "" {
-			return nil, nil, nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
-		}
-		pkg = pkgsWithVersions[targetVersion]
-	} else {
-		pkgList, ok := p.providesMap[name]
-		if !ok || len(pkgList) == 0 {
-			return nil, nil, nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
-		}
-		pkg = pkgList[0]
+	pkg, err = p.getPackage(pkgName)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	deps, conflicts, err := p.getPackageDependencies(pkg, parents, localExisting)
@@ -338,6 +331,32 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 			dependencies = append(dependencies, dep)
 			dependenciesMap[dep.Name] = true
 		}
+	}
+	return
+}
+
+// getPackage get a single package.
+func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
+	name, version, compare := resolvePackageNameVersion(pkgName)
+	pkgsWithVersions, ok := p.nameMap[name]
+	if ok {
+		// pkgsWithVersions contains a map of all versions of the package
+		// get the one that most matches what was requested
+		versions := make([]string, 0, 10)
+		for version := range pkgsWithVersions {
+			versions = append(versions, version)
+		}
+		targetVersion := getBestVersion(versions, version, compare)
+		if targetVersion == "" {
+			return nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
+		}
+		pkg = pkgsWithVersions[targetVersion]
+	} else {
+		pkgList, ok := p.providesMap[name]
+		if !ok || len(pkgList) == 0 {
+			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
+		}
+		pkg = pkgList[0]
 	}
 	return
 }
