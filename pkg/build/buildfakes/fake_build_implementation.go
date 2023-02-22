@@ -12,6 +12,7 @@ import (
 	"chainguard.dev/apko/pkg/s6"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/sigstore/cosign/v2/pkg/oci"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
 type FakeBuildImplementation struct {
@@ -155,6 +156,19 @@ type FakeBuildImplementation struct {
 	installLdconfigLinksReturnsOnCall map[int]struct {
 		result1 error
 	}
+	InstallPackagesStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
+	installPackagesMutex       sync.RWMutex
+	installPackagesArgsForCall []struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}
+	installPackagesReturns struct {
+		result1 error
+	}
+	installPackagesReturnsOnCall map[int]struct {
+		result1 error
+	}
 	MutateAccountsStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	mutateAccountsMutex       sync.RWMutex
 	mutateAccountsArgsForCall []struct {
@@ -194,6 +208,23 @@ type FakeBuildImplementation struct {
 	refreshReturnsOnCall map[int]struct {
 		result1 *s6.Context
 		result2 *exec.Executor
+		result3 error
+	}
+	ResolvePackagesStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error)
+	resolvePackagesMutex       sync.RWMutex
+	resolvePackagesArgsForCall []struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}
+	resolvePackagesReturns struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}
+	resolvePackagesReturnsOnCall map[int]struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
 		result3 error
 	}
 	ValidateImageConfigurationStub        func(*types.ImageConfiguration) error
@@ -915,6 +946,69 @@ func (fake *FakeBuildImplementation) InstallLdconfigLinksReturnsOnCall(i int, re
 	}{result1}
 }
 
+func (fake *FakeBuildImplementation) InstallPackages(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
+	fake.installPackagesMutex.Lock()
+	ret, specificReturn := fake.installPackagesReturnsOnCall[len(fake.installPackagesArgsForCall)]
+	fake.installPackagesArgsForCall = append(fake.installPackagesArgsForCall, struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
+	stub := fake.InstallPackagesStub
+	fakeReturns := fake.installPackagesReturns
+	fake.recordInvocation("InstallPackages", []interface{}{arg1, arg2, arg3})
+	fake.installPackagesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeBuildImplementation) InstallPackagesCallCount() int {
+	fake.installPackagesMutex.RLock()
+	defer fake.installPackagesMutex.RUnlock()
+	return len(fake.installPackagesArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) InstallPackagesCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) error) {
+	fake.installPackagesMutex.Lock()
+	defer fake.installPackagesMutex.Unlock()
+	fake.InstallPackagesStub = stub
+}
+
+func (fake *FakeBuildImplementation) InstallPackagesArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
+	fake.installPackagesMutex.RLock()
+	defer fake.installPackagesMutex.RUnlock()
+	argsForCall := fake.installPackagesArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeBuildImplementation) InstallPackagesReturns(result1 error) {
+	fake.installPackagesMutex.Lock()
+	defer fake.installPackagesMutex.Unlock()
+	fake.InstallPackagesStub = nil
+	fake.installPackagesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeBuildImplementation) InstallPackagesReturnsOnCall(i int, result1 error) {
+	fake.installPackagesMutex.Lock()
+	defer fake.installPackagesMutex.Unlock()
+	fake.InstallPackagesStub = nil
+	if fake.installPackagesReturnsOnCall == nil {
+		fake.installPackagesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.installPackagesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeBuildImplementation) MutateAccounts(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.mutateAccountsMutex.Lock()
 	ret, specificReturn := fake.mutateAccountsReturnsOnCall[len(fake.mutateAccountsArgsForCall)]
@@ -1108,6 +1202,75 @@ func (fake *FakeBuildImplementation) RefreshReturnsOnCall(i int, result1 *s6.Con
 	}{result1, result2, result3}
 }
 
+func (fake *FakeBuildImplementation) ResolvePackages(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error) {
+	fake.resolvePackagesMutex.Lock()
+	ret, specificReturn := fake.resolvePackagesReturnsOnCall[len(fake.resolvePackagesArgsForCall)]
+	fake.resolvePackagesArgsForCall = append(fake.resolvePackagesArgsForCall, struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+		arg3 *types.ImageConfiguration
+	}{arg1, arg2, arg3})
+	stub := fake.ResolvePackagesStub
+	fakeReturns := fake.resolvePackagesReturns
+	fake.recordInvocation("ResolvePackages", []interface{}{arg1, arg2, arg3})
+	fake.resolvePackagesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeBuildImplementation) ResolvePackagesCallCount() int {
+	fake.resolvePackagesMutex.RLock()
+	defer fake.resolvePackagesMutex.RUnlock()
+	return len(fake.resolvePackagesArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) ResolvePackagesCalls(stub func(fs.FullFS, *options.Options, *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error)) {
+	fake.resolvePackagesMutex.Lock()
+	defer fake.resolvePackagesMutex.Unlock()
+	fake.ResolvePackagesStub = stub
+}
+
+func (fake *FakeBuildImplementation) ResolvePackagesArgsForCall(i int) (fs.FullFS, *options.Options, *types.ImageConfiguration) {
+	fake.resolvePackagesMutex.RLock()
+	defer fake.resolvePackagesMutex.RUnlock()
+	argsForCall := fake.resolvePackagesArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeBuildImplementation) ResolvePackagesReturns(result1 []*repository.RepositoryPackage, result2 []string, result3 error) {
+	fake.resolvePackagesMutex.Lock()
+	defer fake.resolvePackagesMutex.Unlock()
+	fake.ResolvePackagesStub = nil
+	fake.resolvePackagesReturns = struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeBuildImplementation) ResolvePackagesReturnsOnCall(i int, result1 []*repository.RepositoryPackage, result2 []string, result3 error) {
+	fake.resolvePackagesMutex.Lock()
+	defer fake.resolvePackagesMutex.Unlock()
+	fake.ResolvePackagesStub = nil
+	if fake.resolvePackagesReturnsOnCall == nil {
+		fake.resolvePackagesReturnsOnCall = make(map[int]struct {
+			result1 []*repository.RepositoryPackage
+			result2 []string
+			result3 error
+		})
+	}
+	fake.resolvePackagesReturnsOnCall[i] = struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}{result1, result2, result3}
+}
+
 func (fake *FakeBuildImplementation) ValidateImageConfiguration(arg1 *types.ImageConfiguration) error {
 	fake.validateImageConfigurationMutex.Lock()
 	ret, specificReturn := fake.validateImageConfigurationReturnsOnCall[len(fake.validateImageConfigurationArgsForCall)]
@@ -1256,12 +1419,16 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.installCharDevicesMutex.RUnlock()
 	fake.installLdconfigLinksMutex.RLock()
 	defer fake.installLdconfigLinksMutex.RUnlock()
+	fake.installPackagesMutex.RLock()
+	defer fake.installPackagesMutex.RUnlock()
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
 	fake.mutatePathsMutex.RLock()
 	defer fake.mutatePathsMutex.RUnlock()
 	fake.refreshMutex.RLock()
 	defer fake.refreshMutex.RUnlock()
+	fake.resolvePackagesMutex.RLock()
+	defer fake.resolvePackagesMutex.RUnlock()
 	fake.validateImageConfigurationMutex.RLock()
 	defer fake.validateImageConfigurationMutex.RUnlock()
 	fake.writeSupervisionTreeMutex.RLock()

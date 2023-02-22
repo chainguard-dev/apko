@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/sync/errgroup"
 
 	apkimpl "chainguard.dev/apko/pkg/apk/impl"
@@ -70,7 +71,8 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 type Option func(*APK) error
 
-// Builds the image in Context.WorkDir according to the image configuration
+// Initialize sets the image in Context.WorkDir according to the image configuration,
+// and does everything short of installing the packages.
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	// initialize apk
 	// first set up required directories
@@ -114,12 +116,19 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 		return err
 	}
 
-	// sync reality with desired apk world
-	if err := a.impl.FixateWorld(false, true, false, &a.Options.SourceDateEpoch); err != nil {
-		return fmt.Errorf("failed to fixate apk world: %w", err)
-	}
-
 	return nil
+}
+
+// Install install packages. Only works if already initialized.
+func (a *APK) Install() error {
+	// sync reality with desired apk world
+	return a.impl.FixateWorld(false, true, false, &a.Options.SourceDateEpoch)
+}
+
+// ResolvePackages gets list of packages that should be installed
+func (a *APK) ResolvePackages() (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	// sync reality with desired apk world
+	return a.impl.ResolveWorld()
 }
 
 func (a *APK) GetInstalled() ([]*apkimpl.InstalledPackage, error) {

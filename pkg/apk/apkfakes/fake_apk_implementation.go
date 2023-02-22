@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"chainguard.dev/apko/pkg/apk/impl"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
 type FakeApkImplementation struct {
@@ -92,6 +93,20 @@ type FakeApkImplementation struct {
 	}
 	listInitFilesReturnsOnCall map[int]struct {
 		result1 []tar.Header
+	}
+	ResolveWorldStub        func() ([]*repository.RepositoryPackage, []string, error)
+	resolveWorldMutex       sync.RWMutex
+	resolveWorldArgsForCall []struct {
+	}
+	resolveWorldReturns struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}
+	resolveWorldReturnsOnCall map[int]struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
 	}
 	SetRepositoriesStub        func([]string) error
 	setRepositoriesMutex       sync.RWMutex
@@ -537,6 +552,65 @@ func (fake *FakeApkImplementation) ListInitFilesReturnsOnCall(i int, result1 []t
 	}{result1}
 }
 
+func (fake *FakeApkImplementation) ResolveWorld() ([]*repository.RepositoryPackage, []string, error) {
+	fake.resolveWorldMutex.Lock()
+	ret, specificReturn := fake.resolveWorldReturnsOnCall[len(fake.resolveWorldArgsForCall)]
+	fake.resolveWorldArgsForCall = append(fake.resolveWorldArgsForCall, struct {
+	}{})
+	stub := fake.ResolveWorldStub
+	fakeReturns := fake.resolveWorldReturns
+	fake.recordInvocation("ResolveWorld", []interface{}{})
+	fake.resolveWorldMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeApkImplementation) ResolveWorldCallCount() int {
+	fake.resolveWorldMutex.RLock()
+	defer fake.resolveWorldMutex.RUnlock()
+	return len(fake.resolveWorldArgsForCall)
+}
+
+func (fake *FakeApkImplementation) ResolveWorldCalls(stub func() ([]*repository.RepositoryPackage, []string, error)) {
+	fake.resolveWorldMutex.Lock()
+	defer fake.resolveWorldMutex.Unlock()
+	fake.ResolveWorldStub = stub
+}
+
+func (fake *FakeApkImplementation) ResolveWorldReturns(result1 []*repository.RepositoryPackage, result2 []string, result3 error) {
+	fake.resolveWorldMutex.Lock()
+	defer fake.resolveWorldMutex.Unlock()
+	fake.ResolveWorldStub = nil
+	fake.resolveWorldReturns = struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeApkImplementation) ResolveWorldReturnsOnCall(i int, result1 []*repository.RepositoryPackage, result2 []string, result3 error) {
+	fake.resolveWorldMutex.Lock()
+	defer fake.resolveWorldMutex.Unlock()
+	fake.ResolveWorldStub = nil
+	if fake.resolveWorldReturnsOnCall == nil {
+		fake.resolveWorldReturnsOnCall = make(map[int]struct {
+			result1 []*repository.RepositoryPackage
+			result2 []string
+			result3 error
+		})
+	}
+	fake.resolveWorldReturnsOnCall[i] = struct {
+		result1 []*repository.RepositoryPackage
+		result2 []string
+		result3 error
+	}{result1, result2, result3}
+}
+
 func (fake *FakeApkImplementation) SetRepositories(arg1 []string) error {
 	var arg1Copy []string
 	if arg1 != nil {
@@ -686,6 +760,8 @@ func (fake *FakeApkImplementation) Invocations() map[string][][]interface{} {
 	defer fake.initKeyringMutex.RUnlock()
 	fake.listInitFilesMutex.RLock()
 	defer fake.listInitFilesMutex.RUnlock()
+	fake.resolveWorldMutex.RLock()
+	defer fake.resolveWorldMutex.RUnlock()
 	fake.setRepositoriesMutex.RLock()
 	defer fake.setRepositoriesMutex.RUnlock()
 	fake.setWorldMutex.RLock()

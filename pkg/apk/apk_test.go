@@ -65,6 +65,32 @@ func TestInitialize(t *testing.T) {
 			msg:         "SetWorld should fail",
 			shouldError: true,
 		},
+	} {
+		mock := &apkfakes.FakeApkImplementation{}
+		tc.prepare(mock)
+		workDir := t.TempDir()
+		fsys := apkfs.DirFS(workDir)
+		sut, err := NewWithOptions(fsys, options.Options{
+			WorkDir: workDir,
+		})
+		require.NoError(t, err)
+		sut.SetImplementation(mock)
+		err = sut.Initialize(&types.ImageConfiguration{})
+		if tc.shouldError {
+			require.Error(t, err, tc.msg)
+		} else {
+			require.NoError(t, err, tc.msg, err)
+		}
+	}
+}
+
+func TestInstall(t *testing.T) {
+	fakeErr := fmt.Errorf("synthetic error")
+	for _, tc := range []struct {
+		prepare     func(*apkfakes.FakeApkImplementation)
+		msg         string
+		shouldError bool
+	}{
 		{ // FixateWorld fails
 			prepare: func(fai *apkfakes.FakeApkImplementation) {
 				fai.FixateWorldReturns(fakeErr)
@@ -83,6 +109,8 @@ func TestInitialize(t *testing.T) {
 		require.NoError(t, err)
 		sut.SetImplementation(mock)
 		err = sut.Initialize(&types.ImageConfiguration{})
+		require.NoError(t, err, tc.msg, err)
+		err = sut.Install()
 		if tc.shouldError {
 			require.Error(t, err, tc.msg)
 		} else {
