@@ -220,3 +220,18 @@ func WithStageTags(stageTags string) Option {
 		return nil
 	}
 }
+
+// WithBuildOptions applies configured patches which have been requested to the ImageConfiguration.
+func WithBuildOptions(buildOptions []string) Option {
+	return func(bc *Context) error {
+		for _, opt := range buildOptions {
+			if bo, ok := bc.ImageConfiguration.Options[opt]; ok {
+				if err := bo.Apply(&bc.ImageConfiguration); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	}
+}

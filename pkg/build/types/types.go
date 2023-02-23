@@ -87,6 +87,8 @@ type ImageConfiguration struct {
 	VCSUrl      string            `yaml:"vcs-url,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 	Include     string            `yaml:"include,omitempty"`
+
+	Options map[string]BuildOption `yaml:"options,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.

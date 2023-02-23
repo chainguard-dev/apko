@@ -49,6 +49,7 @@ func publish() *cobra.Command {
 	var archstrs []string
 	var extraKeys []string
 	var extraRepos []string
+	var buildOptions []string
 	var rawAnnotations []string
 	var debugEnabled bool
 	var withVCS bool
@@ -93,6 +94,7 @@ in a keychain.`,
 				build.WithTagSuffix(tagSuffix),
 				build.WithLocal(local),
 				build.WithStageTags(stageTags),
+				build.WithBuildOptions(buildOptions),
 			); err != nil {
 				return err
 			}
@@ -115,6 +117,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
 	cmd.Flags().StringVar(&stageTags, "stage-tags", "", "path to file to write list of tags to instead of publishing them")
