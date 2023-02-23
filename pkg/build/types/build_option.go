@@ -27,9 +27,20 @@ type ContentsOption struct {
 	Packages ListOption `yaml:"packages,omitempty"`
 }
 
+// AccountsOption describes an optional deviation to an apko environment's
+// run-as setting.
+type AccountsOption struct {
+	RunAs string `yaml:"run-as,omitempty"`
+}
+
 // BuildOption describes an optional deviation to an apko environment.
 type BuildOption struct {
 	Contents ContentsOption `yaml:"contents,omitempty"`
+	Accounts AccountsOption `yaml:"accounts,omitempty"`
+
+	Environment map[string]string `yaml:"environment,omitempty"`
+
+	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
 }
 
 // Apply applies a patch described by a BuildOption to an apko environment.
@@ -48,6 +59,18 @@ func (bo BuildOption) Apply(ic *ImageConfiguration) error {
 		}
 
 		ic.Contents.Packages = pkgList
+	}
+
+	if bo.Accounts.RunAs != "" {
+		ic.Accounts.RunAs = bo.Accounts.RunAs
+	}
+
+	for k, v := range bo.Environment {
+		ic.Environment[k] = v
+	}
+
+	if bo.Entrypoint.Type != "" {
+		ic.Entrypoint = bo.Entrypoint
 	}
 
 	return nil
