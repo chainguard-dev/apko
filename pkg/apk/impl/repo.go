@@ -204,9 +204,10 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 // PkgResolver is a helper struct for resolving packages from a list of indexes.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
-	indexes     []*repository.RepositoryWithIndex
-	nameMap     map[string]map[string]*repository.RepositoryPackage
-	providesMap map[string][]*repository.RepositoryPackage
+	indexes      []*repository.RepositoryWithIndex
+	nameMap      map[string]map[string]*repository.RepositoryPackage
+	providesMap  map[string][]*repository.RepositoryPackage
+	installIfMap map[string][]*repository.RepositoryPackage // contains any package that should be installed if the named package is installed
 }
 
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
@@ -214,6 +215,7 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 	var (
 		pkgNameMap     = map[string]map[string]*repository.RepositoryPackage{}
 		pkgProvidesMap = map[string][]*repository.RepositoryPackage{}
+		installIfMap   = map[string][]*repository.RepositoryPackage{}
 	)
 	p := &PkgResolver{
 		indexes: indexes,
@@ -227,6 +229,12 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 				pkgNameMap[pkg.Name] = existingPkg
 			}
 			existingPkg[pkg.Version] = pkg
+			for _, dep := range pkg.InstallIf {
+				if _, ok := installIfMap[dep]; !ok {
+					installIfMap[dep] = []*repository.RepositoryPackage{}
+				}
+				installIfMap[dep] = append(installIfMap[dep], pkg)
+			}
 		}
 	}
 	// create a map of every provided file to its package
@@ -261,6 +269,7 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 	}
 	p.nameMap = pkgNameMap
 	p.providesMap = pkgProvidesMap
+	p.installIfMap = installIfMap
 	return p
 }
 
@@ -328,11 +337,49 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		return
 	}
 	// eliminate duplication in dependencies
-	added := map[string]bool{}
+	added := map[string]*repository.RepositoryPackage{}
 	for _, dep := range deps {
 		if _, ok := added[dep.Name]; !ok {
 			dependencies = append(dependencies, dep)
-			added[dep.Name] = true
+			added[dep.Name] = dep
+		}
+	}
+	// are there any installIf dependencies?
+	var (
+		depPkgList []*repository.RepositoryPackage
+		ok         bool
+	)
+	for dep, depPkg := range added {
+		if depPkgList, ok = p.installIfMap[dep]; !ok {
+			depPkgList, ok = p.installIfMap[fmt.Sprintf("%s=%s", dep, depPkg.Version)]
+		}
+		if !ok {
+			continue
+		}
+		// this package "dep" can trigger an installIf. It might not be enough, so check it
+		for _, installIfPkg := range depPkgList {
+			var matchCount int
+			for _, subDep := range installIfPkg.InstallIf {
+				// two possibilities: package name, or name=version
+				name, version, _ := resolvePackageNameVersion(subDep)
+				// precise match of whatever it is, take it and continue
+				if _, ok := added[subDep]; ok {
+					matchCount++
+					continue
+				}
+				// didn't get a precise match, so check if the name and version match
+				if addedPkg, ok := added[name]; ok && addedPkg.Version == version {
+					matchCount++
+					continue
+				}
+			}
+			if matchCount == len(installIfPkg.InstallIf) {
+				// all dependencies are met, so add it
+				if _, ok := added[installIfPkg.Name]; !ok {
+					dependencies = append(dependencies, installIfPkg)
+					added[installIfPkg.Name] = installIfPkg
+				}
+			}
 		}
 	}
 	return
