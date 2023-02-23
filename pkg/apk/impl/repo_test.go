@@ -127,7 +127,7 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 			{Name: "dep8", Version: "1.0.0", Dependencies: []string{"dep8"}},
 			{Name: "libq", Version: "1.0.0", Dependencies: []string{}, Provides: []string{"so:libq.so.1"}},
 			{Name: "foo", Version: "1.0.0", Dependencies: []string{}, Provides: []string{"cmd:/bin/foo"}},
-			{Name: "busybox", Version: "1.0.0", Dependencies: []string{}},
+			{Name: "busybox", Version: "1.0.0", Dependencies: []string{}, Provides: []string{"/bin/sh"}},
 			{Name: "unused", Version: "1.0.0", Dependencies: []string{}},
 			{Name: "package2", Version: "1.0.0", Dependencies: []string{"dep2", "dep7"}},
 			{Name: "package3", Version: "1.0.0", Dependencies: []string{"dep8"}},

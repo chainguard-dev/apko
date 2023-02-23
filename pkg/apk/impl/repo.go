@@ -355,11 +355,13 @@ func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPack
 		}
 		pkg = pkgsWithVersions[targetVersion]
 	} else {
-		pkgList, ok := p.providesMap[name]
-		if !ok || len(pkgList) == 0 {
+		providers, ok := p.providesMap[name]
+		if !ok || len(providers) == 0 {
 			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
-		pkg = pkgList[0]
+		// we are going to do this in reverse order
+		sortPackages(providers, pkg, nil)
+		pkg = providers[0]
 	}
 	return
 }
