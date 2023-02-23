@@ -411,9 +411,6 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			conflicts = append(conflicts, dep[1:])
 			continue
 		}
-		if dep == "/bin/sh" {
-			dep = "busybox"
-		}
 		// this package might be pinned to a version
 		name, version, compare := resolvePackageNameVersion(dep)
 		// first see if it is a name of a package
@@ -526,6 +523,9 @@ func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.Repo
 		}
 		if jOriginMatched && !iOriginMatched {
 			return false
+		}
+		if pkgs[i].ProviderPriority != pkgs[j].ProviderPriority {
+			return pkgs[i].ProviderPriority > pkgs[j].ProviderPriority
 		}
 		// both matched or both did not, so just compare versions
 		// version priority
