@@ -349,9 +349,13 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 		if err != nil {
 			return name.Digest{}, err
 		}
-		logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
-		if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
-			return name.Digest{}, err
+		if strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
+			logger.Warnf("skipping local domain tagging %s as %s", localSrcTag.Name(), localDstTag.Name())
+		} else {
+			logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
+			if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+				return name.Digest{}, err
+			}
 		}
 		return name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), hash))
 	}
@@ -500,9 +504,13 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 			if err != nil {
 				return name.Digest{}, nil, err
 			}
-			logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
-			if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
-				return name.Digest{}, nil, err
+			if strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
+				logger.Warnf("skipping local domain tagging %s as %s", localSrcTag.Name(), localDstTag.Name())
+			} else {
+				logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
+				if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+					return name.Digest{}, nil, err
+				}
 			}
 		}
 		digest, err := name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), useManifest.Digest.String()))

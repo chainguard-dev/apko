@@ -265,7 +265,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("failed to write tags: %w", err)
 		}
 	} else {
+		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
 		for _, at := range additionalTags {
+			if skipLocalCopy {
+				bc.Logger().Warnf("skipping local domain tag %s", at)
+				continue
+			}
 			if err := oci.Copy(finalDigest.Name(), at); err != nil {
 				return err
 			}
