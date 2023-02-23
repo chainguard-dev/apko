@@ -14,12 +14,15 @@ builds:
   env:
   - CGO_ENABLED=0
   goos:
-    # apko requires alpine, so only build linux binaries.
+    - darwin
     - linux
   goarch:
     - "386"
     - amd64
     - arm64
+  ignore:
+    - goos: darwin
+      goarch: "386"
   flags:
     - -trimpath
   mod_timestamp: '{{ .CommitTimestamp }}'
