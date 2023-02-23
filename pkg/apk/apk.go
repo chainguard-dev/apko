@@ -75,8 +75,11 @@ type Option func(*APK) error
 // and does everything short of installing the packages.
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	// initialize apk
-	// first set up required directories
-	baseDirs := []string{"/tmp", "/proc", "/dev", "/var", "/lib", "/etc"}
+	// first set up required directories (tmp has different permissions)
+	if err := a.fs.MkdirAll("/tmp", 0o777); err != nil {
+		return err
+	}
+	baseDirs := []string{"/proc", "/dev", "/var", "/lib", "/etc"}
 	for _, d := range baseDirs {
 		if err := a.fs.MkdirAll(d, 0o755); err != nil {
 			return err
