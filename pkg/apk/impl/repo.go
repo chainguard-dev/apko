@@ -269,6 +269,7 @@ func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
 func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
 	var (
 		dependenciesMap = map[string]*repository.RepositoryPackage{}
+		installTracked  = map[string]*repository.RepositoryPackage{}
 	)
 	// first get the explicitly named packages
 	for _, pkgName := range packages {
@@ -286,12 +287,14 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 			return nil, nil, err
 		}
 		for _, dep := range deps {
-			if _, ok := dependenciesMap[dep.Name]; !ok {
+			if _, ok := installTracked[dep.Name]; !ok {
 				toInstall = append(toInstall, dep)
-				dependenciesMap[dep.Name] = dep
+				installTracked[dep.Name] = dep
 			}
+			dependenciesMap[dep.Name] = dep
 		}
 		toInstall = append(toInstall, pkg)
+		installTracked[pkg.Name] = pkg
 		if _, ok := dependenciesMap[pkgName]; !ok {
 			dependenciesMap[pkgName] = pkg
 		}
@@ -325,11 +328,11 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		return
 	}
 	// eliminate duplication in dependencies
-	dependenciesMap := map[string]bool{}
+	added := map[string]bool{}
 	for _, dep := range deps {
-		if _, ok := dependenciesMap[dep.Name]; !ok {
+		if _, ok := added[dep.Name]; !ok {
 			dependencies = append(dependencies, dep)
-			dependenciesMap[dep.Name] = true
+			added[dep.Name] = true
 		}
 	}
 	return
