@@ -355,11 +355,13 @@ func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPack
 		}
 		pkg = pkgsWithVersions[targetVersion]
 	} else {
-		pkgList, ok := p.providesMap[name]
-		if !ok || len(pkgList) == 0 {
+		providers, ok := p.providesMap[name]
+		if !ok || len(providers) == 0 {
 			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
-		pkg = pkgList[0]
+		// we are going to do this in reverse order
+		sortPackages(providers, pkg, nil)
+		pkg = providers[0]
 	}
 	return
 }
@@ -410,9 +412,6 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 		if strings.HasPrefix(dep, "!") {
 			conflicts = append(conflicts, dep[1:])
 			continue
-		}
-		if dep == "/bin/sh" {
-			dep = "busybox"
 		}
 		// this package might be pinned to a version
 		name, version, compare := resolvePackageNameVersion(dep)
@@ -526,6 +525,9 @@ func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.Repo
 		}
 		if jOriginMatched && !iOriginMatched {
 			return false
+		}
+		if pkgs[i].ProviderPriority != pkgs[j].ProviderPriority {
+			return pkgs[i].ProviderPriority > pkgs[j].ProviderPriority
 		}
 		// both matched or both did not, so just compare versions
 		// version priority
