@@ -1,3 +1,19 @@
+# Changes from 0.6.0 to 0.7.0
+
+* `apk-tools` is no longer required to build images, instead a native
+  implementation has been integrated as a replacement.
+
+* The alpine keyring is no longer required to build images for Alpine.
+  Instead, keys are downloaded from Alpine's website as required.
+
+* The `--stage-tags` option has been added to allow postponing image
+  tagging until after acceptance tests are run.
+
+* Index SBOMs are now always generated, even for single-arch images.
+
+* SBOMs from APK packages are now integrated into the image-level
+  SBOM.
+
 # Changes from 0.5.0 to 0.6.0
 
 * Environment variables in the image configuration are now sorted
