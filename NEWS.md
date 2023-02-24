@@ -1,3 +1,14 @@
+# Changes from 0.7.0 to 0.7.1
+
+* Fix an issue where the user-requested tag was not being used for
+  locally built images with the `apko build` command.  Now, multi-arch
+  images built with `apko build` will use the user-requested tag
+  appended with the architecture the image is for.  This is due to a
+  limitation in Docker.
+
+* Fix a regression where the `/bin/find` symlink to BusyBox was not
+  properly installed.
+
 # Changes from 0.6.0 to 0.7.0
 
 * `apk-tools` is no longer required to build images, instead a native
