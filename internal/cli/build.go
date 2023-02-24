@@ -238,7 +238,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	}
 
 	// finally generate the tar.gz file that includes all of the arch images and an index
-	finalDigest, err = oci.BuildIndex(outputTarGZ, bc.ImageConfiguration, imgs, bc.Logger())
+	finalDigest, err = oci.BuildIndex(outputTarGZ, bc.ImageConfiguration, imgs, bc.Options.Tags, bc.Logger())
 	if err != nil {
 		return fmt.Errorf("failed to build index: %w", err)
 	}

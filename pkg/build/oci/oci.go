@@ -569,18 +569,18 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 // BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
 // Uses the standard OCI media type for the image index.
 // Returns the digest and the path to the combined tar.gz.
-func BuildIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
-	return buildIndexWithMediaType(outfile, ggcrtypes.OCIImageIndex, ic, imgs, logger)
+func BuildIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger *logrus.Entry) (name.Digest, error) {
+	return buildIndexWithMediaType(outfile, ggcrtypes.OCIImageIndex, ic, imgs, tags, logger)
 }
 
 // BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
 // Uses the legacy docker media type for the image index, i.e. multiarch manifest.
 // Returns the digest and the path to the combined tar.gz.
-func BuildDockerIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
-	return buildIndexWithMediaType(outfile, ggcrtypes.DockerManifestList, ic, imgs, logger)
+func BuildDockerIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger *logrus.Entry) (name.Digest, error) {
+	return buildIndexWithMediaType(outfile, ggcrtypes.DockerManifestList, ic, imgs, tags, logger)
 }
 
-func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry) (name.Digest, error) {
+func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger *logrus.Entry) (name.Digest, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	tagsToImages := make(map[name.Tag]v1.Image)
 	archs := make([]types.Architecture, 0, len(imgs))
@@ -607,11 +607,21 @@ func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ ty
 		if err != nil {
 			return name.Digest{}, fmt.Errorf("failed to compute size for image: %w", err)
 		}
-		tag, err := name.NewTag(arch.String())
-		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to create tag for image: %w", err)
+		for _, tagName := range tags {
+			ref, err := name.NewTag(tagName)
+			if err != nil {
+				return name.Digest{}, fmt.Errorf("failed to parse tag %s: %w", tagName, err)
+			}
+			ref, err = name.NewTag(fmt.Sprintf("%s-%s", ref.Name(), strings.ReplaceAll(arch.String(), "/", "_")))
+			if err != nil {
+				return name.Digest{}, fmt.Errorf("failed to parse tag %s: %w", tagName, err)
+			}
+
+			if err != nil {
+				return name.Digest{}, fmt.Errorf("failed to create tag for image: %w", err)
+			}
+			tagsToImages[ref] = img
 		}
-		tagsToImages[tag] = img
 		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
