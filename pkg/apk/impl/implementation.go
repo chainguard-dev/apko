@@ -31,7 +31,6 @@ import (
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"go.lsp.dev/uri"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/unix"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
@@ -234,23 +233,29 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 		}
 	}
 	for _, e := range append(initFiles, additionalFiles...) {
-		if err := a.fs.WriteFile(e.path, e.contents, e.perms); err != nil {
-			return fmt.Errorf("failed to create file %s: %w", e.path, err)
+		path := filepath.Clean(strings.TrimPrefix(e.path, string(os.PathSeparator)))
+		if err := a.fs.MkdirAll(filepath.Dir(path), e.perms); err != nil {
+			return fmt.Errorf("failed to create dir for file %s: %w", e.path, err)
+		}
+		if err := a.fs.WriteFile(path, e.contents, e.perms); err != nil {
+			return fmt.Errorf("failed to create file %s: %w", path, err)
 		}
 	}
 	for _, e := range initDeviceFiles {
-		perms := uint32(e.perms.Perm())
-		err := a.fs.Mknod(e.path, unix.S_IFCHR|perms, int(unix.Mkdev(e.major, e.minor)))
+		err := a.initDeviceFile(e)
 		if !a.ignoreMknodErrors && err != nil {
 			return fmt.Errorf("failed to create char device %s: %w", e.path, err)
 		}
 	}
 
 	// add scripts.tar with nothing in it
+	if err := a.fs.MkdirAll(filepath.Dir(scriptsFilePath), fs.FileMode(scriptsTarPerms)); err != nil {
+		return fmt.Errorf("could not create dir for tarball file %q: %w", scriptsFilePath, err)
+	}
 	scriptsTarPerms := 0o644
 	tarfile, err := a.fs.OpenFile(scriptsFilePath, os.O_CREATE|os.O_WRONLY, fs.FileMode(scriptsTarPerms))
 	if err != nil {
-		return fmt.Errorf("could not create tarball file '%s', got error '%w'", scriptsFilePath, err)
+		return fmt.Errorf("could not create tarball file %q: %w", scriptsFilePath, err)
 	}
 	defer tarfile.Close()
 	tarWriter := tar.NewWriter(tarfile)

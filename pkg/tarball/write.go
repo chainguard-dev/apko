@@ -22,49 +22,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"syscall"
 
 	gzip "golang.org/x/build/pargzip"
-	"golang.org/x/sys/unix"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/passwd"
 )
-
-func hasHardlinks(fi fs.FileInfo) bool {
-	if stat := fi.Sys(); stat != nil {
-		si, ok := stat.(*syscall.Stat_t)
-		if !ok {
-			return false
-		}
-
-		// if we don't have inodes, we just assume the filesystem
-		// does not support hardlinks
-		if si == nil {
-			return false
-		}
-
-		return si.Nlink > 1
-	}
-
-	return false
-}
-
-func getInodeFromFileInfo(fi fs.FileInfo) (uint64, error) {
-	if stat := fi.Sys(); stat != nil {
-		si := stat.(*syscall.Stat_t)
-
-		// if we don't have inodes, we just assume the filesystem
-		// does not support hardlinks
-		if si == nil {
-			return 0, fmt.Errorf("unable to stat underlying file")
-		}
-
-		return si.Ino, nil
-	}
-
-	return 0, fmt.Errorf("unable to stat underlying file")
-}
 
 func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]string) error {
 	if users == nil {
@@ -112,17 +75,10 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 		}
 
 		if info.Mode()&os.ModeCharDevice == os.ModeCharDevice {
-			rlfs, ok := fsys.(apkfs.ReadnodFS)
-			if !ok {
-				return fmt.Errorf("read character device not supported by this fs: path (%s) %#v %#v", path, info, fsys)
-			}
-			isCharDevice = true
-			dev, err := rlfs.Readnod(path)
+			isCharDevice, major, minor, err = ctx.charDevice(path, fsys, info)
 			if err != nil {
 				return err
 			}
-			major = unix.Major(uint64(dev))
-			minor = unix.Minor(uint64(dev))
 		}
 
 		header, err := tar.FileInfoHeader(info, link)

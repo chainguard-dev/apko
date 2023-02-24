@@ -1,8 +1,10 @@
-name: Build Images
+name: Build Samples
 
 on:
   pull_request:
+    branches: ['main']
   push:
+    branches: ['main']
   workflow_dispatch:
 
 jobs:
@@ -36,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-latest]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -51,6 +53,7 @@ jobs:
           ./apko version
 
       - name: build images
+        shell: bash
         run: |
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
