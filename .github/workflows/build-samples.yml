@@ -34,6 +34,7 @@ jobs:
   build-all-examples-one-arch:
     name: build-all-examples-amd64
     strategy:
+      fail-fast: false
       matrix:
         platform: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
@@ -44,9 +45,6 @@ jobs:
         with:
           go-version: 1.19
           check-latest: true
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2.1.0
-
       - name: build
         run: |
           make apko
