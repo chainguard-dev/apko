@@ -44,7 +44,7 @@ type apkImplementation interface {
 	ResolveWorld() (toInstall []*repository.RepositoryPackage, conflicts []string, err error)
 	// SetRepositories sets the repositories to use. Replaces any existing ones.
 	SetRepositories(repos []string) error
-	// GetRepositories gets the list of repositories in use.
+	// GetRepositories gets the list of repositories in use, including pinned ones with their names.
 	GetRepositories() ([]string, error)
 	// GetInstalled gets the list of installed packages.
 	GetInstalled() ([]*apkimpl.InstalledPackage, error)

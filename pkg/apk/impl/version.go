@@ -17,17 +17,32 @@ package impl
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
 
 // versionRegex how to parse versions.
 // see https://github.com/alpinelinux/apk-tools/blob/50ab589e9a5a84592ee4c0ac5a49506bb6c552fc/src/version.c#
-var versionRegex = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
+// for information on pinning, see https://wiki.alpinelinux.org/wiki/Alpine_Package_Keeper#Repository_pinning
+// To quote:
+//
+//   After which you can "pin" dependencies to these tags using:
+//
+//      apk add stableapp newapp@edge bleedingapp@testing
+//   Apk will now by default only use the untagged repositories, but adding a tag to specific package:
+//
+//   1. will prefer the repository with that tag for the named package, even if a later version of the package is available in another repository
+//
+//   2. allows pulling in dependencies for the tagged package from the tagged repository (though it prefers to use untagged repositories to satisfy dependencies if possible)
+
+var (
+	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
+	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
+)
 
 func init() {
 	versionRegex.Longest()
+	packageNameRegex.Longest()
 }
 
 type packageVersionPreModifier int
@@ -289,76 +304,98 @@ func (v versionDependency) satisfies(c versionCompare) bool {
 	}
 }
 
-func resolvePackageNameVersion(name string) (string, string, versionDependency) {
-	parts := strings.SplitN(name, "=", 2)
-	if len(parts) == 2 {
+func resolvePackageNameVersionPin(pkgName string) (name, version string, dep versionDependency, pin string) {
+	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
+	if len(parts) == 0 || len(parts[0]) < 2 {
+		return pkgName, version, versionNone, pin
+	}
+	// layout: [full match, name, =version, =|>|<, version, @pin, pin]
+	name = parts[0][1]
+	matcher := parts[0][3]
+	version = parts[0][4]
+	pin = parts[0][6]
+	if matcher != "" {
 		// we have an equal
-		if strings.HasSuffix(parts[0], ">") {
-			return strings.TrimSuffix(parts[0], ">"), parts[1], versionGreaterEqual
+		switch matcher {
+		case "=":
+			dep = versionEqual
+		case ">":
+			dep = versionGreater
+		case "<":
+			dep = versionLess
+		case ">=":
+			dep = versionGreaterEqual
+		case "<=":
+			dep = versionLessEqual
+		default:
+			dep = versionNone
 		}
-		if strings.HasSuffix(parts[0], "<") {
-			return strings.TrimSuffix(parts[0], "<"), parts[1], versionLessEqual
-		}
-		return parts[0], parts[1], versionEqual
 	}
-	parts = strings.SplitN(name, ">", 2)
-	if len(parts) == 2 {
-		// we have a greater than but not equal
-		return strings.TrimSuffix(parts[0], ">"), parts[1], versionGreater
-	}
-	parts = strings.SplitN(name, "<", 2)
-	if len(parts) == 2 {
-		// we have a less than but not equal
-		return strings.TrimSuffix(parts[0], "<"), parts[1], versionLess
-	}
-	// we have no =, < or >, so we just return the name
-	return name, "", versionNone
+	return
 }
 
-func getBestVersion(versions []string, version string, compare versionDependency) string {
+type filterOptions struct {
+	allowPin  string
+	preferPin string
+	version   string
+	compare   versionDependency
+}
+
+type filterOption func(*filterOptions)
+
+func withAllowPin(pin string) filterOption {
+	return func(o *filterOptions) {
+		o.allowPin = pin
+	}
+}
+func withPreferPin(pin string) filterOption {
+	return func(o *filterOptions) {
+		o.preferPin = pin
+	}
+}
+func withVersion(version string, compare versionDependency) filterOption {
+	return func(o *filterOptions) {
+		o.version = version
+		o.compare = compare
+	}
+}
+
+func filterPackages(pkgs []*repositoryPackage, opts ...filterOption) []*repositoryPackage {
+	o := &filterOptions{
+		compare: versionNone,
+	}
+	for _, opt := range opts {
+		opt(o)
+	}
+
 	// go through all potential versions, save the ones that meet the constraints,
 	// then take the highest
-	var passed []string
-	for _, v := range versions {
-		if compare == versionNone {
-			passed = append(passed, v)
+	var passed []*repositoryPackage
+	for _, p := range pkgs {
+		// do we allow this package?
+
+		// if it has a pinned name, and it is not preferred or allowed, we reject it immediately
+		if p.pinnedName != "" && p.pinnedName != o.allowPin && p.pinnedName != o.preferPin {
 			continue
 		}
-		actualVersion, err := parseVersion(v)
+		if o.compare == versionNone {
+			passed = append(passed, p)
+			continue
+		}
+		actualVersion, err := parseVersion(p.Version)
 		// skip invalid ones
 		if err != nil {
 			continue
 		}
-		requiredVersion, err := parseVersion(version)
+		requiredVersion, err := parseVersion(o.version)
 		// if the required version is invalid, we can't compare, so we return no matches
 		if err != nil {
-			return ""
+			return nil
 		}
 		versionRelationship := compareVersions(actualVersion, requiredVersion)
-		if compare.satisfies(versionRelationship) {
-			passed = append(passed, v)
+		if o.compare.satisfies(versionRelationship) {
+			passed = append(passed, p)
 		}
 	}
-	if len(passed) == 0 {
-		return ""
-	}
-	if len(passed) == 1 {
-		return passed[0]
-	}
-	SortVersions(passed)
-	return passed[0]
-}
-
-func SortVersions(versions []string) {
-	sort.Slice(versions, func(i, j int) bool {
-		actualVersion, err := parseVersion(versions[i])
-		if err != nil {
-			return false
-		}
-		requiredVersion, err := parseVersion(versions[j])
-		if err != nil {
-			return true
-		}
-		return compareVersions(actualVersion, requiredVersion) == greater
-	})
+	return passed
 }
