@@ -21,7 +21,7 @@ jobs:
         check-latest: true
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@17573ee1cc1b9d061760f3a006fc4aac4f944fd5
+      uses: github/codeql-action/init@32dc499307d133bb5085bae78498c0ac2cf762d5
       with:
         languages: go
 
@@ -29,4 +29,4 @@ jobs:
       run: make apko
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@17573ee1cc1b9d061760f3a006fc4aac4f944fd5
+      uses: github/codeql-action/analyze@32dc499307d133bb5085bae78498c0ac2cf762d5
