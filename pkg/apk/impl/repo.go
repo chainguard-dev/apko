@@ -16,6 +16,7 @@ package impl
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"errors"
@@ -33,6 +34,18 @@ import (
 	"go.lsp.dev/uri"
 )
 
+type namedRepositoryWithIndex struct {
+	name string
+	repo *repository.RepositoryWithIndex
+}
+
+// repositoryPackage is a package that is part of a repository.
+// it is nearly identical to repository.RepositoryPackage, but it includes the pinned name of the repository.
+type repositoryPackage struct {
+	*repository.RepositoryPackage
+	pinnedName string
+}
+
 // SetRepositories sets the contents of /etc/apk/repositories file.
 // The base directory of /etc/apk must already exist, i.e. this only works on an initialized APK database.
 func (a *APKImplementation) SetRepositories(repos []string) error {
@@ -49,25 +62,25 @@ func (a *APKImplementation) SetRepositories(repos []string) error {
 	return nil
 }
 
-func (a *APKImplementation) GetRepositories() ([]string, error) {
+func (a *APKImplementation) GetRepositories() (repos []string, err error) {
 	// get the repository URLs
 	reposFile, err := a.fs.Open(reposFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("could not open repositories file in %s at %s: %w", a.fs, reposFilePath, err)
 	}
 	defer reposFile.Close()
-	reposData, err := io.ReadAll(reposFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read repositories file: %w", err)
+	scanner := bufio.NewScanner(reposFile)
+	for scanner.Scan() {
+		repos = append(repos, scanner.Text())
 	}
-	return strings.Fields(string(reposData)), nil
+	return
 }
 
 // getRepositoryIndexes returns the indexes for the repositories in the specified root.
 // The signatures for each index are verified unless ignoreSignatures is set to true.
-func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repository.RepositoryWithIndex, error) {
+func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*namedRepositoryWithIndex, error) {
 	var (
-		indexes []*repository.RepositoryWithIndex
+		indexes []*namedRepositoryWithIndex
 	)
 
 	r := regexp.MustCompile(`^\.SIGN\.RSA\.(.*\.rsa\.pub)$`)
@@ -86,8 +99,23 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 	if err != nil {
 		return nil, fmt.Errorf("failed to read arch file: %w", err)
 	}
-	for _, repoURI := range repos {
-		repoBase := fmt.Sprintf("%s/%s", repoURI, arch)
+	for _, repo := range repos {
+		// does it start with a pin?
+		var (
+			repoName string
+			repoURL  = repo
+		)
+		if strings.HasPrefix(repo, "@") {
+			// it's a pinned repository, get the name
+			parts := strings.Fields(repo)
+			if len(parts) < 2 {
+				return nil, errors.New("invalid repository line")
+			}
+			repoName = parts[0]
+			repoURL = parts[1][1:]
+		}
+
+		repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
 		u := fmt.Sprintf("%s/%s", repoBase, indexFilename)
 
 		// Normalize the repo as a URI, so that local paths
@@ -194,8 +222,8 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 			if err != nil {
 				return nil, fmt.Errorf("unable to read convert repository index bytes to index struct at %s: %w", u, err)
 			}
-			repo := repository.Repository{Uri: repoBase}
-			indexes = append(indexes, repo.WithIndex(index))
+			repoRef := repository.Repository{Uri: repoBase}
+			indexes = append(indexes, &namedRepositoryWithIndex{repo: repoRef.WithIndex(index), name: repoName})
 		}
 	}
 	return indexes, nil
@@ -204,64 +232,52 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*repo
 // PkgResolver is a helper struct for resolving packages from a list of indexes.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
-	indexes      []*repository.RepositoryWithIndex
-	nameMap      map[string]map[string]*repository.RepositoryPackage
-	providesMap  map[string][]*repository.RepositoryPackage
-	installIfMap map[string][]*repository.RepositoryPackage // contains any package that should be installed if the named package is installed
+	indexes      []*namedRepositoryWithIndex
+	nameMap      map[string][]*repositoryPackage
+	providesMap  map[string][]*repositoryPackage
+	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 }
 
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
-func NewPkgResolver(indexes []*repository.RepositoryWithIndex) *PkgResolver {
+func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
 	var (
-		pkgNameMap     = map[string]map[string]*repository.RepositoryPackage{}
-		pkgProvidesMap = map[string][]*repository.RepositoryPackage{}
-		installIfMap   = map[string][]*repository.RepositoryPackage{}
+		pkgNameMap     = map[string][]*repositoryPackage{}
+		pkgProvidesMap = map[string][]*repositoryPackage{}
+		installIfMap   = map[string][]*repositoryPackage{}
 	)
 	p := &PkgResolver{
 		indexes: indexes,
 	}
 	// create a map of every package by name and version to its RepositoryPackage
 	for _, index := range indexes {
-		for _, pkg := range index.Packages() {
-			existingPkg, ok := pkgNameMap[pkg.Name]
-			if !ok {
-				existingPkg = map[string]*repository.RepositoryPackage{}
-				pkgNameMap[pkg.Name] = existingPkg
-			}
-			existingPkg[pkg.Version] = pkg
+		for _, pkg := range index.repo.Packages() {
+			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
+				RepositoryPackage: pkg,
+				pinnedName:        index.name,
+			})
 			for _, dep := range pkg.InstallIf {
 				if _, ok := installIfMap[dep]; !ok {
-					installIfMap[dep] = []*repository.RepositoryPackage{}
+					installIfMap[dep] = []*repositoryPackage{}
 				}
-				installIfMap[dep] = append(installIfMap[dep], pkg)
+				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
+					RepositoryPackage: pkg,
+					pinnedName:        index.name,
+				})
 			}
 		}
 	}
 	// create a map of every provided file to its package
+	allPkgs := make([][]*repositoryPackage, 0, 10)
 	for _, pkgVersions := range pkgNameMap {
+		allPkgs = append(allPkgs, pkgVersions)
+	}
+	for _, pkgVersions := range allPkgs {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
-				name, version, _ := resolvePackageNameVersion(provide)
-				targetPkg := pkgNameMap[name]
-				if targetPkg == nil {
-					targetPkg = map[string]*repository.RepositoryPackage{}
-				}
-				// did we already have a package for this version? If so, take the highest available.
-				existingPkg, ok := targetPkg[version]
-				if !ok {
-					targetPkg[version] = pkg
-				} else {
-					// both matched or both did not, so just compare versions
-					// version priority
-					existingVersion, errE := parseVersion(existingPkg.Version)
-					newVersion, errN := parseVersion(pkg.Version)
-					// if either is invalid, leave them alone
-					if errE == nil && errN == nil && compareVersions(newVersion, existingVersion) == greater {
-						targetPkg[version] = pkg
-					}
-				}
+				name, _, _, _ := resolvePackageNameVersionPin(provide)
+				pkgNameMap[name] = append(pkgNameMap[name], pkg)
 				if _, ok := pkgProvidesMap[name]; !ok {
-					pkgProvidesMap[name] = []*repository.RepositoryPackage{}
+					pkgProvidesMap[name] = []*repositoryPackage{}
 				}
 				pkgProvidesMap[name] = append(pkgProvidesMap[name], pkg)
 			}
@@ -332,7 +348,8 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		return nil, nil, nil, err
 	}
 
-	deps, conflicts, err := p.getPackageDependencies(pkg, parents, localExisting)
+	_, _, _, pin := resolvePackageNameVersionPin(pkgName)
+	deps, conflicts, err := p.getPackageDependencies(pkg, pin, parents, localExisting)
 	if err != nil {
 		return
 	}
@@ -346,7 +363,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	}
 	// are there any installIf dependencies?
 	var (
-		depPkgList []*repository.RepositoryPackage
+		depPkgList []*repositoryPackage
 		ok         bool
 	)
 	for dep, depPkg := range added {
@@ -361,7 +378,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 			var matchCount int
 			for _, subDep := range installIfPkg.InstallIf {
 				// two possibilities: package name, or name=version
-				name, version, _ := resolvePackageNameVersion(subDep)
+				name, version, _, _ := resolvePackageNameVersionPin(subDep)
 				// precise match of whatever it is, take it and continue
 				if _, ok := added[subDep]; ok {
 					matchCount++
@@ -376,8 +393,8 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 			if matchCount == len(installIfPkg.InstallIf) {
 				// all dependencies are met, so add it
 				if _, ok := added[installIfPkg.Name]; !ok {
-					dependencies = append(dependencies, installIfPkg)
-					added[installIfPkg.Name] = installIfPkg
+					dependencies = append(dependencies, installIfPkg.RepositoryPackage)
+					added[installIfPkg.Name] = installIfPkg.RepositoryPackage
 				}
 			}
 		}
@@ -387,28 +404,25 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 
 // getPackage get a single package.
 func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
-	name, version, compare := resolvePackageNameVersion(pkgName)
+	name, version, compare, pin := resolvePackageNameVersionPin(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
 	if ok {
 		// pkgsWithVersions contains a map of all versions of the package
 		// get the one that most matches what was requested
-		versions := make([]string, 0, 10)
-		for version := range pkgsWithVersions {
-			versions = append(versions, version)
-		}
-		targetVersion := getBestVersion(versions, version, compare)
-		if targetVersion == "" {
+		pkgs := filterPackages(pkgsWithVersions, withVersion(version, compare), withPreferPin(pin))
+		if len(pkgs) == 0 {
 			return nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
 		}
-		pkg = pkgsWithVersions[targetVersion]
+		sortPackages(pkgs, nil, nil, pin)
+		pkg = pkgs[0].RepositoryPackage
 	} else {
 		providers, ok := p.providesMap[name]
 		if !ok || len(providers) == 0 {
 			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
 		// we are going to do this in reverse order
-		sortPackages(providers, pkg, nil)
-		pkg = providers[0]
+		sortPackages(providers, pkg, nil, "")
+		pkg = providers[0].RepositoryPackage
 	}
 	return
 }
@@ -441,10 +455,17 @@ func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPack
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, parents map[string]bool, existing map[string]*repository.RepositoryPackage) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*repository.RepositoryPackage) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
 	// check if the package we are checking is one of our parents, avoid cyclical graphs
 	if _, ok := parents[pkg.Name]; ok {
 		return nil, nil, nil
+	}
+	myProvides := map[string]bool{}
+	// see if we provide this
+	for _, provide := range pkg.Provides {
+		name, _, _, _ := resolvePackageNameVersionPin(provide)
+		myProvides[provide] = true
+		myProvides[name] = true
 	}
 
 	// each dependency has only one of two possibilities:
@@ -461,42 +482,55 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			continue
 		}
 		// this package might be pinned to a version
-		name, version, compare := resolvePackageNameVersion(dep)
+		name, version, compare, _ := resolvePackageNameVersionPin(dep)
+		// see if we provide this
+		if myProvides[name] || myProvides[dep] {
+			// we provide this, so skip it
+			continue
+		}
+
 		// first see if it is a name of a package
 		depPkgWithVersions, ok := p.nameMap[name]
 		if ok {
 			// pkgsWithVersions contains a map of all versions of the package
 			// get the one that most matches what was requested
-			var versions []string
-			for version := range depPkgWithVersions {
-				versions = append(versions, version)
+			pkgs := filterPackages(depPkgWithVersions, withVersion(version, compare), withAllowPin(allowPin))
+			if len(pkgs) == 0 {
+				return nil, nil, fmt.Errorf("could not find package %s in indexes", dep)
 			}
-			targetVersion := getBestVersion(versions, version, compare)
-			if targetVersion == "" {
-				return nil, nil, fmt.Errorf("could not find package %s in indexes: %w", dep, err)
-			}
-			depPkg = depPkgWithVersions[targetVersion]
+			sortPackages(pkgs, nil, existing, "")
+			depPkg = pkgs[0].RepositoryPackage
 		} else {
 			// it was not the name of a package, see if some package provides this
-			providers, ok := p.providesMap[name]
-			if !ok || len(providers) == 0 {
+			initialProviders, ok := p.providesMap[name]
+			if !ok || len(initialProviders) == 0 {
 				// no one provides it, return an error
 				return nil, nil, fmt.Errorf("could not find package either named %s or that provides %s for %s", dep, dep, pkg.Name)
 			}
-			var isSelf bool
-			for _, provider := range providers {
+			// before we sort the packages, figure out if we satisfy the dependency
+			// also filter out invalid ones, i.e. ones that come from a pinned repository, but that pin is now allowed
+			var (
+				isSelf    bool
+				providers []*repositoryPackage
+			)
+			for _, provider := range initialProviders {
+				// if the provider package is pinned and does not match our allowed pin, skip it
+				if provider.pinnedName != "" && provider.pinnedName != allowPin {
+					continue
+				}
 				// if my package can provide this dependency, then already satisfied
 				if provider.Name == pkg.Name {
 					isSelf = true
 					break
 				}
+				providers = append(providers, provider)
 			}
 			if isSelf {
 				continue
 			}
 			// we are going to do this in reverse order
-			sortPackages(providers, pkg, existing)
-			depPkg = providers[0]
+			sortPackages(providers, pkg, existing, "")
+			depPkg = providers[0].RepositoryPackage
 		}
 		// and then recurse to its children
 		// each child gets the parental chain, but should not affect any others,
@@ -506,7 +540,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			childParents[k] = true
 		}
 		childParents[pkg.Name] = true
-		subDeps, confs, err := p.getPackageDependencies(depPkg, childParents, existing)
+		subDeps, confs, err := p.getPackageDependencies(depPkg, allowPin, childParents, existing)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -524,7 +558,8 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 // sortPackages sorts a slice of packages in descending order of preference, based on
 // matching origin to a provided comparison package, whether or not one of the packages
 // already is installed, the versions, and whether an origin already exists.
-func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.RepositoryPackage, existing map[string]*repository.RepositoryPackage) {
+// The pin is for preference only; prefer a package that matches the pin over one that does not.
+func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPackage, existing map[string]*repository.RepositoryPackage, pin string) {
 	// get existing origins
 	existingOrigins := map[string]bool{}
 	for _, pkg := range existing {
@@ -573,6 +608,13 @@ func sortPackages(pkgs []*repository.RepositoryPackage, compare *repository.Repo
 		if jOriginMatched && !iOriginMatched {
 			return false
 		}
+		if pkgs[i].pinnedName == pin && pkgs[j].pinnedName != pin {
+			return true
+		}
+		if pkgs[i].pinnedName != pin && pkgs[j].pinnedName == pin {
+			return false
+		}
+		// check provider priority
 		if pkgs[i].ProviderPriority != pkgs[j].ProviderPriority {
 			return pkgs[i].ProviderPriority > pkgs[j].ProviderPriority
 		}

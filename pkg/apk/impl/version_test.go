@@ -92,22 +92,72 @@ func TestParseVersion(t *testing.T) {
 }
 
 func TestResolveVersion(t *testing.T) {
-	versions := []string{"1.2.3-r0", "1.3.6-r0", "1.2.8-r0", "1.7.1-r0", "1.7.1-r1", "2.0.6-r0"}
+	pkgs := []*repositoryPackage{
+		testNamedPackageFromVersionAndPin("1.2.3-r0", ""),
+		testNamedPackageFromVersionAndPin("1.3.6-r0", ""),
+		testNamedPackageFromVersionAndPin("1.2.8-r0", ""),
+		testNamedPackageFromVersionAndPin("1.7.1-r0", ""),
+		testNamedPackageFromVersionAndPin("1.7.1-r1", ""),
+		testNamedPackageFromVersionAndPin("2.0.6-r0", ""),
+		testNamedPackageFromVersionAndPin("2.1.0", "pinA"),
+	}
 	tests := []struct {
 		version     string
 		compare     versionDependency
+		pin         string
 		want        string
 		description string
 	}{
-		{"1.2.3-r0", versionEqual, "1.2.3-r0", "exact version match"},
-		{"1.2.3-r10000", versionEqual, "", "exact version no match"},
-		{"2.0.0", versionGreater, "2.0.6-r0", "greater than version match"},
-		{"2.0.0", versionGreaterEqual, "2.0.6-r0", "greater than or equal to version match"},
-		{"3.0.0", versionGreaterEqual, "", "greater than or equal to version no match"},
-		{"", versionNone, "2.0.6-r0", "no requirement should get highest version"},
+		{"1.2.3-r0", versionEqual, "", "1.2.3-r0", "exact version match"},
+		{"1.2.3-r10000", versionEqual, "", "", "exact version no match"},
+		{"2.0.0", versionGreater, "", "2.0.6-r0", "greater than version match"},
+		{"2.0.0", versionGreaterEqual, "", "2.0.6-r0", "greater than or equal to version match"},
+		{"3.0.0", versionGreaterEqual, "", "", "greater than or equal to version no match"},
+		{"2.1.0", versionEqual, "", "", "equal match but pinned"},
+		{"2.1.0", versionEqual, "pinA", "2.1.0", "equal match and pin match"},
+		{"", versionNone, "", "2.0.6-r0", "no requirement should get highest version"},
 	}
 	for _, tt := range tests {
-		found := getBestVersion(versions, tt.version, tt.compare)
-		require.Equal(t, found, tt.want, "version resolver gets correct version")
+		t.Run(tt.description, func(t *testing.T) {
+			found := filterPackages(pkgs, withVersion(tt.version, tt.compare), withPreferPin(tt.pin))
+			sortPackages(found, nil, nil, tt.pin)
+			if tt.want == "" {
+				require.Nil(t, found, "version resolver should not find a package")
+			} else {
+				require.NotNil(t, found, "version resolver should find a package")
+				require.Equal(t, found[0].Version, tt.want, "version resolver gets correct version")
+			}
+		})
+	}
+}
+
+func TestResolverPackageNameVersionPing(t *testing.T) {
+	tests := []struct {
+		input   string
+		name    string
+		version string
+		dep     versionDependency
+		pin     string
+	}{
+		{"agetty", "agetty", "", versionNone, ""},
+		{"foo-dev", "foo-dev", "", versionNone, ""},
+		{"name@edge", "name", "", versionNone, "edge"},
+		{"name=1.2.3", "name", "1.2.3", versionEqual, ""},
+		{"name>1.2.3", "name", "1.2.3", versionGreater, ""},
+		{"name<1.2.3", "name", "1.2.3", versionLess, ""},
+		{"name>=1.2.3", "name", "1.2.3", versionGreaterEqual, ""},
+		{"name<=1.2.3", "name", "1.2.3", versionLessEqual, ""},
+		{"name@edge=1.2.3", "name@edge=1.2.3", "", versionNone, ""}, // wrong order, so just returns the whole thing
+		{"name=1.2.3@community", "name", "1.2.3", versionEqual, "community"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			name, version, dep, pin := resolvePackageNameVersionPin(tt.input)
+			require.Equal(t, tt.name, name)
+			require.Equal(t, tt.version, version)
+			require.Equal(t, tt.dep, dep)
+			require.Equal(t, tt.pin, pin)
+		})
 	}
 }

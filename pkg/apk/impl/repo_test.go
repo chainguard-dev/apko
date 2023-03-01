@@ -158,7 +158,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 	// - find all of the dependencies of all of the packages
 	// - eliminate duplicates
 	// - reverse the order, so that it is in order of installation
-	resolver := NewPkgResolver(index)
+	resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
 	pkgs, _, err := resolver.GetPackagesWithDependencies(names)
 	require.NoErrorf(t, err, "unable to get packages")
 	var actual = make([]string, 0, len(pkgs))
@@ -173,7 +173,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		expected := []string{"dep4", "dep5", "dep1", "dep6", "foo", "libq", "dep3", "busybox", "dep2"}
 		_, index := testGetPackagesAndIndex()
 
-		resolver := NewPkgResolver(index)
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
 		_, pkgs, _, err := resolver.GetPackageWithDependencies("package1", nil)
 		require.NoErrorf(t, err, "unable to get dependencies")
 
@@ -188,7 +188,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		expected := []string{"dep8"}
 		_, index := testGetPackagesAndIndex()
 
-		resolver := NewPkgResolver(index)
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
 		_, pkgs, _, err := resolver.GetPackageWithDependencies("package3", nil)
 		require.NoErrorf(t, err, "unable to get dependencies")
 
@@ -213,12 +213,11 @@ func TestVersionHierarchy(t *testing.T) {
 			{Name: "multi-versioner", Version: "2.0.6-r0"},
 		},
 	})
-	resolver := NewPkgResolver([]*repository.RepositoryWithIndex{index})
+	resolver := NewPkgResolver(testNamedRepositoryFromIndexes([]*repository.RepositoryWithIndex{index}))
 	pkgWithVersions, ok := resolver.nameMap["multi-versioner"]
 	require.True(t, ok, "found multi-versioner in nameMap")
-	for version, pkg := range pkgWithVersions {
-		require.True(t, pkg.Version != "", "multi-versioner has version")
-		require.Equal(t, version, pkg.Version, "multi-versioner has correct version")
+	for i, pkg := range pkgWithVersions {
+		require.True(t, pkg.Version == index.Packages()[i].Version, "multi-versioner has version")
 	}
 }
 
@@ -297,10 +296,29 @@ func TestSortPackages(t *testing.T) {
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = repository.NewRepositoryPackage(pkg.pkg, &repository.RepositoryWithIndex{Repository: &repository.Repository{Uri: pkg.repo}})
 			}
-			sortPackages(pkgs, pkg, existing)
-			for i, pkg := range pkgs {
+			namedPkgs := testNamedPackageFromPackages(pkgs)
+			sortPackages(namedPkgs, pkg, existing, "")
+			for i, pkg := range namedPkgs {
 				require.Equal(t, int(pkg.InstalledSize), i, "position matches")
 			}
 		})
 	}
+}
+
+func testNamedRepositoryFromIndexes(indexes []*repository.RepositoryWithIndex) (named []*namedRepositoryWithIndex) {
+	for _, index := range indexes {
+		named = append(named, &namedRepositoryWithIndex{repo: index})
+	}
+	return
+}
+
+func testNamedPackageFromPackages(pkgs []*repository.RepositoryPackage) (named []*repositoryPackage) {
+	for _, pkg := range pkgs {
+		named = append(named, &repositoryPackage{RepositoryPackage: pkg})
+	}
+	return
+}
+
+func testNamedPackageFromVersionAndPin(version, pin string) *repositoryPackage {
+	return &repositoryPackage{RepositoryPackage: &repository.RepositoryPackage{Package: &repository.Package{Version: version}}, pinnedName: pin}
 }
