@@ -46,7 +46,7 @@ func (a *APKImplementation) SetWorld(packages []string) error {
 	copy(copied, packages)
 	sort.Strings(copied)
 
-	data := strings.Join(copied, "\n")
+	data := strings.Join(copied, "\n") + "\n"
 
 	// #nosec G306 -- apk world must be publicly readable
 	if err := a.fs.WriteFile(filepath.Join("etc", "apk", "world"),
