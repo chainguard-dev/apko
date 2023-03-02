@@ -31,7 +31,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 	require.NoError(t, err, "unable to mkdir /etc/apk")
 	err = src.WriteFile(reposFilePath, []byte("https://dl-cdn.alpinelinux.org/alpine/v3.16/main"), 0644)
 	require.NoErrorf(t, err, "unable to write repositories")
-	err = src.WriteFile(archFilePath, []byte("aarch64"), 0644)
+	err = src.WriteFile(archFilePath, []byte("aarch64\n"), 0644)
 	require.NoErrorf(t, err, "unable to write arch")
 	err = src.MkdirAll(keysDirPath, 0755)
 	require.NoError(t, err, "unable to mkdir /etc/apk/keys")

@@ -143,7 +143,7 @@ func (a *APKImplementation) ListInitFiles() []tar.Header {
 	// additionalFiles are files we need but can only be resolved in the context of
 	// this func, e.g. we need the architecture
 	additionalFiles := []file{
-		{"/etc/apk/arch", 0o644, []byte(a.arch)},
+		{"/etc/apk/arch", 0o644, []byte(a.arch + "\n")},
 	}
 
 	for _, e := range initDirectories {
@@ -199,7 +199,7 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 	// additionalFiles are files we need but can only be resolved in the context of
 	// this func, e.g. we need the architecture
 	additionalFiles := []file{
-		{"/etc/apk/arch", 0o644, []byte(a.arch)},
+		{"/etc/apk/arch", 0o644, []byte(a.arch + "\n")},
 	}
 
 	for _, e := range baseDirectories {

@@ -96,7 +96,7 @@ func TestSetWorld(t *testing.T) {
 	require.NoError(t, err)
 
 	sort.Strings(packages)
-	expected := strings.Join(packages, "\n")
+	expected := strings.Join(packages, "\n") + "\n"
 	require.Equal(t, expected, string(actual), "unexpected content for etc/apk/world:\nexpected %s\nactual %s", expected, actual)
 }
 

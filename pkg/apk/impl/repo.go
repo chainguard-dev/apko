@@ -95,10 +95,12 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*name
 	if err != nil {
 		return nil, fmt.Errorf("could not open arch file in %s at %s: %w", a.fs, archFile, err)
 	}
-	arch, err := io.ReadAll(archFile)
+	archB, err := io.ReadAll(archFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read arch file: %w", err)
 	}
+	// trim the newline
+	arch := []byte(strings.TrimSuffix(string(archB), "\n"))
 	for _, repo := range repos {
 		// does it start with a pin?
 		var (
