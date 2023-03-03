@@ -126,7 +126,7 @@ func (a *APKImplementation) updateScriptsTar(pkg *repository.Package, controlTar
 	}
 	// only need to rewind if the file has tar in it
 	if fi.Size() >= 1024 {
-		if _, err = scripts.Seek(-1024, os.SEEK_END); err != nil {
+		if _, err = scripts.Seek(-1024, io.SeekEnd); err != nil {
 			return fmt.Errorf("could not seek to end of tar file: %w", err)
 		}
 	}
