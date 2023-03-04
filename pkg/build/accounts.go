@@ -96,7 +96,8 @@ func (di *defaultBuildImplementation) MutateAccounts(
 		for _, u := range ic.Accounts.Users {
 			ue := userToUserEntry(u)
 			uf.Entries = append(uf.Entries, ue)
-
+		}
+		for _, ue := range uf.Entries {
 			// This is what the home directory is set to for our homeless users.
 			if ue.HomeDir == "/dev/null" {
 				continue
