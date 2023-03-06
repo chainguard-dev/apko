@@ -113,8 +113,8 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*name
 			if len(parts) < 2 {
 				return nil, errors.New("invalid repository line")
 			}
-			repoName = parts[0]
-			repoURL = parts[1][1:]
+			repoName = parts[0][1:]
+			repoURL = parts[1]
 		}
 
 		repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
