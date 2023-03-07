@@ -35,8 +35,6 @@ import (
 	"chainguard.dev/apko/pkg/sbom"
 )
 
-// Programmatic wrapper around apk-tools.
-
 type APK struct {
 	impl    apkImplementation
 	fs      apkfs.FullFS
