@@ -382,19 +382,42 @@ func filterPackages(pkgs []*repositoryPackage, opts ...filterOption) []*reposito
 			passed = append(passed, p)
 			continue
 		}
-		actualVersion, err := parseVersion(p.Version)
-		// skip invalid ones
-		if err != nil {
-			continue
-		}
+
 		requiredVersion, err := parseVersion(o.version)
 		// if the required version is invalid, we can't compare, so we return no matches
 		if err != nil {
 			return nil
 		}
+
+		actualVersion, err := parseVersion(p.Version)
+		// skip invalid ones
+		if err != nil {
+			continue
+		}
+
 		versionRelationship := compareVersions(actualVersion, requiredVersion)
 		if o.compare.satisfies(versionRelationship) {
 			passed = append(passed, p)
+			continue
+		}
+
+		for _, prov := range p.Provides {
+			_, version, _, _ := resolvePackageNameVersionPin(prov)
+			if version == "" {
+				continue
+			}
+
+			actualVersion, err = parseVersion(version)
+			// again, we skip invalid ones
+			if err != nil {
+				continue
+			}
+
+			versionRelationship = compareVersions(actualVersion, requiredVersion)
+			if o.compare.satisfies(versionRelationship) {
+				passed = append(passed, p)
+				break
+			}
 		}
 	}
 	return passed
