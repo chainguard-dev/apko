@@ -24,6 +24,8 @@ import (
 )
 
 // /bin/busybox --list-full | sort | sed 's|^|/|g'
+// note that it changes based on version of busybox,
+// so this should be updated to match busybox version.
 var (
 	busyboxList = `
 	/bin/arch
@@ -273,6 +275,7 @@ var (
 	/usr/bin/tr
 	/usr/bin/traceroute
 	/usr/bin/traceroute6
+	/usr/bin/tree
 	/usr/bin/truncate
 	/usr/bin/tty
 	/usr/bin/ttysize
