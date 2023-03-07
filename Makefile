@@ -167,7 +167,7 @@ release: ## Run Goreleaser in release mode
 #######################
 .PHONY: sign-image
 sign-image: ko ## Sign images built using ko
-	cosign sign $(DIGEST)
+	cosign sign -f -y $(DIGEST)
 
 ##################
 # help
