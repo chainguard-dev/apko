@@ -58,11 +58,3 @@ Note that all of the steps involve some file manipulation.
 * In the case of `ldconfig`, it replicates the equivalent functionality by parsing the library ELF headers and creating the symlinks.
 * In the case of `busybox`, it creates symlinks to the busybox binary, based on a fixed list.
 * In the case of character devices, if it cannot do so directly - either because the underlying filesystem does not support it or because it is not running as root - it ignores the errors and keeps track of the intended files, adding them to the final layer tar stream.
-
-## Managing apk
-
-All of the apk functions inside `apko` are performed by executing `apk` inside the chroot/proot jail.
-They are abstracted via the `type apk.APK struct`, in order to simplify both testing and future changes.
-For now, however, these simply execute `apk` commands.
-
-In the future, this is likely to change to direct layout of files on disk and manipulation of the database.
