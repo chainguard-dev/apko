@@ -84,7 +84,7 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 		}
 	}
 	// write to installed file
-	b := []byte("\n\n" + strings.Join(pkgLines, "\n") + "\n\n")
+	b := []byte(strings.Join(pkgLines, "\n") + "\n\n")
 	if _, err := installedFile.Write(b); err != nil {
 		return err
 	}
