@@ -197,11 +197,11 @@ type dirFS struct {
 func (f *dirFS) Readlink(name string) (string, bool, error) {
 	// The underlying filesystem might not support symlinks, and it might be case-insensitive, so just
 	// use the one in memory.
-	target, _, err := f.overrides.Readlink(name)
+	target, isSymlink, err := f.overrides.Readlink(name)
 	if err != nil {
 		return "", false, err
 	}
-	return target, true, err
+	return target, isSymlink, err
 }
 
 // Open open a file for reading. Returns fs.File.
