@@ -58,12 +58,6 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 
 	// sort the files by directory
 	sort.Slice(files, func(i, j int) bool {
-		if filepath.Dir(files[i].Name) < filepath.Dir(files[j].Name) {
-			return true
-		}
-		if filepath.Dir(files[i].Name) > filepath.Dir(files[j].Name) {
-			return false
-		}
 		return files[i].Name < files[j].Name
 	})
 	// package lines
