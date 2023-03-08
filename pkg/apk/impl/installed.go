@@ -58,12 +58,6 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 
 	// sort the files by directory
 	sort.Slice(files, func(i, j int) bool {
-		if filepath.Dir(files[i].Name) < filepath.Dir(files[j].Name) {
-			return true
-		}
-		if filepath.Dir(files[i].Name) > filepath.Dir(files[j].Name) {
-			return false
-		}
 		return files[i].Name < files[j].Name
 	})
 	// package lines
@@ -84,10 +78,13 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 			if perm != 0o644 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("a:%d:%d:%04o", user, group, perm))
 			}
+			if f.PAXRecords != nil && f.PAXRecords[paxRecordsChecksumKey] != "" {
+				pkgLines = append(pkgLines, fmt.Sprintf("Z:%s", f.PAXRecords[paxRecordsChecksumKey]))
+			}
 		}
 	}
 	// write to installed file
-	b := []byte("\n\n" + strings.Join(pkgLines, "\n") + "\n\n")
+	b := []byte(strings.Join(pkgLines, "\n") + "\n\n")
 	if _, err := installedFile.Write(b); err != nil {
 		return err
 	}

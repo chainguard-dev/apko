@@ -17,6 +17,8 @@ package impl
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha1" // nolint:gosec // this is what apk tools is using
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -24,17 +26,17 @@ import (
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
-func (a *APKImplementation) writeOneFile(header *tar.Header, tr *tar.Reader) error {
+func (a *APKImplementation) writeOneFile(header *tar.Header, r io.Reader) error {
 	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode().Perm())
 	if err != nil {
 		return fmt.Errorf("error creating file %s: %w", header.Name, err)
 	}
 	defer f.Close()
 
-	if _, err := io.CopyN(f, tr, header.Size); err != nil {
+	if _, err := io.CopyN(f, r, header.Size); err != nil {
 		return fmt.Errorf("unable to write content for %s: %w", header.Name, err)
 	}
-
+	// override one of the
 	return nil
 }
 
@@ -72,9 +74,21 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 				return nil, fmt.Errorf("error creating directory %s: %w", header.Name, err)
 			}
 		case tar.TypeReg:
-			if err := a.writeOneFile(header, tr); err != nil {
+			// we need to calculate the checksum of the file while reading it
+			w := sha1.New() //nolint:gosec // this is what apk tools is using
+			tee := io.TeeReader(tr, w)
+			if err := a.writeOneFile(header, tee); err != nil {
 				return nil, err
 			}
+			// it uses this format
+			checksum := fmt.Sprintf("Q1%s", base64.StdEncoding.EncodeToString(w.Sum(nil)))
+			// we need to save this somewhere. The output expects []tar.Header, so we need to override that.
+			// Reusing a field should be good enough, provided that we know it is not getting in the way of
+			// anything downstream. Since we know it is not, this is good enough.
+			if header.PAXRecords == nil {
+				header.PAXRecords = make(map[string]string)
+			}
+			header.PAXRecords[paxRecordsChecksumKey] = checksum
 		case tar.TypeSymlink:
 			// some underlying filesystems and some memfs that we use in tests do not support symlinks.
 			// attempt it, and if it fails, just copy it.
