@@ -78,6 +78,9 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 			if perm != 0o644 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("a:%d:%d:%04o", user, group, perm))
 			}
+			if f.PAXRecords != nil && f.PAXRecords[paxRecordsChecksumKey] != "" {
+				pkgLines = append(pkgLines, fmt.Sprintf("Z:%s", f.PAXRecords[paxRecordsChecksumKey]))
+			}
 		}
 	}
 	// write to installed file
