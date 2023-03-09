@@ -134,6 +134,12 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 			header.Devmajor = int64(major)
 			header.Devminor = int64(minor)
 		}
+
+		// use mode of actual installed file from workdir
+		// seems like archive/tar header.Mode / header.FileInfo().Mode()
+		// generated modes don't include suid/sgid/sticky bits??
+		header.Mode = int64(info.Mode())
+
 		// work around some weirdness, without this we wind up with just the basename
 		header.Name = path
 
