@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
@@ -49,6 +50,12 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 	if err != nil {
 		return nil, err
 	}
+	// per https://git.alpinelinux.org/apk-tools/tree/src/extract_v2.c?id=337734941831dae9a6aa441e38611c43a5fd72c0#n120
+	//  * APKv1.0 compatibility - first non-hidden file is
+	//  * considered to start the data section of the file.
+	//  * This does not make any sense if the file has v2.0
+	//  * style .PKGINFO
+	var startedDataSection bool
 	tr := tar.NewReader(gr)
 	for {
 		header, err := tr.Next()
@@ -58,6 +65,13 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 		if err != nil {
 			return nil, err
 		}
+		// if it was a hidden file and not a directory and we have not yet started the data section,
+		// so skip this file
+		if !startedDataSection && header.Name[0] == '.' && !strings.Contains(header.Name, "/") {
+			continue
+		}
+		// whatever it is now, it is in the data section
+		startedDataSection = true
 
 		switch header.Typeflag {
 		case tar.TypeDir:
