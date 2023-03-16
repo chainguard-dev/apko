@@ -45,13 +45,6 @@ func TestInitDB(t *testing.T) {
 	src := apkfs.NewMemFS()
 	apk, err := NewAPKImplementation(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
-	err = src.MkdirAll("/tmp", 0o777|fs.ModeSticky)
-	require.NoError(t, err, "error creating %s", "/tmp")
-	baseDirs := []string{"/tmp", "/proc", "/dev", "/var", "/lib", "/etc"}
-	for _, d := range baseDirs {
-		err := src.MkdirAll(d, 0o755)
-		require.NoError(t, err, "error creating %s", d)
-	}
 	err = apk.InitDB()
 	require.NoError(t, err)
 	// check all of the contents
