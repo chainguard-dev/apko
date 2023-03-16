@@ -81,7 +81,7 @@ type deviceFile struct {
 }
 
 var baseDirectories = []directory{
-	{"/tmp", 0o777},
+	{"/tmp", 0o777 | fs.ModeSticky},
 	{"/dev", 0o755},
 	{"/etc", 0o755},
 	{"/lib", 0o755},

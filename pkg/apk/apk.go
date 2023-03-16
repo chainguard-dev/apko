@@ -74,7 +74,7 @@ type Option func(*APK) error
 func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	// initialize apk
 	// first set up required directories (tmp has different permissions)
-	if err := a.fs.MkdirAll("/tmp", 0o777); err != nil {
+	if err := a.fs.MkdirAll("/tmp", 0o777|fs.ModeSticky); err != nil {
 		return err
 	}
 	baseDirs := []string{"/proc", "/dev", "/var", "/lib", "/etc"}
