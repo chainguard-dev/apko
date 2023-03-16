@@ -81,11 +81,11 @@ type deviceFile struct {
 }
 
 var baseDirectories = []directory{
-	{"/tmp", 0o777},
+	{"/tmp", 0o777 | fs.ModeSticky},
 	{"/dev", 0o755},
 	{"/etc", 0o755},
 	{"/lib", 0o755},
-	{"/proc", 0o655},
+	{"/proc", 0o555},
 	{"/var", 0o755},
 }
 
@@ -206,11 +206,16 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 		stat, err := a.fs.Stat(e.path)
 		switch {
 		case err != nil && errors.Is(err, fs.ErrNotExist):
-			return fmt.Errorf("base directory %s does not exist", e.path)
+			err := a.fs.Mkdir(e.path, e.perms)
+			if err != nil {
+				return fmt.Errorf("failed to create base directory %s: %w", e.path, err)
+			}
 		case err != nil:
 			return fmt.Errorf("error opening base directory %s: %w", e.path, err)
 		case !stat.IsDir():
 			return fmt.Errorf("base directory %s is not a directory", e.path)
+		case stat.Mode().Perm() != e.perms:
+			return fmt.Errorf("base directory %s has incorrect permissions: %o", e.path, stat.Mode().Perm())
 		}
 	}
 	for _, e := range initDirectories {
