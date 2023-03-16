@@ -1,3 +1,11 @@
+# Changes from 0.7.1 to 0.7.2
+
+* BusyBox: ensure a symlink for `tree` is installed.  This was a new
+  applet added in BusyBox 1.36.
+
+* Various regression fixes regarding the native apk implementation in
+  apko.
+
 # Changes from 0.7.0 to 0.7.1
 
 * Fix an issue where the user-requested tag was not being used for
