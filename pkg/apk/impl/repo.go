@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -141,7 +142,10 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*name
 		case "file":
 			b, err = os.ReadFile(u)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read repository %s: %w", u, err)
+				if !errors.Is(err, fs.ErrNotExist) {
+					return nil, fmt.Errorf("failed to read repository %s: %w", u, err)
+				}
+				continue
 			}
 		case "https":
 			client := a.client
