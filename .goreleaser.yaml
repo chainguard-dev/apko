@@ -34,7 +34,7 @@ signs:
   - id: apko-cosign
     cmd: cosign
     certificate: "${artifact}.crt"
-    args: ["sign-blob", "--output-signature", "${signature}", "--output-certificate", "${certificate}", "${artifact}"]
+    args: ["sign-blob", "--output-signature", "${signature}", "--output-certificate", "${certificate}", "${artifact}", "--yes"]
     artifacts: all
 
 archives:
