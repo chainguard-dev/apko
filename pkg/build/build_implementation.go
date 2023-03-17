@@ -74,7 +74,7 @@ type buildImplementation interface {
 	// AdditionalTags generate additional tags for apk packages
 	AdditionalTags(apkfs.FullFS, *options.Options) error
 	// InstallBusyboxLinks install busybox symlinks, if busybox is installed
-	InstallBusyboxLinks(apkfs.FullFS) error
+	InstallBusyboxLinks(apkfs.FullFS, *options.Options) error
 	// InstallLdconfigLinks install ldconfig symlinks
 	InstallLdconfigLinks(apkfs.FullFS) error
 	// InstallCharDevices install character devices
@@ -297,7 +297,7 @@ func buildImage(
 	}
 
 	// add busybox symlinks
-	if err := di.InstallBusyboxLinks(fsys); err != nil {
+	if err := di.InstallBusyboxLinks(fsys, o); err != nil {
 		return err
 	}
 
