@@ -438,7 +438,7 @@ func (f *dirFS) Link(oldname, newname string) error {
 	if !strings.HasPrefix(target, f.base) {
 		return fmt.Errorf("hardlink target %s is outside of the filesystem", target)
 	}
-	if f.caseSensitiveOnDisk(newname) {
+	if f.createOnDisk(newname) {
 		_ = os.Link(target, filepath.Join(f.base, newname))
 	}
 	return f.overrides.Link(oldname, newname)
@@ -448,7 +448,7 @@ func (f *dirFS) Symlink(oldname, newname string) error {
 	// For symlink, take target as is.
 	// If it is outside of the base, it will be resolved by Readlink.
 	// This enables proper symlink behaviour.
-	if f.caseSensitiveOnDisk(newname) {
+	if f.createOnDisk(newname) {
 		_ = os.Symlink(oldname, filepath.Join(f.base, newname))
 	}
 	return f.overrides.Symlink(oldname, newname)
@@ -519,8 +519,11 @@ func (f *dirFS) caseSensitiveOnDisk(p string) bool {
 	if f.caseMap == nil {
 		return true
 	}
+	f.caseMapMutex.Lock()
+	defer f.caseMapMutex.Unlock()
 	p = standardizePath(p)
-	result, ok := f.caseMap[strings.ToLower(p)]
+	key := strings.ToLower(p)
+	result, ok := f.caseMap[key]
 	if !ok {
 		return true
 	}
@@ -532,13 +535,13 @@ func (f *dirFS) caseSensitiveOnDisk(p string) bool {
 // This func is responsible solely for determining if you _should_ created it on disk.
 // If that would cause a conflict, that is up to the calling routing to figure out.
 func (f *dirFS) createOnDisk(p string) bool {
+	if f.caseMap == nil {
+		return true
+	}
 	f.caseMapMutex.Lock()
 	defer f.caseMapMutex.Unlock()
 	p = standardizePath(p)
 	key := strings.ToLower(p)
-	if f.caseMap == nil {
-		return true
-	}
 	result, ok := f.caseMap[key]
 	if !ok {
 		f.caseMap[key] = p
