@@ -123,10 +123,11 @@ type FakeBuildImplementation struct {
 	initializeApkReturnsOnCall map[int]struct {
 		result1 error
 	}
-	InstallBusyboxLinksStub        func(fs.FullFS) error
+	InstallBusyboxLinksStub        func(fs.FullFS, *options.Options) error
 	installBusyboxLinksMutex       sync.RWMutex
 	installBusyboxLinksArgsForCall []struct {
 		arg1 fs.FullFS
+		arg2 *options.Options
 	}
 	installBusyboxLinksReturns struct {
 		result1 error
@@ -763,18 +764,19 @@ func (fake *FakeBuildImplementation) InitializeApkReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxLinks(arg1 fs.FullFS) error {
+func (fake *FakeBuildImplementation) InstallBusyboxLinks(arg1 fs.FullFS, arg2 *options.Options) error {
 	fake.installBusyboxLinksMutex.Lock()
 	ret, specificReturn := fake.installBusyboxLinksReturnsOnCall[len(fake.installBusyboxLinksArgsForCall)]
 	fake.installBusyboxLinksArgsForCall = append(fake.installBusyboxLinksArgsForCall, struct {
 		arg1 fs.FullFS
-	}{arg1})
+		arg2 *options.Options
+	}{arg1, arg2})
 	stub := fake.InstallBusyboxLinksStub
 	fakeReturns := fake.installBusyboxLinksReturns
-	fake.recordInvocation("InstallBusyboxLinks", []interface{}{arg1})
+	fake.recordInvocation("InstallBusyboxLinks", []interface{}{arg1, arg2})
 	fake.installBusyboxLinksMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -788,17 +790,17 @@ func (fake *FakeBuildImplementation) InstallBusyboxLinksCallCount() int {
 	return len(fake.installBusyboxLinksArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxLinksCalls(stub func(fs.FullFS) error) {
+func (fake *FakeBuildImplementation) InstallBusyboxLinksCalls(stub func(fs.FullFS, *options.Options) error) {
 	fake.installBusyboxLinksMutex.Lock()
 	defer fake.installBusyboxLinksMutex.Unlock()
 	fake.InstallBusyboxLinksStub = stub
 }
 
-func (fake *FakeBuildImplementation) InstallBusyboxLinksArgsForCall(i int) fs.FullFS {
+func (fake *FakeBuildImplementation) InstallBusyboxLinksArgsForCall(i int) (fs.FullFS, *options.Options) {
 	fake.installBusyboxLinksMutex.RLock()
 	defer fake.installBusyboxLinksMutex.RUnlock()
 	argsForCall := fake.installBusyboxLinksArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeBuildImplementation) InstallBusyboxLinksReturns(result1 error) {
