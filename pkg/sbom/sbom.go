@@ -30,6 +30,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
+	"chainguard.dev/apko/pkg/vfs"
 )
 
 var (
@@ -56,17 +57,17 @@ type SBOM struct {
 	Options    options.Options
 }
 
-func New(fs apkfs.FullFS) *SBOM {
+func New(basefs vfs.BaseFS, fs apkfs.FullFS) *SBOM {
 	return &SBOM{
-		Generators: generator.Generators(fs),
+		Generators: generator.Generators(basefs, fs),
 		impl:       &defaultSBOMImplementation{},
 		Options:    DefaultOptions,
 	}
 }
 
-// NewWithWorkDir returns a new sbom object with a working dir preset
-func NewWithFS(fs apkfs.FullFS, a types.Architecture) *SBOM {
-	s := New(fs)
+// NewWithFS returns a new sbom object with fs.
+func NewWithFS(basefs vfs.BaseFS, fs apkfs.FullFS, a types.Architecture) *SBOM {
+	s := New(basefs, fs)
 	s.Options.FS = fs
 	s.Options.FileName = fmt.Sprintf("sbom-%s", a.ToAPK())
 	return s

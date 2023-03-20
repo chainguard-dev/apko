@@ -38,6 +38,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 	"chainguard.dev/apko/pkg/tarball"
+	"chainguard.dev/apko/pkg/vfs"
 )
 
 //counterfeiter:generate . buildImplementation
@@ -339,7 +340,8 @@ func buildPackageList(
 }
 
 func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) *sbom.SBOM {
-	s := sbom.NewWithFS(fsys, o.Arch)
+	basefs, _ := vfs.DirFS(o.WorkDir)
+	s := sbom.NewWithFS(basefs, fsys, o.Arch)
 	// Parse the image reference
 	if len(o.Tags) > 0 {
 		tag, err := name.NewTag(o.Tags[0])

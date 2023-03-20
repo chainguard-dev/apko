@@ -29,8 +29,8 @@ import (
 
 	purl "github.com/package-url/packageurl-go"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
+	"chainguard.dev/apko/pkg/vfs"
 )
 
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
@@ -44,10 +44,10 @@ const (
 )
 
 type SPDX struct {
-	fs apkfs.FullFS
+	fs vfs.BaseFS
 }
 
-func New(fs apkfs.FullFS) SPDX {
+func New(fs vfs.BaseFS) SPDX {
 	return SPDX{fs}
 }
 
@@ -189,7 +189,7 @@ func replacePackage(doc *Document, originalID, newID string) {
 }
 
 // locateApkSBOM returns the SBOM
-func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
+func locateApkSBOM(fsys vfs.BaseFS, p *Package) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
 		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),

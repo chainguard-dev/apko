@@ -22,6 +22,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
+	"chainguard.dev/apko/pkg/vfs"
 )
 
 //counterfeiter:generate . Generator
@@ -33,13 +34,13 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
-func Generators(fsys apkfs.FullFS) map[string]Generator {
+func Generators(basefs vfs.BaseFS, fsys apkfs.FullFS) map[string]Generator {
 	generators := map[string]Generator{}
 
-	sx := spdx.New(fsys)
+	sx := spdx.New(basefs)
 	generators[sx.Key()] = &sx
 
-	cdx := cyclonedx.New(fsys)
+	cdx := cyclonedx.New(basefs)
 	generators[cdx.Key()] = &cdx
 
 	idb := idb.New(fsys)

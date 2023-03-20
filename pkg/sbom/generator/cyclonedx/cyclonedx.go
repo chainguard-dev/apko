@@ -22,15 +22,15 @@ import (
 
 	purl "github.com/package-url/packageurl-go"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
+	"chainguard.dev/apko/pkg/vfs"
 )
 
 type CycloneDX struct {
-	fs apkfs.FullFS
+	fs vfs.BaseFS
 }
 
-func New(fs apkfs.FullFS) CycloneDX {
+func New(fs vfs.BaseFS) CycloneDX {
 	return CycloneDX{fs}
 }
 
