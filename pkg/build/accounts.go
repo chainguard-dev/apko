@@ -119,7 +119,12 @@ func (di *defaultBuildImplementation) MutateAccounts(
 			} else if !os.IsNotExist(err) {
 				return fmt.Errorf("checking homedir exists: %w", err)
 			}
-			if err := fsys.MkdirAll(targetHomedir, 0o755); err != nil {
+			// Create the directory. Only the directory should be 0o700; parents, if they are missing, should be 0o755.
+			parent := filepath.Dir(targetHomedir)
+			if err := fsys.MkdirAll(parent, 0o755); err != nil {
+				return fmt.Errorf("creating parent %s: %w", parent, err)
+			}
+			if err := fsys.Mkdir(targetHomedir, 0o700); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
 			}
 			if err := fsys.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
