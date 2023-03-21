@@ -22,6 +22,14 @@ jobs:
           make apko
           ./apko version
 
+      - name: Setup cosign (needed in CI tests)
+        uses: sigstore/cosign-installer@v3
+
+      - name: Run CI tests in hack/ci/
+        run: |
+          set -ex
+          ./hack/ci-tests.sh
+
       - uses: goreleaser/goreleaser-action@f82d6c1c344bcacabba2c841718984797f664a6b # v2.8.1
         with:
           version: latest
@@ -31,11 +39,3 @@ jobs:
         run: |
           make snapshot
           ./dist/apko-build_linux_amd64_v1/apko version
-
-      # Required in SBOM quality test below
-      - name: Setup cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Check SBOM quality
-        run: |
-          ./hack/sbom-quality.sh
