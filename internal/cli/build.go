@@ -154,6 +154,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	var errg errgroup.Group
 	workDir := bc.Options.WorkDir
 	imgs := map[types.Architecture]coci.SignedImage{}
+	contexts := map[types.Architecture]*build.Context{}
 	imageTars := map[types.Architecture]string{}
 
 	// This is a hack to skip the SBOM generation during
@@ -184,6 +185,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		bc.Options.SBOMFormats = []string{}
 		bc.Options.WantSBOM = false
 		bc.ImageConfiguration.Archs = archs
+
+		// save the build context for later
+		contexts[arch] = bc
 
 		errg.Go(func() error {
 			bc.Options.Arch = arch
@@ -218,17 +222,11 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	if wantSBOM {
 		logrus.Info("Generating arch image SBOMs")
 		for arch, img := range imgs {
-			// working directory for this architecture
-			wd := filepath.Join(workDir, arch.ToAPK())
-			bc, err := build.New(wd, opts...)
-			if err != nil {
-				return err
-			}
-			bc.Options.WantSBOM = true
-			bc.Options.Arch = arch
-			bc.Options.TarballPath = imageTars[arch]
-			bc.Options.WorkDir = wd
+			bc := contexts[arch]
+
+			// override the SBOM options
 			bc.Options.SBOMFormats = formats
+			bc.Options.WantSBOM = true
 			bc.Options.SBOMPath = sbomPath
 
 			if err := bc.GenerateImageSBOM(arch, img); err != nil {
