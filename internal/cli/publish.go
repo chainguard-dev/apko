@@ -167,7 +167,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var errg errgroup.Group
 	workDir := bc.Options.WorkDir
 	imgs := map[types.Architecture]coci.SignedImage{}
-	contexts := map[types.Architecture]*build.Context{}
 	imageTars := map[types.Architecture]string{}
 
 	// This is a hack to skip the SBOM generation during
@@ -199,9 +198,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		bc.Options.SBOMFormats = []string{}
 		bc.Options.WantSBOM = false
 		bc.ImageConfiguration.Archs = archs
-
-		// save the build context for later
-		contexts[arch] = bc
 
 		errg.Go(func() error {
 			bc.Options.Arch = arch
@@ -289,26 +285,33 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	bc.Options.SBOMFormats = formats
-	sbomPath := bc.Options.SBOMPath
+	sbompath := bc.Options.SBOMPath
 	if bc.Options.SBOMPath == "" {
-		sbomPath = bc.Options.TempDir()
+		sbompath = bc.Options.TempDir()
 	}
 
 	if wantSBOM {
 		logrus.Info("Generating arch image SBOMs")
 		for arch, img := range imgs {
-			bc := contexts[arch]
-
+			// working directory for this architecture
+			wd := filepath.Join(workDir, arch.ToAPK())
+			bc, err := build.New(wd, opts...)
+			if err != nil {
+				return err
+			}
 			bc.Options.WantSBOM = true
+			bc.Options.Arch = arch
+			bc.Options.TarballPath = imageTars[arch]
+			bc.Options.WorkDir = wd
 			bc.Options.SBOMFormats = formats
-			bc.Options.SBOMPath = sbomPath
+			bc.Options.SBOMPath = sbompath
 
 			if err := bc.GenerateImageSBOM(arch, img); err != nil {
 				return fmt.Errorf("generating sbom for %s: %w", arch, err)
 			}
 
 			if _, err := oci.PostAttachSBOM(
-				img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+				img, sbompath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
 			}
@@ -320,7 +323,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 		if idx != nil {
 			if _, err := oci.PostAttachSBOM(
-				idx, sbomPath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+				idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to index: %w", err)
 			}
