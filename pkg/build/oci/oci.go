@@ -192,6 +192,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		cfg.Config.User = ic.Accounts.RunAs
 	}
 
+	if ic.StopSignal != "" {
+		cfg.Config.StopSignal = ic.StopSignal
+	}
+
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to update %s config file: %w", imageType, err)
