@@ -78,6 +78,7 @@ type ImageConfiguration struct {
 	Contents    ImageContents     `yaml:"contents,omitempty"`
 	Entrypoint  ImageEntrypoint   `yaml:"entrypoint,omitempty"`
 	Cmd         string            `yaml:"cmd,omitempty"`
+	StopSignal  string            `yaml:"stop-signal,omitempty"`
 	WorkDir     string            `yaml:"work-dir,omitempty"`
 	Accounts    ImageAccounts     `yaml:"accounts,omitempty"`
 	Archs       []Architecture    `yaml:"archs,omitempty"`
