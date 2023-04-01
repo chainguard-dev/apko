@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
@@ -67,6 +68,13 @@ func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *
 			// get the version
 			installedVersion = pkg.Version
 			break
+		}
+		// Other packages might "provide" busybox
+		for _, prov := range pkg.Provides {
+			if strings.Contains(prov, "busybox") {
+				installedVersion = pkg.Version
+				break
+			}
 		}
 	}
 	if installedVersion == "" {
