@@ -28,7 +28,7 @@ import (
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
 func (a *APKImplementation) writeOneFile(header *tar.Header, r io.Reader) error {
-	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode())
+	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, header.FileInfo().Mode())
 	if err != nil {
 		return fmt.Errorf("error creating file %s: %w", header.Name, err)
 	}
