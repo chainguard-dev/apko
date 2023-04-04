@@ -19,14 +19,14 @@ const (
 	DefaultSystemKeyRingPath = "/usr/share/apk/keys/"
 	indexFilename            = "APKINDEX.tar.gz"
 	// we are using these for fs.FS so should omit the leading /
-	reposFilePath     = "etc/apk/repositories"
-	archFilePath      = "etc/apk/arch"
-	keysDirPath       = "etc/apk/keys"
-	worldFilePath     = "etc/apk/world"
-	installedFilePath = "lib/apk/db/installed"
-	scriptsFilePath   = "lib/apk/db/scripts.tar"
+	reposFilePath     = "/etc/apk/repositories"
+	archFilePath      = "/etc/apk/arch"
+	keysDirPath       = "/etc/apk/keys"
+	worldFilePath     = "/etc/apk/world"
+	installedFilePath = "/lib/apk/db/installed"
+	scriptsFilePath   = "/lib/apk/db/scripts.tar"
 	scriptsTarPerms   = 0o644
-	triggersFilePath  = "lib/apk/db/triggers"
+	triggersFilePath  = "/lib/apk/db/triggers"
 	// which PAX record we use in the tar header
 	paxRecordsChecksumKey = "APK-TOOLS.checksum.SHA1"
 

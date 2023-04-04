@@ -17,7 +17,6 @@ package fs
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -28,7 +27,6 @@ import (
 
 	"github.com/blang/vfs"
 	origMemfs "github.com/blang/vfs/memfs"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -169,39 +167,11 @@ func (m *memFS) open(name string) (*memFile, error) {
 }
 
 func (m *memFS) Mknod(path string, mode uint32, dev int) error {
-	file, err := m.OpenFile(
-		path,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		fs.FileMode(mode)|os.ModeCharDevice|os.ModeDevice,
-	)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	// save the major and minor numbers in the file itself
-	devNumbers := []uint32{unix.Major(uint64(dev)), unix.Minor(uint64(dev))}
-	return binary.Write(file, binary.LittleEndian, devNumbers)
+	return m.mknod(path, mode, dev)
 }
 
 func (m *memFS) Readnod(name string) (dev int, err error) {
-	file, err := m.Open(name)
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-	fi, err := file.Stat()
-	if err != nil {
-		return 0, err
-	}
-	if fi.Mode()&os.ModeCharDevice != os.ModeCharDevice {
-		return 0, fmt.Errorf("%s not a character device", name)
-	}
-	// read the major and minor numbers from the file itself
-	devNumbers := make([]uint32, 2)
-	if err := binary.Read(file, binary.LittleEndian, devNumbers); err != nil {
-		return 0, err
-	}
-	return int(unix.Mkdev(devNumbers[0], devNumbers[1])), nil
+	return m.readnod(name)
 }
 
 func (m *memFS) Chmod(path string, perm fs.FileMode) error {

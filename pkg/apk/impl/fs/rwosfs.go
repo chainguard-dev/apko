@@ -21,10 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 type dirFSOpts struct {
@@ -142,19 +139,7 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 				err = f.overrides.Symlink(target, path)
 			}
 		case fs.ModeCharDevice:
-			var dev int
-			sys := fi.Sys()
-			st1, ok1 := sys.(*syscall.Stat_t)
-			st2, ok2 := sys.(*unix.Stat_t)
-			switch {
-			case ok1:
-				dev = int(st1.Rdev)
-			case ok2:
-				dev = int(st2.Rdev)
-			default:
-				return fmt.Errorf("unsupported type %T", sys)
-			}
-			err = f.overrides.Mknod(path, uint32(unix.S_IFCHR|mode), dev)
+			return f.modeCharDevice(path, fi, mode)
 		default:
 			var memFile File
 			memFile, err = f.overrides.OpenFile(path, os.O_CREATE, perm)
@@ -492,14 +477,7 @@ func (f *dirFS) Chown(path string, uid int, gid int) error {
 }
 
 func (f *dirFS) Mknod(name string, mode uint32, dev int) error {
-	if f.caseSensitiveOnDisk(name) {
-		err := unix.Mknod(filepath.Join(f.base, name), mode, dev)
-		// what if we could not create it? Just create a regular file there, and memory will override
-		if err != nil {
-			_ = os.WriteFile(filepath.Join(f.base, name), nil, 0)
-		}
-	}
-	return f.overrides.Mknod(name, mode, dev)
+	return f.mknod(f.base, name, mode, dev)
 }
 
 // sanitize ensures that we never go beyond the root of the filesystem
