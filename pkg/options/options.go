@@ -51,10 +51,10 @@ type Options struct {
 
 var Default = Options{
 	Log: &logrus.Logger{
-		Out: os.Stderr,
+		Out:       os.Stderr,
 		Formatter: &log.Formatter{},
-		Hooks: make(logrus.LevelHooks),
-		Level: logrus.InfoLevel,
+		Hooks:     make(logrus.LevelHooks),
+		Level:     logrus.InfoLevel,
 	},
 	Arch: types.ParseArchitecture(runtime.GOARCH),
 }

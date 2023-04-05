@@ -16,8 +16,8 @@ package log
 
 import (
 	"bytes"
-	"io"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
