@@ -20,10 +20,10 @@ import (
 	"runtime"
 	"time"
 
-	nested "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 )
 
 type Options struct {
@@ -51,12 +51,10 @@ type Options struct {
 
 var Default = Options{
 	Log: &logrus.Logger{
-		Out: os.Stderr,
-		Formatter: &nested.Formatter{
-			ShowFullLevel: true,
-		},
-		Hooks: make(logrus.LevelHooks),
-		Level: logrus.InfoLevel,
+		Out:       os.Stderr,
+		Formatter: &log.Formatter{},
+		Hooks:     make(logrus.LevelHooks),
+		Level:     logrus.InfoLevel,
 	},
 	Arch: types.ParseArchitecture(runtime.GOARCH),
 }

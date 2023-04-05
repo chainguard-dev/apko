@@ -545,7 +545,7 @@ func (a *APKImplementation) fetchAlpineKeys(versions []string) error {
 //
 //nolint:unparam // we do not use some params... yet.
 func (a *APKImplementation) installPackage(pkg *repository.RepositoryPackage, cache, updateCache, executeScripts bool, sourceDateEpoch *time.Time) error {
-	a.logger.Infof("installing %s (%s)", pkg.Name, pkg.Version)
+	a.logger.Debugf("installing %s (%s)", pkg.Name, pkg.Version)
 
 	u := pkg.Url()
 
