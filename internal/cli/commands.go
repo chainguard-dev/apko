@@ -15,6 +15,9 @@
 package cli
 
 import (
+	"fmt"
+	"net/http"
+
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/release-utils/version"
@@ -25,6 +28,9 @@ func New() *cobra.Command {
 		Use:               "apko",
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			http.DefaultTransport = userAgentTransport{http.DefaultTransport}
+		},
 	}
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
@@ -35,4 +41,11 @@ func New() *cobra.Command {
 	cmd.AddCommand(showPackages())
 	cmd.AddCommand(version.Version())
 	return cmd
+}
+
+type userAgentTransport struct{ t http.RoundTripper }
+
+func (u userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", fmt.Sprintf("apko/%s", version.GetVersionInfo().GitVersion))
+	return u.t.RoundTrip(req)
 }
