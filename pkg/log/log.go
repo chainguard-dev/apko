@@ -74,6 +74,15 @@ func levelToColor(entry *logrus.Entry) int {
 	}
 }
 
+func msgLevelToColor(entry *logrus.Entry) int {
+	switch entry.Level {
+	case logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel:
+		return levelToColor(entry)
+	default:
+		return gray
+	}
+}
+
 func levelEmoji(entry *logrus.Entry) string {
 	switch entry.Level {
 	case logrus.PanicLevel, logrus.FatalLevel:
@@ -85,7 +94,7 @@ func levelEmoji(entry *logrus.Entry) string {
 	case logrus.InfoLevel:
 		return "ℹ️ "
 	default:
-		return "❕ "
+		return "❕"
 	}
 }
 
@@ -96,9 +105,9 @@ func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
 	message := strings.TrimSuffix(entry.Message, "\n")
 
 	if arch, ok := entry.Data["arch"]; ok {
-		fmt.Fprintf(b, "%s %s%-10s|%s %s", levelEmoji(entry), color(out, levelToColor(entry)), arch, color(out, reset), message)
+		fmt.Fprintf(b, "%s %s%-10s|%s %s%s%s", levelEmoji(entry), color(out, levelToColor(entry)), arch, color(out, reset), color(out, msgLevelToColor(entry)), message, color(out, reset))
 	} else {
-		fmt.Fprintf(b, "%s %s%-10s|%s %s", levelEmoji(entry), color(out, levelToColor(entry)), "", color(out, reset), message)
+		fmt.Fprintf(b, "%s %s%-10s|%s %s%s%s", levelEmoji(entry), color(out, levelToColor(entry)), "", color(out, reset), color(out, msgLevelToColor(entry)), message, color(out, reset))
 	}
 
 	b.WriteByte('\n')
