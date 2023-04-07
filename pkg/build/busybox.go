@@ -107,7 +107,7 @@ func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *
 			// sometimes the list generates links twice, so do not error on that
 			if errors.Is(err, os.ErrExist) {
 				// ignore if it already is a symlink, in line with what `busybox --install -s`` does
-				if _, _, err := fsys.Readlink(link); err == nil {
+				if _, err := fsys.Readlink(link); err == nil {
 					continue
 				}
 				// ignore if it already is a regular file

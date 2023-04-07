@@ -66,7 +66,9 @@ func TestInitDB(t *testing.T) {
 			fi, err := fs.Stat(src, f.path)
 			require.NoError(t, err, "error statting %s", f.path)
 			require.Equal(t, fi.Mode().Type()&os.ModeCharDevice, os.ModeCharDevice, "expected %s to be a character file, got %v", f.path, fi.Mode())
-			require.Equal(t, f.perms, fi.Mode().Perm(), "expected %s to have permissions %v, got %v", f.path, f.perms, fi.Mode().Perm())
+			targetPerms := f.perms
+			actualPerms := fi.Mode().Perm()
+			require.Equal(t, targetPerms, actualPerms, "expected %s to have permissions %v, got %v", f.path, targetPerms, actualPerms)
 		}
 	}
 }

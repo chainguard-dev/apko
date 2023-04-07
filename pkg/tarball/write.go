@@ -96,7 +96,6 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 
 		var (
 			link         string
-			symlink      bool
 			major, minor uint32
 			isCharDevice bool
 		)
@@ -106,7 +105,7 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 				return fmt.Errorf("readlink not supported by this fs: path (%s)", path)
 			}
 
-			if link, symlink, err = rlfs.Readlink(path); err != nil {
+			if link, err = rlfs.Readlink(path); err != nil {
 				return err
 			}
 		}
@@ -178,8 +177,8 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 			header.Gname = h.Gname
 		}
 
-		if link != "" && !symlink {
-			header.Typeflag = tar.TypeLink
+		if link != "" {
+			header.Typeflag = tar.TypeSymlink
 		}
 		if !info.IsDir() && hasHardlinks(info) {
 			inode, err := getInodeFromFileInfo(info)
