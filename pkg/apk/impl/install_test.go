@@ -29,6 +29,8 @@ func TestInstallAPKFiles(t *testing.T) {
 	apk, src, err := testGetTestAPK()
 	require.NoErrorf(t, err, "failed to get test APK")
 
+	var finalDoubleWriteContent = []byte("second write is much longer")
+
 	// create a tgz stream with our files
 	dirs := []struct {
 		name  string
@@ -41,12 +43,15 @@ func TestInstallAPKFiles(t *testing.T) {
 		{"var/lib/test", os.ModeDir | 0755},
 	}
 	files := []struct {
-		name    string
-		perms   os.FileMode
-		content []byte
+		name        string
+		overwritten bool // whether or not this file is expected to be overwritten, so ignore it in a check
+		perms       os.FileMode
+		content     []byte
 	}{
-		{"etc/foo/bar", 0644, []byte("hello world")},
-		{"var/lib/test/foobar", 0644, []byte("hello var/lib")},
+		{"etc/foo/bar", false, 0644, []byte("hello world")},
+		{"var/lib/test/foobar", false, 0644, []byte("hello var/lib")},
+		{"etc/doublewrite", true, 0644, []byte("first")},
+		{"etc/doublewrite", false, 0644, finalDoubleWriteContent},
 	}
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -91,6 +96,9 @@ func TestInstallAPKFiles(t *testing.T) {
 		delete(headerMap, d.name)
 	}
 	for _, f := range files {
+		if f.overwritten {
+			continue
+		}
 		h, ok := headerMap[f.name]
 		require.True(t, ok, "file %s not found in headers", f.name)
 		require.Equal(t, tar.TypeReg, rune(h.Typeflag), "mismatched file type for %s", f.name)
@@ -107,6 +115,9 @@ func TestInstallAPKFiles(t *testing.T) {
 		require.Equal(t, fi.Mode(), d.perms, "expected %s to have permissions %v, got %v", d.name, d.perms, fi.Mode())
 	}
 	for _, f := range files {
+		if f.overwritten {
+			continue
+		}
 		fi, err := fs.Stat(src, f.name)
 		require.NoError(t, err, "error statting %s", f.name)
 		require.True(t, fi.Mode().IsRegular(), "expected %s to be a regular file, got %v", f.name, fi.Mode())

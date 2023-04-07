@@ -31,7 +31,6 @@ linters:
   - gocritic
   - importas
   - prealloc
-  - revive
   - misspell
   - stylecheck
   - tparallel

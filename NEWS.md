@@ -1,3 +1,14 @@
+# Changes from 0.7.2 to 0.7.3
+
+* Fix recording symlinks when operating on a case-insensitive filesystem.
+
+* Improve `busybox --install -s` emulation.
+
+* Fix permissions of created home directories.
+
+* Fix regression in generated SBOMs where individual files in the image
+  were not included, only the top-level packages.
+
 # Changes from 0.7.1 to 0.7.2
 
 * BusyBox: ensure a symlink for `tree` is installed.  This was a new

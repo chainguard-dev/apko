@@ -52,6 +52,8 @@ entrypoint:
   services:
     nginx: /usr/sbin/nginx -c /etc/nginx/nginx.conf -g "daemon off;"
 
+stop-signal: SIGQUIT
+
 work-dir: /usr/share/nginx
 
 accounts:
@@ -129,6 +131,12 @@ Services are monitored with the [s6 supervisor](https://skarnet.org/software/s6/
 `cmd` defines a command to run when the container starts up. If `entrypoint.command` is not set, it
 will be executed with `/bin/sh -c`. If `entrypoint.command` is set, `cmd` will be passed as arguments to
 `entrypoint.command`. This sets the "cmd" value on OCI images.
+
+### Stop-Signal top level element
+
+`stop-signal` configures the shutdown signal sent to the main process in the container by the
+runtime. By default this is SIGTERM. Be careful when using this alongside a `service-bundle`
+entrypoint which will intercept and potentially reinterpret the signal.
 
 ### Work-dir top level element
 

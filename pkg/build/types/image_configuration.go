@@ -183,6 +183,10 @@ func (ic *ImageConfiguration) Summarize(logger *logrus.Entry) {
 	if ic.Cmd != "" {
 		logger.Printf("  cmd: %s", ic.Cmd)
 	}
+	if ic.StopSignal != "" {
+		logger.Printf("  stop signal: %s", ic.StopSignal)
+	}
+
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
 		logger.Printf("  accounts:")
 		logger.Printf("    runas:  %s", ic.Accounts.RunAs)
