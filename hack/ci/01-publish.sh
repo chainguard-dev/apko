@@ -5,14 +5,6 @@
 
 set -ex
 
-# Go to repo root
-cd "$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../../"
-
-if [[ ! -f apko ]]; then
-    echo "Please first run \"make apko\". Exiting."
-    exit 1
-fi
-
 REGISTRY_BASE_IMAGE="index.docker.io/library/registry:2.8.1"
 REGISTRY_CONTAINER_NAME="ci-testing-registry"
 REF="localhost:5000/ci-testing:test"
@@ -34,19 +26,24 @@ contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
   packages:
+    - ca-certificates-bundle
+    - glibc-locale-en
+    - busybox
+    - bash
+    - openjdk-17
     - maven
+    - wolfi-baselayout
 archs:
   - x86_64
   - aarch64
 EOF
 
 # Publish image to registry
-./apko publish --debug "${APKO_CONFIG}" "${REF}"
+"${APKO}" publish --debug "${APKO_CONFIG}" "${REF}"
 
-# Subtest #1: Can we run it?
-# TODO: re-enable when we can run something
-# docker pull "${REF}"
-# docker run --entrypoint mvn --rm "${REF}" --version
+# Subtest #1: Can we run it
+docker pull "${REF}"
+docker run --entrypoint mvn --rm "${REF}" --version
 
 # Subtest #2: Dowload SBOM and check that it contains
 # files derived from package SBOMs melange produces in /var/lib/db/sbom

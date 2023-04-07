@@ -5,15 +5,16 @@
 
 set -ex
 
-# Go to repo root
-cd "$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../"
+ # Go to repo root
+ cd "$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../"
 
-if [[ ! -f apko ]]; then
+ if [[ ! -f apko ]]; then
     echo "Please first run \"make apko\". Exiting."
     exit 1
-fi
+ fi
 
+export APKO=$(pwd)/apko
 for exe in `find hack/ci -name '*.sh' | sort`; do
     echo "Running test: ${exe}"
-    ${exe}
+    "${exe}"
 done
