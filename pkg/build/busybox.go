@@ -34,6 +34,10 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
+const (
+	busybox = "/bin/busybox"
+)
+
 // for reference, the list of versions can be updated from curl -L https://distfiles.alpinelinux.org/distfiles/edge/ | grep busybox
 // we do everything higher than the version below
 
@@ -47,7 +51,7 @@ var busyboxLinks map[string][]string
 
 func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *options.Options) error {
 	// does busybox exist? if not, do not bother with symlinks
-	if _, err := fsys.Stat("/bin/busybox"); err != nil {
+	if _, err := fsys.Stat(busybox); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -92,11 +96,28 @@ func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *
 	}
 
 	for _, link := range links {
+		if link == busybox || link == "" {
+			continue
+		}
 		dir := filepath.Dir(link)
 		if err := fsys.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
-		if err := fsys.Symlink("/bin/busybox", link); err != nil {
+		if err := fsys.Symlink(busybox, link); err != nil {
+			// sometimes the list generates links twice, so do not error on that
+			if errors.Is(err, os.ErrExist) {
+				// ignore if it already is a symlink, in line with what `busybox --install -s`` does
+				if _, _, err := fsys.Readlink(link); err == nil {
+					continue
+				}
+				// ignore if it already is a regular file
+				if err != nil {
+					fi, err := fsys.Stat(link)
+					if err == nil && fi.Mode().IsRegular() {
+						continue
+					}
+				}
+			}
 			return fmt.Errorf("creating busybox link %s: %w", link, err)
 		}
 	}
