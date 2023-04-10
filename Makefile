@@ -163,6 +163,14 @@ release: ## Run Goreleaser in release mode
 
 
 #######################
+# CI tests
+#######################
+
+.PHONY: ci
+ci:
+	./hack/ci-tests.sh
+
+#######################
 # Sign images
 #######################
 .PHONY: sign-image
