@@ -78,7 +78,7 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 			// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
 			// otherwise, we need to create the directory.
 			if fi, err := a.fs.Stat(header.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-				if target, symlink, err := a.fs.Readlink(header.Name); err == nil && symlink {
+				if target, err := a.fs.Readlink(header.Name); err == nil {
 					if fi, err = a.fs.Stat(target); err == nil && fi.IsDir() {
 						// "break" rather than "continue", so that any handling outside of this switch statement is processed
 						break

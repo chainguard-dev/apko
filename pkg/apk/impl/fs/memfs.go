@@ -17,7 +17,6 @@ package fs
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -25,69 +24,149 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/blang/vfs"
-	origMemfs "github.com/blang/vfs/memfs"
 	"golang.org/x/sys/unix"
 )
 
-const (
-	linkFlagSymlink  = 's'
-	linkFlagHardlink = 'h'
-)
+type memFS struct {
+	tree *node
+}
 
 func NewMemFS() FullFS {
-	return &memFS{origMemfs.Create(), map[string]*ownership{}}
+	return &memFS{
+		tree: &node{
+			dir:      true,
+			children: map[string]*node{},
+			name:     "/",
+			mode:     fs.ModeDir | 0755,
+		},
+	}
 }
 
-type ownership struct {
-	uid, gid int
-	perms    fs.FileMode
+// getNode returns the node for the given path. If the path is not found, it
+// returns an error
+func (m *memFS) getNode(path string) (*node, error) {
+	if path == "/" || path == "." {
+		return m.tree, nil
+	}
+	parent := filepath.Dir(path)
+	parts := strings.Split(path, "/")
+	node := m.tree
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if node.children == nil {
+			return nil, os.ErrNotExist
+		}
+		var ok bool
+		childNode, ok := node.children[part]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		// what if it is a symlink?
+		if childNode.mode&os.ModeSymlink != 0 {
+			linkTarget := childNode.linkTarget
+			if !filepath.IsAbs(linkTarget) {
+				linkTarget = filepath.Join(parent, linkTarget)
+			}
+			targetNode, err := m.getNode(linkTarget)
+			if err != nil {
+				return nil, err
+			}
+			childNode = targetNode
+		}
+		node = childNode
+	}
+	return node, nil
 }
-type memFS struct {
-	*origMemfs.MemFS
-	perms map[string]*ownership // used only for overrides
+func (m *memFS) Mkdir(path string, perms fs.FileMode) error {
+	// first see if the parent exists
+	parent := filepath.Dir(path)
+	anode, err := m.getNode(parent)
+	if err != nil {
+		return err
+	}
+	if anode.mode&fs.ModeDir == 0 {
+		return fmt.Errorf("parent is not a directory")
+	}
+	// see if it exists
+	if _, ok := anode.children[filepath.Base(path)]; ok {
+		return os.ErrExist
+	}
+	// now create the directory
+	anode.children[filepath.Base(path)] = &node{
+		name:       filepath.Base(path),
+		mode:       fs.ModeDir | perms,
+		dir:        true,
+		modTime:    time.Now(),
+		createTime: time.Now(),
+		children:   map[string]*node{},
+	}
+	return nil
+}
+
+func (m *memFS) Stat(path string) (fs.FileInfo, error) {
+	node, err := m.getNode(path)
+	if err != nil {
+		return nil, err
+	}
+	if node.mode&fs.ModeSymlink != 0 {
+		targetNode, err := m.getNode(node.linkTarget)
+		if err != nil {
+			return nil, err
+		}
+		node = targetNode
+	}
+	return node.fileInfo(path), nil
+}
+
+func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
+	node, err := m.getNode(path)
+	if err != nil {
+		return nil, err
+	}
+	return node.fileInfo(path), nil
 }
 
 func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
-	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
-	dir, err := m.Stat(path)
-	if err == nil {
-		if dir.IsDir() {
-			return nil
+	parts := strings.Split(path, "/")
+	anode := m.tree
+	for _, part := range parts {
+		if part == "" {
+			continue
 		}
-		return &os.PathError{Op: "mkdir", Path: path, Err: errors.New("not a directory")}
-	}
-
-	// Slow path: make sure parent exists and then call Mkdir for path.
-	i := len(path)
-	for i > 0 && os.IsPathSeparator(path[i-1]) { // Skip trailing path separator.
-		i--
-	}
-
-	j := i
-	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
-		j--
-	}
-
-	if j > 1 {
-		// Create parent.
-		err = m.MkdirAll(path[:j-1], fs.ModeDir|perm)
-		if err != nil {
-			return err
+		if anode.children == nil {
+			anode.children = map[string]*node{}
 		}
-	}
-
-	// Parent now exists; invoke Mkdir and use its result.
-	err = m.Mkdir(path, fs.ModeDir|perm)
-	if err != nil {
-		// Handle arguments like "foo/." by
-		// double-checking that directory doesn't exist.
-		dir, err1 := m.Lstat(path)
-		if err1 == nil && dir.IsDir() {
-			return nil
+		var ok bool
+		newnode, ok := anode.children[part]
+		if !ok {
+			newnode = &node{
+				name:       part,
+				mode:       fs.ModeDir | perm,
+				dir:        true,
+				modTime:    time.Now(),
+				createTime: time.Now(),
+				children:   map[string]*node{},
+			}
+			anode.children[part] = newnode
+			anode = newnode
+			continue
 		}
-		return err
+		// what if it is a symlink?
+		if newnode.mode&os.ModeSymlink != 0 {
+			targetNode, err := m.getNode(newnode.linkTarget)
+			if err != nil {
+				return err
+			}
+			newnode = targetNode
+		}
+		if !newnode.dir {
+			return fmt.Errorf("path is not a directory")
+		}
+		anode = newnode
 	}
 	return nil
 }
@@ -97,23 +176,46 @@ func (m *memFS) Open(name string) (fs.File, error) {
 }
 
 func (m *memFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
-	// m.MemFS does not support symlinks, so we need to give it a resolved path.
-	// That means walking through all of the parts until we get to the end, and
-	// giving it the actual path to the file.
-	truename, err := m.walkSymlinks(name)
+	parent := filepath.Dir(name)
+	base := filepath.Base(name)
+	parentAnode, err := m.getNode(parent)
 	if err != nil {
 		return nil, err
 	}
-	return m.openFile(truename, flag, perm)
-}
+	if !parentAnode.dir {
+		return nil, fmt.Errorf("parent is not a directory")
+	}
+	if parentAnode.children == nil {
+		parentAnode.children = map[string]*node{}
+	}
+	anode, ok := parentAnode.children[base]
+	if !ok && flag&os.O_CREATE == 0 {
+		return nil, os.ErrNotExist
+	}
+	if anode != nil && anode.dir {
+		return nil, fmt.Errorf("is a directory")
+	}
+	if flag&os.O_CREATE != 0 && !ok {
+		// create the file
+		anode = &node{
+			name:       base,
+			mode:       perm,
+			dir:        false,
+			modTime:    time.Now(),
+			createTime: time.Now(),
+		}
+		parentAnode.children[base] = anode
+	}
+	// what if it is a symlink? Follow the symlink
+	if anode.mode&os.ModeSymlink != 0 {
+		linkTarget := anode.linkTarget
+		if !filepath.IsAbs(linkTarget) {
+			linkTarget = filepath.Join(parent, linkTarget)
+		}
+		return m.OpenFile(linkTarget, flag, perm)
+	}
 
-// openFile opens a file, but assumes all symlinks in the interim path have been resolved.
-func (m *memFS) openFile(name string, flag int, perm fs.FileMode) (*memFile, error) {
-	f, err := m.MemFS.OpenFile(name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-	return &memFile{f, m}, nil
+	return newMemFile(anode, name, m, flag), nil
 }
 
 func (m *memFS) ReadFile(name string) ([]byte, error) {
@@ -130,7 +232,7 @@ func (m *memFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (m *memFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
-	f, err := m.OpenFile(name, os.O_RDWR|os.O_CREATE, mode)
+	f, err := m.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
@@ -142,254 +244,298 @@ func (m *memFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 }
 
 func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	fi, err := m.MemFS.ReadDir(name)
+	anode, err := m.getNode(name)
 	if err != nil {
 		return nil, err
 	}
-	var de = make([]fs.DirEntry, 0, len(fi))
-	for _, f := range fi {
-		// what if we had overrides for ownership or permissions?
-		if o, ok := m.perms[standardizePath(filepath.Join(name, f.Name()))]; ok {
-			f = &memFileInfo{f, o.perms, o.uid, o.gid}
-		}
-		de = append(de, fs.FileInfoToDirEntry(f))
+	if !anode.dir {
+		return nil, fmt.Errorf("not a directory")
+	}
+	var de = make([]fs.DirEntry, 0, len(anode.children))
+	for name, node := range anode.children {
+		de = append(de, fs.FileInfoToDirEntry(node.fileInfo(name)))
 	}
 	return de, nil
 }
 
 func (m *memFS) OpenReaderAt(name string) (File, error) {
-	return m.open(name)
-}
-func (m *memFS) open(name string) (*memFile, error) {
-	f, err := m.MemFS.OpenFile(name, os.O_RDONLY, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	return &memFile{File: f, fs: m}, nil
+	return m.OpenFile(name, os.O_RDONLY, 0o644)
 }
 
 func (m *memFS) Mknod(path string, mode uint32, dev int) error {
-	file, err := m.OpenFile(
-		path,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		fs.FileMode(mode)|os.ModeCharDevice|os.ModeDevice,
-	)
+	parent := filepath.Dir(path)
+	base := filepath.Base(path)
+	anode, err := m.getNode(parent)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	// save the major and minor numbers in the file itself
-	devNumbers := []uint32{unix.Major(uint64(dev)), unix.Minor(uint64(dev))}
-	return binary.Write(file, binary.LittleEndian, devNumbers)
+	if _, ok := anode.children[base]; ok {
+		return os.ErrExist
+	}
+	anode.children[base] = &node{
+		name:       base,
+		mode:       fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
+		modTime:    time.Now(),
+		createTime: time.Now(),
+		major:      unix.Major(uint64(dev)),
+		minor:      unix.Minor(uint64(dev)),
+	}
+
+	return nil
 }
 
-func (m *memFS) Readnod(name string) (dev int, err error) {
-	file, err := m.Open(name)
+func (m *memFS) Readnod(path string) (dev int, err error) {
+	parent := filepath.Dir(path)
+	base := filepath.Base(path)
+	parentNode, err := m.getNode(parent)
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
-	fi, err := file.Stat()
-	if err != nil {
-		return 0, err
+	anode, ok := parentNode.children[base]
+	if !ok {
+		return 0, os.ErrNotExist
 	}
-	if fi.Mode()&os.ModeCharDevice != os.ModeCharDevice {
-		return 0, fmt.Errorf("%s not a character device", name)
+	if anode.mode&os.ModeDevice != os.ModeDevice || anode.mode&os.ModeCharDevice != os.ModeCharDevice {
+		return 0, fmt.Errorf("not a device")
 	}
-	// read the major and minor numbers from the file itself
-	devNumbers := make([]uint32, 2)
-	if err := binary.Read(file, binary.LittleEndian, devNumbers); err != nil {
-		return 0, err
-	}
-	return int(unix.Mkdev(devNumbers[0], devNumbers[1])), nil
+	return int(unix.Mkdev(anode.major, anode.minor)), nil
 }
 
 func (m *memFS) Chmod(path string, perm fs.FileMode) error {
-	p := standardizePath(path)
-	o, ok := m.perms[p]
-	if !ok {
-		// take any existing perms from the memfs; we are overring uid/gid anyways
-		fi, err := m.MemFS.Stat(path)
-		if err != nil {
-			return err
-		}
-		o = &ownership{perms: fi.Mode()}
-		m.perms[p] = o
+	anode, err := m.getNode(path)
+	if err != nil {
+		return err
 	}
-	// perms must reflect the file type as well
-	o.perms = perm | (o.perms & os.ModeType)
+	// need to change the mode, but keep the type
+	anode.mode = perm | (anode.mode & os.ModeType)
 	return nil
 }
 func (m *memFS) Chown(path string, uid int, gid int) error {
-	p := standardizePath(path)
-	o, ok := m.perms[p]
-	if !ok {
-		// take any existing perms from the memfs; we are overring uid/gid anyways
-		fi, err := m.MemFS.Stat(path)
-		if err != nil {
-			return err
-		}
-		o = &ownership{perms: fi.Mode()}
-		m.perms[p] = o
+	anode, err := m.getNode(path)
+	if err != nil {
+		return err
 	}
-	o.uid = uid
-	o.gid = gid
+	anode.uid = uid
+	anode.gid = gid
 	return nil
 }
+
 func (m *memFS) Create(name string) (File, error) {
 	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o666)
 }
 
 func (m *memFS) Symlink(oldname, newname string) error {
-	return m.multilink(true, oldname, newname)
-}
-func (m *memFS) Link(oldname, newname string) error {
-	return m.multilink(false, oldname, newname)
-}
-func (m *memFS) multilink(symlink bool, oldname, newname string) error {
-	file, err := m.OpenFile(
-		newname,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0777|os.ModeSymlink)
+	parent := filepath.Dir(newname)
+	base := filepath.Base(newname)
+	anode, err := m.getNode(parent)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	var linkType = linkFlagHardlink
-	if symlink {
-		linkType = linkFlagSymlink
+	if _, ok := anode.children[base]; ok {
+		return os.ErrExist
 	}
-	// hardlinks in tar always are absolute paths, so we need to include the base /
-	if !symlink {
-		oldname = filepath.Clean(fmt.Sprintf("%c%s", filepath.Separator, oldname))
+	anode.children[base] = &node{
+		name:       base,
+		mode:       0777 | os.ModeSymlink,
+		modTime:    time.Now(),
+		linkTarget: oldname,
 	}
-	// save the target in the file itself
-	_, err = file.Write([]byte(fmt.Sprintf("%c:%s", linkType, oldname)))
-	return err
+	return nil
 }
 
-func (m *memFS) Readlink(name string) (target string, symlink bool, err error) {
-	truename, err := m.walkSymlinks(filepath.Dir(name))
+func (m *memFS) Link(oldname, newname string) error {
+	parent := filepath.Dir(newname)
+	base := filepath.Base(newname)
+	anode, err := m.getNode(parent)
 	if err != nil {
-		return "", false, err
+		return err
 	}
-	return m.readSymlink(filepath.Join(truename, filepath.Base(name)))
-}
-
-// readHardlink reads the hardlink target directly from the memfs.
-func (m *memFS) readHardlink(name string) (string, bool, error) {
-	target, linkType, err := m.readLinkBase(name)
-	return target, linkType == linkFlagHardlink, err
-}
-
-// readSymlink reads the symlink target directly from the memfs.
-func (m *memFS) readSymlink(name string) (string, bool, error) {
-	target, linkType, err := m.readLinkBase(name)
-	return target, linkType == linkFlagSymlink, err
-}
-
-// readLinkBase reads the link base target directly from the memfs.
-func (m *memFS) readLinkBase(name string) (string, byte, error) {
-	file, err := m.openFile(name, os.O_RDONLY, 0o644)
+	if _, ok := anode.children[base]; ok {
+		return os.ErrExist
+	}
+	target, err := m.getNode(oldname)
 	if err != nil {
-		return "", 0, err
+		return os.ErrNotExist
 	}
-	defer file.Close()
-	fi, err := file.Stat()
-	if err != nil {
-		return "", 0, err
-	}
-	buf := make([]byte, fi.Size())
-	if _, err = file.Read(buf); err != nil {
-		return "", 0, err
-	}
-	// first 2 bytes are the link type ("h" or "s") and a separator ":"
-	if len(buf) < 3 {
-		return "", 0, fmt.Errorf("invalid link %s", name)
-	}
-	return string(buf[2:]), buf[0], nil
+	anode.children[base] = target
+	target.linkCount++
+	return nil
 }
 
-func (m *memFS) walkSymlinks(path string) (string, error) {
-	var final string
-	segments := strings.Split(path, "/")
-	for i, seg := range segments {
-		if seg == "" {
-			continue
-		}
-		// see if this section exists; if it is not a symlink, just add it
-		segmentName := filepath.Join(final, seg)
-		fi, err := m.Stat(segmentName)
-		// we can ignore the last segment not existing
-		if err != nil {
-			if i == len(segments)-1 {
-				final = filepath.Join(final, seg)
-				continue
-			}
-			return "", err
-		}
-		// not a symlink, so just append it
-		if fi.Mode()&os.ModeSymlink != os.ModeSymlink {
-			final = filepath.Join(final, seg)
-		} else {
-			// it is a symlink, so resolve it
-			target, _, err := m.readSymlink(segmentName)
-			// what if it was not found?
-			switch {
-			case err != nil && i != len(segments)-1:
-				// we can handle the last one not existing, but no interim one
-				return "", err
-			case strings.HasPrefix(target, "/"):
-				// was it an absolute path?
-				final = target
-			default:
-				// relative path, so add it to the current path
-				final = filepath.Join(final, target)
-			}
-		}
+func (m *memFS) Readlink(name string) (target string, err error) {
+	parent := filepath.Dir(name)
+	base := filepath.Base(name)
+	parentNode, err := m.getNode(parent)
+	if err != nil {
+		return "", err
 	}
-	return final, nil
+	anode, ok := parentNode.children[base]
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	if anode.mode&os.ModeSymlink == 0 {
+		return "", fmt.Errorf("file is not a link")
+	}
+	return anode.linkTarget, nil
+}
+
+func (m *memFS) Remove(name string) error {
+	parent := filepath.Dir(name)
+	base := filepath.Base(name)
+	anode, err := m.getNode(parent)
+	if err != nil {
+		return err
+	}
+	if _, ok := anode.children[base]; !ok {
+		return os.ErrNotExist
+	}
+	if anode.children[base].linkCount > 0 {
+		anode.children[base].linkCount--
+	}
+	delete(anode.children, base)
+	return nil
 }
 
 type memFile struct {
-	vfs.File
-	fs *memFS
+	node     *node
+	fs       *memFS
+	name     string
+	offset   int64
+	openMode int
+}
+
+func newMemFile(node *node, name string, fs *memFS, openMode int) *memFile {
+	m := &memFile{
+		node:     node,
+		fs:       fs,
+		name:     name,
+		openMode: openMode,
+	}
+	if openMode&os.O_APPEND != 0 {
+		m.offset = int64(len(node.data))
+	}
+	if openMode&os.O_TRUNC != 0 {
+		node.data = nil
+	}
+	return m
 }
 
 func (f *memFile) Stat() (fs.FileInfo, error) {
-	fi, err := f.fs.MemFS.Stat(f.Name())
-	if err != nil {
-		return nil, err
+	if f.node == nil || f.fs == nil {
+		return nil, os.ErrClosed
 	}
-	// what if we had overrides for ownership or permissions?
-	o, ok := f.fs.perms[f.Name()]
-	if !ok {
-		return fi, nil
+	return f.fs.Stat(f.name)
+}
+
+func (f *memFile) Close() error {
+	if f.node == nil || f.fs == nil {
+		return os.ErrClosed
 	}
-	return &memFileInfo{fi, o.perms, o.uid, o.gid}, nil
+	f.fs = nil
+	f.node = nil
+	return nil
+}
+
+func (f *memFile) Read(b []byte) (int, error) {
+	if f.node == nil || f.fs == nil {
+		return 0, os.ErrClosed
+	}
+	if f.offset >= int64(len(f.node.data)) {
+		return 0, io.EOF
+	}
+	n := copy(b, f.node.data[f.offset:])
+	f.offset += int64(n)
+	return n, nil
+}
+
+func (f *memFile) ReadAt(p []byte, off int64) (n int, err error) {
+	if f.node == nil || f.fs == nil {
+		return 0, os.ErrClosed
+	}
+	if off >= int64(len(f.node.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, f.node.data[off:])
+	return n, nil
+}
+func (f *memFile) Seek(offset int64, whence int) (int64, error) {
+	if f.node == nil || f.fs == nil {
+		return 0, os.ErrClosed
+	}
+	switch whence {
+	case io.SeekStart:
+		f.offset = offset
+	case io.SeekCurrent:
+		f.offset += offset
+	case io.SeekEnd:
+		f.offset = int64(len(f.node.data)) + offset
+	default:
+		return 0, errors.New("invalid whence")
+	}
+	return f.offset, nil
+}
+
+func (f *memFile) Write(p []byte) (n int, err error) {
+	if f.node == nil || f.fs == nil {
+		return 0, os.ErrClosed
+	}
+	if f.openMode&os.O_APPEND != 0 && f.openMode&os.O_RDWR != 0 && f.openMode&os.O_WRONLY != 0 {
+		return 0, errors.New("file not opened in write mode")
+	}
+	if f.offset+int64(len(p)) > int64(len(f.node.data)) {
+		f.node.data = append(f.node.data[:f.offset], p...)
+	} else {
+		copy(f.node.data[f.offset:], p)
+	}
+	f.offset += int64(len(p))
+	return len(p), nil
+}
+
+type node struct {
+	mode         fs.FileMode
+	uid, gid     int
+	dir          bool
+	name         string
+	data         []byte
+	modTime      time.Time
+	createTime   time.Time
+	linkTarget   string
+	linkCount    int // extra links, so 0 means a single pointer. O-based, like most compuuter counting systems.
+	major, minor uint32
+	children     map[string]*node
+}
+
+func (n *node) fileInfo(name string) fs.FileInfo {
+	return &memFileInfo{
+		node: n,
+		name: name,
+	}
 }
 
 type memFileInfo struct {
-	fs.FileInfo
-	mode     fs.FileMode
-	uid, gid int
+	*node
+	name string
 }
 
-func (f *memFileInfo) Mode() fs.FileMode {
-	return f.mode
+func (m *memFileInfo) Name() string {
+	return m.name
 }
-
-func (f *memFileInfo) Sys() any {
+func (m *memFileInfo) Size() int64 {
+	return int64(len(m.data))
+}
+func (m *memFileInfo) Mode() fs.FileMode {
+	return m.mode
+}
+func (m *memFileInfo) ModTime() time.Time {
+	return m.modTime
+}
+func (m *memFileInfo) IsDir() bool {
+	return m.dir
+}
+func (m *memFileInfo) Sys() any {
 	return &tar.Header{
-		Mode: int64(f.mode),
-		Uid:  f.uid,
-		Gid:  f.gid,
+		Mode: int64(m.mode),
+		Uid:  m.uid,
+		Gid:  m.gid,
 	}
-}
-
-func standardizePath(p string) string {
-	if p[0] == '/' {
-		p = p[1:]
-	}
-	return p
 }

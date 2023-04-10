@@ -32,7 +32,7 @@ type FullFS interface {
 	Readnod(name string) (dev int, err error)
 	Symlink(oldname, newname string) error
 	Link(oldname, newname string) error
-	Readlink(name string) (target string, symlink bool, err error)
+	Readlink(name string) (target string, err error)
 	Stat(path string) (fs.FileInfo, error)
 	Lstat(path string) (fs.FileInfo, error)
 	Create(name string) (File, error)
@@ -52,7 +52,7 @@ type File interface {
 
 type ReadLinkFS interface {
 	fs.FS
-	Readlink(name string) (string, bool, error)
+	Readlink(name string) (string, error)
 }
 
 type OpenReaderAtFS interface {

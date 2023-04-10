@@ -1,13 +1,179 @@
 package fs
 
 import (
-	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+func TestMemFSMkdir(t *testing.T) {
+	t.Run("parent non existent", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a/b", 0755)
+		require.Error(t, err, os.ErrNotExist)
+	})
+	t.Run("parent file", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b", []byte("hello"), 0644)
+		require.NoError(t, err)
+		err = m.Mkdir("/a/b/c", 0755)
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("already exists", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.Mkdir("/a", 0755)
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("success", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll("/a/b", 0755)
+		require.NoError(t, err)
+		err = m.Mkdir("/a/b/c", 0755)
+		require.NoError(t, err)
+	})
+}
+
+func TestMemFSMkdirAll(t *testing.T) {
+	t.Run("parent non existent", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll("/a/b", 0755)
+		require.NoError(t, err)
+	})
+	t.Run("parent file", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b", []byte("hello"), 0644)
+		require.NoError(t, err)
+		err = m.MkdirAll("/a/b/c", 0755)
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("already exists", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.MkdirAll("/a", 0755)
+		require.NoError(t, err)
+	})
+	t.Run("does not exist", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll("/a/b", 0755)
+		require.NoError(t, err)
+		err = m.Mkdir("/a/b/c", 0755)
+		require.NoError(t, err)
+	})
+}
+
+func TestMemFSCreateFile(t *testing.T) {
+	t.Run("parent non existent", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		_, err := m.Create("/a/b")
+		require.Error(t, err, os.ErrNotExist)
+	})
+	t.Run("parent file", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b", []byte("hello"), 0644)
+		require.NoError(t, err)
+		_, err = m.Create("/a/b/c")
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("already exists dir", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		_, err = m.Create("/a")
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("does not exist", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll("/a/b", 0755)
+		require.NoError(t, err)
+		_, err = m.Create("/a/b/c")
+		require.NoError(t, err)
+		dir, err := m.ReadDir("/a/b")
+		require.NoError(t, err)
+		require.Len(t, dir, 1)
+	})
+}
+
+func TestMemFSWriteFile(t *testing.T) {
+	t.Run("parent non existent", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.WriteFile("/a/b", []byte("hello"), 0644)
+		require.Error(t, err, os.ErrNotExist)
+	})
+	t.Run("parent file", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b", []byte("hello"), 0644)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b/c", []byte("hello"), 0644)
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("already exists dir", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.Mkdir("/a", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b/c", []byte("hello"), 0644)
+		require.Error(t, err, os.ErrExist)
+	})
+	t.Run("does not exist", func(t *testing.T) {
+		var (
+			m       = NewMemFS()
+			content = []byte("hello")
+		)
+		err := m.MkdirAll("/a/b", 0755)
+		require.NoError(t, err)
+		err = m.WriteFile("/a/b/c", content, 0644)
+		require.NoError(t, err)
+		dir, err := m.ReadDir("/a/b")
+		require.NoError(t, err)
+		require.Len(t, dir, 1)
+		require.Equal(t, dir[0].Name(), "c")
+		data, err := m.ReadFile("/a/b/c")
+		require.NoError(t, err)
+		require.Equal(t, data, content)
+	})
+}
 func TestMemFSSymlink(t *testing.T) {
 	var (
 		m       = NewMemFS()
@@ -29,14 +195,13 @@ func TestMemFSSymlink(t *testing.T) {
 	require.NoError(t, err, "error reading link file content %s", link)
 	require.Equal(t, originalContent, linkContent, "content of %s should be %s", link, originalContent)
 	// check if the link is an actual symlink, and the target of the link
-	actualTarget, isLink, err := m.Readlink(link)
+	actualTarget, err := m.Readlink(link)
 	require.NoError(t, err, "error reading target of link file %s", link)
-	require.True(t, isLink, "file %s should be a symlink", link)
 	require.Equal(t, target, actualTarget, "target of %s should be %s", link, target)
 }
 func TestMemFSHardlink(t *testing.T) {
 	var (
-		m           = NewMemFS().(*memFS)
+		m           = NewMemFS()
 		base        = "/a/b/c"
 		target      = filepath.Join(base, "d")
 		linkSlash   = filepath.Join(base, "e")
@@ -58,12 +223,6 @@ func TestMemFSHardlink(t *testing.T) {
 		linkContent, err := m.ReadFile(linkName)
 		require.NoError(t, err, "error reading link file content %s", linkName)
 		require.Equal(t, originalContent, linkContent, "content of %s should be %s", linkName, originalContent)
-		// check if the link is an actual hardlink, and the target of the link
-		actualTarget, isLink, err := m.readHardlink(linkName)
-		require.NoError(t, err, "error reading target of link file %s", linkName)
-		require.True(t, isLink, "file %s should be a hardlink", linkName)
-		target = filepath.Clean(fmt.Sprintf("%c%s", filepath.Separator, target))
-		require.Equal(t, target, actualTarget, "target of %s should be %s", linkName, target)
 	})
 	t.Run("link with no slash", func(t *testing.T) {
 		// linkNoSlash - remove the leading slash
@@ -74,11 +233,5 @@ func TestMemFSHardlink(t *testing.T) {
 		linkContent, err := m.ReadFile(linkName)
 		require.NoError(t, err, "error reading link file content %s", linkName)
 		require.Equal(t, originalContent, linkContent, "content of %s should be %s", linkName, originalContent)
-		// check if the link is an actual hardlink, and the target of the link
-		actualTarget, isLink, err := m.readHardlink(linkName)
-		require.NoError(t, err, "error reading target of link file %s", linkName)
-		require.True(t, isLink, "file %s should be a hardlink", linkName)
-		target = filepath.Clean(fmt.Sprintf("%c%s", filepath.Separator, target))
-		require.Equal(t, target, actualTarget, "target of %s should be %s", linkName, target)
 	})
 }

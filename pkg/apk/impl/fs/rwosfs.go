@@ -65,8 +65,7 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 		}
 	}
 
-	memfs := NewMemFS()
-	m := memfs.(*memFS)
+	m := NewMemFS()
 
 	// check if the underlying filesystem is case-sensitive
 	fi, err := os.Stat(dir)
@@ -124,6 +123,9 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 	_ = fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == "." {
+			return nil
 		}
 		fi, err := d.Info()
 		if err != nil {
@@ -187,21 +189,21 @@ type dirFS struct {
 	// filesystem or operating system limitations.
 	// It will include all directories, but no file contents.
 	// If there are permissions in memory, they override the disk.
-	overrides *memFS
+	overrides FullFS
 	// caseMap if non-nil, underlying filesystem is case-insensitive, so only one variant of each file
 	// can exist on disk. Maps the case-sensitive to the case-insensitive variant
 	caseMap      map[string]string
 	caseMapMutex sync.Mutex
 }
 
-func (f *dirFS) Readlink(name string) (string, bool, error) {
+func (f *dirFS) Readlink(name string) (string, error) {
 	// The underlying filesystem might not support symlinks, and it might be case-insensitive, so just
 	// use the one in memory.
-	target, isSymlink, err := f.overrides.Readlink(name)
+	target, err := f.overrides.Readlink(name)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	return target, isSymlink, err
+	return target, err
 }
 
 // Open open a file for reading. Returns fs.File.
@@ -632,4 +634,11 @@ func (d *dirEntry) Info() (fs.FileInfo, error) {
 		return nil, err
 	}
 	return &fileInfo{file: diskInfo, mem: memInfo}, nil
+}
+
+func standardizePath(p string) string {
+	if p[0] == '/' {
+		p = p[1:]
+	}
+	return p
 }

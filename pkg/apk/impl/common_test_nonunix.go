@@ -17,4 +17,4 @@
 
 package impl
 
-var ignoreMknodErrors = true
+var ignoreMknodErrors = false
