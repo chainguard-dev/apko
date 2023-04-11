@@ -235,3 +235,66 @@ func TestMemFSHardlink(t *testing.T) {
 		require.Equal(t, originalContent, linkContent, "content of %s should be %s", linkName, originalContent)
 	})
 }
+
+func TestMemFSMidLevelSymlink(t *testing.T) {
+	var (
+		basedir        = "/usr"
+		truedir        = "lib"
+		linkdir        = "lib64"
+		subdir         = "subdir"
+		filename       = "target"
+		fullTruedir    = filepath.Join(basedir, truedir)
+		fullLinkdir    = filepath.Join(basedir, linkdir)
+		fullTrueSubdir = filepath.Join(fullTruedir, subdir)
+		fullLinksubdir = filepath.Join(fullLinkdir, subdir)
+		truefile       = filepath.Join(fullTrueSubdir, filename)
+		linkfile       = filepath.Join(fullLinksubdir, filename)
+		content        = []byte("hello")
+	)
+	t.Run("target in true dir", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll(fullTruedir, 0755)
+		require.NoError(t, err, "error creating dir %s", basedir)
+		err = m.Symlink(truedir, fullLinkdir)
+		require.NoError(t, err, "error creating directory symlink %s", fullLinkdir)
+		err = m.Mkdir(fullTrueSubdir, 0755)
+		require.NoError(t, err, "error creating dir %s", fullTrueSubdir)
+		err = m.WriteFile(truefile, content, 0644)
+		require.NoError(t, err, "error creating file %s", truefile)
+		// read the original file, then read the symlink, should get same content
+		originalContent, err := m.ReadFile(truefile)
+		require.NoError(t, err, "error reading target file content %s", truefile)
+		linkContent, err := m.ReadFile(linkfile)
+		require.NoError(t, err, "error reading link file content %s", linkfile)
+		require.Equal(t, originalContent, linkContent, "content of %s should be %s", linkfile, originalContent)
+		// check if the link is an actual symlink, and the target of the link
+		actualTarget, err := m.Readlink(fullLinkdir)
+		require.NoError(t, err, "error reading target of link file %s", fullLinkdir)
+		require.Equal(t, truedir, actualTarget, "target of %s should be %s", fullLinkdir, truedir)
+	})
+	t.Run("target in symlink dir", func(t *testing.T) {
+		var (
+			m = NewMemFS()
+		)
+		err := m.MkdirAll(fullTruedir, 0755)
+		require.NoError(t, err, "error creating dir %s", basedir)
+		err = m.Symlink(truedir, fullLinkdir)
+		require.NoError(t, err, "error creating directory symlink %s", fullLinkdir)
+		err = m.Mkdir(fullLinksubdir, 0755)
+		require.NoError(t, err, "error creating dir %s", fullLinksubdir)
+		err = m.WriteFile(linkfile, content, 0644)
+		require.NoError(t, err, "error creating file %s", truefile)
+		// read the original file, then read the symlink, should get same content
+		originalContent, err := m.ReadFile(truefile)
+		require.NoError(t, err, "error reading target file content %s", truefile)
+		linkContent, err := m.ReadFile(linkfile)
+		require.NoError(t, err, "error reading link file content %s", linkfile)
+		require.Equal(t, originalContent, linkContent, "content of %s should be %s", linkfile, originalContent)
+		// check if the link is an actual symlink, and the target of the link
+		actualTarget, err := m.Readlink(fullLinkdir)
+		require.NoError(t, err, "error reading target of link file %s", fullLinkdir)
+		require.Equal(t, truedir, actualTarget, "target of %s should be %s", fullLinkdir, truedir)
+	})
+}

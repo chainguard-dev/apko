@@ -29,6 +29,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const pathSep = "/"
+
 type memFS struct {
 	tree *node
 }
@@ -50,9 +52,9 @@ func (m *memFS) getNode(path string) (*node, error) {
 	if path == "/" || path == "." {
 		return m.tree, nil
 	}
-	parent := filepath.Dir(path)
-	parts := strings.Split(path, "/")
+	parts := strings.Split(path, pathSep)
 	node := m.tree
+	traversed := make([]string, 0)
 	for _, part := range parts {
 		if part == "" {
 			continue
@@ -67,9 +69,13 @@ func (m *memFS) getNode(path string) (*node, error) {
 		}
 		// what if it is a symlink?
 		if childNode.mode&os.ModeSymlink != 0 {
+			// getNode requires working on the absolute path, so we just resolve the path to an absolute path,
+			// rather than struggling to clean up the path.
+			// But, we have to make sure that we set it relative to where we are currently, rather than the parent of the path.
+			// For example, /usr/lib64/foo/bar when /usr/lib64 -> lib, we want to resolve to /usr/lib rather than /usr/lib64/foo/lib
 			linkTarget := childNode.linkTarget
 			if !filepath.IsAbs(linkTarget) {
-				linkTarget = filepath.Join(parent, linkTarget)
+				linkTarget = filepath.Join(strings.Join(traversed, pathSep), linkTarget)
 			}
 			targetNode, err := m.getNode(linkTarget)
 			if err != nil {
@@ -78,6 +84,7 @@ func (m *memFS) getNode(path string) (*node, error) {
 			childNode = targetNode
 		}
 		node = childNode
+		traversed = append(traversed, part)
 	}
 	return node, nil
 }
@@ -131,7 +138,8 @@ func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
 }
 
 func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
-	parts := strings.Split(path, "/")
+	parts := strings.Split(path, pathSep)
+	traversed := make([]string, 0)
 	anode := m.tree
 	for _, part := range parts {
 		if part == "" {
@@ -152,12 +160,15 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 				children:   map[string]*node{},
 			}
 			anode.children[part] = newnode
-			anode = newnode
-			continue
 		}
 		// what if it is a symlink?
 		if newnode.mode&os.ModeSymlink != 0 {
-			targetNode, err := m.getNode(newnode.linkTarget)
+			linkTarget := newnode.linkTarget
+			if !filepath.IsAbs(linkTarget) {
+				linkTarget = filepath.Join(strings.Join(traversed, pathSep), linkTarget)
+			}
+
+			targetNode, err := m.getNode(linkTarget)
 			if err != nil {
 				return err
 			}
@@ -167,6 +178,7 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 			return fmt.Errorf("path is not a directory")
 		}
 		anode = newnode
+		traversed = append(traversed, part)
 	}
 	return nil
 }
