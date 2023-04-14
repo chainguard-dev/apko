@@ -316,7 +316,7 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 	)
 	// first get the explicitly named packages
 	for _, pkgName := range packages {
-		pkg, err := p.getPackage(pkgName)
+		pkg, err := p.ResolvePackage(pkgName)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -361,7 +361,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		localExisting[k] = v
 	}
 
-	pkg, err = p.getPackage(pkgName)
+	pkg, err = p.ResolvePackage(pkgName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -420,8 +420,8 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	return
 }
 
-// getPackage get a single package.
-func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
+// ResolvePackage given a single package name and optional version constraints, resolve to an actual package.
+func (p *PkgResolver) ResolvePackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
 	name, version, compare, pin := resolvePackageNameVersionPin(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
 	if ok {
