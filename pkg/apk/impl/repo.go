@@ -35,9 +35,21 @@ import (
 	"go.lsp.dev/uri"
 )
 
+type NamedIndex interface {
+	Name() string
+	Index() *repository.RepositoryWithIndex
+}
 type namedRepositoryWithIndex struct {
 	name string
 	repo *repository.RepositoryWithIndex
+}
+
+func (n *namedRepositoryWithIndex) Name() string {
+	return n.name
+}
+
+func (n *namedRepositoryWithIndex) Index() *repository.RepositoryWithIndex {
+	return n.repo
 }
 
 // repositoryPackage is a package that is part of a repository.
@@ -238,14 +250,14 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*name
 // PkgResolver is a helper struct for resolving packages from a list of indexes.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
-	indexes      []*namedRepositoryWithIndex
+	indexes      []NamedIndex
 	nameMap      map[string][]*repositoryPackage
 	providesMap  map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 }
 
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
-func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
+func NewPkgResolver(indexes []NamedIndex) *PkgResolver {
 	var (
 		pkgNameMap     = map[string][]*repositoryPackage{}
 		pkgProvidesMap = map[string][]*repositoryPackage{}
@@ -256,10 +268,10 @@ func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
 	}
 	// create a map of every package by name and version to its RepositoryPackage
 	for _, index := range indexes {
-		for _, pkg := range index.repo.Packages() {
+		for _, pkg := range index.Index().Packages() {
 			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
 				RepositoryPackage: pkg,
-				pinnedName:        index.name,
+				pinnedName:        index.Name(),
 			})
 			for _, dep := range pkg.InstallIf {
 				if _, ok := installIfMap[dep]; !ok {
@@ -267,7 +279,7 @@ func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
 				}
 				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
 					RepositoryPackage: pkg,
-					pinnedName:        index.name,
+					pinnedName:        index.Name(),
 				})
 			}
 		}

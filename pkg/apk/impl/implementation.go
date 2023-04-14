@@ -403,7 +403,11 @@ func (a *APKImplementation) ResolveWorld() (toInstall []*repository.RepositoryPa
 	if err != nil {
 		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
 	}
-	resolver := NewPkgResolver(indexes)
+	indexesInt := make([]NamedIndex, 0, len(indexes))
+	for _, index := range indexes {
+		indexesInt = append(indexesInt, index)
+	}
+	resolver := NewPkgResolver(indexesInt)
 	return resolver.GetPackagesWithDependencies(directPkgs)
 }
 
