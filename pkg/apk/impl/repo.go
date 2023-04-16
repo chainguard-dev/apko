@@ -15,29 +15,53 @@
 package impl
 
 import (
-	"archive/tar"
 	"bufio"
-	"bytes"
-	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"net/http"
-	"net/url"
-	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"gitlab.alpinelinux.org/alpine/go/repository"
-	"go.lsp.dev/uri"
 )
+
+// NamedIndex an index that contains all of its packages,
+// as well as having an optional name and source. The name and source
+// need not be unique.
+type NamedIndex interface {
+	Name() string
+	Packages() []*repository.RepositoryPackage
+	Source() string
+}
 
 type namedRepositoryWithIndex struct {
 	name string
 	repo *repository.RepositoryWithIndex
+}
+
+func NewNamedRepositoryWithIndex(name string, repo *repository.RepositoryWithIndex) *namedRepositoryWithIndex {
+	return &namedRepositoryWithIndex{
+		name: name,
+		repo: repo,
+	}
+}
+
+func (n *namedRepositoryWithIndex) Name() string {
+	return n.name
+}
+
+func (n *namedRepositoryWithIndex) Packages() []*repository.RepositoryPackage {
+	if n.repo == nil {
+		return nil
+	}
+	return n.repo.Packages()
+}
+func (n *namedRepositoryWithIndex) Source() string {
+	if n.repo == nil || n.repo.IndexUri() == "" {
+		return ""
+	}
+
+	return n.repo.IndexUri()
 }
 
 // repositoryPackage is a package that is part of a repository.
@@ -80,12 +104,6 @@ func (a *APKImplementation) GetRepositories() (repos []string, err error) {
 // getRepositoryIndexes returns the indexes for the repositories in the specified root.
 // The signatures for each index are verified unless ignoreSignatures is set to true.
 func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*namedRepositoryWithIndex, error) {
-	var (
-		indexes []*namedRepositoryWithIndex
-	)
-
-	r := regexp.MustCompile(`^\.SIGN\.RSA\.(.*\.rsa\.pub)$`)
-
 	// get the repository URLs
 	repos, err := a.GetRepositories()
 	if err != nil {
@@ -101,151 +119,48 @@ func (a *APKImplementation) getRepositoryIndexes(ignoreSignatures bool) ([]*name
 		return nil, fmt.Errorf("failed to read arch file: %w", err)
 	}
 	// trim the newline
-	arch := []byte(strings.TrimSuffix(string(archB), "\n"))
-	for _, repo := range repos {
-		// does it start with a pin?
-		var (
-			repoName string
-			repoURL  = repo
-		)
-		if strings.HasPrefix(repo, "@") {
-			// it's a pinned repository, get the name
-			parts := strings.Fields(repo)
-			if len(parts) < 2 {
-				return nil, errors.New("invalid repository line")
-			}
-			repoName = parts[0][1:]
-			repoURL = parts[1]
-		}
+	arch := strings.TrimSuffix(string(archB), "\n")
 
-		repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
-		u := fmt.Sprintf("%s/%s", repoBase, indexFilename)
-
-		// Normalize the repo as a URI, so that local paths
-		// are translated into file:// URLs, allowing them to be parsed
-		// into a url.URL{}.
-		var (
-			b     []byte
-			asURI uri.URI
-		)
-		if strings.HasPrefix(u, "https://") {
-			asURI, _ = uri.Parse(u)
-		} else {
-			asURI = uri.New(u)
-		}
-		asURL, err := url.Parse(string(asURI))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse repo as URI: %w", err)
-		}
-
-		switch asURL.Scheme {
-		case "file":
-			b, err = os.ReadFile(u)
-			if err != nil {
-				if !errors.Is(err, fs.ErrNotExist) {
-					return nil, fmt.Errorf("failed to read repository %s: %w", u, err)
-				}
-				continue
-			}
-		case "https":
-			client := a.client
-			if client == nil {
-				client = &http.Client{}
-			}
-			res, err := client.Get(asURL.String()) // nolint:gosec // we know what we are doing here
-			if err != nil {
-				return nil, fmt.Errorf("unable to get repository index at %s: %w", u, err)
-			}
-			defer res.Body.Close()
-			buf := bytes.NewBuffer(nil)
-			if _, err := io.Copy(buf, res.Body); err != nil {
-				return nil, fmt.Errorf("unable to read repository index at %s: %w", u, err)
-			}
-			b = buf.Bytes()
-		default:
-			return nil, fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
-		}
-
-		// validate the signature
-		if !ignoreSignatures {
-			buf := bytes.NewReader(b)
-			gzipReader, err := gzip.NewReader(buf)
-			if err != nil {
-				return nil, fmt.Errorf("unable to create gzip reader for repository index: %w", err)
-			}
-			// set multistream to false, so we can read each part separately;
-			// the first part is the signature, the second is the index, which should be
-			// verified.
-			gzipReader.Multistream(false)
-			defer gzipReader.Close()
-
-			tarReader := tar.NewReader(gzipReader)
-
-			// read the signature
-			signatureFile, err := tarReader.Next()
-			if err != nil {
-				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
-			}
-			matches := r.FindStringSubmatch(signatureFile.Name)
-			if len(matches) != 2 {
-				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
-			}
-			signature, err := io.ReadAll(tarReader)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
-			}
-			// with multistream false, we should read the next one
-			if _, err := tarReader.Next(); err != nil && !errors.Is(err, io.EOF) {
-				return nil, fmt.Errorf("unexpected error reading from tgz: %w", err)
-			}
-			// we now have the signature bytes and name, get the contents of the rest;
-			// this should be everything else in the raw gzip file as is.
-			allBytes := len(b)
-			unreadBytes := buf.Len()
-			readBytes := allBytes - unreadBytes
-			indexData := b[readBytes:]
-
-			indexDigest, err := HashData(indexData)
-			if err != nil {
-				return nil, err
-			}
-			// now we can check the signature
-			keyFilePath := filepath.Join(keysDirPath, matches[1])
-			keyFile, err := a.fs.Open(keyFilePath)
-			if err != nil {
-				return nil, fmt.Errorf("could not open keyfile in %s at %s: %w", a.fs, keyFilePath, err)
-			}
-			keyData, err := io.ReadAll(keyFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read key file: %w", err)
-			}
-			if err := RSAVerifySHA1Digest(indexDigest, signature, keyData); err != nil {
-				return nil, fmt.Errorf("signature did not match for keyfile %s: %w", keyFile, err)
-			}
-
-			// with a valid signature, convert it to an ApkIndex
-			index, err := repository.IndexFromArchive(io.NopCloser(bytes.NewReader(b)))
-			if err != nil {
-				return nil, fmt.Errorf("unable to read convert repository index bytes to index struct at %s: %w", u, err)
-			}
-			repoRef := repository.Repository{Uri: repoBase}
-			indexes = append(indexes, &namedRepositoryWithIndex{repo: repoRef.WithIndex(index), name: repoName})
-		}
+	// create the list of keys
+	keys := make(map[string][]byte)
+	dir, err := a.fs.ReadDir(keysDirPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read keys directory in %s at %s: %w", a.fs, keysDirPath, err)
 	}
-	return indexes, nil
+	for _, d := range dir {
+		if d.IsDir() {
+			continue
+		}
+		fullPath := filepath.Join(keysDirPath, d.Name())
+		b, err := a.fs.ReadFile(fullPath)
+		if err != nil {
+			return nil, fmt.Errorf("could not read key file at %s: %w", fullPath, err)
+		}
+		keys[d.Name()] = b
+	}
+
+	return GetRepositoryIndexes(repos, keys, arch, WithIgnoreSignatures(ignoreSignatures), WithHTTPClient(a.client))
 }
 
-// PkgResolver is a helper struct for resolving packages from a list of indexes.
+// PkgResolver resolves packages from a list of indexes.
+// It is created with NewPkgResolver and passed a list of indexes.
+// It then can be used to resolve the correct version of a package given
+// version constraints, if any, as well as all the package and all of
+// the required upstream dependencies.
+// If provided multiple indexes, it will look for dependencies in all of the
+// indexes. If you need to look only in a certain set, you should create a new
+// PkgResolver with only those indexes.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
-	indexes      []*namedRepositoryWithIndex
+	indexes      []NamedIndex
 	nameMap      map[string][]*repositoryPackage
 	providesMap  map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 }
 
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
-func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
+// The indexes are anything that implements NamedIndex.
+func NewPkgResolver(indexes []NamedIndex) *PkgResolver {
 	var (
 		pkgNameMap     = map[string][]*repositoryPackage{}
 		pkgProvidesMap = map[string][]*repositoryPackage{}
@@ -256,10 +171,10 @@ func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
 	}
 	// create a map of every package by name and version to its RepositoryPackage
 	for _, index := range indexes {
-		for _, pkg := range index.repo.Packages() {
+		for _, pkg := range index.Packages() {
 			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
 				RepositoryPackage: pkg,
-				pinnedName:        index.name,
+				pinnedName:        index.Name(),
 			})
 			for _, dep := range pkg.InstallIf {
 				if _, ok := installIfMap[dep]; !ok {
@@ -267,7 +182,7 @@ func NewPkgResolver(indexes []*namedRepositoryWithIndex) *PkgResolver {
 				}
 				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
 					RepositoryPackage: pkg,
-					pinnedName:        index.name,
+					pinnedName:        index.Name(),
 				})
 			}
 		}
@@ -304,7 +219,7 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 	)
 	// first get the explicitly named packages
 	for _, pkgName := range packages {
-		pkg, err := p.getPackage(pkgName)
+		pkg, err := p.ResolvePackage(pkgName)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -349,7 +264,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		localExisting[k] = v
 	}
 
-	pkg, err = p.getPackage(pkgName)
+	pkg, err = p.ResolvePackage(pkgName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -408,8 +323,8 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	return
 }
 
-// getPackage get a single package.
-func (p *PkgResolver) getPackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
+// ResolvePackage given a single package name and optional version constraints, resolve to an actual package.
+func (p *PkgResolver) ResolvePackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
 	name, version, compare, pin := resolvePackageNameVersionPin(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
 	if ok {

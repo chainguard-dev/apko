@@ -305,9 +305,9 @@ func TestSortPackages(t *testing.T) {
 	}
 }
 
-func testNamedRepositoryFromIndexes(indexes []*repository.RepositoryWithIndex) (named []*namedRepositoryWithIndex) {
+func testNamedRepositoryFromIndexes(indexes []*repository.RepositoryWithIndex) (named []NamedIndex) {
 	for _, index := range indexes {
-		named = append(named, &namedRepositoryWithIndex{repo: index})
+		named = append(named, NewNamedRepositoryWithIndex("", index))
 	}
 	return
 }
