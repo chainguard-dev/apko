@@ -18,14 +18,12 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRun(t *testing.T) {
 	impl := defaultBuildImplementation{}
 	testCommand := "ls"
-	l := logrus.NewEntry(&logrus.Logger{})
 	for _, tc := range []struct {
 		cmd       *exec.Cmd
 		shouldErr bool
@@ -48,7 +46,7 @@ func TestRun(t *testing.T) {
 		if _, err := exec.LookPath(testCommand); err != nil {
 			t.Skipf("skipping Run test as %s executable not found", testCommand)
 		}
-		err := impl.Run(tc.cmd, "test", l)
+		err := impl.Run(tc.cmd, "test", testLogger())
 		if tc.shouldErr {
 			require.Error(t, err, tc.cmd.String())
 		}

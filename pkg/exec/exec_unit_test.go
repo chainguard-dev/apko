@@ -16,14 +16,16 @@ package exec
 
 import (
 	"fmt"
+	"io"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/log"
 )
 
-func testLogger() *logrus.Entry {
-	return logrus.NewEntry(&logrus.Logger{})
+func testLogger() log.Logger {
+	return &log.Adapter{Out: io.Discard}
 }
 
 func TestNew(t *testing.T) {
