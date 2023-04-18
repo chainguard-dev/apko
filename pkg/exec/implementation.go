@@ -19,17 +19,17 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/sirupsen/logrus"
+	"chainguard.dev/apko/pkg/log"
 )
 
 //counterfeiter:generate . executorImplementation
 type executorImplementation interface {
-	Run(cmd *exec.Cmd, logname string, logger *logrus.Entry) error
+	Run(cmd *exec.Cmd, logname string, logger log.Logger) error
 }
 
 type defaultBuildImplementation struct{}
 
-func monitorPipe(p io.ReadCloser, logger *logrus.Entry, finish chan struct{}) {
+func monitorPipe(p io.ReadCloser, logger log.Logger, finish chan struct{}) {
 	defer p.Close()
 
 	scanner := bufio.NewScanner(p)
@@ -42,9 +42,9 @@ func monitorPipe(p io.ReadCloser, logger *logrus.Entry, finish chan struct{}) {
 
 // Run
 func (di *defaultBuildImplementation) Run(
-	cmd *exec.Cmd, logname string, baseLogger *logrus.Entry,
+	cmd *exec.Cmd, logname string, baseLogger log.Logger,
 ) error {
-	logger := baseLogger.WithFields(logrus.Fields{"cmd": logname})
+	logger := baseLogger.WithFields(log.Fields{"cmd": logname})
 	logger.Infof("running: %s", cmd)
 
 	stdout, err := cmd.StdoutPipe()

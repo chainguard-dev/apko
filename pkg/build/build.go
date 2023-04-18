@@ -27,12 +27,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sirupsen/logrus"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
+	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
@@ -95,7 +95,7 @@ func (bc *Context) BuildPackageList() (toInstall []*repository.RepositoryPackage
 	return buildPackageList(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration)
 }
 
-func (bc *Context) Logger() *logrus.Entry {
+func (bc *Context) Logger() log.Logger {
 	return bc.Options.Logger()
 }
 
@@ -138,7 +138,7 @@ func (bc *Context) ImageLayoutToLayer() (string, error) {
 			return "", fmt.Errorf("generating SBOMs: %w", err)
 		}
 	} else {
-		bc.Logger().Debug("Not generating SBOMs (WantSBOM = false)")
+		bc.Logger().Debugf("Not generating SBOMs (WantSBOM = false)")
 	}
 
 	return layerTarGZ, nil

@@ -26,13 +26,13 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
 )
 
@@ -295,7 +295,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if wantSBOM {
-		logrus.Info("Generating arch image SBOMs")
+		log.NewLogger().Infof("Generating arch image SBOMs")
 		for arch, img := range imgs {
 			bc := contexts[arch]
 
@@ -371,12 +371,12 @@ func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImag
 ) {
 	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}

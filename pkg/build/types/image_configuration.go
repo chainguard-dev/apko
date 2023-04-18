@@ -19,15 +19,15 @@ import (
 	"os"
 
 	"github.com/jinzhu/copier"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/fetch"
+	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/vcs"
 )
 
 // Attempt to probe an upstream VCS URL if known.
-func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus.Entry) {
+func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger log.Logger) {
 	url, err := vcs.ProbeDirFromPath(imageConfigPath)
 	if err != nil {
 		logger.Debugf("failed to probe VCS URL: %v", err)
@@ -41,7 +41,7 @@ func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger *logrus
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(configData []byte, logger *logrus.Entry) error {
+func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error {
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
@@ -90,7 +90,7 @@ func (ic *ImageConfiguration) parse(configData []byte, logger *logrus.Entry) err
 }
 
 // Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(imageConfigPath string, logger *logrus.Entry) error {
+func (ic *ImageConfiguration) Load(imageConfigPath string, logger log.Logger) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err == nil {
 		return ic.parse(data, logger)
@@ -167,7 +167,7 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize(logger *logrus.Entry) {
+func (ic *ImageConfiguration) Summarize(logger log.Logger) {
 	logger.Printf("image configuration:")
 	logger.Printf("  contents:")
 	logger.Printf("    repositories: %v", ic.Contents.Repositories)
