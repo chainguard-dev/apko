@@ -16,16 +16,16 @@ package exec_test
 
 import (
 	"fmt"
+	"io"
 	"testing"
-
-	"github.com/sirupsen/logrus"
 
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/exec/execfakes"
+	"chainguard.dev/apko/pkg/log"
 )
 
-func testLogger() *logrus.Entry {
-	return logrus.NewEntry(&logrus.Logger{})
+func testLogger() log.Logger {
+	return &log.Adapter{Out: io.Discard}
 }
 
 func TestExecute(t *testing.T) {

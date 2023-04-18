@@ -20,8 +20,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
 )
@@ -39,7 +37,7 @@ type Options struct {
 	ExtraKeyFiles           []string
 	ExtraRepos              []string
 	Arch                    types.Architecture
-	Log                     *logrus.Logger
+	Log                     log.Logger
 	TempDirPath             string
 	PackageVersionTag       string
 	PackageVersionTagStem   bool
@@ -50,16 +48,11 @@ type Options struct {
 }
 
 var Default = Options{
-	Log: &logrus.Logger{
-		Out:       os.Stderr,
-		Formatter: &log.Formatter{},
-		Hooks:     make(logrus.LevelHooks),
-		Level:     logrus.InfoLevel,
-	},
+	Log:  &log.Adapter{Out: os.Stderr, Level: log.InfoLevel},
 	Arch: types.ParseArchitecture(runtime.GOARCH),
 }
 
-func (o *Options) Summarize(logger *logrus.Entry) {
+func (o *Options) Summarize(logger log.Logger) {
 	logger.Printf("  working directory: %s", o.WorkDir)
 	logger.Printf("  tarball path: %s", o.TarballPath)
 	logger.Printf("  source date: %s", o.SourceDateEpoch)
@@ -68,8 +61,8 @@ func (o *Options) Summarize(logger *logrus.Entry) {
 	logger.Printf("  arch: %v", o.Arch.ToAPK())
 }
 
-func (o *Options) Logger() *logrus.Entry {
-	fields := logrus.Fields{}
+func (o *Options) Logger() log.Logger {
+	fields := log.Fields{}
 	emptyArch := types.Architecture{}
 
 	if o.Arch != emptyArch {

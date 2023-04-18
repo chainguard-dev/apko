@@ -144,7 +144,7 @@ func AdditionalTags(fsys fs.FS, opts options.Options) ([]string, error) {
 		}
 		version := pkg.Version
 		if version == "" {
-			opts.Log.Warningf("Version for package %s is empty", pkg.Name)
+			opts.Log.Warnf("Version for package %s is empty", pkg.Name)
 			continue
 		}
 		if opts.TagSuffix != "" {

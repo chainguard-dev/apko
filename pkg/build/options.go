@@ -18,9 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 )
 
 // Option is an option for the build context.
@@ -175,7 +174,7 @@ func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 func WithDebugLogging(enable bool) Option {
 	return func(bc *Context) error {
 		if enable {
-			bc.Options.Log.SetLevel(logrus.DebugLevel)
+			bc.Options.Log.SetLevel(log.DebugLevel)
 		}
 		return nil
 	}

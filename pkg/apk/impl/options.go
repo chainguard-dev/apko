@@ -18,9 +18,8 @@ import (
 	"io"
 	"runtime"
 
-	"github.com/sirupsen/logrus"
-
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	"chainguard.dev/apko/pkg/log"
 )
 
 type opts struct {
@@ -85,8 +84,7 @@ func WithFS(fs apkfs.FullFS) Option {
 
 func defaultOpts() *opts {
 	fs := apkfs.DirFS("/")
-	discardLogger := logrus.New()
-	discardLogger.Out = io.Discard
+	discardLogger := &log.Adapter{Out: io.Discard}
 	logger := discardLogger
 
 	return &opts{

@@ -20,19 +20,19 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/sirupsen/logrus"
+	"chainguard.dev/apko/pkg/log"
 )
 
 type Executor struct {
 	impl    executorImplementation
 	WorkDir string
 	UseQemu string
-	Log     *logrus.Entry
+	Log     log.Logger
 }
 
 type Option func(*Executor) error
 
-func New(workDir string, logger *logrus.Entry, opts ...Option) (*Executor, error) {
+func New(workDir string, logger log.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
 		impl:    &defaultBuildImplementation{},
 		WorkDir: workDir,
@@ -44,7 +44,7 @@ func New(workDir string, logger *logrus.Entry, opts ...Option) (*Executor, error
 		}
 	}
 
-	e.Log = logger.WithFields(logrus.Fields{"use-qemu": e.UseQemu})
+	e.Log = logger.WithFields(log.Fields{"use-qemu": e.UseQemu})
 
 	return e, nil
 }

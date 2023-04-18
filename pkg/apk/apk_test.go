@@ -16,17 +16,18 @@ package apk
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apkfakes"
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 )
 
@@ -201,7 +202,7 @@ A:bop
 				PackageVersionTagPrefix: test.packageVersionTagPrefix,
 				Tags:                    test.tags,
 				WorkDir:                 td,
-				Log:                     &logrus.Logger{},
+				Log:                     &log.Adapter{Out: io.Discard},
 			}
 			fsys := apkfs.DirFS(td)
 			got, err := AdditionalTags(fsys, opts)

@@ -15,19 +15,18 @@
 package s6
 
 import (
-	"github.com/sirupsen/logrus"
-
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	"chainguard.dev/apko/pkg/log"
 )
 
 type Services map[interface{}]interface{}
 
 type Context struct {
 	fs  apkfs.FullFS
-	Log *logrus.Entry
+	Log log.Logger
 }
 
-func New(fs apkfs.FullFS, logger *logrus.Entry) *Context {
+func New(fs apkfs.FullFS, logger log.Logger) *Context {
 	return &Context{
 		fs:  fs,
 		Log: logger,
