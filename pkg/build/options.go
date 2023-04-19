@@ -170,6 +170,14 @@ func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 	}
 }
 
+// WithLogger sets the log.Logger implementation to be used by the build context.
+func WithLogger(logger log.Logger) Option {
+	return func(bc *Context) error {
+		bc.Options.Log = logger
+		return nil
+	}
+}
+
 // WithDebugLogging sets the debug log level for the build context.
 func WithDebugLogging(enable bool) Option {
 	return func(bc *Context) error {
