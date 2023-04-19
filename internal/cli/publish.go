@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,6 +32,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
 )
@@ -52,6 +52,7 @@ func publish() *cobra.Command {
 	var extraRepos []string
 	var buildOptions []string
 	var rawAnnotations []string
+	var logPolicy []string
 	var debugEnabled bool
 	var quietEnabled bool
 	var withVCS bool
@@ -69,13 +70,19 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var logger log.Logger
-
-			if quietEnabled {
-				logger = log.NewLogger(io.Discard)
-			} else {
-				logger = log.NewLogger(os.Stderr)
+			if len(logPolicy) == 0 {
+				if quietEnabled {
+					logPolicy = []string{"builtin:discard"}
+				} else {
+					logPolicy = []string{"builtin:stderr"}
+				}
 			}
+
+			logWriter, err := iocomb.Combine(logPolicy)
+			if err != nil {
+				return fmt.Errorf("invalid logging policy: %w", err)
+			}
+			logger := log.NewLogger(logWriter)
 
 			if !writeSBOM {
 				sbomFormats = []string{}
@@ -130,6 +137,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
+	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
 	cmd.Flags().StringVar(&stageTags, "stage-tags", "", "path to file to write list of tags to instead of publishing them")

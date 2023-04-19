@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 
@@ -25,6 +24,7 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
 )
 
@@ -34,6 +34,7 @@ func buildMinirootFS() *cobra.Command {
 	var buildDate string
 	var buildArch string
 	var sbomPath string
+	var logPolicy []string
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -42,13 +43,19 @@ func buildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var logger log.Logger
-
-			if quietEnabled {
-				logger = log.NewLogger(io.Discard)
-			} else {
-				logger = log.NewLogger(os.Stderr)
+			if len(logPolicy) == 0 {
+				if quietEnabled {
+					logPolicy = []string{"builtin:discard"}
+				} else {
+					logPolicy = []string{"builtin:stderr"}
+				}
 			}
+
+			logWriter, err := iocomb.Combine(logPolicy)
+			if err != nil {
+				return fmt.Errorf("invalid logging policy: %w", err)
+			}
+			logger := log.NewLogger(logWriter)
 
 			return BuildMinirootFSCmd(cmd.Context(),
 				build.WithConfig(args[0]),
@@ -67,6 +74,7 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 
 	return cmd
 }

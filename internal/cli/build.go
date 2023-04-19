@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -30,6 +29,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
 )
@@ -47,6 +47,7 @@ func buildCmd() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var buildOptions []string
+	var logPolicy []string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -64,13 +65,19 @@ bill of materials) describing the image contents.
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var logger log.Logger
-
-			if quietEnabled {
-				logger = log.NewLogger(io.Discard)
-			} else {
-				logger = log.NewLogger(os.Stderr)
+			if len(logPolicy) == 0 {
+				if quietEnabled {
+					logPolicy = []string{"builtin:discard"}
+				} else {
+					logPolicy = []string{"builtin:stderr"}
+				}
 			}
+
+			logWriter, err := iocomb.Combine(logPolicy)
+			if err != nil {
+				return fmt.Errorf("invalid logging policy: %w", err)
+			}
+			logger := log.NewLogger(logWriter)
 
 			// TODO(kaniini): Print warning when multi-arch build is requested
 			// and ignored by the build system.
@@ -109,6 +116,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
+	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 
 	return cmd
 }
