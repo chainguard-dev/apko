@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
@@ -24,10 +25,12 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 )
 
 func buildMinirootFS() *cobra.Command {
 	var debugEnabled bool
+	var quietEnabled bool
 	var buildDate string
 	var buildArch string
 	var sbomPath string
@@ -39,18 +42,28 @@ func buildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var logger log.Logger
+
+			if quietEnabled {
+				logger = log.NewLogger(io.Discard)
+			} else {
+				logger = log.NewLogger(os.Stderr)
+			}
+
 			return BuildMinirootFSCmd(cmd.Context(),
 				build.WithConfig(args[0]),
 				build.WithTarball(args[1]),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
+	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")

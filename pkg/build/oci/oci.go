@@ -212,7 +212,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 }
 
 func Copy(src, dst string) error {
-	log.NewLogger().Infof("Copying %s to %s", src, dst)
+	log.DefaultLogger().Infof("Copying %s to %s", src, dst)
 	if err := crane.Copy(src, dst, crane.WithAuthFromKeychain(keychain)); err != nil {
 		return fmt.Errorf("tagging %s with tag %s: %w", src, dst, err)
 	}
@@ -248,7 +248,7 @@ func attachSBOM(
 	// Attach the SBOM, e.g.
 	// TODO(kaniini): Allow all SBOM types to be uploaded.
 	if len(sbomFormats) == 0 {
-		log.NewLogger().Debugf("Not building sboms, no formats requested")
+		log.DefaultLogger().Debugf("Not building sboms, no formats requested")
 		return si, nil
 	}
 

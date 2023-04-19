@@ -81,6 +81,10 @@ func (a *Adapter) WithFields(fields Fields) Logger {
 	return &out
 }
 
-func NewLogger() Logger {
-	return &Adapter{Out: os.Stderr}
+func NewLogger(out io.Writer) Logger {
+	return &Adapter{Out: out, Level: InfoLevel}
+}
+
+func DefaultLogger() Logger {
+	return NewLogger(os.Stderr)
 }
