@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,6 +53,7 @@ func publish() *cobra.Command {
 	var buildOptions []string
 	var rawAnnotations []string
 	var debugEnabled bool
+	var quietEnabled bool
 	var withVCS bool
 	var writeSBOM bool
 	var local bool
@@ -67,6 +69,14 @@ in a keychain.`,
 		Example: `  apko publish <config.yaml> <tag...>`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var logger log.Logger
+
+			if quietEnabled {
+				logger = log.NewLogger(io.Discard)
+			} else {
+				logger = log.NewLogger(os.Stderr)
+			}
+
 			if !writeSBOM {
 				sbomFormats = []string{}
 			}
@@ -85,6 +95,7 @@ in a keychain.`,
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
+				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
@@ -105,6 +116,7 @@ in a keychain.`,
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
+	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
@@ -295,7 +307,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if wantSBOM {
-		log.DefaultLogger().Infof("Generating arch image SBOMs")
+		bc.Options.Log.Infof("Generating arch image SBOMs")
 		for arch, img := range imgs {
 			bc := contexts[arch]
 

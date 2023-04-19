@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -29,12 +30,14 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
 )
 
 func buildCmd() *cobra.Command {
 	var useDockerMediaTypes bool
 	var debugEnabled bool
+	var quietEnabled bool
 	var withVCS bool
 	var buildDate string
 	var archstrs []string
@@ -61,6 +64,14 @@ bill of materials) describing the image contents.
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var logger log.Logger
+
+			if quietEnabled {
+				logger = log.NewLogger(io.Discard)
+			} else {
+				logger = log.NewLogger(os.Stderr)
+			}
+
 			// TODO(kaniini): Print warning when multi-arch build is requested
 			// and ignored by the build system.
 			archs := types.ParseArchitectures(archstrs)
@@ -78,6 +89,7 @@ bill of materials) describing the image contents.
 				build.WithExtraKeys(extraKeys),
 				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
+				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
 				build.WithBuildOptions(buildOptions),
@@ -87,6 +99,7 @@ bill of materials) describing the image contents.
 
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
+	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
