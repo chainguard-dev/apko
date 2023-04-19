@@ -108,6 +108,10 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 			              -> /bin/sh (busybox)
 			          -> dep7
 			  package3 -> dep8
+			  package5 v1.0.0
+			  package5 v1.5.0
+			  package5 v1.5.1
+			  package5 v2.0.0
 	*/
 	// a depth-first search gives the following for package1
 	// dep5, dep4, dep1, libq, foo, dep6, dep3, busybox, dep2, libq, foo, dep6, dep3
@@ -131,6 +135,10 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 			{Name: "unused", Version: "1.0.0", Dependencies: []string{}},
 			{Name: "package2", Version: "1.0.0", Dependencies: []string{"dep2", "dep7"}},
 			{Name: "package3", Version: "1.0.0", Dependencies: []string{"dep8"}},
+			{Name: "package5", Version: "1.0.0"},
+			{Name: "package5", Version: "1.5.0"},
+			{Name: "package5", Version: "1.5.1"},
+			{Name: "package5", Version: "2.0.0"},
 		}
 		repoPackages = make([]*repository.RepositoryPackage, 0, len(packages))
 	)
@@ -197,6 +205,49 @@ func TestGetPackageDependencies(t *testing.T) {
 			actual = append(actual, p.Name)
 		}
 		require.True(t, reflect.DeepEqual(expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, expected)
+	})
+}
+
+func TestResolvePackage(t *testing.T) {
+	t.Run("no match", func(t *testing.T) {
+		// getPackageDependencies does not get the same dependencies twice.
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		pkgs, err := resolver.ResolvePackage("package12")
+		require.Error(t, err)
+		require.Len(t, pkgs, 0)
+	})
+	t.Run("any version", func(t *testing.T) {
+		// getPackageDependencies does not get the same dependencies twice.
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		pkgs, err := resolver.ResolvePackage("package5")
+		require.NoError(t, err)
+		require.Len(t, pkgs, 4)
+	})
+	t.Run("specific version", func(t *testing.T) {
+		// getPackageDependencies does not get the same dependencies twice.
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		version := "1.0.0"
+		pkgs, err := resolver.ResolvePackage("package5=" + version)
+		require.NoError(t, err)
+		require.Len(t, pkgs, 1)
+		require.Equal(t, version, pkgs[0].Version)
+	})
+	t.Run("greater than version", func(t *testing.T) {
+		// getPackageDependencies does not get the same dependencies twice.
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		pkgs, err := resolver.ResolvePackage("package5>1.0.0")
+		require.NoError(t, err)
+		require.Len(t, pkgs, 3)
+		// first version should be highest match
+		require.Equal(t, "2.0.0", pkgs[0].Version)
 	})
 }
 
