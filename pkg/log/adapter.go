@@ -82,7 +82,7 @@ func (a *Adapter) WithFields(fields Fields) Logger {
 }
 
 func NewLogger(out io.Writer) Logger {
-	return &Adapter{Out: out}
+	return &Adapter{Out: out, Level: InfoLevel}
 }
 
 func DefaultLogger() Logger {
