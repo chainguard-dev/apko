@@ -295,7 +295,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if wantSBOM {
-		log.NewLogger().Infof("Generating arch image SBOMs")
+		log.DefaultLogger().Infof("Generating arch image SBOMs")
 		for arch, img := range imgs {
 			bc := contexts[arch]
 
