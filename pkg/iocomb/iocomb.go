@@ -17,6 +17,8 @@ package iocomb
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // WriterFromTarget returns a writer given a target specification.
@@ -29,6 +31,14 @@ func WriterFromTarget(target string) (io.Writer, error) {
 	case "builtin:discard":
 		return io.Discard, nil
 	default:
+		if strings.Contains(target, "/") {
+			parent := filepath.Dir(target)
+
+			if err := os.MkdirAll(parent, 0o755); err != nil {
+				return nil, err
+			}
+		}
+
 		out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0o644)
 		if err != nil {
 			return nil, err
