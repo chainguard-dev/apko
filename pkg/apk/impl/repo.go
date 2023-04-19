@@ -219,12 +219,15 @@ func (p *PkgResolver) GetPackagesWithDependencies(packages []string) (toInstall 
 	)
 	// first get the explicitly named packages
 	for _, pkgName := range packages {
-		pkg, err := p.ResolvePackage(pkgName)
+		pkgs, err := p.ResolvePackage(pkgName)
 		if err != nil {
 			return nil, nil, err
 		}
+		if len(pkgs) == 0 {
+			return nil, nil, fmt.Errorf("could not find package %s", pkgName)
+		}
 		// do not add it to toInstall, as we want to have it in the correct order with dependencies
-		dependenciesMap[pkgName] = pkg
+		dependenciesMap[pkgName] = pkgs[0]
 	}
 	// now get the dependencies for each package
 	for _, pkgName := range packages {
@@ -264,10 +267,14 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 		localExisting[k] = v
 	}
 
-	pkg, err = p.ResolvePackage(pkgName)
+	pkgs, err := p.ResolvePackage(pkgName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if len(pkgs) == 0 {
+		return nil, nil, nil, fmt.Errorf("could not find package %s", pkgName)
+	}
+	pkg = pkgs[0]
 
 	_, _, _, pin := resolvePackageNameVersionPin(pkgName)
 	deps, conflicts, err := p.getPackageDependencies(pkg, pin, parents, localExisting)
@@ -323,27 +330,33 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	return
 }
 
-// ResolvePackage given a single package name and optional version constraints, resolve to an actual package.
-func (p *PkgResolver) ResolvePackage(pkgName string) (pkg *repository.RepositoryPackage, err error) {
+// ResolvePackage given a single package name and optional version constraints, resolve to a list of packages
+// that satisfy the constraint. The list will be sorted by version number, with the highest version first
+// and decreasing from there. In general, the first one in the list is the best match. This function
+// returns multiple in case you need to see all potential matches.
+func (p *PkgResolver) ResolvePackage(pkgName string) (pkgs []*repository.RepositoryPackage, err error) {
 	name, version, compare, pin := resolvePackageNameVersionPin(pkgName)
 	pkgsWithVersions, ok := p.nameMap[name]
+	var packages []*repositoryPackage
 	if ok {
 		// pkgsWithVersions contains a map of all versions of the package
 		// get the one that most matches what was requested
-		pkgs := filterPackages(pkgsWithVersions, withVersion(version, compare), withPreferPin(pin))
-		if len(pkgs) == 0 {
+		packages = filterPackages(pkgsWithVersions, withVersion(version, compare), withPreferPin(pin))
+		if len(packages) == 0 {
 			return nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
 		}
-		sortPackages(pkgs, nil, nil, pin)
-		pkg = pkgs[0].RepositoryPackage
+		sortPackages(packages, nil, nil, pin)
 	} else {
 		providers, ok := p.providesMap[name]
 		if !ok || len(providers) == 0 {
 			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
 		// we are going to do this in reverse order
-		sortPackages(providers, pkg, nil, "")
-		pkg = providers[0].RepositoryPackage
+		sortPackages(providers, nil, nil, "")
+		packages = providers
+	}
+	for _, pkg := range packages {
+		pkgs = append(pkgs, pkg.RepositoryPackage)
 	}
 	return
 }
