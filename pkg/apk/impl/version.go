@@ -305,7 +305,7 @@ func includesVersion(actual, required packageVersion) bool {
 		return false
 	}
 
-	// was there post-suffi
+	// was there post-suffix
 	if required.postSuffix != packageVersionPostModifierNone && actual.postSuffix != required.postSuffix {
 		return false
 	}
