@@ -116,6 +116,10 @@ func TestResolveVersion(t *testing.T) {
 		{"2.1.0", versionEqual, "", "", "equal match but pinned"},
 		{"2.1.0", versionEqual, "pinA", "2.1.0", "equal match and pin match"},
 		{"", versionNone, "", "2.0.6-r0", "no requirement should get highest version"},
+		{"1.6", versionTilde, "", "", "no match"},
+		{"1.7", versionTilde, "", "1.7.1-r1", "fits within"},
+		{"1.7.1", versionTilde, "", "1.7.1-r1", "fits within"},
+		{"1.7.1-r2", versionTilde, "", "", "no match"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
@@ -131,7 +135,7 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-func TestResolverPackageNameVersionPing(t *testing.T) {
+func TestResolverPackageNameVersionPin(t *testing.T) {
 	tests := []struct {
 		input   string
 		name    string
