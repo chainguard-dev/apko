@@ -218,7 +218,7 @@ func compareVersions(actual, required packageVersion) versionCompare {
 	// same letters
 	// compare pre-suffixes
 	// because None is 0 but the lowest priority to make it easy to have a sane default,
-	// but lowest priortiy, we need some extra logic to handle
+	// but lowest priority, we need some extra logic to handle
 	actualPreSuffix, requiredPreSuffix := actual.preSuffix, required.preSuffix
 	if actualPreSuffix == packageVersionPreModifierNone {
 		actualPreSuffix = packageVersionPreModifierMax
@@ -242,7 +242,7 @@ func compareVersions(actual, required packageVersion) versionCompare {
 	// same pre-suffix numbers
 	// compare post-suffixes
 	// because None is 0 but the lowest priority to make it easy to have a sane default,
-	// but lowest priortiy, we need some extra logic to handle
+	// but lowest priority, we need some extra logic to handle
 	actualPostSuffix, requiredPostSuffix := actual.postSuffix, required.postSuffix
 	if actualPostSuffix == packageVersionPostModifierNone {
 		actualPostSuffix = packageVersionPostModifierMax
@@ -274,6 +274,52 @@ func compareVersions(actual, required packageVersion) versionCompare {
 	return equal
 }
 
+// includesVersion returns true if the actual version is a strict subset of the required version
+func includesVersion(actual, required packageVersion) bool {
+	// if more required numbers than actual numbers, than require is more specific,
+	// so no match
+	if len(actual.numbers) < len(required.numbers) {
+		return false
+	}
+	for i := 0; i < len(required.numbers); i++ {
+		if actual.numbers[i] != required.numbers[i] {
+			return false
+		}
+	}
+	// if length is the same, check the rest of it; if actual is longer, it's ok
+	if len(actual.numbers) > len(required.numbers) {
+		return true
+	}
+	// was there a required letter?
+	if required.letter != 0 && actual.letter != required.letter {
+		return false
+	}
+
+	// was there pre-suffix
+	if required.preSuffix != packageVersionPreModifierNone && actual.preSuffix != required.preSuffix {
+		return false
+	}
+
+	// was there pre-suffix number
+	if required.preSuffixNumber != 0 && actual.preSuffixNumber != required.preSuffixNumber {
+		return false
+	}
+
+	// was there post-suffi
+	if required.postSuffix != packageVersionPostModifierNone && actual.postSuffix != required.postSuffix {
+		return false
+	}
+	if required.postSuffixNumber != 0 && actual.postSuffixNumber != required.postSuffixNumber {
+		return false
+	}
+
+	// compare revisions
+	if required.revision != 0 && actual.revision != required.revision {
+		return false
+	}
+	return true
+}
+
 type versionDependency int
 
 const (
@@ -283,9 +329,14 @@ const (
 	versionLess
 	versionGreaterEqual
 	versionLessEqual
+	versionTilde
 )
 
-func (v versionDependency) satisfies(c versionCompare) bool {
+func (v versionDependency) satisfies(actualVersion, requiredVersion packageVersion) bool {
+	if v == versionTilde {
+		return includesVersion(actualVersion, requiredVersion)
+	}
+	c := compareVersions(actualVersion, requiredVersion)
 	switch v {
 	case versionNone:
 		return true
@@ -327,6 +378,8 @@ func resolvePackageNameVersionPin(pkgName string) (name, version string, dep ver
 			dep = versionGreaterEqual
 		case "<=":
 			dep = versionLessEqual
+		case "~":
+			dep = versionTilde
 		default:
 			dep = versionNone
 		}
@@ -395,8 +448,7 @@ func filterPackages(pkgs []*repositoryPackage, opts ...filterOption) []*reposito
 			continue
 		}
 
-		versionRelationship := compareVersions(actualVersion, requiredVersion)
-		if o.compare.satisfies(versionRelationship) {
+		if o.compare.satisfies(actualVersion, requiredVersion) {
 			passed = append(passed, p)
 			continue
 		}
@@ -413,8 +465,7 @@ func filterPackages(pkgs []*repositoryPackage, opts ...filterOption) []*reposito
 				continue
 			}
 
-			versionRelationship = compareVersions(actualVersion, requiredVersion)
-			if o.compare.satisfies(versionRelationship) {
+			if o.compare.satisfies(actualVersion, requiredVersion) {
 				passed = append(passed, p)
 				break
 			}
