@@ -37,7 +37,7 @@ import (
 
 var (
 	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
-	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
+	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
 )
 
 func init() {
