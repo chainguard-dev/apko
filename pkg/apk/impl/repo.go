@@ -277,7 +277,7 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	pkg = pkgs[0]
 
 	_, _, _, pin := resolvePackageNameVersionPin(pkgName)
-	deps, conflicts, err := p.getPackageDependencies(pkg, pin, parents, localExisting)
+	deps, conflicts, err := p.getPackageDependencies(pkg, pin, true, parents, localExisting)
 	if err != nil {
 		return
 	}
@@ -389,7 +389,7 @@ func (p *PkgResolver) ResolvePackage(pkgName string) (pkgs []*repository.Reposit
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*repository.RepositoryPackage) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, allowPin string, allowSelfFulfill bool, parents map[string]bool, existing map[string]*repository.RepositoryPackage) (dependencies []*repository.RepositoryPackage, conflicts []string, err error) {
 	// check if the package we are checking is one of our parents, avoid cyclical graphs
 	if _, ok := parents[pkg.Name]; ok {
 		return nil, nil, nil
@@ -421,6 +421,24 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 		if myProvides[name] || myProvides[dep] {
 			// we provide this, so skip it
 			continue
+		}
+
+		if allowSelfFulfill && pkg.Name == name {
+			var (
+				actualVersion, requiredVersion packageVersion
+				err1, err2                     error
+			)
+			actualVersion, err1 = parseVersion(pkg.Version)
+			if compare != versionNone {
+				requiredVersion, err2 = parseVersion(version)
+			}
+			// we accept invalid versions for ourself, but do not try to use it to fulfill
+			if err1 == nil && err2 == nil {
+				if compare.satisfies(actualVersion, requiredVersion) {
+					// we provide it, so skip looking elsewhere
+					continue
+				}
+			}
 		}
 
 		// first see if it is a name of a package
@@ -474,7 +492,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			childParents[k] = true
 		}
 		childParents[pkg.Name] = true
-		subDeps, confs, err := p.getPackageDependencies(depPkg, allowPin, childParents, existing)
+		subDeps, confs, err := p.getPackageDependencies(depPkg, allowPin, true, childParents, existing)
 		if err != nil {
 			return nil, nil, err
 		}
