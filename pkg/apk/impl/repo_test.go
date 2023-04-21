@@ -139,6 +139,8 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 			{Name: "package5", Version: "1.5.0"},
 			{Name: "package5", Version: "1.5.1"},
 			{Name: "package5", Version: "2.0.0"},
+			{Name: "package6", Version: "1.5.1"},
+			{Name: "package6", Version: "2.0.0", Dependencies: []string{"package6", "package5"}},
 		}
 		repoPackages = make([]*repository.RepositoryPackage, 0, len(packages))
 	)
@@ -205,6 +207,34 @@ func TestGetPackageDependencies(t *testing.T) {
 			actual = append(actual, p.Name)
 		}
 		require.True(t, reflect.DeepEqual(expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, expected)
+	})
+	t.Run("self-fulfill", func(t *testing.T) {
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		pkg6, err := resolver.ResolvePackage("package6")
+		require.NoErrorf(t, err, "unable to resolve package6")
+		require.GreaterOrEqual(t, len(pkg6), 1, "package6 should have at least one match")
+		tests := []struct {
+			name     string
+			expected []string
+			allow    bool
+		}{
+			{"allowed", []string{"package5"}, true},
+			{"not allowed", []string{"package6", "package5"}, false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				deps, _, err := resolver.getPackageDependencies(pkg6[0], "", tt.allow, nil, nil)
+				require.NoErrorf(t, err, "unable to get dependencies")
+
+				var actual = make([]string, 0, len(deps))
+				for _, p := range deps {
+					actual = append(actual, p.Name)
+				}
+				require.True(t, reflect.DeepEqual(tt.expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, tt.expected)
+			})
+		}
 	})
 }
 
