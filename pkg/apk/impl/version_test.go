@@ -124,7 +124,7 @@ func TestResolveVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
 			found := filterPackages(pkgs, withVersion(tt.version, tt.compare), withPreferPin(tt.pin))
-			sortPackages(found, nil, nil, tt.pin)
+			sortPackages(found, nil, "", nil, tt.pin)
 			if tt.want == "" {
 				require.Nil(t, found, "version resolver should not find a package")
 			} else {
