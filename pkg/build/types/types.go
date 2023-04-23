@@ -83,6 +83,7 @@ type ImageConfiguration struct {
 	Accounts    ImageAccounts     `yaml:"accounts,omitempty"`
 	Archs       []Architecture    `yaml:"archs,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty"`
+	OnBuild     []string          `yaml:"on_build,omitempty"`
 	Paths       []PathMutation    `yaml:"paths,omitempty"`
 	OSRelease   OSRelease         `yaml:"os-release,omitempty"`
 	VCSUrl      string            `yaml:"vcs-url,omitempty"`

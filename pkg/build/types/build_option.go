@@ -41,6 +41,7 @@ type BuildOption struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
 
 	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
+	OnBuild    []string        `yaml:"on_build,omitempty"`
 }
 
 // Apply applies a patch described by a BuildOption to an apko environment.
@@ -68,6 +69,8 @@ func (bo BuildOption) Apply(ic *ImageConfiguration) error {
 	for k, v := range bo.Environment {
 		ic.Environment[k] = v
 	}
+
+	ic.OnBuild = append(ic.OnBuild, bo.OnBuild...)
 
 	if bo.Entrypoint.Type != "" {
 		ic.Entrypoint = bo.Entrypoint

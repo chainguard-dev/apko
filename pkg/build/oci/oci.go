@@ -188,6 +188,10 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 		}
 	}
 
+	if len(ic.OnBuild) > 0 {
+		cfg.Config.OnBuild = ic.OnBuild
+	}
+
 	if ic.Accounts.RunAs != "" {
 		cfg.Config.User = ic.Accounts.RunAs
 	}

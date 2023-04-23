@@ -22,6 +22,10 @@ entrypoint:
 # optional environment configuration
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
+
+# optional on build configuration
+on_build:
+  - COPY . /usr/src/app
 ```
 
 Running `apko build` on this file will produce a tar file containing an Alpine base container image.
