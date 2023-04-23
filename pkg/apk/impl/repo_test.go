@@ -141,6 +141,8 @@ func testGetPackagesAndIndex() ([]*repository.RepositoryPackage, []*repository.R
 			{Name: "package5", Version: "2.0.0"},
 			{Name: "package6", Version: "1.5.1"},
 			{Name: "package6", Version: "2.0.0", Dependencies: []string{"package6", "package5"}},
+			{Name: "package7", Version: "1"},
+			{Name: "package8", Version: "2", Provides: []string{"package7=0.9"}},
 		}
 		repoPackages = make([]*repository.RepositoryPackage, 0, len(packages))
 	)
@@ -279,6 +281,17 @@ func TestResolvePackage(t *testing.T) {
 		// first version should be highest match
 		require.Equal(t, "2.0.0", pkgs[0].Version)
 	})
+	t.Run("with provides", func(t *testing.T) {
+		// getPackageDependencies does not get the same dependencies twice.
+		_, index := testGetPackagesAndIndex()
+
+		resolver := NewPkgResolver(testNamedRepositoryFromIndexes(index))
+		pkgs, err := resolver.ResolvePackage("package7")
+		require.NoError(t, err)
+		require.Len(t, pkgs, 2)
+		// first version should be highest match
+		require.Equal(t, "1", pkgs[0].Version)
+	})
 }
 
 // Make sure that all versions exist
@@ -378,7 +391,7 @@ func TestSortPackages(t *testing.T) {
 				existing[pkg.pkg.Name] = repository.NewRepositoryPackage(pkg.pkg, &repository.RepositoryWithIndex{Repository: &repository.Repository{Uri: pkg.repo}})
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
-			sortPackages(namedPkgs, pkg, existing, "")
+			sortPackages(namedPkgs, pkg, "", existing, "")
 			for i, pkg := range namedPkgs {
 				require.Equal(t, int(pkg.InstalledSize), i, "position matches")
 			}

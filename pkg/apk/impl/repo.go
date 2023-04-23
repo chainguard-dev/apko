@@ -345,14 +345,14 @@ func (p *PkgResolver) ResolvePackage(pkgName string) (pkgs []*repository.Reposit
 		if len(packages) == 0 {
 			return nil, fmt.Errorf("could not find package %s in indexes: %w", pkgName, err)
 		}
-		sortPackages(packages, nil, nil, pin)
+		sortPackages(packages, nil, name, nil, pin)
 	} else {
 		providers, ok := p.providesMap[name]
 		if !ok || len(providers) == 0 {
 			return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
 		}
 		// we are going to do this in reverse order
-		sortPackages(providers, nil, nil, "")
+		sortPackages(providers, nil, name, nil, "")
 		packages = providers
 	}
 	for _, pkg := range packages {
@@ -450,7 +450,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 			if len(pkgs) == 0 {
 				return nil, nil, fmt.Errorf("could not find package %s in indexes", dep)
 			}
-			sortPackages(pkgs, nil, existing, "")
+			sortPackages(pkgs, nil, name, existing, "")
 			depPkg = pkgs[0].RepositoryPackage
 		} else {
 			// it was not the name of a package, see if some package provides this
@@ -481,7 +481,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 				continue
 			}
 			// we are going to do this in reverse order
-			sortPackages(providers, pkg, existing, "")
+			sortPackages(providers, pkg, name, existing, "")
 			depPkg = providers[0].RepositoryPackage
 		}
 		// and then recurse to its children
@@ -511,7 +511,12 @@ func (p *PkgResolver) getPackageDependencies(pkg *repository.RepositoryPackage, 
 // matching origin to a provided comparison package, whether or not one of the packages
 // already is installed, the versions, and whether an origin already exists.
 // The pin is for preference only; prefer a package that matches the pin over one that does not.
-func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPackage, existing map[string]*repository.RepositoryPackage, pin string) {
+// If a name is provided, then this is indicated as the name of the package we are looking for.
+// This may affect the sort order, as not all packages may have the same name.
+// For example, if the original search was for package "a", then pkgs may contain some that
+// are named "a", but others that provided "a". In that case, we should look not at the
+// version of the package, but the version of "a" that the package provides.
+func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPackage, name string, existing map[string]*repository.RepositoryPackage, pin string) {
 	// get existing origins
 	existingOrigins := map[string]bool{}
 	for _, pkg := range existing {
@@ -520,6 +525,9 @@ func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPacka
 		}
 	}
 	sort.Slice(pkgs, func(i, j int) bool {
+		// determine versions
+		iVersionStr := getDepVersionForName(pkgs[i], name)
+		jVersionStr := getDepVersionForName(pkgs[j], name)
 		if compare != nil {
 			// matching repository
 			pkgRepo := compare.Repository().Uri
@@ -572,11 +580,11 @@ func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPacka
 		}
 		// both matched or both did not, so just compare versions
 		// version priority
-		iVersion, err := parseVersion(pkgs[i].Version)
+		iVersion, err := parseVersion(iVersionStr)
 		if err != nil {
 			return false
 		}
-		jVersion, err := parseVersion(pkgs[j].Version)
+		jVersion, err := parseVersion(jVersionStr)
 		if err != nil {
 			return false
 		}
@@ -584,7 +592,47 @@ func sortPackages(pkgs []*repositoryPackage, compare *repository.RepositoryPacka
 		if versions != equal {
 			return versions == greater
 		}
+		// if versions are equal, they might not be the same as the package versions
+		if iVersionStr != pkgs[i].Version || jVersionStr != pkgs[j].Version {
+			iVersion, err := parseVersion(pkgs[i].Version)
+			if err != nil {
+				return false
+			}
+			jVersion, err := parseVersion(pkgs[j].Version)
+			if err != nil {
+				return false
+			}
+			versions := compareVersions(iVersion, jVersion)
+			if versions != equal {
+				return versions == greater
+			}
+		}
 		// if versions are equal, compare names
 		return pkgs[i].Name < pkgs[j].Name
 	})
+}
+
+// getDepVersionForName get the version of the package that provides the given name.
+// If the name matches the package name, then the version of the package is used;
+// if it does not, then the version of the provides is used.
+//
+// For example, if pkg foo v2.3 provides bar=1.2, and we look for name=bar then it returns
+// 1.2 (from the provides); else it return 2.3 (from the package itself).
+//
+// Note that the calling function might decide to ignore this and use the package
+// version anyways.
+func getDepVersionForName(pkg *repositoryPackage, name string) string {
+	if name == "" || name == pkg.Name {
+		return pkg.Version
+	}
+	for _, prov := range pkg.Provides {
+		pName, pVersion, _, _ := resolvePackageNameVersionPin(prov)
+		if pVersion == "" {
+			pVersion = pkg.Version
+		}
+		if pName == name {
+			return pVersion
+		}
+	}
+	return ""
 }
