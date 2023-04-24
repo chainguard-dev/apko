@@ -14,6 +14,8 @@
 
 // This depends on knowing the correct links for each version.
 // These are kept in a map in busybox_versions.go, which is generated.
+// However, those are just a fallback. Beginning with alpine busybox 1.36.0-r8
+// and wolfi 1.36.0-r3, it includes a manifest of links in /etc/busybox-paths.d/<package-name>
 //
 // To regenerate, run the following from the repository root:
 //
@@ -35,7 +37,8 @@ import (
 )
 
 const (
-	busybox = "/bin/busybox"
+	busybox      = "/bin/busybox"
+	busyboxPaths = "/etc/busybox-paths.d"
 )
 
 // for reference, the list of versions can be updated from curl -L https://distfiles.alpinelinux.org/distfiles/edge/ | grep busybox
@@ -66,17 +69,22 @@ func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *
 	if err != nil {
 		return err
 	}
-	var installedVersion string
+	var (
+		installedVersion string
+		pkgName          string
+	)
 	for _, pkg := range installed {
 		if pkg.Name == "busybox" {
 			// get the version
 			installedVersion = pkg.Version
+			pkgName = pkg.Name
 			break
 		}
 		// Other packages might "provide" busybox
 		for _, prov := range pkg.Provides {
 			if strings.Contains(prov, "busybox") {
 				installedVersion = pkg.Version
+				pkgName = pkg.Name
 				break
 			}
 		}
@@ -84,15 +92,25 @@ func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *
 	if installedVersion == "" {
 		return fmt.Errorf("busybox package not installed")
 	}
-	// convert to a basic semver
-	matches := basicSemverRegex.FindAllStringSubmatch(installedVersion, -1)
-	if len(matches) != 1 || len(matches[0]) < 4 {
-		return fmt.Errorf("invalid busybox version: %s", installedVersion)
-	}
-	installedVersion = matches[0][1]
-	links, ok := busyboxLinks[installedVersion]
-	if !ok {
-		links = busyboxLinks["default"]
+
+	var links []string
+	// first look in /etc/busybox-paths.d/<package>
+	// if that does not exist, use the fallback map
+	pathsFilename := filepath.Join(busyboxPaths, pkgName)
+	if b, err := fsys.ReadFile(pathsFilename); err == nil {
+		links = strings.Split(string(b), "\n")
+	} else {
+		var ok bool
+		// convert to a basic semver
+		matches := basicSemverRegex.FindAllStringSubmatch(installedVersion, -1)
+		if len(matches) != 1 || len(matches[0]) < 4 {
+			return fmt.Errorf("invalid busybox version: %s", installedVersion)
+		}
+		installedVersion = matches[0][1]
+		links, ok = busyboxLinks[installedVersion]
+		if !ok {
+			links = busyboxLinks["default"]
+		}
 	}
 
 	for _, link := range links {
