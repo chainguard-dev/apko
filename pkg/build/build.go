@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
+	"gopkg.in/yaml.v3"
 
 	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
@@ -85,6 +86,14 @@ func (bc *Context) GenerateSBOM() error {
 func (bc *Context) BuildImage() (fs.FS, error) {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
 	if err := buildImage(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
+		logger := bc.Options.Logger()
+		logger.Debugf("buildImage failed: %v", err)
+		b, err2 := yaml.Marshal(bc.ImageConfiguration)
+		if err2 != nil {
+			logger.Debugf("failed to marshal image configuration: %v", err2)
+		} else {
+			logger.Debugf("image configuration:\n%s", string(b))
+		}
 		return nil, err
 	}
 	return bc.fs, nil
