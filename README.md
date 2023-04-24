@@ -65,6 +65,10 @@ entrypoint:
 # optional environment configuration
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
+
+# optional on build configuration
+on_build:
+  - COPY . /usr/src/app
 ```
 We can build this with apko from any environment with apk tooling:
 
