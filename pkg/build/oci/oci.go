@@ -31,7 +31,6 @@ import (
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
-	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
@@ -49,6 +48,7 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci/static"
 	"github.com/sigstore/cosign/v2/pkg/oci/walk"
 	ctypes "github.com/sigstore/cosign/v2/pkg/types"
+	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
@@ -67,6 +67,26 @@ var keychain = authn.NewMultiKeychain(
 	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
 	github.Keychain,
 )
+
+var remoteOpts []remote.Option
+
+func init() {
+	remoteOpts = []remote.Option{remote.WithAuthFromKeychain(keychain)}
+
+	pusher, err := remote.NewPusher(remoteOpts...)
+	if err == nil {
+		remoteOpts = append(remoteOpts, remote.Reuse(pusher))
+	} else {
+		log.DefaultLogger().Infof("NewPusher(): %v", err)
+	}
+
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err == nil {
+		remoteOpts = append(remoteOpts, remote.Reuse(puller))
+	} else {
+		log.DefaultLogger().Infof("NewPuller(): %v", err)
+	}
+}
 
 func BuildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
 	return buildImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
@@ -213,9 +233,26 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 
 func Copy(src, dst string) error {
 	log.DefaultLogger().Infof("Copying %s to %s", src, dst)
-	if err := crane.Copy(src, dst, crane.WithAuthFromKeychain(keychain)); err != nil {
+	srcRef, err := name.ParseReference(src)
+	if err != nil {
+		return err
+	}
+	dstRef, err := name.ParseReference(dst)
+	if err != nil {
+		return err
+	}
+	desc, err := remote.Get(srcRef, remoteOpts...)
+	if err != nil {
+		return fmt.Errorf("fetching %s: %w", src, err)
+	}
+	pusher, err := remote.NewPusher(remoteOpts...)
+	if err != nil {
+		return err
+	}
+	if err := pusher.Push(context.TODO(), dstRef, desc); err != nil {
 		return fmt.Errorf("tagging %s with tag %s: %w", src, dst, err)
 	}
+
 	return nil
 }
 
@@ -227,16 +264,20 @@ func PostAttachSBOM(si oci.SignedEntity, sbomPath string, sbomFormats []string,
 	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
 		return nil, err2
 	}
+	var g errgroup.Group
 	for _, tag := range tags {
 		ref, err := name.ParseReference(tag)
 		if err != nil {
 			return nil, fmt.Errorf("parsing reference: %w", err)
 		}
 		// Write any attached SBOMs/signatures.
-		wp := writePeripherals(ref, logger, remote.WithAuthFromKeychain(keychain))
-		if err := wp(context.Background(), si); err != nil {
-			return nil, err
-		}
+		wp := writePeripherals(ref, logger, remoteOpts...)
+		g.Go(func() error {
+			return wp(context.TODO(), si)
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return si, nil
 }
@@ -364,15 +405,21 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 		return name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), hash))
 	}
 
-	// Write any attached SBOMs/signatures.
-	wp := writePeripherals(imgRef, logger, remote.WithAuthFromKeychain(keychain))
-	if err := wp(context.Background(), image); err != nil {
-		return name.Digest{}, err
-	}
+	var g errgroup.Group
 
-	if err := retry.Do(func() error {
-		return remote.Write(imgRef, image, remote.WithAuthFromKeychain(keychain))
-	}); err != nil {
+	// Write any attached SBOMs/signatures.
+	wp := writePeripherals(imgRef, logger, remoteOpts...)
+	g.Go(func() error {
+		return wp(context.TODO(), image)
+	})
+
+	g.Go(func() error {
+		return retry.Do(func() error {
+			return remote.Write(imgRef, image, remoteOpts...)
+		})
+	})
+
+	if err := g.Wait(); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 	return imgRef.Context().Digest(hash.String()), nil
@@ -556,17 +603,28 @@ func publishTagFromIndex(index oci.SignedImageIndex, imageRef string, hash v1.Ha
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 	}
 
+	var g errgroup.Group
+
 	// Write any attached SBOMs/signatures (recursively)
-	wp := writePeripherals(ref, logger, remote.WithAuthFromKeychain(keychain))
-	if err := walk.SignedEntity(context.Background(), index, wp); err != nil {
+	wp := writePeripherals(ref, logger, remoteOpts...)
+	if err := walk.SignedEntity(context.TODO(), index, func(ctx context.Context, se oci.SignedEntity) error {
+		g.Go(func() error {
+			return wp(ctx, se)
+		})
+		return nil
+	}); err != nil {
 		return name.Digest{}, err
 	}
 
-	if err := retry.Do(func() error {
-		return remote.WriteIndex(ref, index, remote.WithAuthFromKeychain(keychain))
-	}); err != nil {
+	g.Go(func() error {
+		return retry.Do(func() error {
+			return remote.WriteIndex(ref, index, remoteOpts...)
+		})
+	})
+	if err := g.Wait(); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
+
 	return ref.Context().Digest(hash.String()), nil
 }
 

@@ -290,14 +290,20 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	} else {
 		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
+		var g errgroup.Group
 		for _, at := range additionalTags {
+			at := at
 			if skipLocalCopy {
 				bc.Logger().Warnf("skipping local domain tag %s", at)
 				continue
 			}
-			if err := oci.Copy(finalDigest.Name(), at); err != nil {
-				return err
-			}
+			g.Go(func() error {
+				return oci.Copy(finalDigest.Name(), at)
+
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
 		}
 	}
 
@@ -316,22 +322,32 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	if wantSBOM {
 		bc.Options.Log.Infof("Generating arch image SBOMs")
+		var g errgroup.Group
 		for arch, img := range imgs {
+			arch, img := arch, img
 			bc := contexts[arch]
 
 			bc.Options.WantSBOM = true
 			bc.Options.SBOMFormats = formats
 			bc.Options.SBOMPath = sbomPath
 
-			if err := bc.GenerateImageSBOM(arch, img); err != nil {
-				return fmt.Errorf("generating sbom for %s: %w", arch, err)
-			}
+			g.Go(func() error {
+				if err := bc.GenerateImageSBOM(arch, img); err != nil {
+					return fmt.Errorf("generating sbom for %s: %w", arch, err)
+				}
 
-			if _, err := oci.PostAttachSBOM(
-				img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
-			); err != nil {
-				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
-			}
+				if _, err := oci.PostAttachSBOM(
+					img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+				); err != nil {
+					return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
+				}
+
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return err
 		}
 
 		if err := bc.GenerateIndexSBOM(finalDigest, imgs); err != nil {

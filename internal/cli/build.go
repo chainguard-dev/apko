@@ -242,7 +242,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 	if wantSBOM {
 		logrus.Info("Generating arch image SBOMs")
+		var g errgroup.Group
 		for arch, img := range imgs {
+			arch, img := arch, img
 			bc := contexts[arch]
 
 			// override the SBOM options
@@ -250,9 +252,16 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 			bc.Options.WantSBOM = true
 			bc.Options.SBOMPath = sbomPath
 
-			if err := bc.GenerateImageSBOM(arch, img); err != nil {
-				return fmt.Errorf("generating sbom for %s: %w", arch, err)
-			}
+			g.Go(func() error {
+				if err := bc.GenerateImageSBOM(arch, img); err != nil {
+					return fmt.Errorf("generating sbom for %s: %w", arch, err)
+				}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return err
 		}
 	}
 
