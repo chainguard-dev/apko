@@ -240,7 +240,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			// defer os.Remove(layerTarGZ)
 
 			var img coci.SignedImage
-			finalDigest, img, err = publishImage(bc, layerTarGZ, arch)
+			finalDigest, img, err = publishImage(ctx, bc, layerTarGZ, arch)
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
@@ -260,7 +260,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if len(archs) > 1 {
-		finalDigest, idx, err = publishIndex(bc, imgs)
+		finalDigest, idx, err = publishIndex(ctx, bc, imgs)
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)
 		}
@@ -290,14 +290,19 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	} else {
 		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
+		var g errgroup.Group
 		for _, at := range additionalTags {
+			at := at
 			if skipLocalCopy {
 				bc.Logger().Warnf("skipping local domain tag %s", at)
 				continue
 			}
-			if err := oci.Copy(finalDigest.Name(), at); err != nil {
-				return err
-			}
+			g.Go(func() error {
+				return oci.Copy(ctx, finalDigest.Name(), at)
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
 		}
 	}
 
@@ -316,22 +321,32 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	if wantSBOM {
 		bc.Options.Log.Infof("Generating arch image SBOMs")
+		var g errgroup.Group
 		for arch, img := range imgs {
+			arch, img := arch, img
 			bc := contexts[arch]
 
 			bc.Options.WantSBOM = true
 			bc.Options.SBOMFormats = formats
 			bc.Options.SBOMPath = sbomPath
 
-			if err := bc.GenerateImageSBOM(arch, img); err != nil {
-				return fmt.Errorf("generating sbom for %s: %w", arch, err)
-			}
+			g.Go(func() error {
+				if err := bc.GenerateImageSBOM(arch, img); err != nil {
+					return fmt.Errorf("generating sbom for %s: %w", arch, err)
+				}
 
-			if _, err := oci.PostAttachSBOM(
-				img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
-			); err != nil {
-				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
-			}
+				if _, err := oci.PostAttachSBOM(
+					ctx, img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+				); err != nil {
+					return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
+				}
+
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return err
 		}
 
 		if err := bc.GenerateIndexSBOM(finalDigest, imgs); err != nil {
@@ -340,7 +355,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 		if idx != nil {
 			if _, err := oci.PostAttachSBOM(
-				idx, sbomPath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to index: %w", err)
 			}
@@ -363,10 +378,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 }
 
 // publishImage publishes a specific architecture image
-func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
+func publishImage(ctx context.Context, bc *build.Context, layerTarGZ string, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
 	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
-		imgDigest, img, err = oci.PublishDockerImageFromLayer(
+		imgDigest, img, err = oci.PublishDockerImageFromLayer(ctx,
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
 			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
 		)
@@ -374,7 +389,7 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
 		}
 	} else {
-		imgDigest, img, err = oci.PublishImageFromLayer(
+		imgDigest, img, err = oci.PublishImageFromLayer(ctx,
 			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
 			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
 		)
@@ -386,17 +401,17 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 }
 
 // publishIndex publishes the new image index
-func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImage) (
+func publishIndex(ctx context.Context, bc *build.Context, imgs map[types.Architecture]coci.SignedImage) (
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
 	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}
