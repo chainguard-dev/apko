@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 )
@@ -259,4 +260,39 @@ func TestUpdateTriggers(t *testing.T) {
 	}
 	// nolint:forbidigo // this is a valid use case
 	t.Errorf("could not find entry for commit: %s", cksum)
+}
+
+func TestSortTarHeaders(t *testing.T) {
+	headers := []tar.Header{
+		{Name: "bin", Typeflag: tar.TypeDir},
+		{Name: "usr", Typeflag: tar.TypeDir},
+		{Name: "usr/etc", Typeflag: tar.TypeDir},
+		{Name: "usr/bin", Typeflag: tar.TypeDir},
+		{Name: "bin/ls", Typeflag: tar.TypeReg},
+		{Name: "bin/busybox"},
+		{Name: "etc", Typeflag: tar.TypeDir},
+		{Name: "etc/logrotate.d", Typeflag: tar.TypeDir},
+		{Name: "etc/logrotate.d/file", Typeflag: tar.TypeReg},
+		{Name: "etc/logrotate.d/file2", Typeflag: tar.TypeReg},
+		{Name: "etc/hosts", Typeflag: tar.TypeReg},
+		{Name: "etc/mylaterfile", Typeflag: tar.TypeReg}, // this is particularly good for testing that it comes before logrotate.d
+	}
+	expected := []string{
+		"bin",
+		"bin/busybox",
+		"bin/ls",
+		"etc",
+		"etc/hosts",
+		"etc/mylaterfile",
+		"etc/logrotate.d",
+		"etc/logrotate.d/file",
+		"etc/logrotate.d/file2",
+		"usr",
+		"usr/etc",
+		"usr/bin",
+	}
+	results := sortTarHeaders(headers)
+	for i, header := range results {
+		assert.Equal(t, expected[i], header.Name, "position %d: expected %s, got %s", i, expected[i], header.Name)
+	}
 }

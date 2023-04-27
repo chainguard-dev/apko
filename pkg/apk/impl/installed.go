@@ -57,13 +57,11 @@ func (a *APKImplementation) addInstalledPackage(pkg *repository.Package, files [
 	defer installedFile.Close()
 
 	// sort the files by directory
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name < files[j].Name
-	})
+	sortedFiles := sortTarHeaders(files)
 	// package lines
 	pkgLines := PackageToIndex(pkg)
 	// file lines
-	for _, f := range files {
+	for _, f := range sortedFiles {
 		perm := f.Mode & 0777
 		user := f.Uid
 		group := f.Gid
@@ -390,4 +388,99 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 		return 0, 0, 0, fmt.Errorf("invalid permission string perms was not an int64 %s", permString)
 	}
 	return
+}
+
+// sortTarHeaders sorts tar headers by name. It ensures that all file children of a directory are listed
+// immediately after the directory itself. This is to support lib/apk/db/installed, which lists full paths
+// for directories, but only the basename for the files, so the last directory entry before a file must be the parent
+// in which it sits.
+func sortTarHeaders(headers []tar.Header) []tar.Header {
+	// to hold our results
+	var (
+		sorted = make([]tar.Header, 0, len(headers))
+		// create a tree with everything in it, where keys are full directory paths, values are slice of full paths of children
+		listing = map[string][]string{}
+		all     = map[string]tar.Header{}
+	)
+
+	for _, header := range headers {
+		dir := filepath.Dir(header.Name)
+		listing[dir] = append(listing[dir], header.Name)
+		all[header.Name] = header
+	}
+	// now we have a map where the keys are all of the directories, and the values are all of the files or directories
+	// in that directory
+	// now we can build the structure
+	var dirEntries = make([]string, 0, len(listing))
+	for entry := range listing {
+		dirEntries = append(dirEntries, entry)
+	}
+	sort.Slice(dirEntries, func(i, j int) bool {
+		return dirEntries[i] < dirEntries[j]
+	})
+	// go through each directory entry.
+	// add the directory itsef, then add its file children
+	for _, dir := range dirEntries {
+		header, ok := all[dir]
+		if !ok {
+			continue
+		}
+		sorted = append(sorted, header)
+		// now all of its children
+		children, ok := listing[dir]
+		if !ok || len(children) == 0 {
+			continue
+		}
+		sort.Strings(children)
+		for _, child := range children {
+			header, ok := all[child]
+			if !ok || header.Typeflag == tar.TypeDir {
+				continue
+			}
+			sorted = append(sorted, header)
+		}
+	}
+	/*
+		sort.Slice(headers, func(i, j int) bool {
+			parentDirI, parentDirJ := filepath.Dir(headers[i].Name), filepath.Dir(headers[j].Name)
+			isDirI, isDirJ := headers[i].Typeflag == tar.TypeDir, headers[j].Typeflag == tar.TypeDir
+
+			// logic is somewhat complicated.
+			// If the two paths are in the same directory, then files before dirs, then sort by name
+			if parentDirI == parentDirJ {
+				if isDirI == isDirJ {
+					return headers[i].Name < headers[j].Name
+				}
+				if isDirI {
+					return false
+				}
+				return true
+			}
+			// the two are not in the same directory
+
+			// If both are files, then sort by name
+			// If both are directories, then sort by name. This will put parents before their children automatically,
+			// which we need as well
+			if isDirI == isDirJ {
+				return headers[i].Name < headers[j].Name
+			}
+
+			// one is a directory, one is a file
+			// see if the file is in the directory; if so, the directory comes first
+			if isDirI {
+				if strings.HasPrefix(headers[j].Name, parentDirI) {
+					return true
+				}
+				// file is not a child of the directory, direct or otherwise.
+				//
+			}
+			if isDirJ {
+				if strings.HasPrefix(headers[i].Name, parentDirJ) {
+					return false
+				}
+			}
+
+		})
+	*/
+	return sorted
 }
