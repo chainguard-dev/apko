@@ -605,7 +605,7 @@ func (a *APKImplementation) installPackage(pkg *repository.RepositoryPackage, ca
 	if err != nil {
 		return fmt.Errorf("could not open package data file %s for reading: %w", expanded.PackageDataTarGzFilename, err)
 	}
-	installedFiles, err := a.installAPKFiles(gzipIn)
+	installedFiles, err := a.installAPKFiles(gzipIn, pkg.Origin)
 	if err != nil {
 		return fmt.Errorf("unable to install files for pkg %s: %w", pkg.Name, err)
 	}
