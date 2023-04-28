@@ -20,7 +20,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.2
-	gitlab.alpinelinux.org/alpine/go v0.6.0
+	gitlab.alpinelinux.org/alpine/go v0.6.1-0.20230428211436-f22972d078c8
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
 	golang.org/x/sync v0.1.0
@@ -106,6 +106,7 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/sigstore/rekor v1.1.0 // indirect
 	github.com/sigstore/sigstore v1.6.3 // indirect
