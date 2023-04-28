@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -32,6 +33,7 @@ import (
 const pathSep = "/"
 
 type memFS struct {
+	mu   sync.Mutex
 	tree *node
 }
 
@@ -49,6 +51,9 @@ func NewMemFS() FullFS {
 // getNode returns the node for the given path. If the path is not found, it
 // returns an error
 func (m *memFS) getNode(path string) (*node, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if path == "/" || path == "." {
 		return m.tree, nil
 	}
