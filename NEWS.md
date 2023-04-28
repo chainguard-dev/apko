@@ -1,3 +1,25 @@
+# Changes from 0.7.3 to 0.8.0
+
+* Add support for fuzzy version matching using the tilde operator (`~`).
+  This is necessary to support Python packages in Alpine 3.18 or later, which
+  declare a dependency on the versioned Python runtime.
+
+* Implement `--log-policy` which allows users to specify logging policies,
+  such as `--log-policy builtin:stderr,/home/build/buildlogs/foo.log`.  This
+  logging policy would cause log data to be written to `stderr`, as well as
+  `/home/build/buildlogs/foo.log`.
+
+* Send `user-agent` in HTTP requests.
+
+* Add support for using `/etc/busybox-links.d` files to set up the BusyBox
+  symlinks where present, instead of using hardcoded lists.
+
+* Add support for configuring the signal used by an OCI runtime to stop
+  processes in a container.
+
+* Ensure files are truncated when installing new files which replace files
+  from other packages.
+
 # Changes from 0.7.2 to 0.7.3
 
 * Fix recording symlinks when operating on a case-insensitive filesystem.
