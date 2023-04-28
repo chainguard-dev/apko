@@ -64,7 +64,7 @@ func (a *APKImplementation) writeOneFile(header *tar.Header, r io.Reader, allowO
 // installAPKFiles install the files from the APK and return the list of installed files
 // and their permissions. Returns a tar.Header because it is a convenient existing
 // struct that has all of the fields we need.
-func (a *APKImplementation) installAPKFiles(gzipIn io.Reader, origin string) ([]tar.Header, error) {
+func (a *APKImplementation) installAPKFiles(gzipIn io.Reader, origin string, replaces string) ([]tar.Header, error) {
 	var files []tar.Header
 	gr, err := gzip.NewReader(gzipIn)
 	if err != nil {
@@ -159,11 +159,11 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader, origin string) ([]
 				// go through each installed, looking for those that match our origin
 				var found bool
 				for _, pkg := range installed {
-					// if it is not the same origin, we are not interested
-					if pkg.Origin != origin {
+					// if it is not the same origin or isn't a replacement, we are not interested
+					if pkg.Origin != origin && pkg.Name != replaces {
 						continue
 					}
-					// matched the origin, so look for the file we are installing
+					// matched the origin (or is a replacement), so look for the file we are installing
 					for _, file := range pkg.Files {
 						if file.Name == header.Name {
 							found = true
