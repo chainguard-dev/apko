@@ -24,7 +24,7 @@ import (
 
 type User struct {
 	// Required: The name of the user
-	UserName string `json:"user_name"`
+	UserName string `json:"username"`
 	// Required: The user ID
 	UID uint32 `json:"uid"`
 	// Required: The user's group ID
@@ -33,7 +33,7 @@ type User struct {
 
 type Group struct {
 	// Required: The name of the group
-	GroupName string `json:"group_name"`
+	GroupName string `json:"groupname"`
 	// Required: The group ID
 	GID uint32 `json:"gid"`
 	// Required: The list of members of the group
@@ -87,7 +87,7 @@ type ImageEntrypoint struct {
 	// Optional: The type of entrypoint. Only "service-bundle" is supported.
 	Type string `json:"type,omitempty"`
 	// Required: The command of the entrypoint
-	Command string `json:"command,omitempty"`
+	Command string `json:"command"`
 	// Optional: The shell fragment of the entrypoint command
 	ShellFragment string `json:"shell-fragment,omitempty"`
 
