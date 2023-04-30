@@ -19,12 +19,11 @@ import (
 	"os"
 	"testing"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
-	"chainguard.dev/apko/pkg/sbom/generator"
-	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
-
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/sbom/generator"
+	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 

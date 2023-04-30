@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 )
 
 // UserEntry contains the parsed data from an /etc/passwd entry.

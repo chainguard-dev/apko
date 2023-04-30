@@ -22,11 +22,11 @@ import (
 	"io/fs"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	osr "github.com/dominodatalab/os-release"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"

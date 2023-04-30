@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	impl "github.com/chainguard-dev/go-apk/pkg/apk"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 
-	"chainguard.dev/apko/pkg/apk/impl"
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/options"
 )
 

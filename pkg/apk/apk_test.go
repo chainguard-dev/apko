@@ -21,11 +21,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apkfakes"
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"

@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"golang.org/x/sys/unix"
-
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 )
 
 func (di *defaultBuildImplementation) InstallCharDevices(fsys apkfs.FullFS) error {

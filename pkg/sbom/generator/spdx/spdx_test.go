@@ -21,12 +21,12 @@ import (
 	"regexp"
 	"testing"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/command"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 

@@ -24,12 +24,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	purl "github.com/package-url/packageurl-go"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 	"sigs.k8s.io/release-utils/version"
 
-	purl "github.com/package-url/packageurl-go"
-
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 

@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 )
 
 // GroupEntry describes a single line in /etc/group.

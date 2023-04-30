@@ -31,8 +31,9 @@ import (
 	"regexp"
 	"strings"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/options"
 )
 
