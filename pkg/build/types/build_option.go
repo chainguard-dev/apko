@@ -41,7 +41,7 @@ type BuildOption struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
 
 	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
-	OnBuild    []string        `yaml:"on_build,omitempty"`
+	OnBuild    []string        `yaml:"on-build,omitempty"`
 }
 
 // Apply applies a patch described by a BuildOption to an apko environment.
