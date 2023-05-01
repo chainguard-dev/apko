@@ -17,7 +17,8 @@ package generator
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
 	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"

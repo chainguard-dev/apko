@@ -19,7 +19,8 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 )

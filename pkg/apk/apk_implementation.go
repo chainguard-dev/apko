@@ -20,7 +20,7 @@ import (
 
 	"gitlab.alpinelinux.org/alpine/go/repository"
 
-	apkimpl "chainguard.dev/apko/pkg/apk/impl"
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 )
 
 //counterfeiter:generate . apkImplementation

@@ -15,7 +15,8 @@
 package s6
 
 import (
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+
 	"chainguard.dev/apko/pkg/log"
 )
 

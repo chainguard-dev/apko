@@ -24,12 +24,12 @@ import (
 	"sort"
 	"strings"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/sync/errgroup"
 
-	apkimpl "chainguard.dev/apko/pkg/apk/impl"
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
@@ -53,7 +53,7 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 	// apko does not execute the scripts, so they do not matter. This buys us flexibility
 	// to run without root privileges, or even on non-Linux.
-	apkImpl, _ := apkimpl.NewAPKImplementation(
+	apkImpl, _ := apkimpl.New(
 		apkimpl.WithFS(fsys),
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),

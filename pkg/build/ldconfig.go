@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	apkfs "chainguard.dev/apko/pkg/apk/impl/fs"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 )
 
 // original alpine ldconfig available at https://git.alpinelinux.org/aports/tree/main/musl/ldconfig

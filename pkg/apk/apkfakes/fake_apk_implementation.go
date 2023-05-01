@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"chainguard.dev/apko/pkg/apk/impl"
+	apka "github.com/chainguard-dev/go-apk/pkg/apk"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
@@ -25,16 +25,16 @@ type FakeApkImplementation struct {
 	fixateWorldReturnsOnCall map[int]struct {
 		result1 error
 	}
-	GetInstalledStub        func() ([]*impl.InstalledPackage, error)
+	GetInstalledStub        func() ([]*apka.InstalledPackage, error)
 	getInstalledMutex       sync.RWMutex
 	getInstalledArgsForCall []struct {
 	}
 	getInstalledReturns struct {
-		result1 []*impl.InstalledPackage
+		result1 []*apka.InstalledPackage
 		result2 error
 	}
 	getInstalledReturnsOnCall map[int]struct {
-		result1 []*impl.InstalledPackage
+		result1 []*apka.InstalledPackage
 		result2 error
 	}
 	GetRepositoriesStub        func() ([]string, error)
@@ -198,7 +198,7 @@ func (fake *FakeApkImplementation) FixateWorldReturnsOnCall(i int, result1 error
 	}{result1}
 }
 
-func (fake *FakeApkImplementation) GetInstalled() ([]*impl.InstalledPackage, error) {
+func (fake *FakeApkImplementation) GetInstalled() ([]*apka.InstalledPackage, error) {
 	fake.getInstalledMutex.Lock()
 	ret, specificReturn := fake.getInstalledReturnsOnCall[len(fake.getInstalledArgsForCall)]
 	fake.getInstalledArgsForCall = append(fake.getInstalledArgsForCall, struct {
@@ -222,34 +222,34 @@ func (fake *FakeApkImplementation) GetInstalledCallCount() int {
 	return len(fake.getInstalledArgsForCall)
 }
 
-func (fake *FakeApkImplementation) GetInstalledCalls(stub func() ([]*impl.InstalledPackage, error)) {
+func (fake *FakeApkImplementation) GetInstalledCalls(stub func() ([]*apka.InstalledPackage, error)) {
 	fake.getInstalledMutex.Lock()
 	defer fake.getInstalledMutex.Unlock()
 	fake.GetInstalledStub = stub
 }
 
-func (fake *FakeApkImplementation) GetInstalledReturns(result1 []*impl.InstalledPackage, result2 error) {
+func (fake *FakeApkImplementation) GetInstalledReturns(result1 []*apka.InstalledPackage, result2 error) {
 	fake.getInstalledMutex.Lock()
 	defer fake.getInstalledMutex.Unlock()
 	fake.GetInstalledStub = nil
 	fake.getInstalledReturns = struct {
-		result1 []*impl.InstalledPackage
+		result1 []*apka.InstalledPackage
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeApkImplementation) GetInstalledReturnsOnCall(i int, result1 []*impl.InstalledPackage, result2 error) {
+func (fake *FakeApkImplementation) GetInstalledReturnsOnCall(i int, result1 []*apka.InstalledPackage, result2 error) {
 	fake.getInstalledMutex.Lock()
 	defer fake.getInstalledMutex.Unlock()
 	fake.GetInstalledStub = nil
 	if fake.getInstalledReturnsOnCall == nil {
 		fake.getInstalledReturnsOnCall = make(map[int]struct {
-			result1 []*impl.InstalledPackage
+			result1 []*apka.InstalledPackage
 			result2 error
 		})
 	}
 	fake.getInstalledReturnsOnCall[i] = struct {
-		result1 []*impl.InstalledPackage
+		result1 []*apka.InstalledPackage
 		result2 error
 	}{result1, result2}
 }
