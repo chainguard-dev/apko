@@ -207,7 +207,7 @@ func (ic *ImageConfiguration) Summarize(logger log.Logger) {
 	}
 
 	if len(ic.OnBuild) > 0 {
-		logger.Printf("  on_build:")
+		logger.Printf("  on-build:")
 		for _, onBuildInstruction := range ic.OnBuild {
 			logger.Printf("    - %s", onBuildInstruction)
 		}
