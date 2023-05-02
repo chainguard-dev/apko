@@ -38,7 +38,7 @@ type apkImplementation interface {
 	// GetWorld get the list of packages in the world file.
 	GetWorld() ([]string, error)
 	// FixateWorld use the world file to set the state of the system, including any dependencies.
-	FixateWorld(cache, updateCache, executeScripts bool, sourceDateEpoch *time.Time) error
+	FixateWorld(sourceDateEpoch *time.Time) error
 	// ResolveWorld use the world file to determine the target state of the system, including any dependencies.
 	// Does not install or remove any packages.
 	ResolveWorld() (toInstall []*repository.RepositoryPackage, conflicts []string, err error)

@@ -167,7 +167,7 @@ func (bc *Context) runAssertions() error {
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
 func New(workDir string, opts ...Option) (*Context, error) {
-	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir(true))
+	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
 		Options: options.Default,
 		impl: &defaultBuildImplementation{

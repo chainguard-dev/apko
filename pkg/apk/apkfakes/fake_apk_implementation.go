@@ -11,13 +11,10 @@ import (
 )
 
 type FakeApkImplementation struct {
-	FixateWorldStub        func(bool, bool, bool, *time.Time) error
+	FixateWorldStub        func(*time.Time) error
 	fixateWorldMutex       sync.RWMutex
 	fixateWorldArgsForCall []struct {
-		arg1 bool
-		arg2 bool
-		arg3 bool
-		arg4 *time.Time
+		arg1 *time.Time
 	}
 	fixateWorldReturns struct {
 		result1 error
@@ -134,21 +131,18 @@ type FakeApkImplementation struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeApkImplementation) FixateWorld(arg1 bool, arg2 bool, arg3 bool, arg4 *time.Time) error {
+func (fake *FakeApkImplementation) FixateWorld(arg1 *time.Time) error {
 	fake.fixateWorldMutex.Lock()
 	ret, specificReturn := fake.fixateWorldReturnsOnCall[len(fake.fixateWorldArgsForCall)]
 	fake.fixateWorldArgsForCall = append(fake.fixateWorldArgsForCall, struct {
-		arg1 bool
-		arg2 bool
-		arg3 bool
-		arg4 *time.Time
-	}{arg1, arg2, arg3, arg4})
+		arg1 *time.Time
+	}{arg1})
 	stub := fake.FixateWorldStub
 	fakeReturns := fake.fixateWorldReturns
-	fake.recordInvocation("FixateWorld", []interface{}{arg1, arg2, arg3, arg4})
+	fake.recordInvocation("FixateWorld", []interface{}{arg1})
 	fake.fixateWorldMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -162,17 +156,17 @@ func (fake *FakeApkImplementation) FixateWorldCallCount() int {
 	return len(fake.fixateWorldArgsForCall)
 }
 
-func (fake *FakeApkImplementation) FixateWorldCalls(stub func(bool, bool, bool, *time.Time) error) {
+func (fake *FakeApkImplementation) FixateWorldCalls(stub func(*time.Time) error) {
 	fake.fixateWorldMutex.Lock()
 	defer fake.fixateWorldMutex.Unlock()
 	fake.FixateWorldStub = stub
 }
 
-func (fake *FakeApkImplementation) FixateWorldArgsForCall(i int) (bool, bool, bool, *time.Time) {
+func (fake *FakeApkImplementation) FixateWorldArgsForCall(i int) *time.Time {
 	fake.fixateWorldMutex.RLock()
 	defer fake.fixateWorldMutex.RUnlock()
 	argsForCall := fake.fixateWorldArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1
 }
 
 func (fake *FakeApkImplementation) FixateWorldReturns(result1 error) {

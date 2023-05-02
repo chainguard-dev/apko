@@ -113,7 +113,7 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 // Install install packages. Only works if already initialized.
 func (a *APK) Install() error {
 	// sync reality with desired apk world
-	return a.impl.FixateWorld(false, true, false, &a.Options.SourceDateEpoch)
+	return a.impl.FixateWorld(&a.Options.SourceDateEpoch)
 }
 
 // ResolvePackages gets list of packages that should be installed
