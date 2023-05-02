@@ -110,7 +110,7 @@ type ImageConfiguration struct {
 	// Required: The entrypoint of the container image
 	//
 	// This typically is the path to the executable to run. Since many of
-	// Chainguard Images do not include a shell, this should be the full path
+	// images do not include a shell, this should be the full path
 	// to the executable.
 	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
 	// Optional: The command of the container image
