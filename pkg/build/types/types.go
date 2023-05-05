@@ -91,8 +91,7 @@ type ImageEntrypoint struct {
 	// Optional: The shell fragment of the entrypoint command
 	ShellFragment string `yaml:"shell-fragment"`
 
-	// TBD: presently a map of service names and the command to run
-	Services map[interface{}]interface{}
+	Services map[string]string
 }
 
 type ImageAccounts struct {

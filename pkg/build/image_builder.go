@@ -32,7 +32,11 @@ func (di *defaultBuildImplementation) WriteSupervisionTree(
 	s6context *s6.Context, imageConfig *types.ImageConfiguration,
 ) error {
 	// write service supervision tree
-	if err := s6context.WriteSupervisionTree(imageConfig.Entrypoint.Services); err != nil {
+	s6m := make(map[interface{}]interface{}, len(imageConfig.Entrypoint.Services))
+	for k, v := range imageConfig.Entrypoint.Services {
+		s6m[k] = v
+	}
+	if err := s6context.WriteSupervisionTree(s6m); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 	return nil
