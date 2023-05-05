@@ -199,7 +199,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	}
 
 	// if arch is missing default to the running program's arch
-	zeroArch := types.Architecture{}
+	zeroArch := types.Architecture("")
 	if bc.Options.Arch == zeroArch {
 		bc.Options.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}

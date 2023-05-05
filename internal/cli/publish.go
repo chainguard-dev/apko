@@ -355,7 +355,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 		if idx != nil {
 			if _, err := oci.PostAttachSBOM(
-				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture(""), bc.Logger(), bc.Options.Tags...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to index: %w", err)
 			}

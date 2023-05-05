@@ -147,9 +147,9 @@ type ImageConfiguration struct {
 
 // Architecture represents a CPU architecture for the container image.
 // TODO(kaniini): Maybe this should be its own package at this point?
-type Architecture struct{ s string }
+type Architecture string
 
-func (a Architecture) String() string { return a.s }
+func (a Architecture) String() string { return string(a) }
 
 func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var buf string
@@ -157,19 +157,19 @@ func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	a.s = ParseArchitecture(buf).s
+	*a = ParseArchitecture(buf)
 	return nil
 }
 
 var (
-	_386    = Architecture{"386"}
-	amd64   = Architecture{"amd64"}
-	arm64   = Architecture{"arm64"}
-	armv6   = Architecture{"arm/v6"}
-	armv7   = Architecture{"arm/v7"}
-	ppc64le = Architecture{"ppc64le"}
-	riscv64 = Architecture{"riscv64"}
-	s390x   = Architecture{"s390x"}
+	_386    = Architecture("386")
+	amd64   = Architecture("amd64")
+	arm64   = Architecture("arm64")
+	armv6   = Architecture("arm/v6")
+	armv7   = Architecture("arm/v7")
+	ppc64le = Architecture("ppc64le")
+	riscv64 = Architecture("riscv64")
+	s390x   = Architecture("s390x")
 )
 
 // AllArchs contains the standard set of supported architectures, which are
@@ -199,7 +199,7 @@ func (a Architecture) ToAPK() string {
 	case armv7:
 		return "armv7"
 	default:
-		return a.s
+		return string(a)
 	}
 }
 
@@ -213,7 +213,7 @@ func (a Architecture) ToOCIPlatform() *v1.Platform {
 		plat.Architecture = "arm"
 		plat.Variant = "v7"
 	default:
-		plat.Architecture = a.s
+		plat.Architecture = string(a)
 	}
 	return &plat
 }
@@ -231,7 +231,7 @@ func (a Architecture) ToQEmu() string {
 	case armv7:
 		return "arm"
 	default:
-		return a.s
+		return string(a)
 	}
 }
 
@@ -312,7 +312,7 @@ func ParseArchitecture(s string) Architecture {
 	case "armv7":
 		return armv7
 	}
-	return Architecture{s}
+	return Architecture(s)
 }
 
 // ParseArchitectures parses architecture values in string form, and returns
@@ -340,7 +340,7 @@ func ParseArchitectures(in []string) []Architecture {
 		archs = append(archs, k)
 	}
 	sort.Slice(archs, func(i, j int) bool {
-		return archs[i].s < archs[j].s
+		return archs[i] < archs[j]
 	})
 	return archs
 }
