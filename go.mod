@@ -22,7 +22,7 @@ require (
 	github.com/stretchr/testify v1.8.2
 	gitlab.alpinelinux.org/alpine/go v0.7.0
 	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
-	golang.org/x/sync v0.1.0
+	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.7.0
 	golang.org/x/term v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
