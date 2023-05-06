@@ -24,124 +24,124 @@ import (
 
 type User struct {
 	// Required: The name of the user
-	UserName string
+	UserName string `json:"user_name"`
 	// Required: The user ID
-	UID uint32
+	UID uint32 `json:"uid"`
 	// Required: The user's group ID
-	GID uint32
+	GID uint32 `json:"gid"`
 }
 
 type Group struct {
 	// Required: The name of the group
-	GroupName string
+	GroupName string `json:"group_name"`
 	// Required: The group ID
-	GID uint32
+	GID uint32 `json:"gid"`
 	// Required: The list of members of the group
-	Members []string
+	Members []string `json:"members"`
 }
 
 type PathMutation struct {
 	// The target path to mutate
-	Path string
+	Path string `json:"path,omitempty"`
 	// The type of mutation to perform
 	//
 	// This can be one of: directory, empty-file, hardlink, symlink, permissions
-	Type string
+	Type string `json:"type,omitempty"`
 	// The mutation's desired user ID
-	UID uint32
+	UID uint32 `json:"uid,omitempty"`
 	// The mutation's desired group ID
-	GID uint32
+	GID uint32 `json:"gid,omitempty"`
 	// The permission bits for the path
-	Permissions uint32
+	Permissions uint32 `json:"permissions,omitempty"`
 	// The source path to mutate
-	Source string
+	Source string `json:"source,omitempty"`
 	// Toggle whether to mutate recursively
-	Recursive bool
+	Recursive bool `json:"recursive,omitempty"`
 }
 
 type OSRelease struct {
 	// Optional: The name of the OS
-	Name string
+	Name string `json:"name,omitempty"`
 	// Optional: The unique identifier for the OS
-	ID string
+	ID string `json:"id,omitempty"`
 	// Optional: The unique identifier for the version of the OS
-	VersionID string `yaml:"version-id"`
+	VersionID string `json:"version-id,omitempty"`
 	// Optional: The human readable description of the OS
-	PrettyName string `yaml:"pretty-name"`
+	PrettyName string `json:"pretty-name,omitempty"`
 	// Optional: The URL of the homepage for the OS
-	HomeURL string `yaml:"home-url"`
+	HomeURL string `json:"home-url,omitempty"`
 	// Optional: The URL of the bug reporting website for the OS
-	BugReportURL string `yaml:"bug-report-url"`
+	BugReportURL string `json:"bug-report-url,omitempty"`
 }
 
 type ImageContents struct {
 	// A list of apk repositories to use for pulling packages
-	Repositories []string `yaml:"repositories,omitempty"`
+	Repositories []string `json:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
-	Keyring []string `yaml:"keyring,omitempty"`
+	Keyring []string `json:"keyring,omitempty"`
 	// A list of packages to include in the image
-	Packages []string `yaml:"packages,omitempty"`
+	Packages []string `json:"packages,omitempty"`
 }
 
 type ImageEntrypoint struct {
 	// Optional: The type of entrypoint. Only "service-bundle" is supported.
-	Type string
+	Type string `json:"type,omitempty"`
 	// Required: The command of the entrypoint
-	Command string
+	Command string `json:"command,omitempty"`
 	// Optional: The shell fragment of the entrypoint command
-	ShellFragment string `yaml:"shell-fragment"`
+	ShellFragment string `json:"shell-fragment,omitempty"`
 
-	Services map[string]string
+	Services map[string]string `json:"services,omitempty"`
 }
 
 type ImageAccounts struct {
 	// Required: The user to run the container as. This can be a username or UID.
-	RunAs string `yaml:"run-as"`
+	RunAs string `json:"run-as,omitempty"`
 	// Required: List of users to populate the image with
-	Users []User
+	Users []User `json:"users,omitempty"`
 	// Required: List of groups to populate the image with
-	Groups []Group
+	Groups []Group `json:"groups,omitempty"`
 }
 
 type ImageConfiguration struct {
 	// Required: The apk packages in the container image
-	Contents ImageContents `yaml:"contents,omitempty"`
+	Contents ImageContents `json:"contents,omitempty"`
 	// Required: The entrypoint of the container image
 	//
 	// This typically is the path to the executable to run. Since many of
 	// images do not include a shell, this should be the full path
 	// to the executable.
-	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
+	Entrypoint ImageEntrypoint `json:"entrypoint,omitempty"`
 	// Optional: The command of the container image
 	//
 	// These are the additional arguments to pass to the entrypoint.
-	Cmd string `yaml:"cmd,omitempty"`
+	Cmd string `json:"cmd,omitempty"`
 	// Optional: The stop signal used to suspend the execution of the containers process
-	StopSignal string `yaml:"stop-signal,omitempty"`
+	StopSignal string `json:"stop-signal,omitempty"`
 	// Optional: The working directory of the container
-	WorkDir string `yaml:"work-dir,omitempty"`
+	WorkDir string `json:"work-dir,omitempty"`
 	// Optional: Account configuration for the container image
-	Accounts ImageAccounts `yaml:"accounts,omitempty"`
+	Accounts ImageAccounts `json:"accounts,omitempty"`
 	// Optional: List of CPU architectures to build the container image for
 	//
 	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x
-	Archs []Architecture `yaml:"archs,omitempty"`
+	Archs []Architecture `json:"archs,omitempty"`
 	// Optional: Envionment variables to set in the container image
-	Environment map[string]string `yaml:"environment,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
 	// Optional: List of paths mutations
-	Paths []PathMutation `yaml:"paths,omitempty"`
+	Paths []PathMutation `json:"paths,omitempty"`
 	// Optional: The /etc/os-release configuration for the container image
-	OSRelease OSRelease `yaml:"os-release,omitempty"`
+	OSRelease OSRelease `json:"os-release,omitempty"`
 	// Optional: The link to version control system for this container's source code
-	VCSUrl string `yaml:"vcs-url,omitempty"`
+	VCSUrl string `json:"vcs-url,omitempty"`
 	// Optional: Annotations to apply to the images manifests
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 	// Optional: Path to a local file containing additional image configuration
 	//
 	// The included configuration is deep merged with the parent configuration
-	Include string `yaml:"include,omitempty"`
+	Include string `json:"include,omitempty"`
 	// Optional: A map of named build option deviations
-	Options map[string]BuildOption `yaml:"options,omitempty"`
+	Options map[string]BuildOption `json:"options,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
