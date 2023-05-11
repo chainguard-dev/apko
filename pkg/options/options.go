@@ -49,8 +49,9 @@ type Options struct {
 }
 
 var Default = Options{
-	Log:  &log.Adapter{Out: io.Discard, Level: log.InfoLevel},
-	Arch: types.ParseArchitecture(runtime.GOARCH),
+	Log:             &log.Adapter{Out: io.Discard, Level: log.InfoLevel},
+	Arch:            types.ParseArchitecture(runtime.GOARCH),
+	SourceDateEpoch: time.Unix(0, 0),
 }
 
 func (o *Options) Summarize(logger log.Logger) {
