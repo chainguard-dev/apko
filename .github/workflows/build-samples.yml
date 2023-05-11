@@ -28,6 +28,7 @@ jobs:
           ./apko version
 
       - name: build image
+        timeout-minutes: 15
         run: |
           ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --arch ${{ matrix.arch }}
 
@@ -51,6 +52,7 @@ jobs:
           ./apko version
 
       - name: build images
+        timeout-minutes: 15
         run: |
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
