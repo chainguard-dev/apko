@@ -88,6 +88,22 @@ func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
 	return bc.impl.InstalledPackages(bc.fs, &bc.Options)
 }
 
+func (bc *Context) SetBuildDateEpoch() error {
+	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
+		return nil
+	}
+	pl, err := bc.InstalledPackages()
+	if err != nil {
+		return fmt.Errorf("failed to determine installed packages: %w", err)
+	}
+	for _, p := range pl {
+		if p.BuildTime.After(bc.Options.SourceDateEpoch) {
+			bc.Options.SourceDateEpoch = p.BuildTime
+		}
+	}
+	return nil
+}
+
 func (bc *Context) BuildImage() (fs.FS, error) {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
 	if err := buildImage(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {

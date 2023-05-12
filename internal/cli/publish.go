@@ -206,7 +206,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	mtx := sync.Mutex{}
 
-	ade := bc.Options.SourceDateEpoch
+	// We compute the "build date epoch" of the multi-arch image to be the
+	// maximum "build date epoch" of the per-arch images.  If the user has
+	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
+	// computation.
+	multiArchBDE := bc.Options.SourceDateEpoch
 
 	for _, arch := range archs {
 		arch := arch
@@ -241,15 +245,18 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			// TODO(kaniini): clean up everything correctly for multitag scenario
 			// defer os.Remove(layerTarGZ)
 
-			if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
-				pl, err := bc.InstalledPackages()
-				if err != nil {
-					return fmt.Errorf("failed to determine installed packages: %w", err)
-				}
-				bc.Options.SourceDateEpoch = apkDateEpoch(pl)
-				if bc.Options.SourceDateEpoch.After(ade) {
-					ade = bc.Options.SourceDateEpoch
-				}
+			// Compute the "build date epoch" from the packages that were
+			// installed.  The "build date epoch" is the MAX of the builddate
+			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
+			// explicitly set by the user, that trumps this.
+			// This computation will only affect the timestamp of the image
+			// itself and its SBOMs, since the timestamps on files come from the
+			// APKs.
+			if err := bc.SetBuildDateEpoch(); err != nil {
+				return fmt.Errorf("failed to determine build date epoch: %w", err)
+			}
+			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
+				multiArchBDE = bc.Options.SourceDateEpoch
 			}
 
 			var img coci.SignedImage
@@ -270,7 +277,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	if err := errg.Wait(); err != nil {
 		return err
 	}
-	bc.Options.SourceDateEpoch = ade
+	bc.Options.SourceDateEpoch = multiArchBDE
 
 	if len(archs) > 1 {
 		finalDigest, idx, err = publishIndex(ctx, bc, imgs)

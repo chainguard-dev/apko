@@ -19,9 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
-	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
@@ -195,7 +193,11 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		}
 	}()
 
-	ade := bc.Options.SourceDateEpoch
+	// We compute the "build date epoch" of the multi-arch image to be the
+	// maximum "build date epoch" of the per-arch images.  If the user has
+	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
+	// computation.
+	multiArchBDE := bc.Options.SourceDateEpoch
 
 	for _, arch := range archs {
 		arch := arch
@@ -227,15 +229,18 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 				return fmt.Errorf("failed to build layer image: %w", err)
 			}
 
-			if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
-				pl, err := bc.InstalledPackages()
-				if err != nil {
-					return fmt.Errorf("failed to determine installed packages: %w", err)
-				}
-				bc.Options.SourceDateEpoch = apkDateEpoch(pl)
-				if bc.Options.SourceDateEpoch.After(ade) {
-					ade = bc.Options.SourceDateEpoch
-				}
+			// Compute the "build date epoch" from the packages that were
+			// installed.  The "build date epoch" is the MAX of the builddate
+			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
+			// explicitly set by the user, that trumps this.
+			// This computation will only affect the timestamp of the image
+			// itself and its SBOMs, since the timestamps on files come from the
+			// APKs.
+			if err := bc.SetBuildDateEpoch(); err != nil {
+				return fmt.Errorf("failed to determine build date epoch: %w", err)
+			}
+			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
+				multiArchBDE = bc.Options.SourceDateEpoch
 			}
 
 			imageTars[arch] = layerTarGZ
@@ -251,7 +256,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	if err := errg.Wait(); err != nil {
 		return err
 	}
-	bc.Options.SourceDateEpoch = ade
+	bc.Options.SourceDateEpoch = multiArchBDE
 
 	bc.Options.SBOMFormats = formats
 	sbomPath := bc.Options.SBOMPath
@@ -297,14 +302,4 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	)
 
 	return nil
-}
-
-func apkDateEpoch(pl []*apkimpl.InstalledPackage) time.Time {
-	t := time.Unix(0, 0).UTC()
-	for _, p := range pl {
-		if p.BuildTime.After(t) {
-			t = p.BuildTime
-		}
-	}
-	return t
 }
