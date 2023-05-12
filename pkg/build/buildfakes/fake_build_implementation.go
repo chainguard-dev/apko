@@ -9,6 +9,7 @@ import (
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/sigstore/cosign/v2/pkg/oci"
@@ -169,6 +170,20 @@ type FakeBuildImplementation struct {
 	}
 	installPackagesReturnsOnCall map[int]struct {
 		result1 error
+	}
+	InstalledPackagesStub        func(fs.FullFS, *options.Options) ([]*apk.InstalledPackage, error)
+	installedPackagesMutex       sync.RWMutex
+	installedPackagesArgsForCall []struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+	}
+	installedPackagesReturns struct {
+		result1 []*apk.InstalledPackage
+		result2 error
+	}
+	installedPackagesReturnsOnCall map[int]struct {
+		result1 []*apk.InstalledPackage
+		result2 error
 	}
 	MutateAccountsStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	mutateAccountsMutex       sync.RWMutex
@@ -1011,6 +1026,71 @@ func (fake *FakeBuildImplementation) InstallPackagesReturnsOnCall(i int, result1
 	}{result1}
 }
 
+func (fake *FakeBuildImplementation) InstalledPackages(arg1 fs.FullFS, arg2 *options.Options) ([]*apk.InstalledPackage, error) {
+	fake.installedPackagesMutex.Lock()
+	ret, specificReturn := fake.installedPackagesReturnsOnCall[len(fake.installedPackagesArgsForCall)]
+	fake.installedPackagesArgsForCall = append(fake.installedPackagesArgsForCall, struct {
+		arg1 fs.FullFS
+		arg2 *options.Options
+	}{arg1, arg2})
+	stub := fake.InstalledPackagesStub
+	fakeReturns := fake.installedPackagesReturns
+	fake.recordInvocation("InstalledPackages", []interface{}{arg1, arg2})
+	fake.installedPackagesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeBuildImplementation) InstalledPackagesCallCount() int {
+	fake.installedPackagesMutex.RLock()
+	defer fake.installedPackagesMutex.RUnlock()
+	return len(fake.installedPackagesArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) InstalledPackagesCalls(stub func(fs.FullFS, *options.Options) ([]*apk.InstalledPackage, error)) {
+	fake.installedPackagesMutex.Lock()
+	defer fake.installedPackagesMutex.Unlock()
+	fake.InstalledPackagesStub = stub
+}
+
+func (fake *FakeBuildImplementation) InstalledPackagesArgsForCall(i int) (fs.FullFS, *options.Options) {
+	fake.installedPackagesMutex.RLock()
+	defer fake.installedPackagesMutex.RUnlock()
+	argsForCall := fake.installedPackagesArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeBuildImplementation) InstalledPackagesReturns(result1 []*apk.InstalledPackage, result2 error) {
+	fake.installedPackagesMutex.Lock()
+	defer fake.installedPackagesMutex.Unlock()
+	fake.InstalledPackagesStub = nil
+	fake.installedPackagesReturns = struct {
+		result1 []*apk.InstalledPackage
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeBuildImplementation) InstalledPackagesReturnsOnCall(i int, result1 []*apk.InstalledPackage, result2 error) {
+	fake.installedPackagesMutex.Lock()
+	defer fake.installedPackagesMutex.Unlock()
+	fake.InstalledPackagesStub = nil
+	if fake.installedPackagesReturnsOnCall == nil {
+		fake.installedPackagesReturnsOnCall = make(map[int]struct {
+			result1 []*apk.InstalledPackage
+			result2 error
+		})
+	}
+	fake.installedPackagesReturnsOnCall[i] = struct {
+		result1 []*apk.InstalledPackage
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeBuildImplementation) MutateAccounts(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
 	fake.mutateAccountsMutex.Lock()
 	ret, specificReturn := fake.mutateAccountsReturnsOnCall[len(fake.mutateAccountsArgsForCall)]
@@ -1423,6 +1503,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.installLdconfigLinksMutex.RUnlock()
 	fake.installPackagesMutex.RLock()
 	defer fake.installPackagesMutex.RUnlock()
+	fake.installedPackagesMutex.RLock()
+	defer fake.installedPackagesMutex.RUnlock()
 	fake.mutateAccountsMutex.RLock()
 	defer fake.mutateAccountsMutex.RUnlock()
 	fake.mutatePathsMutex.RLock()

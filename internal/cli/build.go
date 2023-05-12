@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
@@ -59,7 +61,7 @@ command, e.g.
 
   # docker load < output.tar
 
-Along the image, apko will generate CycloneDX and SPDX SBOMs (software 
+Along the image, apko will generate CycloneDX and SPDX SBOMs (software
 bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
@@ -193,6 +195,8 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		}
 	}()
 
+	ade := bc.Options.SourceDateEpoch
+
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
@@ -223,6 +227,17 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 				return fmt.Errorf("failed to build layer image: %w", err)
 			}
 
+			if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
+				pl, err := bc.InstalledPackages()
+				if err != nil {
+					return fmt.Errorf("failed to determine installed packages: %w", err)
+				}
+				bc.Options.SourceDateEpoch = apkDateEpoch(pl)
+				if bc.Options.SourceDateEpoch.After(ade) {
+					ade = bc.Options.SourceDateEpoch
+				}
+			}
+
 			imageTars[arch] = layerTarGZ
 			img, err := oci.BuildImageFromLayer(
 				layerTarGZ, bc.ImageConfiguration, bc.Logger(), bc.Options)
@@ -236,6 +251,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	if err := errg.Wait(); err != nil {
 		return err
 	}
+	bc.Options.SourceDateEpoch = ade
 
 	bc.Options.SBOMFormats = formats
 	sbomPath := bc.Options.SBOMPath
@@ -281,4 +297,14 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	)
 
 	return nil
+}
+
+func apkDateEpoch(pl []*apkimpl.InstalledPackage) time.Time {
+	t := time.Unix(0, 0).UTC()
+	for _, p := range pl {
+		if p.BuildTime.After(t) {
+			t = p.BuildTime
+		}
+	}
+	return t
 }

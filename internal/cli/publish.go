@@ -206,6 +206,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	mtx := sync.Mutex{}
 
+	ade := bc.Options.SourceDateEpoch
+
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
@@ -239,6 +241,17 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			// TODO(kaniini): clean up everything correctly for multitag scenario
 			// defer os.Remove(layerTarGZ)
 
+			if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
+				pl, err := bc.InstalledPackages()
+				if err != nil {
+					return fmt.Errorf("failed to determine installed packages: %w", err)
+				}
+				bc.Options.SourceDateEpoch = apkDateEpoch(pl)
+				if bc.Options.SourceDateEpoch.After(ade) {
+					ade = bc.Options.SourceDateEpoch
+				}
+			}
+
 			var img coci.SignedImage
 			finalDigest, img, err = publishImage(ctx, bc, layerTarGZ, arch)
 			if err != nil {
@@ -254,10 +267,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return nil
 		})
 	}
-
 	if err := errg.Wait(); err != nil {
 		return err
 	}
+	bc.Options.SourceDateEpoch = ade
 
 	if len(archs) > 1 {
 		finalDigest, idx, err = publishIndex(ctx, bc, imgs)

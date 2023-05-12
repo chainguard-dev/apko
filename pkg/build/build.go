@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
@@ -81,6 +82,10 @@ func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Arc
 
 func (bc *Context) GenerateSBOM() error {
 	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
+}
+
+func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
+	return bc.impl.InstalledPackages(bc.fs, &bc.Options)
 }
 
 func (bc *Context) BuildImage() (fs.FS, error) {

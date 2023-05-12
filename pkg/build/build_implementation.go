@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -53,6 +54,8 @@ type buildImplementation interface {
 	InitializeApk(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
 	// InstallPackages install the packages
 	InstallPackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
+	// InstalledPackages fetches the installed package list
+	InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error)
 	// ResolvePackages resolve the names and versions of packages to be installed
 	ResolvePackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error)
 	// MutateAccounts set up the user accounts and groups in the working directory
@@ -214,6 +217,14 @@ func (di *defaultBuildImplementation) InstallPackages(fsys apkfs.FullFS, o *opti
 		return err
 	}
 	return apk.Install()
+}
+
+func (di *defaultBuildImplementation) InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error) {
+	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	if err != nil {
+		return nil, err
+	}
+	return apk.GetInstalled()
 }
 
 func (di *defaultBuildImplementation) ResolvePackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
