@@ -252,7 +252,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			// This computation will only affect the timestamp of the image
 			// itself and its SBOMs, since the timestamps on files come from the
 			// APKs.
-			if err := bc.SetBuildDateEpoch(); err != nil {
+			if bc.Options.SourceDateEpoch, err = bc.GetBuildDateEpoch(); err != nil {
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
 			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
