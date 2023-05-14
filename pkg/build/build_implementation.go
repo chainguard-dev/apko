@@ -342,7 +342,7 @@ func buildPackageList(
 	}
 
 	if toInstall, conflicts, err = di.ResolvePackages(fsys, o, ic); err != nil {
-		return toInstall, conflicts, fmt.Errorf("installing apk packages: %w", err)
+		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
 	o.Logger().Infof("finished gathering apk info in %s", o.WorkDir)
 
