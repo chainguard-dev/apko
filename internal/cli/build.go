@@ -59,7 +59,7 @@ command, e.g.
 
   # docker load < output.tar
 
-Along the image, apko will generate CycloneDX and SPDX SBOMs (software 
+Along the image, apko will generate CycloneDX and SPDX SBOMs (software
 bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar>`,
@@ -193,6 +193,12 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		}
 	}()
 
+	// We compute the "build date epoch" of the multi-arch image to be the
+	// maximum "build date epoch" of the per-arch images.  If the user has
+	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
+	// computation.
+	multiArchBDE := bc.Options.SourceDateEpoch
+
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
@@ -223,6 +229,20 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 				return fmt.Errorf("failed to build layer image: %w", err)
 			}
 
+			// Compute the "build date epoch" from the packages that were
+			// installed.  The "build date epoch" is the MAX of the builddate
+			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
+			// explicitly set by the user, that trumps this.
+			// This computation will only affect the timestamp of the image
+			// itself and its SBOMs, since the timestamps on files come from the
+			// APKs.
+			if bc.Options.SourceDateEpoch, err = bc.GetBuildDateEpoch(); err != nil {
+				return fmt.Errorf("failed to determine build date epoch: %w", err)
+			}
+			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
+				multiArchBDE = bc.Options.SourceDateEpoch
+			}
+
 			imageTars[arch] = layerTarGZ
 			img, err := oci.BuildImageFromLayer(
 				layerTarGZ, bc.ImageConfiguration, bc.Logger(), bc.Options)
@@ -236,6 +256,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	if err := errg.Wait(); err != nil {
 		return err
 	}
+	bc.Options.SourceDateEpoch = multiArchBDE
 
 	bc.Options.SBOMFormats = formats
 	sbomPath := bc.Options.SBOMPath

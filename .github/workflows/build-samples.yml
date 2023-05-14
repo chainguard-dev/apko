@@ -59,8 +59,8 @@ jobs:
             ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --arch amd64
           done
 
-  build-alpine-multi-arch-deterministically:
-    name: build-alpine-deterministically
+  build-alpine-source-date-epoch:
+    name: source-date-epoch
     runs-on: ubuntu-latest
 
     steps:
@@ -81,12 +81,54 @@ jobs:
         with:
           port: 5000
 
-      - name: build image
+      - name: build image (w/ source date epoch)
         shell: bash
         timeout-minutes: 15
         env:
           SOURCE_DATE_EPOCH: "0"
         run: |
+          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+
+          for idx in {2..10}
+          do
+            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+
+            if [ "${FIRST}" = "${NEXT}" ]; then
+              echo "Build ${idx} matches."
+            else
+              echo "Build ${idx} differs: ${FIRST} and ${NEXT}"
+              exit 1
+            fi
+          done
+
+  build-alpine-build-date-epoch:
+    name: build-date-epoch
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v2.4.0
+      - uses: actions/setup-go@4d34df0c2316fe8122ab82dc22947d607c0c91f9 # v2.1.5
+        with:
+          go-version: 1.19
+          check-latest: true
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2.1.0
+
+      - name: build
+        run: |
+          make apko
+          ./apko version
+
+      - uses: chainguard-dev/actions/setup-registry@main
+        with:
+          port: 5000
+
+      - name: build image (w/ build date epoch)
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          # Without SOURCE_DATE_EPOCH set, the timestamp of the image will be computed to be
+          # the maximum build date of the resolved APKs.
           FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
 
           for idx in {2..10}

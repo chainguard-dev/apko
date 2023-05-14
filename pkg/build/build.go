@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
@@ -81,6 +82,27 @@ func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Arc
 
 func (bc *Context) GenerateSBOM() error {
 	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
+}
+
+func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
+	return bc.impl.InstalledPackages(bc.fs, &bc.Options)
+}
+
+func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
+	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
+		return bc.Options.SourceDateEpoch, nil
+	}
+	pl, err := bc.InstalledPackages()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to determine installed packages: %w", err)
+	}
+	bde := bc.Options.SourceDateEpoch
+	for _, p := range pl {
+		if p.BuildTime.After(bde) {
+			bde = p.BuildTime
+		}
+	}
+	return bde, nil
 }
 
 func (bc *Context) BuildImage() (fs.FS, error) {
