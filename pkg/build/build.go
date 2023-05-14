@@ -89,7 +89,7 @@ func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
-	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); !ok {
+	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
 		return bc.Options.SourceDateEpoch, nil
 	}
 	pl, err := bc.InstalledPackages()
