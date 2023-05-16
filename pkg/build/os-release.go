@@ -79,6 +79,9 @@ func (bc *Context) GenerateOSRelease() error {
 	defer w.Close()
 
 	if osr.ID != "" {
+		if osr.ID == "unknown" {
+			bc.Logger().Warnf("distro ID not specified and /etc/os-release does not already exist")
+		}
 		_, err := fmt.Fprintf(w, "ID=%s\n", osr.ID)
 		if err != nil {
 			return err
