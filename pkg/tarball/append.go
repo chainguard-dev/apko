@@ -16,9 +16,10 @@ package tarball
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"io"
 	"io/fs"
+
+	"github.com/klauspost/compress/gzip"
 )
 
 type MultiTar struct {

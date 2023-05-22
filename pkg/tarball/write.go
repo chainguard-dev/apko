@@ -25,7 +25,7 @@ import (
 	"syscall"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-	gzip "golang.org/x/build/pargzip"
+	gzip "github.com/klauspost/pgzip"
 	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/passwd"
