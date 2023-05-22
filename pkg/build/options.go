@@ -196,10 +196,13 @@ func WithVCS(enable bool) Option {
 	}
 }
 
-// WithAnnotations parses and populates the annotations in the ImageConfiguration
+// WithAnnotations adds annotations from commandline to those in the config.
+// Commandline annotations take precedence.
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
-		bc.ImageConfiguration.Annotations = annotations
+		for k, v := range annotations {
+			bc.ImageConfiguration.Annotations[k] = v
+		}
 		return nil
 	}
 }

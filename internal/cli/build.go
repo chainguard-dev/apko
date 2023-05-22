@@ -48,6 +48,7 @@ func buildCmd() *cobra.Command {
 	var extraRepos []string
 	var buildOptions []string
 	var logPolicy []string
+	var rawAnnotations []string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -82,6 +83,10 @@ bill of materials) describing the image contents.
 			// TODO(kaniini): Print warning when multi-arch build is requested
 			// and ignored by the build system.
 			archs := types.ParseArchitectures(archstrs)
+			annotations, err := parseAnnotations(rawAnnotations)
+			if err != nil {
+				return fmt.Errorf("parsing annotations from command line: %w", err)
+			}
 
 			if !writeSBOM {
 				sbomFormats = []string{}
@@ -99,6 +104,7 @@ bill of materials) describing the image contents.
 				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
+				build.WithAnnotations(annotations),
 				build.WithBuildOptions(buildOptions),
 			)
 		},
@@ -117,6 +123,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
+	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 
 	return cmd
 }
