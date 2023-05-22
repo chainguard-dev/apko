@@ -47,7 +47,7 @@ func TestBuildLayer(t *testing.T) {
 		},
 		{ // BuildTarball fails
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
-				fbi.BuildTarballReturns("", fakeErr)
+				fbi.BuildTarballReturns("", nil, nil, fakeErr)
 			},
 			msg:         "buildtarball fails",
 			shouldError: true,
@@ -67,7 +67,7 @@ func TestBuildLayer(t *testing.T) {
 		sut.Options.WantSBOM = true
 		require.NoError(t, err)
 		sut.SetImplementation(&mock)
-		_, err = sut.BuildLayer()
+		_, _, err = sut.BuildLayer(false)
 		if tc.shouldError {
 			require.Error(t, err, tc.msg)
 		} else {

@@ -15,8 +15,11 @@
 package build
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,7 +50,7 @@ type buildImplementation interface {
 	// Refresh initialize build, set options, and get a jail and emulation executor and s6 supervisor config
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
 	// BuildTarball build from the layout in a working directory to an OCI image layer tarball
-	BuildTarball(*options.Options, fs.FS) (string, error)
+	BuildTarball(*options.Options, fs.FS) (string, *v1.Hash, *v1.Descriptor, error)
 	// GenerateSBOM generate a software-bill-of-materials for the image
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
@@ -105,7 +108,7 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 	return s6.New(di.workdirFS, o.Logger()), executor, nil
 }
 
-func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, error) {
+func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, *v1.Hash, *v1.Descriptor, error) {
 	var outfile *os.File
 	var err error
 
@@ -115,7 +118,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 		outfile, err = os.Create(filepath.Join(o.TempDir(), o.TarballFileName()))
 	}
 	if err != nil {
-		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
+		return "", nil, nil, fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
 	o.TarballPath = outfile.Name()
 	defer outfile.Close()
@@ -125,15 +128,32 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 		tarball.WithSourceDateEpoch(o.SourceDateEpoch),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to construct tarball build context: %w", err)
 	}
 
-	if err := tw.WriteArchive(outfile, fsys); err != nil {
-		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
+	hasher := sha256.New()
+	out := io.MultiWriter(outfile, hasher)
+
+	h, err := tw.WriteArchive(out, fsys)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to generate tarball for image: %w", err)
+	}
+
+	stat, err := outfile.Stat()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to stat %q: %w", outfile.Name(), err)
+	}
+
+	desc := v1.Descriptor{
+		Size: stat.Size(),
+		Digest: v1.Hash{
+			Algorithm: "sha256",
+			Hex:       hex.EncodeToString(hasher.Sum(make([]byte, 0, hasher.Size()))),
+		},
 	}
 
 	o.Logger().Infof("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), nil
+	return outfile.Name(), h, &desc, nil
 }
 
 // GenerateImageSBOM generates an sbom for an image
@@ -309,17 +329,17 @@ func buildImage(
 
 	// add busybox symlinks
 	if err := di.InstallBusyboxLinks(fsys, o); err != nil {
-		return err
+		return fmt.Errorf("adding busybox symlinks: %w", err)
 	}
 
 	// add ldconfig links
 	if err := di.InstallLdconfigLinks(fsys); err != nil {
-		return err
+		return fmt.Errorf("adding ldconfig symlinks: %w", err)
 	}
 
 	// add necessary character devices
 	if err := di.InstallCharDevices(fsys); err != nil {
-		return err
+		return fmt.Errorf("installing char devices: %w", err)
 	}
 
 	o.Logger().Infof("finished building filesystem in %s", o.WorkDir)

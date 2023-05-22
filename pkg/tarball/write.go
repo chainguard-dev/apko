@@ -17,6 +17,7 @@ package tarball
 import (
 	"archive/tar"
 	"crypto/sha1" // nolint:gosec
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"syscall"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	gzip "golang.org/x/build/pargzip"
 	"golang.org/x/sys/unix"
 
@@ -247,16 +249,14 @@ func (ctx *Context) writeTar(tw *tar.Writer, fsys fs.FS, users, groups map[int]s
 // WriteArchive writes a tarball to the provided io.Writer from the provided fs.FS.
 // To override permissions, set the OverridePerms when creating the Context.
 // If you need to get multiple filesystems, merge them prior to calling WriteArchive.
-func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) error {
+func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) (*v1.Hash, error) {
 	gzw := gzip.NewWriter(dst)
 	defer gzw.Close()
 
-	tw := tar.NewWriter(gzw)
-	if !ctx.SkipClose {
-		defer tw.Close()
-	} else {
-		defer tw.Flush()
-	}
+	hasher := sha256.New()
+	mw := io.MultiWriter(hasher, gzw)
+
+	tw := tar.NewWriter(mw)
 
 	// get the uname and gname maps
 	usersFile, _ := passwd.ReadUserFile(src, "etc/passwd")
@@ -270,8 +270,21 @@ func (ctx *Context) WriteArchive(dst io.Writer, src fs.FS) error {
 		groups[int(g.GID)] = g.GroupName
 	}
 	if err := ctx.writeTar(tw, src, users, groups); err != nil {
-		return fmt.Errorf("writing TAR archive failed: %w", err)
+		return nil, fmt.Errorf("writing TAR archive failed: %w", err)
 	}
 
-	return nil
+	if !ctx.SkipClose {
+		if err := tw.Close(); err != nil {
+			return nil, fmt.Errorf("closing tar: %w", err)
+		}
+	} else {
+		if err := tw.Flush(); err != nil {
+			return nil, fmt.Errorf("flushing tar: %w", err)
+		}
+	}
+
+	return &v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(hasher.Sum(make([]byte, 0, hasher.Size()))),
+	}, nil
 }

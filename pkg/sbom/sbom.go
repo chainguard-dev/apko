@@ -20,11 +20,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	osr "github.com/dominodatalab/os-release"
-	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -241,14 +242,13 @@ func (di *defaultSBOMImplementation) GenerateIndex(opts *options.Options, genera
 
 // ReadLayerTarball reads an apko layer adding its digest to the sbom options
 func (di *defaultSBOMImplementation) ReadLayerTarball(opts *options.Options, tarballPath string) error {
-	v1Layer, err := v1tar.LayerFromFile(tarballPath)
+	f, err := os.Open(tarballPath)
 	if err != nil {
-		return fmt.Errorf("failed to create OCI layer from tar.gz: %w", err)
+		return fmt.Errorf("failed to read %q: %w", tarballPath, err)
 	}
-
-	digest, err := v1Layer.Digest()
+	digest, _, err := v1.SHA256(f)
 	if err != nil {
-		return fmt.Errorf("could not calculate layer digest: %w", err)
+		return fmt.Errorf("computing digest of %q: %w", tarballPath, err)
 	}
 	opts.ImageInfo.LayerDigest = digest.String()
 	return nil

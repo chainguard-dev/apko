@@ -88,38 +88,34 @@ func init() {
 	}
 }
 
-func BuildImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
-	return buildImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
-}
-func BuildDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
-	return buildImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
+func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
+	return buildImageFromLayerWithMediaType(layer, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
 }
 
-func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
-	imageType := humanReadableImageType(mediaType)
-	logger.Printf("building %s image from layer '%s'", imageType, layerTarGZ)
+func buildImageFromLayerWithMediaType(layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
+	logger.Printf("building image from layer")
 
-	v1Layer, err := v1tar.LayerFromFile(layerTarGZ, v1tar.WithMediaType(mediaType))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create %s layer from tar.gz: %w", imageType, err)
-	}
-
-	digest, err := v1Layer.Digest()
+	digest, err := layer.Digest()
 	if err != nil {
 		return nil, fmt.Errorf("could not calculate layer digest: %w", err)
 	}
 
-	diffid, err := v1Layer.DiffID()
+	diffid, err := layer.DiffID()
 	if err != nil {
 		return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
-	logger.Printf("%s layer digest: %v", imageType, digest)
-	logger.Printf("%s layer diffID: %v", imageType, diffid)
+	mediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, fmt.Errorf("could not get layer mediaType: %w", err)
+	}
+
+	logger.Printf("layer digest: %v", digest)
+	logger.Printf("layer diffID: %v", diffid)
 
 	adds := make([]mutate.Addendum, 0, 1)
 	adds = append(adds, mutate.Addendum{
-		Layer: v1Layer,
+		Layer: layer,
 		History: v1.History{
 			Author:    "apko",
 			Comment:   "This is an apko single-layer image",
@@ -136,7 +132,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 	}
 	v1Image, err := mutate.Append(emptyImage, adds...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
+		return nil, fmt.Errorf("unable to append layer to empty image: %w", err)
 	}
 
 	annotations := ic.Annotations
@@ -156,7 +152,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get %s config file: %w", imageType, err)
+		return nil, fmt.Errorf("unable to get config file: %w", err)
 	}
 
 	cfg = cfg.DeepCopy()
@@ -218,7 +214,7 @@ func buildImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ 
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to update %s config file: %w", imageType, err)
+		return nil, fmt.Errorf("unable to update config file: %w", err)
 	}
 
 	si := signed.Image(v1Image)
@@ -341,36 +337,6 @@ func attachSBOM(
 	return si, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) error {
-	if opts.UseDockerMediaTypes {
-		return buildImageTarballFromLayerWithMediaType(ggcrtypes.DockerLayer, imageRef, layerTarGZ, outputTarGZ, ic, logger, opts)
-	}
-	return buildImageTarballFromLayerWithMediaType(ggcrtypes.OCILayer, imageRef, layerTarGZ, outputTarGZ, ic, logger, opts)
-}
-
-func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imageRef string, layerTarGZ string, outputTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) error {
-	imageType := humanReadableImageType(mediaType)
-	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
-	if err != nil {
-		return err
-	}
-
-	if v1Image == nil {
-		return errors.New("image build from layer returned nil")
-	}
-	imgRefTag, err := name.NewTag(imageRef)
-	if err != nil {
-		return fmt.Errorf("unable to validate image reference tag: %w", err)
-	}
-
-	if err := v1tar.WriteToFile(outputTarGZ, imgRefTag, v1Image); err != nil {
-		return fmt.Errorf("unable to write %s image to disk: %w", imageType, err)
-	}
-
-	logger.Printf("output %s image file to %s", imageType, outputTarGZ)
-	return nil
-}
-
 func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger log.Logger) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
@@ -425,16 +391,8 @@ func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef st
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(ctx context.Context, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ctx, ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags...)
-}
-
-func PublishDockerImageFromLayer(ctx context.Context, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ctx, ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags...)
-}
-
-func publishImageFromLayerWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
+func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	v1Image, err := buildImageFromLayerWithMediaType(layer, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
 	}
@@ -836,14 +794,4 @@ func writePeripherals(tag name.Reference, logger log.Logger, opt ...remote.Optio
 
 		return nil
 	}
-}
-
-func humanReadableImageType(mediaType ggcrtypes.MediaType) string {
-	switch mediaType {
-	case ggcrtypes.DockerLayer:
-		return "Docker"
-	case ggcrtypes.OCILayer:
-		return "OCI"
-	}
-	return "unknown"
 }

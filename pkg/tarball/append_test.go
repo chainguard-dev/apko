@@ -45,7 +45,8 @@ func TestMultiTar(t *testing.T) {
 	m.Close()
 
 	var expected bytes.Buffer
-	require.NoError(t, ctx.WriteArchive(&expected, testdataFS))
+	_, err = ctx.WriteArchive(&expected, testdataFS)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, got)
 }
@@ -64,8 +65,10 @@ func TestExtraWriter(t *testing.T) {
 
 	var expectedFoo bytes.Buffer
 	var expectedBar bytes.Buffer
-	require.NoError(t, ctx.WriteArchive(&expectedBar, barFS))
-	require.NoError(t, ctx.WriteArchive(&expectedFoo, fooFS))
+	_, err = ctx.WriteArchive(&expectedBar, barFS)
+	require.NoError(t, err)
+	_, err = ctx.WriteArchive(&expectedFoo, fooFS)
+	require.NoError(t, err)
 
 	require.Equal(t, expectedFoo, gotFoo)
 	require.Equal(t, expectedBar, gotBar)

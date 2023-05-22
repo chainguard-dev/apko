@@ -17,7 +17,9 @@ package build
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"runtime"
@@ -27,6 +29,8 @@ import (
 	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/hashicorp/go-multierror"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
@@ -66,7 +70,7 @@ func (bc *Context) Summarize() {
 // BuildTarball calls the underlying implementation's BuildTarball
 // which takes the fully populated working directory and saves it to
 // an OCI image layer tar.gz file.
-func (bc *Context) BuildTarball() (string, error) {
+func (bc *Context) BuildTarball() (string, *v1.Hash, *v1.Descriptor, error) {
 	return bc.impl.BuildTarball(&bc.Options, bc.fs)
 }
 
@@ -137,42 +141,54 @@ func (bc *Context) Logger() log.Logger {
 // and sets everything up in the directory. Then
 // packages it all up into a standard OCI image layer
 // tar.gz file.
-func (bc *Context) BuildLayer() (string, error) {
+func (bc *Context) BuildLayer(docker bool) (v1.Layer, string, error) {
 	bc.Summarize()
 
 	// build image filesystem
 	if _, err := bc.BuildImage(); err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	return bc.ImageLayoutToLayer()
+	return bc.ImageLayoutToLayer(docker)
 }
 
 // ImageLayoutToLayer given an already built-out
 // image in an fs from BuildImage(), create
 // an OCI image layer tgz.
-func (bc *Context) ImageLayoutToLayer() (string, error) {
+func (bc *Context) ImageLayoutToLayer(docker bool) (v1.Layer, string, error) {
 	// run any assertions defined
 	if err := bc.runAssertions(); err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	layerTarGZ, err := bc.BuildTarball()
+	layerTarGZ, diffid, desc, err := bc.BuildTarball()
 	// build layer tarball
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	// generate SBOM
 	if bc.Options.WantSBOM {
 		if err := bc.GenerateSBOM(); err != nil {
-			return "", fmt.Errorf("generating SBOMs: %w", err)
+			return nil, layerTarGZ, fmt.Errorf("generating SBOMs: %w", err)
 		}
 	} else {
 		bc.Logger().Debugf("Not generating SBOMs (WantSBOM = false)")
 	}
 
-	return layerTarGZ, nil
+	if desc != nil {
+		desc.MediaType = v1types.OCILayer
+		if docker {
+			desc.MediaType = v1types.DockerLayer
+		}
+	}
+
+	l := layer{
+		filename: layerTarGZ,
+		diffid:   diffid,
+		desc:     desc,
+	}
+	return &l, layerTarGZ, nil
 }
 func (bc *Context) runAssertions() error {
 	var eg multierror.Group
@@ -250,4 +266,46 @@ func (bc *Context) Refresh() error {
 
 func (bc *Context) SetImplementation(i buildImplementation) {
 	bc.impl = i
+}
+
+type layer struct {
+	filename string
+	diffid   *v1.Hash
+	desc     *v1.Descriptor
+}
+
+func (l *layer) DiffID() (v1.Hash, error) {
+	return *l.diffid, nil
+}
+
+func (l *layer) Digest() (v1.Hash, error) {
+	return l.desc.Digest, nil
+}
+
+func (l *layer) Compressed() (io.ReadCloser, error) {
+	return os.Open(l.filename)
+}
+
+// Uncompressed returns an io.ReadCloser for the uncompressed layer contents.
+func (l *layer) Uncompressed() (io.ReadCloser, error) {
+	rc, err := l.Compressed()
+	if err != nil {
+		return nil, err
+	}
+
+	zr, err := gzip.NewReader(rc)
+	if err != nil {
+		return nil, err
+	}
+	return zr, nil
+}
+
+// Size returns the compressed size of the Layer.
+func (l *layer) Size() (int64, error) {
+	return l.desc.Size, nil
+}
+
+// MediaType returns the media type of the Layer.
+func (l *layer) MediaType() (v1types.MediaType, error) {
+	return l.desc.MediaType, nil
 }
