@@ -15,12 +15,18 @@
 package build
 
 import (
+	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	gzip "golang.org/x/build/pargzip"
 
 	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
@@ -30,7 +36,7 @@ import (
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
-	"sigs.k8s.io/release-utils/hash"
+	khash "sigs.k8s.io/release-utils/hash"
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
@@ -47,7 +53,7 @@ type buildImplementation interface {
 	// Refresh initialize build, set options, and get a jail and emulation executor and s6 supervisor config
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
 	// BuildTarball build from the layout in a working directory to an OCI image layer tarball
-	BuildTarball(*options.Options, fs.FS) (string, error)
+	BuildTarball(*options.Options, fs.FS) (targz string, diffid hash.Hash, digest hash.Hash, size int64, err error)
 	// GenerateSBOM generate a software-bill-of-materials for the image
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
@@ -105,7 +111,7 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 	return s6.New(di.workdirFS, o.Logger()), executor, nil
 }
 
-func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, error) {
+func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, hash.Hash, hash.Hash, int64, error) {
 	var outfile *os.File
 	var err error
 
@@ -115,7 +121,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 		outfile, err = os.Create(filepath.Join(o.TempDir(), o.TarballFileName()))
 	}
 	if err != nil {
-		return "", fmt.Errorf("opening the build context tarball path failed: %w", err)
+		return "", nil, nil, 0, fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
 	o.TarballPath = outfile.Name()
 	defer outfile.Close()
@@ -125,15 +131,29 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 		tarball.WithSourceDateEpoch(o.SourceDateEpoch),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to construct tarball build context: %w", err)
+		return "", nil, nil, 0, fmt.Errorf("failed to construct tarball build context: %w", err)
 	}
 
-	if err := tw.WriteArchive(outfile, fsys); err != nil {
-		return "", fmt.Errorf("failed to generate tarball for image: %w", err)
+	digest := sha256.New()
+
+	gzw := gzip.NewWriter(io.MultiWriter(digest, outfile))
+
+	diffid := sha256.New()
+
+	if err := tw.WriteTar(context.TODO(), io.MultiWriter(diffid, gzw), fsys); err != nil {
+		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
+	}
+	if err := gzw.Close(); err != nil {
+		return "", nil, nil, 0, fmt.Errorf("closing gzip writer: %w", err)
+	}
+
+	stat, err := outfile.Stat()
+	if err != nil {
+		return "", nil, nil, 0, fmt.Errorf("stat(%q): %w", outfile.Name(), err)
 	}
 
 	o.Logger().Infof("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), nil
+	return outfile.Name(), diffid, digest, stat.Size(), nil
 }
 
 // GenerateImageSBOM generates an sbom for an image
@@ -415,7 +435,7 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 
 	// Load the images data into the SBOM generator options
 	for arch, i := range imgs {
-		sbomHash, err := hash.SHA256ForFile(filepath.Join(s.Options.OutputDir, fmt.Sprintf("sbom-%s.%s", arch.ToAPK(), ext)))
+		sbomHash, err := khash.SHA256ForFile(filepath.Join(s.Options.OutputDir, fmt.Sprintf("sbom-%s.%s", arch.ToAPK(), ext)))
 		if err != nil {
 			return fmt.Errorf("checksumming %s SBOM: %w", arch, err)
 		}
