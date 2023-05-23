@@ -24,6 +24,7 @@ import (
 
 	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
@@ -38,7 +39,6 @@ import (
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
-	"chainguard.dev/apko/pkg/tarball"
 )
 
 //counterfeiter:generate . buildImplementation
