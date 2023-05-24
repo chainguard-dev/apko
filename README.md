@@ -48,6 +48,14 @@ These examples use [Docker](https://docs.docker.com/get-docker/), but should als
 
 Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
 
+### Homebrew/Linuxbrew
+
+If you are using Homebrew (or Linuxbrew), you can install apko by running:
+
+```shell
+brew install chainguard-dev/tap/apko
+```
+
 ## Quickstart
 
 An apko file for building an Alpine base image looks like this:
