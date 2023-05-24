@@ -36,7 +36,7 @@ import (
 )
 
 type APK struct {
-	impl    apkImplementation
+	impl    *apkimpl.APK
 	fs      apkfs.FullFS
 	Options options.Options
 }
@@ -216,10 +216,6 @@ func getStemmedVersionTags(opts options.Options, origRef string, version string)
 		return tags[j] < tags[i]
 	})
 	return tags, nil
-}
-
-func (a *APK) SetImplementation(impl apkImplementation) {
-	a.impl = impl
 }
 
 func (a *APK) ListInitFiles() []tar.Header {
