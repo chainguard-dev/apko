@@ -17,6 +17,7 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
@@ -24,12 +25,22 @@ import (
 )
 
 func New() *cobra.Command {
+	var workDir string
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = ""
+	}
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			http.DefaultTransport = userAgentTransport{http.DefaultTransport}
+			if cwd != "" {
+				if err := os.Chdir(cwd); err != nil {
+					fmt.Printf("failed to change dir to %s: %v\n", cwd, err)
+				}
+			}
 		},
 	}
 
@@ -40,6 +51,8 @@ func New() *cobra.Command {
 	cmd.AddCommand(publish())
 	cmd.AddCommand(showPackages())
 	cmd.AddCommand(version.Version())
+
+	cmd.PersistentFlags().StringVarP(&workDir, "workdir", "C", cwd, "working dir (default is current dir where executed)")
 	return cmd
 }
 
