@@ -2,6 +2,7 @@
 package buildfakes
 
 import (
+	"hash"
 	fsa "io/fs"
 	"sync"
 
@@ -45,7 +46,7 @@ type FakeBuildImplementation struct {
 		result1 fsa.FS
 		result2 error
 	}
-	BuildTarballStub        func(*options.Options, fsa.FS) (string, error)
+	BuildTarballStub        func(*options.Options, fsa.FS) (string, hash.Hash, hash.Hash, int64, error)
 	buildTarballMutex       sync.RWMutex
 	buildTarballArgsForCall []struct {
 		arg1 *options.Options
@@ -53,11 +54,17 @@ type FakeBuildImplementation struct {
 	}
 	buildTarballReturns struct {
 		result1 string
-		result2 error
+		result2 hash.Hash
+		result3 hash.Hash
+		result4 int64
+		result5 error
 	}
 	buildTarballReturnsOnCall map[int]struct {
 		result1 string
-		result2 error
+		result2 hash.Hash
+		result3 hash.Hash
+		result4 int64
+		result5 error
 	}
 	GenerateImageSBOMStub        func(*options.Options, *types.ImageConfiguration, oci.SignedImage) error
 	generateImageSBOMMutex       sync.RWMutex
@@ -399,7 +406,7 @@ func (fake *FakeBuildImplementation) BuildImageReturnsOnCall(i int, result1 fsa.
 	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options, arg2 fsa.FS) (string, error) {
+func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options, arg2 fsa.FS) (string, hash.Hash, hash.Hash, int64, error) {
 	fake.buildTarballMutex.Lock()
 	ret, specificReturn := fake.buildTarballReturnsOnCall[len(fake.buildTarballArgsForCall)]
 	fake.buildTarballArgsForCall = append(fake.buildTarballArgsForCall, struct {
@@ -414,9 +421,9 @@ func (fake *FakeBuildImplementation) BuildTarball(arg1 *options.Options, arg2 fs
 		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1, ret.result2, ret.result3, ret.result4, ret.result5
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3, fakeReturns.result4, fakeReturns.result5
 }
 
 func (fake *FakeBuildImplementation) BuildTarballCallCount() int {
@@ -425,7 +432,7 @@ func (fake *FakeBuildImplementation) BuildTarballCallCount() int {
 	return len(fake.buildTarballArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*options.Options, fsa.FS) (string, error)) {
+func (fake *FakeBuildImplementation) BuildTarballCalls(stub func(*options.Options, fsa.FS) (string, hash.Hash, hash.Hash, int64, error)) {
 	fake.buildTarballMutex.Lock()
 	defer fake.buildTarballMutex.Unlock()
 	fake.BuildTarballStub = stub
@@ -438,30 +445,39 @@ func (fake *FakeBuildImplementation) BuildTarballArgsForCall(i int) (*options.Op
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeBuildImplementation) BuildTarballReturns(result1 string, result2 error) {
+func (fake *FakeBuildImplementation) BuildTarballReturns(result1 string, result2 hash.Hash, result3 hash.Hash, result4 int64, result5 error) {
 	fake.buildTarballMutex.Lock()
 	defer fake.buildTarballMutex.Unlock()
 	fake.BuildTarballStub = nil
 	fake.buildTarballReturns = struct {
 		result1 string
-		result2 error
-	}{result1, result2}
+		result2 hash.Hash
+		result3 hash.Hash
+		result4 int64
+		result5 error
+	}{result1, result2, result3, result4, result5}
 }
 
-func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 string, result2 error) {
+func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 string, result2 hash.Hash, result3 hash.Hash, result4 int64, result5 error) {
 	fake.buildTarballMutex.Lock()
 	defer fake.buildTarballMutex.Unlock()
 	fake.BuildTarballStub = nil
 	if fake.buildTarballReturnsOnCall == nil {
 		fake.buildTarballReturnsOnCall = make(map[int]struct {
 			result1 string
-			result2 error
+			result2 hash.Hash
+			result3 hash.Hash
+			result4 int64
+			result5 error
 		})
 	}
 	fake.buildTarballReturnsOnCall[i] = struct {
 		result1 string
-		result2 error
-	}{result1, result2}
+		result2 hash.Hash
+		result3 hash.Hash
+		result4 int64
+		result5 error
+	}{result1, result2, result3, result4, result5}
 }
 
 func (fake *FakeBuildImplementation) GenerateImageSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 oci.SignedImage) error {

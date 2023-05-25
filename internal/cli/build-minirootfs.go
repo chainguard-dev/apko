@@ -101,7 +101,7 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 
 	bc.Logger().Printf("building minirootfs '%s'", bc.Options.TarballPath)
 
-	layerTarGZ, err := bc.BuildLayer()
+	layerTarGZ, _, err := bc.BuildLayer()
 	if err != nil {
 		return fmt.Errorf("failed to build layer image: %w", err)
 	}

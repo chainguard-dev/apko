@@ -15,6 +15,7 @@
 package build_test
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestBuildLayer(t *testing.T) {
 	}{
 		{ // success
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
-				// noop.
+				fbi.BuildTarballReturns("", sha256.New(), sha256.New(), 0, nil)
 			},
 			msg:         "success",
 			shouldError: false,
@@ -47,7 +48,7 @@ func TestBuildLayer(t *testing.T) {
 		},
 		{ // BuildTarball fails
 			prepare: func(fbi *buildfakes.FakeBuildImplementation) {
-				fbi.BuildTarballReturns("", fakeErr)
+				fbi.BuildTarballReturns("", sha256.New(), sha256.New(), 0, fakeErr)
 			},
 			msg:         "buildtarball fails",
 			shouldError: true,
@@ -61,18 +62,20 @@ func TestBuildLayer(t *testing.T) {
 			shouldError: true,
 		},
 	} {
-		mock := buildfakes.FakeBuildImplementation{}
-		tc.prepare(&mock)
-		sut, err := build.New(t.TempDir())
-		sut.Options.WantSBOM = true
-		require.NoError(t, err)
-		sut.SetImplementation(&mock)
-		_, err = sut.BuildLayer()
-		if tc.shouldError {
-			require.Error(t, err, tc.msg)
-		} else {
-			require.NoError(t, err, tc.msg)
-		}
+		t.Run(tc.msg, func(t *testing.T) {
+			mock := buildfakes.FakeBuildImplementation{}
+			tc.prepare(&mock)
+			sut, err := build.New(t.TempDir())
+			sut.Options.WantSBOM = true
+			require.NoError(t, err)
+			sut.SetImplementation(&mock)
+			_, _, err = sut.BuildLayer()
+			if tc.shouldError {
+				require.Error(t, err, tc.msg)
+			} else {
+				require.NoError(t, err, tc.msg)
+			}
+		})
 	}
 }
 

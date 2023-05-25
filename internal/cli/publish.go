@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -237,7 +238,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
 
-			layerTarGZ, err := bc.BuildLayer()
+			layerTarGZ, layer, err := bc.BuildLayer()
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
@@ -260,7 +261,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 
 			var img coci.SignedImage
-			finalDigest, img, err = publishImage(ctx, bc, layerTarGZ, arch)
+			finalDigest, img, err = publishImage(ctx, bc, layer, arch)
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
@@ -398,24 +399,14 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 }
 
 // publishImage publishes a specific architecture image
-func publishImage(ctx context.Context, bc *build.Context, layerTarGZ string, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
+func publishImage(ctx context.Context, bc *build.Context, layer v1.Layer, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
 	shouldPushTags := bc.Options.StageTags == ""
-	if bc.Options.UseDockerMediaTypes {
-		imgDigest, img, err = oci.PublishDockerImageFromLayer(ctx,
-			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
-		)
-		if err != nil {
-			return name.Digest{}, nil, fmt.Errorf("failed to build Docker image for %q: %w", arch, err)
-		}
-	} else {
-		imgDigest, img, err = oci.PublishImageFromLayer(ctx,
-			layerTarGZ, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-			bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
-		)
-		if err != nil {
-			return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
-		}
+	imgDigest, img, err = oci.PublishImageFromLayer(ctx,
+		layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
+		bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
+	)
+	if err != nil {
+		return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 	}
 	return imgDigest, img, nil
 }

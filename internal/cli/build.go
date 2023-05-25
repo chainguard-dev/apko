@@ -231,7 +231,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
 
-			layerTarGZ, err := bc.BuildLayer()
+			layerTarGZ, layer, err := bc.BuildLayer()
 			if err != nil {
 				return fmt.Errorf("failed to build layer image: %w", err)
 			}
@@ -252,7 +252,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 			imageTars[arch] = layerTarGZ
 			img, err := oci.BuildImageFromLayer(
-				layerTarGZ, bc.ImageConfiguration, bc.Logger(), bc.Options)
+				layer, bc.ImageConfiguration, bc.Logger(), bc.Options)
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image: %w", err)
 			}
