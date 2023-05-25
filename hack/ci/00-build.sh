@@ -23,6 +23,7 @@ contents:
     - busybox
     - bash
     - openjdk-17
+    - openjdk-17-default-jvm
     - maven
     - wolfi-baselayout
 archs:
