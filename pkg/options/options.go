@@ -37,6 +37,7 @@ type Options struct {
 	SBOMFormats             []string
 	ExtraKeyFiles           []string
 	ExtraRepos              []string
+	ExtraPackages           []string
 	Arch                    types.Architecture
 	Log                     log.Logger
 	TempDirPath             string

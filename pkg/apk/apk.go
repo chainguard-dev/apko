@@ -88,8 +88,7 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	})
 
 	eg.Go(func() error {
-		repos := ic.Contents.Repositories
-		repos = append(repos, a.Options.ExtraRepos...)
+		repos := append(ic.Contents.Repositories, a.Options.ExtraRepos...) // nolint:gocritic
 		if err := a.impl.SetRepositories(repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
@@ -97,7 +96,8 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	})
 
 	eg.Go(func() error {
-		if err := a.impl.SetWorld(ic.Contents.Packages); err != nil {
+		packages := append(ic.Contents.Packages, a.Options.ExtraPackages...) //nolint:gocritic
+		if err := a.impl.SetWorld(packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
