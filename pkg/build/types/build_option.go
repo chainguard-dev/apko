@@ -17,30 +17,30 @@ package types
 // ListOption describes an optional deviation to a list, for example, a
 // list of packages.
 type ListOption struct {
-	Add    []string `yaml:"add,omitempty"`
-	Remove []string `yaml:"remove,omitempty"`
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
 }
 
 // ContentsOption describes an optional deviation to an apko environment's
 // contents block.
 type ContentsOption struct {
-	Packages ListOption `yaml:"packages,omitempty"`
+	Packages ListOption `json:"packages,omitempty"`
 }
 
 // AccountsOption describes an optional deviation to an apko environment's
 // run-as setting.
 type AccountsOption struct {
-	RunAs string `yaml:"run-as,omitempty"`
+	RunAs string `json:"run-as,omitempty"`
 }
 
 // BuildOption describes an optional deviation to an apko environment.
 type BuildOption struct {
-	Contents ContentsOption `yaml:"contents,omitempty"`
-	Accounts AccountsOption `yaml:"accounts,omitempty"`
+	Contents ContentsOption `json:"contents,omitempty"`
+	Accounts AccountsOption `json:"accounts,omitempty"`
 
-	Environment map[string]string `yaml:"environment,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
 
-	Entrypoint ImageEntrypoint `yaml:"entrypoint,omitempty"`
+	Entrypoint ImageEntrypoint `json:"entrypoint,omitempty"`
 }
 
 // Apply applies a patch described by a BuildOption to an apko environment.
