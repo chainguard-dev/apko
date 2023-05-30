@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,9 +25,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/google"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -95,7 +102,29 @@ in a keychain.`,
 			if err != nil {
 				return fmt.Errorf("parsing annotations from command line: %w", err)
 			}
-			if err := PublishCmd(cmd.Context(), imageRefs, archs,
+
+			keychain := authn.NewMultiKeychain(
+				authn.DefaultKeychain,
+				google.Keychain,
+				authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogger(io.Discard))),
+				authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
+				github.Keychain,
+			)
+			remoteOpts := []remote.Option{remote.WithAuthFromKeychain(keychain)}
+
+			pusher, err := remote.NewPusher(remoteOpts...)
+			if err != nil {
+				return err
+			}
+			remoteOpts = append(remoteOpts, remote.Reuse(pusher))
+
+			puller, err := remote.NewPuller(remoteOpts...)
+			if err != nil {
+				return err
+			}
+			remoteOpts = append(remoteOpts, remote.Reuse(puller))
+
+			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				build.WithConfig(args[0]),
 				build.WithDockerMediatypes(useDockerMediaTypes),
 				build.WithTags(args[1:]...),
@@ -151,7 +180,7 @@ in a keychain.`,
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, opts ...build.Option) error {
+func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -267,7 +296,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 
 			var img coci.SignedImage
-			finalDigest, img, err = publishImage(ctx, bc, layer, arch)
+			finalDigest, img, err = publishImage(ctx, bc, layer, arch, ropt...)
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
@@ -325,7 +354,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				continue
 			}
 			g.Go(func() error {
-				return oci.Copy(ctx, finalDigest.Name(), at)
+				return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
 			})
 		}
 		if err := g.Wait(); err != nil {
@@ -363,7 +392,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				}
 
 				if _, err := oci.PostAttachSBOM(
-					ctx, img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+					ctx, img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags, ropt...,
 				); err != nil {
 					return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
 				}
@@ -382,7 +411,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 		if idx != nil {
 			if _, err := oci.PostAttachSBOM(
-				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture(""), bc.Logger(), bc.Options.Tags...,
+				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture(""), bc.Logger(), bc.Options.Tags, ropt...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to index: %w", err)
 			}
@@ -405,11 +434,11 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 }
 
 // publishImage publishes a specific architecture image
-func publishImage(ctx context.Context, bc *build.Context, layer v1.Layer, arch types.Architecture) (imgDigest name.Digest, img coci.SignedImage, err error) {
+func publishImage(ctx context.Context, bc *build.Context, layer v1.Layer, arch types.Architecture, ropt ...remote.Option) (imgDigest name.Digest, img coci.SignedImage, err error) {
 	shouldPushTags := bc.Options.StageTags == ""
 	imgDigest, img, err = oci.PublishImageFromLayer(ctx,
 		layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-		bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags...,
+		bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...,
 	)
 	if err != nil {
 		return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
@@ -418,17 +447,17 @@ func publishImage(ctx context.Context, bc *build.Context, layer v1.Layer, arch t
 }
 
 // publishIndex publishes the new image index
-func publishIndex(ctx context.Context, bc *build.Context, imgs map[types.Architecture]coci.SignedImage) (
+func publishIndex(ctx context.Context, bc *build.Context, imgs map[types.Architecture]coci.SignedImage, ropt ...remote.Option) (
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
 	shouldPushTags := bc.Options.StageTags == ""
 	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishDockerIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
 		}
 	} else {
-		indexDigest, idx, err = oci.PublishIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags...)
+		indexDigest, idx, err = oci.PublishIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...)
 		if err != nil {
 			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
 		}
