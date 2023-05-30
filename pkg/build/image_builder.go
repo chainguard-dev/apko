@@ -16,21 +16,18 @@ package build
 
 import (
 	"fmt"
-
-	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/s6"
 )
 
-func (di *defaultBuildImplementation) ValidateImageConfiguration(ic *types.ImageConfiguration) error {
-	if err := ic.Validate(); err != nil {
+func (di *Context) ValidateImageConfiguration() error {
+	if err := di.ImageConfiguration.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 	return nil
 }
 
-func (di *defaultBuildImplementation) WriteSupervisionTree(
-	s6context *s6.Context, imageConfig *types.ImageConfiguration,
-) error {
+func (di *Context) WriteSupervisionTree() error {
+	s6context, imageConfig := di.s6, di.ImageConfiguration
+
 	// write service supervision tree
 	s6m := make(map[interface{}]interface{}, len(imageConfig.Entrypoint.Services))
 	for k, v := range imageConfig.Entrypoint.Services {

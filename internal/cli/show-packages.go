@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 
 	"chainguard.dev/apko/pkg/build"
@@ -63,7 +64,9 @@ func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...bu
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+
+	bc, err := build.New(fsys, opts...)
 	if err != nil {
 		return err
 	}
@@ -97,13 +100,12 @@ func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...bu
 	bc.Options.TempDir()
 	defer os.RemoveAll(bc.Options.TempDir())
 
-	workDir := bc.Options.WorkDir
-
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
-		wd := filepath.Join(workDir, arch.ToAPK())
-		bc, err := build.New(wd, opts...)
+		wd := filepath.Join(wd, arch.ToAPK())
+		fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+		bc, err := build.New(fsys, opts...)
 		if err != nil {
 			return err
 		}
@@ -114,7 +116,6 @@ func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...bu
 		bc.ImageConfiguration.Archs = archs
 
 		bc.Options.Arch = arch
-		bc.Options.WorkDir = wd
 
 		if err := bc.Refresh(); err != nil {
 			return fmt.Errorf("failed to update build context for %q: %w", arch, err)

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -62,7 +63,9 @@ func ShowConfigCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+
+	bc, err := build.New(fsys, opts...)
 	if err != nil {
 		return err
 	}

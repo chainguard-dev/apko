@@ -31,10 +31,7 @@ import (
 	"regexp"
 	"strings"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
-	"chainguard.dev/apko/pkg/options"
 )
 
 const (
@@ -53,7 +50,9 @@ var busyboxLinks map[string][]string
 // note that it changes based on version of busybox,
 // so this should be updated to match busybox version.
 
-func (di *defaultBuildImplementation) InstallBusyboxLinks(fsys apkfs.FullFS, o *options.Options) error {
+func (di *Context) InstallBusyboxLinks() error {
+	fsys, o := di.fs, &di.Options
+
 	// does busybox exist? if not, do not bother with symlinks
 	if _, err := fsys.Stat(busybox); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {

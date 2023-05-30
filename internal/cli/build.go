@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
@@ -139,7 +140,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+
+	bc, err := build.New(fsys, opts...)
 	if err != nil {
 		return err
 	}
@@ -184,7 +187,6 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
 	var errg errgroup.Group
-	workDir := bc.Options.WorkDir
 	imgs := map[types.Architecture]coci.SignedImage{}
 	contexts := map[types.Architecture]*build.Context{}
 	imageTars := map[types.Architecture]string{}
@@ -213,8 +215,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
-		wd := filepath.Join(workDir, arch.ToAPK())
-		bc, err := build.New(wd, opts...)
+		wd := filepath.Join(wd, arch.ToAPK())
+		fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+		bc, err := build.New(fsys, opts...)
 		if err != nil {
 			return err
 		}
@@ -229,7 +232,6 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 		errg.Go(func() error {
 			bc.Options.Arch = arch
-			bc.Options.WorkDir = wd
 
 			if err := bc.Refresh(); err != nil {
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)

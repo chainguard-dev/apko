@@ -29,7 +29,6 @@ type Options struct {
 	UseDockerMediaTypes     bool
 	WantSBOM                bool
 	WithVCS                 bool
-	WorkDir                 string
 	TarballPath             string
 	Tags                    []string
 	SourceDateEpoch         time.Time
@@ -56,7 +55,6 @@ var Default = Options{
 }
 
 func (o *Options) Summarize(logger log.Logger) {
-	logger.Printf("  working directory: %s", o.WorkDir)
 	logger.Printf("  tarball path: %s", o.TarballPath)
 	logger.Printf("  source date: %s", o.SourceDateEpoch)
 	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
