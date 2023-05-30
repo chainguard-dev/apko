@@ -243,7 +243,7 @@ func WithStageTags(stageTags string) Option {
 func WithBuildOptions(buildOptions []string) Option {
 	return func(bc *Context) error {
 		for _, opt := range buildOptions {
-			if bo, ok := bc.ImageConfiguration.Options[opt]; ok {
+			if bo, ok := bc.ImageConfiguration.Options[opt]; ok { //nolint:staticcheck
 				if err := bo.Apply(&bc.ImageConfiguration); err != nil {
 					return err
 				}
