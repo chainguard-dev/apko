@@ -18,18 +18,6 @@ import (
 	"os/exec"
 )
 
-// ExecuteChroot executes the named program with the given arguments
-// inside a chroot.
-// TODO(kaniini): Add support for using qemu-binfmt here for multiarch.
-func (e *Executor) ExecuteChroot(name string, arg ...string) error {
-	var cmd *exec.Cmd
-
-	arg = append([]string{e.WorkDir, name}, arg...)
-	cmd = exec.Command("chroot", arg...)
-
-	return e.impl.Run(cmd, name, e.Log)
-}
-
 // Execute executes the named program with the given arguments.
 func (e *Executor) Execute(name string, arg ...string) error {
 	logname := name

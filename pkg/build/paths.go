@@ -22,10 +22,9 @@ import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
 )
 
-type PathMutator func(apkfs.FullFS, *options.Options, types.PathMutation) error
+type PathMutator func(apkfs.FullFS, types.PathMutation) error
 
 var pathMutators = map[string]PathMutator{
 	"directory":   mutateDirectory,
@@ -35,7 +34,7 @@ var pathMutators = map[string]PathMutator{
 	"permissions": mutatePermissions,
 }
 
-func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+func mutatePermissions(fsys apkfs.FullFS, mut types.PathMutation) error {
 	return mutatePermissionsDirect(fsys, mut.Path, mut.Permissions, mut.UID, mut.GID)
 }
 
@@ -51,7 +50,7 @@ func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uin
 	return nil
 }
 
-func mutateDirectory(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+func mutateDirectory(fsys apkfs.FullFS, mut types.PathMutation) error {
 	perms := fs.FileMode(mut.Permissions)
 
 	if err := fsys.MkdirAll(mut.Path, perms); err != nil {
@@ -86,7 +85,7 @@ func ensureParentDirectory(fsys apkfs.FullFS, mut types.PathMutation) error {
 	return nil
 }
 
-func mutateEmptyFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+func mutateEmptyFile(fsys apkfs.FullFS, mut types.PathMutation) error {
 	target := mut.Path
 
 	if err := ensureParentDirectory(fsys, mut); err != nil {
@@ -102,7 +101,7 @@ func mutateEmptyFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutati
 	return nil
 }
 
-func mutateHardLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+func mutateHardLink(fsys apkfs.FullFS, mut types.PathMutation) error {
 	source := mut.Source
 	target := mut.Path
 
@@ -124,7 +123,7 @@ func mutateHardLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutatio
 	return nil
 }
 
-func mutateSymLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+func mutateSymLink(fsys apkfs.FullFS, mut types.PathMutation) error {
 	target := mut.Path
 
 	if err := ensureParentDirectory(fsys, mut); err != nil {
@@ -138,21 +137,19 @@ func mutateSymLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation
 	return nil
 }
 
-func (di *defaultBuildImplementation) MutatePaths(
-	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
-) error {
-	for _, mut := range ic.Paths {
+func (bc *Context) MutatePaths() error {
+	for _, mut := range bc.ImageConfiguration.Paths {
 		pm, ok := pathMutators[mut.Type]
 		if !ok {
 			return fmt.Errorf("unsupported path mutation type %q", mut.Type)
 		}
 
-		if err := pm(fsys, o, mut); err != nil {
+		if err := pm(bc.fs, mut); err != nil {
 			return err
 		}
 
 		if mut.Type != "permissions" {
-			if err := mutatePermissions(fsys, o, mut); err != nil {
+			if err := mutatePermissions(bc.fs, mut); err != nil {
 				return err
 			}
 		}

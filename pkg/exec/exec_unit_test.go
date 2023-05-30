@@ -32,12 +32,12 @@ func TestNew(t *testing.T) {
 	badOpt := func(e *Executor) error {
 		return fmt.Errorf("synth error")
 	}
-	e, err := New(".", testLogger())
+	e, err := New(testLogger())
 	require.NotNil(t, e)
 	require.NoError(t, err)
 
 	// Option fails
-	e, err = New(".", testLogger(), badOpt)
+	e, err = New(testLogger(), badOpt)
 	require.Nil(t, e)
 	require.Error(t, err)
 }

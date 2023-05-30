@@ -26,6 +26,8 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
+
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 )
 
 func buildMinirootFS() *cobra.Command {
@@ -86,7 +88,9 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	fsys := apkfs.DirFS(wd, apkfs.WithCreateDir())
+
+	bc, err := build.New(fsys, opts...)
 	if err != nil {
 		return err
 	}

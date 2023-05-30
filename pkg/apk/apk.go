@@ -53,12 +53,16 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 	// apko does not execute the scripts, so they do not matter. This buys us flexibility
 	// to run without root privileges, or even on non-Linux.
-	apkImpl, _ := apkimpl.New(
+	apkImpl, err := apkimpl.New(
 		apkimpl.WithFS(fsys),
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),
 		apkimpl.WithIgnoreMknodErrors(true),
 	)
+	if err != nil {
+		return nil, err
+	}
+
 	a := &APK{
 		Options: o,
 		impl:    apkImpl,
@@ -69,9 +73,9 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 type Option func(*APK) error
 
-// Initialize sets the image in Context.WorkDir according to the image configuration,
+// Initialize sets the image according to the image configuration,
 // and does everything short of installing the packages.
-func (a *APK) Initialize(ic *types.ImageConfiguration) error {
+func (a *APK) Initialize(ic types.ImageConfiguration) error {
 	// initialize apk
 	alpineVersions := parseOptionsFromRepositories(ic.Contents.Repositories)
 	if err := a.impl.InitDB(alpineVersions...); err != nil {

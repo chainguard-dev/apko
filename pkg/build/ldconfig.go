@@ -101,17 +101,17 @@ func getSoname(vfs apkfs.OpenReaderAtFS, path string) (string, error) {
 	return dynStrings[0], nil
 }
 
-func (di *defaultBuildImplementation) InstallLdconfigLinks(fsys apkfs.FullFS) error {
-	linksMap, err := ldconfig(fsys, "/lib")
+func (bc *Context) InstallLdconfigLinks() error {
+	linksMap, err := ldconfig(bc.fs, "/lib")
 	if err != nil {
 		return err
 	}
 	for link, target := range linksMap {
 		dir := filepath.Dir(link)
-		if err := fsys.MkdirAll(dir, 0755); err != nil {
+		if err := bc.fs.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
-		if err := fsys.Symlink(target, link); err != nil {
+		if err := bc.fs.Symlink(target, link); err != nil {
 			return fmt.Errorf("creating link %s -> %s: %w", link, target, err)
 		}
 	}
