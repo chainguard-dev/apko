@@ -31,6 +31,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"gopkg.in/yaml.v3"
 
+	"chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/log"
@@ -48,11 +49,14 @@ type Context struct {
 	ImageConfiguration types.ImageConfiguration
 	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
 	ImageConfigFile string
-	executor        *exec.Executor
-	s6              *s6.Context
-	Assertions      []Assertion
-	Options         options.Options
-	fs              apkfs.FullFS
+
+	Assertions []Assertion
+	Options    options.Options
+
+	apk      *apk.APK
+	executor *exec.Executor
+	s6       *s6.Context
+	fs       apkfs.FullFS
 }
 
 func (bc *Context) Summarize() {
@@ -65,7 +69,7 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
 		return bc.Options.SourceDateEpoch, nil
 	}
-	pl, err := bc.InstalledPackages()
+	pl, err := bc.apk.GetInstalled()
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine installed packages: %w", err)
 	}
@@ -80,14 +84,13 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 
 func (bc *Context) BuildImage() (fs.FS, error) {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	if err := bc.buildImage(bc.fs, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
-		logger := bc.Options.Logger()
-		logger.Debugf("buildImage failed: %v", err)
+	if err := bc.buildImage(); err != nil {
+		bc.Logger().Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ImageConfiguration)
 		if err2 != nil {
-			logger.Debugf("failed to marshal image configuration: %v", err2)
+			bc.Logger().Debugf("failed to marshal image configuration: %v", err2)
 		} else {
-			logger.Debugf("image configuration:\n%s", string(b))
+			bc.Logger().Debugf("image configuration:\n%s", string(b))
 		}
 		return nil, err
 	}
@@ -213,6 +216,19 @@ func New(fsys apkfs.FullFS, opts ...Option) (*Context, error) {
 	if bc.Options.WithVCS && bc.ImageConfiguration.VCSUrl == "" {
 		bc.ImageConfiguration.ProbeVCSUrl(bc.ImageConfigFile, bc.Logger())
 	}
+
+	if err := bc.ImageConfiguration.Validate(); err != nil {
+		return nil, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	apk, err := apk.NewWithOptions(fsys, bc.Options)
+	if err != nil {
+		return nil, err
+	}
+	if err := apk.Initialize(bc.ImageConfiguration); err != nil {
+		return nil, err
+	}
+	bc.apk = apk
 
 	return &bc, nil
 }

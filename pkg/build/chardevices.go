@@ -7,9 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func (di *Context) InstallCharDevices() error {
-	fsys := di.fs
-
+func (bc *Context) InstallCharDevices() error {
 	devices := []struct {
 		path  string
 		major uint32
@@ -22,14 +20,14 @@ func (di *Context) InstallCharDevices() error {
 		{"/dev/console", 5, 1},
 	}
 	for _, dev := range devices {
-		if _, err := fsys.Stat(dev.path); err == nil {
+		if _, err := bc.fs.Stat(dev.path); err == nil {
 			continue
 		}
 		dir := filepath.Dir(dev.path)
-		if err := fsys.MkdirAll(dir, 0755); err != nil {
+		if err := bc.fs.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
-		if err := fsys.Mknod(dev.path, unix.S_IFCHR, int(unix.Mkdev(dev.major, dev.minor))); err != nil {
+		if err := bc.fs.Mknod(dev.path, unix.S_IFCHR, int(unix.Mkdev(dev.major, dev.minor))); err != nil {
 			return fmt.Errorf("creating character device %s: %w", dev.path, err)
 		}
 	}

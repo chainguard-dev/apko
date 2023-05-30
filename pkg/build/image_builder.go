@@ -18,22 +18,15 @@ import (
 	"fmt"
 )
 
-func (di *Context) ValidateImageConfiguration() error {
-	if err := di.ImageConfiguration.Validate(); err != nil {
-		return fmt.Errorf("failed to validate configuration: %w", err)
-	}
-	return nil
-}
-
-func (di *Context) WriteSupervisionTree() error {
-	s6context, imageConfig := di.s6, di.ImageConfiguration
+func (bc *Context) WriteSupervisionTree() error {
+	services := bc.ImageConfiguration.Entrypoint.Services
 
 	// write service supervision tree
-	s6m := make(map[interface{}]interface{}, len(imageConfig.Entrypoint.Services))
-	for k, v := range imageConfig.Entrypoint.Services {
+	s6m := make(map[interface{}]interface{}, len(services))
+	for k, v := range services {
 		s6m[k] = v
 	}
-	if err := s6context.WriteSupervisionTree(s6m); err != nil {
+	if err := bc.s6.WriteSupervisionTree(s6m); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 	return nil

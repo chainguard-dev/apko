@@ -30,8 +30,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	chainguardAPK "chainguard.dev/apko/pkg/apk"
 )
 
 const (
@@ -50,22 +48,16 @@ var busyboxLinks map[string][]string
 // note that it changes based on version of busybox,
 // so this should be updated to match busybox version.
 
-func (di *Context) InstallBusyboxLinks() error {
-	fsys, o := di.fs, &di.Options
-
+func (bc *Context) InstallBusyboxLinks() error {
 	// does busybox exist? if not, do not bother with symlinks
-	if _, err := fsys.Stat(busybox); err != nil {
+	if _, err := bc.fs.Stat(busybox); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
 	// get the busybox version
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
-	if err != nil {
-		return err
-	}
-	installed, err := apk.GetInstalled()
+	installed, err := bc.apk.GetInstalled()
 	if err != nil {
 		return err
 	}
@@ -97,7 +89,7 @@ func (di *Context) InstallBusyboxLinks() error {
 	// first look in /etc/busybox-paths.d/<package>
 	// if that does not exist, use the fallback map
 	pathsFilename := filepath.Join(busyboxPaths, pkgName)
-	if b, err := fsys.ReadFile(pathsFilename); err == nil {
+	if b, err := bc.fs.ReadFile(pathsFilename); err == nil {
 		links = strings.Split(string(b), "\n")
 	} else {
 		var ok bool
@@ -118,19 +110,19 @@ func (di *Context) InstallBusyboxLinks() error {
 			continue
 		}
 		dir := filepath.Dir(link)
-		if err := fsys.MkdirAll(dir, 0755); err != nil {
+		if err := bc.fs.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
-		if err := fsys.Symlink(busybox, link); err != nil {
+		if err := bc.fs.Symlink(busybox, link); err != nil {
 			// sometimes the list generates links twice, so do not error on that
 			if errors.Is(err, os.ErrExist) {
 				// ignore if it already is a symlink, in line with what `busybox --install -s`` does
-				if _, err := fsys.Readlink(link); err == nil {
+				if _, err := bc.fs.Readlink(link); err == nil {
 					continue
 				}
 				// ignore if it already is a regular file
 				if err != nil {
-					fi, err := fsys.Stat(link)
+					fi, err := bc.fs.Stat(link)
 					if err == nil && fi.Mode().IsRegular() {
 						continue
 					}
