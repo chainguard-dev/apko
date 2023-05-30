@@ -141,6 +141,8 @@ type ImageConfiguration struct {
 	// The included configuration is deep merged with the parent configuration
 	Include string `yaml:"include,omitempty"`
 	// Optional: A map of named build option deviations
+	//
+	// Deprecated: Use WithExtraPackages.
 	Options map[string]BuildOption `yaml:"options,omitempty"`
 }
 

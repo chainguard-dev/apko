@@ -145,6 +145,13 @@ func WithExtraRepos(repos []string) Option {
 	}
 }
 
+func WithExtraPackages(packages []string) Option {
+	return func(bc *Context) error {
+		bc.Options.ExtraPackages = packages
+		return nil
+	}
+}
+
 // WithImageConfiguration sets the ImageConfiguration object
 // to use when building.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
@@ -232,10 +239,11 @@ func WithStageTags(stageTags string) Option {
 }
 
 // WithBuildOptions applies configured patches which have been requested to the ImageConfiguration.
+// Deprecated: Use WithExtraPackages.
 func WithBuildOptions(buildOptions []string) Option {
 	return func(bc *Context) error {
 		for _, opt := range buildOptions {
-			if bo, ok := bc.ImageConfiguration.Options[opt]; ok {
+			if bo, ok := bc.ImageConfiguration.Options[opt]; ok { //nolint:staticcheck
 				if err := bo.Apply(&bc.ImageConfiguration); err != nil {
 					return err
 				}

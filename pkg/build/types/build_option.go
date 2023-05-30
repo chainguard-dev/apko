@@ -34,6 +34,7 @@ type AccountsOption struct {
 }
 
 // BuildOption describes an optional deviation to an apko environment.
+// Deprecated: Use WithExtraPackages.
 type BuildOption struct {
 	Contents ContentsOption `yaml:"contents,omitempty"`
 	Accounts AccountsOption `yaml:"accounts,omitempty"`
