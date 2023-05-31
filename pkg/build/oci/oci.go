@@ -27,15 +27,10 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
-	ecr "github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
-	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -59,34 +54,6 @@ const (
 	LocalDomain = "apko.local"
 	LocalRepo   = "cache"
 )
-
-var keychain = authn.NewMultiKeychain(
-	authn.DefaultKeychain,
-	google.Keychain,
-	authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogger(io.Discard))),
-	authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
-	github.Keychain,
-)
-
-var remoteOpts []remote.Option
-
-func init() {
-	remoteOpts = []remote.Option{remote.WithAuthFromKeychain(keychain)}
-
-	pusher, err := remote.NewPusher(remoteOpts...)
-	if err == nil {
-		remoteOpts = append(remoteOpts, remote.Reuse(pusher))
-	} else {
-		log.DefaultLogger().Infof("NewPusher(): %v", err)
-	}
-
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err == nil {
-		remoteOpts = append(remoteOpts, remote.Reuse(puller))
-	} else {
-		log.DefaultLogger().Infof("NewPuller(): %v", err)
-	}
-}
 
 func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
 	return buildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
@@ -227,7 +194,7 @@ func buildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 	return ent.(oci.SignedImage), nil
 }
 
-func Copy(ctx context.Context, src, dst string) error {
+func Copy(ctx context.Context, src, dst string, remoteOpts ...remote.Option) error {
 	log.DefaultLogger().Infof("Copying %s to %s", src, dst)
 	srcRef, err := name.ParseReference(src)
 	if err != nil {
@@ -254,8 +221,7 @@ func Copy(ctx context.Context, src, dst string) error {
 
 // PostAttachSBOM attaches the sboms to an already published image
 func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sbomPath string, sbomFormats []string,
-	arch types.Architecture, logger log.Logger, tags ...string,
-) (oci.SignedEntity, error) {
+	arch types.Architecture, logger log.Logger, tags []string, remoteOpts ...remote.Option) (oci.SignedEntity, error) {
 	var err2 error
 	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
 		return nil, err2
@@ -359,7 +325,7 @@ func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ str
 	return nil
 }
 
-func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger log.Logger) (name.Digest, error) {
+func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger log.Logger, remoteOpts ...remote.Option) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
@@ -413,11 +379,11 @@ func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef st
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayer(ctx, layer, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags...)
+func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayer(ctx, layer, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags, remoteOpts...)
 }
 
-func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayer(layer, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -432,7 +398,7 @@ func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 	if shouldPushTags {
 		for _, tag := range tags {
 			logger.Printf("publishing image tag %v", tag)
-			digest, err = publishTagFromImage(ctx, v1Image, tag, h, local, logger)
+			digest, err = publishTagFromImage(ctx, v1Image, tag, h, local, logger, remoteOpts...)
 			if err != nil {
 				return name.Digest{}, nil, err
 			}
@@ -440,7 +406,7 @@ func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 	} else {
 		logger.Printf("publishing image without tag (digest only)")
 		digestOnly := fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())
-		digest, err = publishTagFromImage(ctx, v1Image, digestOnly, h, local, logger)
+		digest, err = publishTagFromImage(ctx, v1Image, digestOnly, h, local, logger, remoteOpts...)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
@@ -449,15 +415,15 @@ func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 	return digest, v1Image, nil
 }
 
-func PublishIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ctx, ggcrtypes.OCIImageIndex, ic, imgs, logger, local, shouldPushTags, tags...)
+func PublishIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ctx, ggcrtypes.OCIImageIndex, ic, imgs, logger, local, shouldPushTags, tags, remoteOpts...)
 }
 
-func PublishDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ctx, ggcrtypes.DockerManifestList, ic, imgs, logger, local, shouldPushTags, tags...)
+func PublishDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ctx, ggcrtypes.DockerManifestList, ic, imgs, logger, local, shouldPushTags, tags, remoteOpts...)
 }
 
-func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -564,7 +530,7 @@ func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaTyp
 	if shouldPushTags {
 		for _, tag := range tags {
 			logger.Printf("publishing index tag %v", tag)
-			digest, err = publishTagFromIndex(ctx, idx, tag, h, logger)
+			digest, err = publishTagFromIndex(ctx, idx, tag, h, logger, remoteOpts...)
 			if err != nil {
 				return name.Digest{}, nil, err
 			}
@@ -572,7 +538,7 @@ func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaTyp
 	} else {
 		logger.Printf("publishing index without tag (digest only)")
 		digestOnly := fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())
-		digest, err = publishTagFromIndex(ctx, idx, digestOnly, h, logger)
+		digest, err = publishTagFromIndex(ctx, idx, digestOnly, h, logger, remoteOpts...)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
@@ -581,7 +547,7 @@ func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaTyp
 	return digest, idx, nil
 }
 
-func publishTagFromIndex(ctx context.Context, index oci.SignedImageIndex, imageRef string, hash v1.Hash, logger log.Logger) (name.Digest, error) {
+func publishTagFromIndex(ctx context.Context, index oci.SignedImageIndex, imageRef string, hash v1.Hash, logger log.Logger, remoteOpts ...remote.Option) (name.Digest, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
