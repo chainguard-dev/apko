@@ -26,7 +26,6 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
-
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 )
 
