@@ -15,6 +15,7 @@
 package options
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,26 +27,28 @@ import (
 )
 
 type Options struct {
-	UseDockerMediaTypes     bool
-	WantSBOM                bool
-	WithVCS                 bool
-	TarballPath             string
-	Tags                    []string
-	SourceDateEpoch         time.Time
-	SBOMPath                string
-	SBOMFormats             []string
-	ExtraKeyFiles           []string
-	ExtraRepos              []string
-	ExtraPackages           []string
-	Arch                    types.Architecture
-	Log                     log.Logger
-	TempDirPath             string
-	PackageVersionTag       string
-	PackageVersionTagStem   bool
-	PackageVersionTagPrefix string
-	TagSuffix               string
-	Local                   bool
-	StageTags               string
+	UseDockerMediaTypes     bool               `json:"useDockerMediaTypes,omitempty"`
+	WantSBOM                bool               `json:"wantSBOM,omitempty"`
+	WithVCS                 bool               `json:"withVCS,omitempty"`
+	WorkDir                 string             `json:"workDir,omitempty"`
+	TarballPath             string             `json:"tarballPath,omitempty"`
+	Tags                    []string           `json:"tags,omitempty"`
+	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`
+	SBOMPath                string             `json:"sbomPath,omitempty"`
+	SBOMFormats             []string           `json:"sbomFormats,omitempty"`
+	ExtraKeyFiles           []string           `json:"extraKeyFiles,omitempty"`
+	ExtraRepos              []string           `json:"extraRepos,omitempty"`
+	ExtraPackages           []string           `json:"extraPackages,omitempty"`
+	Arch                    types.Architecture `json:"arch,omitempty"`
+	TempDirPath             string             `json:"tempDirPath,omitempty"`
+	PackageVersionTag       string             `json:"packageVersionTag,omitempty"`
+	PackageVersionTagStem   bool               `json:"packageVersionTagStem,omitempty"`
+	PackageVersionTagPrefix string             `json:"packageVersionTagPrefix,omitempty"`
+	TagSuffix               string             `json:"tagSuffix,omitempty"`
+	Local                   bool               `json:"local,omitempty"`
+	StageTags               string             `json:"stageTags,omitempty"`
+
+	Log log.Logger
 }
 
 var Default = Options{
@@ -55,22 +58,12 @@ var Default = Options{
 }
 
 func (o *Options) Summarize(logger log.Logger) {
-	logger.Printf("  tarball path: %s", o.TarballPath)
-	logger.Printf("  source date: %s", o.SourceDateEpoch)
-	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
-	logger.Printf("  SBOM output path: %s", o.SBOMPath)
-	logger.Printf("  arch: %v", o.Arch.ToAPK())
-	logger.Printf("  tags: %v", o.Tags)
-	logger.Printf("  sbom formats: %v", o.SBOMFormats)
-	logger.Printf("  extra key files: %v", o.ExtraKeyFiles)
-	logger.Printf("  extra repos: %v", o.ExtraRepos)
-	logger.Printf("  tempdir path: %s", o.TempDirPath)
-	logger.Printf("  package version tag: %s", o.PackageVersionTag)
-	logger.Printf("  package version tag stem: %t", o.PackageVersionTagStem)
-	logger.Printf("  package version tag prefix: %s", o.PackageVersionTagPrefix)
-	logger.Printf("  tag suffix: %s", o.TagSuffix)
-	logger.Printf("  is local: %t", o.Local)
-	logger.Printf("  stage tags: %s", o.StageTags)
+	b, err := json.MarshalIndent(o, "", "\t")
+	if err != nil {
+		logger.Errorf("error marshalling build options: %v", err)
+	} else {
+		logger.Printf("build options:\n%s", string(b))
+	}
 }
 
 func (o *Options) Logger() log.Logger {
