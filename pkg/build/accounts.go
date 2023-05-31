@@ -19,14 +19,18 @@ import (
 	"os"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/passwd"
 )
 
-func (bc *Context) appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
-	bc.Options.Logger().Printf("creating group %d(%s)", group.GID, group.GroupName)
+func (di *defaultBuildImplementation) appendGroup(
+	o *options.Options, groups []passwd.GroupEntry, group types.Group,
+) []passwd.GroupEntry {
+	o.Logger().Printf("creating group %d(%s)", group.GID, group.GroupName)
 
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
@@ -53,25 +57,26 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	}
 }
 
-func (bc *Context) MutateAccounts() error {
+func (di *defaultBuildImplementation) MutateAccounts(
+	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
+) error {
 	var eg errgroup.Group
 
-	groups := bc.ImageConfiguration.Accounts.Groups
-	if len(groups) != 0 {
+	if len(ic.Accounts.Groups) != 0 {
 		// Mutate the /etc/groups file
 		eg.Go(func() error {
 			path := filepath.Join("etc", "group")
 
-			gf, err := passwd.ReadOrCreateGroupFile(bc.fs, path)
+			gf, err := passwd.ReadOrCreateGroupFile(fsys, path)
 			if err != nil {
 				return err
 			}
 
-			for _, g := range groups {
-				gf.Entries = bc.appendGroup(gf.Entries, g)
+			for _, g := range ic.Accounts.Groups {
+				gf.Entries = di.appendGroup(o, gf.Entries, g)
 			}
 
-			if err := gf.WriteFile(bc.fs, path); err != nil {
+			if err := gf.WriteFile(fsys, path); err != nil {
 				return err
 			}
 
@@ -83,14 +88,12 @@ func (bc *Context) MutateAccounts() error {
 	eg.Go(func() error {
 		path := filepath.Join("etc", "passwd")
 
-		uf, err := passwd.ReadOrCreateUserFile(bc.fs, path)
+		uf, err := passwd.ReadOrCreateUserFile(fsys, path)
 		if err != nil {
 			return err
 		}
 
-		accounts := bc.ImageConfiguration.Accounts
-
-		for _, u := range accounts.Users {
+		for _, u := range ic.Accounts.Users {
 			ue := userToUserEntry(u)
 			uf.Entries = append(uf.Entries, ue)
 		}
@@ -104,7 +107,7 @@ func (bc *Context) MutateAccounts() error {
 			targetHomedir := ue.HomeDir
 
 			// Make sure a directory exists with the path we expect.
-			if fi, err := bc.fs.Stat(targetHomedir); err == nil {
+			if fi, err := fsys.Stat(targetHomedir); err == nil {
 				if !fi.IsDir() {
 					return fmt.Errorf("%s home directory %s exists, but is not a directory", ue.UserName, ue.HomeDir)
 				}
@@ -118,13 +121,13 @@ func (bc *Context) MutateAccounts() error {
 			}
 			// Create the directory. Only the directory should be 0o700; parents, if they are missing, should be 0o755.
 			parent := filepath.Dir(targetHomedir)
-			if err := bc.fs.MkdirAll(parent, 0o755); err != nil {
+			if err := fsys.MkdirAll(parent, 0o755); err != nil {
 				return fmt.Errorf("creating parent %s: %w", parent, err)
 			}
-			if err := bc.fs.Mkdir(targetHomedir, 0o700); err != nil {
+			if err := fsys.Mkdir(targetHomedir, 0o700); err != nil {
 				return fmt.Errorf("creating homedir: %w", err)
 			}
-			if err := bc.fs.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
+			if err := fsys.Chown(targetHomedir, int(ue.UID), int(ue.GID)); err != nil {
 				return fmt.Errorf("chowning homedir: %w", err)
 			}
 		}
@@ -134,10 +137,10 @@ func (bc *Context) MutateAccounts() error {
 		}
 
 		// Resolve run-as user if requested.
-		if accounts.RunAs != "" {
+		if ic.Accounts.RunAs != "" {
 			for _, ue := range uf.Entries {
-				if ue.UserName == accounts.RunAs {
-					accounts.RunAs = fmt.Sprintf("%d", ue.UID)
+				if ue.UserName == ic.Accounts.RunAs {
+					ic.Accounts.RunAs = fmt.Sprintf("%d", ue.UID)
 					break
 				}
 			}

@@ -23,14 +23,17 @@ import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 )
 
-func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, osr types.OSRelease) error {
-	if osr.ID == "" || osr.VersionID == "" {
+func maybeGenerateVendorReleaseFile(
+	fsys apkfs.FullFS, ic *types.ImageConfiguration,
+) error {
+	if ic.OSRelease.ID == "" || ic.OSRelease.VersionID == "" {
 		return nil
 	}
 
-	path := filepath.Join("etc", fmt.Sprintf("%s-release", osr.ID))
+	path := filepath.Join("etc", fmt.Sprintf("%s-release", ic.OSRelease.ID))
 
 	_, err := fsys.Stat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -43,7 +46,7 @@ func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, osr types.OSRelease) erro
 	}
 	defer w.Close()
 
-	_, err = fmt.Fprintf(w, "%s\n", osr.VersionID)
+	_, err = fmt.Fprintf(w, "%s\n", ic.OSRelease.VersionID)
 	if err != nil {
 		return err
 	}
@@ -51,79 +54,79 @@ func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, osr types.OSRelease) erro
 	return nil
 }
 
-func (bc *Context) GenerateOSRelease() error {
+func (di *defaultBuildImplementation) GenerateOSRelease(
+	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
+) error {
 	path := filepath.Join("etc", "os-release")
 
 	osReleaseExists := true
-	if _, err := bc.fs.Stat(path); err != nil {
+	if _, err := fsys.Stat(path); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		bc.Logger().Warnf("did not find /etc/os-release at %s", path)
+		o.Logger().Warnf("did not find /etc/os-release at %s", path)
 		osReleaseExists = false
 	}
-
-	osr := bc.ImageConfiguration.OSRelease
 
 	// If /etc/os-release does not exist, return an error that it already exists.
 	// However, if the user is requesting an override, write over it anyway.
 	// TODO: better than checking for "apko-generated image"
-	if osReleaseExists && osr.Name == "apko-generated image" {
+	if osReleaseExists && ic.OSRelease.Name == "apko-generated image" {
 		return ErrOSReleaseAlreadyPresent
 	}
 
-	w, err := bc.fs.Create(path)
+	w, err := fsys.Create(path)
 	if err != nil {
 		return err
 	}
 	defer w.Close()
 
-	if osr.ID != "" {
-		if osr.ID == "unknown" {
-			bc.Logger().Warnf("distro ID not specified and /etc/os-release does not already exist")
+	if ic.OSRelease.ID != "" {
+		if ic.OSRelease.ID == "unknown" {
+			o.Logger().Warnf("distro ID not specified and /etc/os-release does not already exist")
 		}
-		_, err := fmt.Fprintf(w, "ID=%s\n", osr.ID)
+		_, err := fmt.Fprintf(w, "ID=%s\n", ic.OSRelease.ID)
 		if err != nil {
 			return err
 		}
 	}
 
-	if osr.Name != "" {
-		_, err := fmt.Fprintf(w, "NAME=\"%s\"\n", osr.Name)
+	if ic.OSRelease.Name != "" {
+		_, err := fmt.Fprintf(w, "NAME=\"%s\"\n", ic.OSRelease.Name)
 		if err != nil {
 			return err
 		}
 	}
 
-	if osr.PrettyName != "" {
-		_, err := fmt.Fprintf(w, "PRETTY_NAME=\"%s\"\n", osr.PrettyName)
+	if ic.OSRelease.PrettyName != "" {
+		_, err := fmt.Fprintf(w, "PRETTY_NAME=\"%s\"\n", ic.OSRelease.PrettyName)
 		if err != nil {
 			return err
 		}
 	}
 
-	if osr.VersionID != "" {
-		_, err := fmt.Fprintf(w, "VERSION_ID=%s\n", osr.VersionID)
+	if ic.OSRelease.VersionID != "" {
+		_, err := fmt.Fprintf(w, "VERSION_ID=%s\n", ic.OSRelease.VersionID)
 		if err != nil {
 			return err
 		}
 	}
 
-	if osr.HomeURL != "" {
-		_, err := fmt.Fprintf(w, "HOME_URL=\"%s\"\n", osr.HomeURL)
+	if ic.OSRelease.HomeURL != "" {
+		_, err := fmt.Fprintf(w, "HOME_URL=\"%s\"\n", ic.OSRelease.HomeURL)
 		if err != nil {
 			return err
 		}
 	}
 
-	if osr.BugReportURL != "" {
-		_, err := fmt.Fprintf(w, "BUG_REPORT_URL=\"%s\"\n", osr.BugReportURL)
+	if ic.OSRelease.BugReportURL != "" {
+		_, err := fmt.Fprintf(w, "BUG_REPORT_URL=\"%s\"\n", ic.OSRelease.BugReportURL)
 		if err != nil {
 			return err
 		}
 	}
 
-	if err := maybeGenerateVendorReleaseFile(bc.fs, bc.ImageConfiguration.OSRelease); err != nil {
+	if err := maybeGenerateVendorReleaseFile(fsys, ic); err != nil {
 		return err
 	}
 

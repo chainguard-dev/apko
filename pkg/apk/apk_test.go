@@ -110,6 +110,7 @@ A:bop
 				PackageVersionTagStem:   test.packageVersionTagStem,
 				PackageVersionTagPrefix: test.packageVersionTagPrefix,
 				Tags:                    test.tags,
+				WorkDir:                 td,
 				Log:                     &log.Adapter{Out: io.Discard},
 			}
 			fsys := apkfs.DirFS(td)

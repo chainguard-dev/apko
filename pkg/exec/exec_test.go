@@ -56,3 +56,32 @@ func TestExecute(t *testing.T) {
 		sut.Execute("command")
 	}
 }
+
+func TestExecuteChroot(t *testing.T) {
+	tErr := fmt.Errorf("synthetic error")
+	sut := &exec.Executor{
+		Log: testLogger(),
+	}
+	for _, tc := range []struct {
+		prepare   func(*execfakes.FakeExecutorImplementation)
+		shouldErr bool
+	}{
+		{
+			func(fei *execfakes.FakeExecutorImplementation) {
+				fei.RunReturns(tErr)
+			},
+			true,
+		},
+		{
+			func(fei *execfakes.FakeExecutorImplementation) {
+				fei.RunReturns(nil)
+			},
+			false,
+		},
+	} {
+		impl := execfakes.FakeExecutorImplementation{}
+		tc.prepare(&impl)
+		sut.SetImplementation(&impl)
+		sut.ExecuteChroot("command")
+	}
+}
