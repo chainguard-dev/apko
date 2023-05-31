@@ -60,6 +60,17 @@ func (o *Options) Summarize(logger log.Logger) {
 	logger.Printf("  Docker mediatypes: %t", o.UseDockerMediaTypes)
 	logger.Printf("  SBOM output path: %s", o.SBOMPath)
 	logger.Printf("  arch: %v", o.Arch.ToAPK())
+	logger.Printf("  tags: %v", o.Tags)
+	logger.Printf("  sbom formats: %v", o.SBOMFormats)
+	logger.Printf("  extra key files: %v", o.ExtraKeyFiles)
+	logger.Printf("  extra repos: %v", o.ExtraRepos)
+	logger.Printf("  tempdir path: %s", o.TempDirPath)
+	logger.Printf("  package version tag: %s", o.PackageVersionTag)
+	logger.Printf("  package version tag stem: %t", o.PackageVersionTagStem)
+	logger.Printf("  package version tag prefix: %s", o.PackageVersionTagPrefix)
+	logger.Printf("  tag suffix: %s", o.TagSuffix)
+	logger.Printf("  is local: %t", o.Local)
+	logger.Printf("  stage tags: %s", o.StageTags)
 }
 
 func (o *Options) Logger() log.Logger {
