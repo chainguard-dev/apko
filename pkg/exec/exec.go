@@ -25,15 +25,17 @@ import (
 
 type Executor struct {
 	impl    executorImplementation
+	WorkDir string
 	UseQemu string
 	Log     log.Logger
 }
 
 type Option func(*Executor) error
 
-func New(logger log.Logger, opts ...Option) (*Executor, error) {
+func New(workDir string, logger log.Logger, opts ...Option) (*Executor, error) {
 	e := &Executor{
-		impl: &defaultBuildImplementation{},
+		impl:    &defaultBuildImplementation{},
+		WorkDir: workDir,
 	}
 
 	for _, opt := range opts {

@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"path/filepath"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"golang.org/x/sys/unix"
 )
 
-func (di *Context) InstallCharDevices() error {
-	fsys := di.fs
-
+func (di *defaultBuildImplementation) InstallCharDevices(fsys apkfs.FullFS) error {
 	devices := []struct {
 		path  string
 		major uint32

@@ -14,10 +14,13 @@
 
 package build
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"compress/gzip"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
@@ -25,10 +28,14 @@ import (
 	"strconv"
 	"time"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/hashicorp/go-multierror"
+	coci "github.com/sigstore/cosign/v2/pkg/oci"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -44,6 +51,7 @@ import (
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
 type Context struct {
+	impl buildImplementation
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ImageConfiguration types.ImageConfiguration
 	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
@@ -59,6 +67,31 @@ func (bc *Context) Summarize() {
 	bc.Logger().Printf("build context:")
 	bc.Options.Summarize(bc.Logger())
 	bc.ImageConfiguration.Summarize(bc.Logger())
+}
+
+// BuildTarball calls the underlying implementation's BuildTarball
+// which takes the fully populated working directory and saves it to
+// an OCI image layer tar.gz file.
+func (bc *Context) BuildTarball() (string, hash.Hash, hash.Hash, int64, error) {
+	return bc.impl.BuildTarball(&bc.Options, bc.fs)
+}
+
+func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
+	opts := bc.Options
+	opts.Arch = arch
+	return bc.impl.GenerateImageSBOM(&opts, &bc.ImageConfiguration, img)
+}
+
+func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
+	return bc.impl.GenerateIndexSBOM(&bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
+}
+
+func (bc *Context) GenerateSBOM() error {
+	return bc.impl.GenerateSBOM(&bc.Options, &bc.ImageConfiguration)
+}
+
+func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
+	return bc.impl.InstalledPackages(bc.fs, &bc.Options)
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
@@ -80,7 +113,7 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 
 func (bc *Context) BuildImage() (fs.FS, error) {
 	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	if err := bc.buildImage(bc.fs, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
+	if err := buildImage(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
 		logger := bc.Options.Logger()
 		logger.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ImageConfiguration)
@@ -92,6 +125,11 @@ func (bc *Context) BuildImage() (fs.FS, error) {
 		return nil, err
 	}
 	return bc.fs, nil
+}
+
+func (bc *Context) BuildPackageList() (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	// TODO(puerco): Point to final interface (see comment on buildImage fn)
+	return buildPackageList(bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration)
 }
 
 func (bc *Context) Logger() log.Logger {
@@ -177,11 +215,16 @@ func (bc *Context) runAssertions() error {
 // New creates a build context.
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
-func New(fsys apkfs.FullFS, opts ...Option) (*Context, error) {
+func New(workDir string, opts ...Option) (*Context, error) {
+	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
 		Options: options.Default,
-		fs:      fsys,
+		impl: &defaultBuildImplementation{
+			workdirFS: fs,
+		},
+		fs: fs,
 	}
+	bc.Options.WorkDir = workDir
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -215,6 +258,25 @@ func New(fsys apkfs.FullFS, opts ...Option) (*Context, error) {
 	}
 
 	return &bc, nil
+}
+
+// Refresh initializes the build process by calling the underlying implementation's
+// Refresh(), which includes getting the chroot/proot jailed process executor (and
+// possibly architecture emulator), sets those on the Context, and returns.
+func (bc *Context) Refresh() error {
+	s6, executor, err := bc.impl.Refresh(&bc.Options)
+	if err != nil {
+		return err
+	}
+
+	bc.executor = executor
+	bc.s6 = s6
+
+	return nil
+}
+
+func (bc *Context) SetImplementation(i buildImplementation) {
+	bc.impl = i
 }
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing

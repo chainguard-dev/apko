@@ -23,6 +23,7 @@ import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 )
 
 func maybeGenerateVendorReleaseFile(
@@ -53,9 +54,9 @@ func maybeGenerateVendorReleaseFile(
 	return nil
 }
 
-func (di *Context) GenerateOSRelease() error {
-	fsys, o, ic := di.fs, &di.Options, &di.ImageConfiguration
-
+func (di *defaultBuildImplementation) GenerateOSRelease(
+	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
+) error {
 	path := filepath.Join("etc", "os-release")
 
 	osReleaseExists := true
