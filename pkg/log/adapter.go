@@ -17,6 +17,7 @@ package log
 import (
 	"io"
 	"os"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -27,14 +28,23 @@ type Adapter struct {
 	Level  Level
 }
 
-var concreteLogger = &logrus.Logger{
-	Out:       os.Stderr,
-	Formatter: &Formatter{},
-	Hooks:     make(logrus.LevelHooks),
-	Level:     logrus.InfoLevel,
-}
+var (
+	// Protects races between logf's e.Logger.Out and Logf writing to it.
+	// This is probably a false positive, but the race detector hates it.
+	mu sync.Mutex
+
+	concreteLogger = &logrus.Logger{
+		Out:       os.Stderr,
+		Formatter: &Formatter{},
+		Hooks:     make(logrus.LevelHooks),
+		Level:     logrus.InfoLevel,
+	}
+)
 
 func (a *Adapter) logf(level logrus.Level, format string, args ...interface{}) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	e := concreteLogger.WithFields(logrus.Fields(a.Fields))
 	e.Logger.SetLevel(logrus.Level(a.Level))
 	e.Logger.Out = a.Out

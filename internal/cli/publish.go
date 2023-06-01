@@ -222,7 +222,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	workDir := bc.Options.WorkDir
 	imgs := map[types.Architecture]coci.SignedImage{}
 	contexts := map[types.Architecture]*build.Context{}
-	imageTars := map[types.Architecture]string{}
 
 	// This is a hack to skip the SBOM generation during
 	// image build. Will be removed when global options are a thing.
@@ -238,7 +237,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	builtReferences := []string{}
 	additionalTags := []string{}
 
-	mtx := sync.Mutex{}
+	var mu sync.Mutex
 
 	// We compute the "build date epoch" of the multi-arch image to be the
 	// maximum "build date epoch" of the per-arch images.  If the user has
@@ -271,13 +270,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
 
-			layerTarGZ, layer, err := bc.BuildLayer()
+			_, layer, err := bc.BuildLayer()
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
-			imageTars[arch] = layerTarGZ
-			// TODO(kaniini): clean up everything correctly for multitag scenario
-			// defer os.Remove(layerTarGZ)
 
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
@@ -294,17 +290,20 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			}
 
 			var img coci.SignedImage
-			finalDigest, img, err = publishImage(ctx, bc, layer, arch, ropt...)
+			dig, img, err := publishImage(ctx, bc, layer, arch, ropt...)
 			if err != nil {
 				return fmt.Errorf("publishing %s image: %w", arch, err)
 			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
 			// This should be the same across architectures
 			additionalTags = bc.Options.Tags
-
-			builtReferences = append(builtReferences, finalDigest.String())
-			mtx.Lock()
+			finalDigest = dig
+			builtReferences = append(builtReferences, dig.String())
 			imgs[arch] = img
-			mtx.Unlock()
+
 			return nil
 		})
 	}
