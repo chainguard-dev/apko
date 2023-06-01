@@ -54,3 +54,7 @@ if [[ "${HAS_FILES}" != "true" ]]; then
   echo "SBOM does not have files. Exiting."
   exit 1
 fi
+
+# Subtest #3: Each platform should contain platform-specific etc/apk/arch file.
+crane export --platform linux/amd64 "${REF}" | tar -Ox etc/apk/arch | grep x86_64
+crane export --platform linux/arm64 "${REF}" | tar -Ox etc/apk/arch | grep aarch64

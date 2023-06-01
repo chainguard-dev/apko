@@ -25,6 +25,9 @@ jobs:
       - name: Setup cosign (needed in CI tests)
         uses: sigstore/cosign-installer@v3
 
+      - name: Setup crane (needed in CI tests)
+        uses: imjasonh/setup-crane@v0.3
+
       - name: Run CI tests in hack/ci/
         run: |
           make ci
