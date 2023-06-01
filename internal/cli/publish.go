@@ -314,7 +314,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	bc.Options.SourceDateEpoch = multiArchBDE
 
 	if len(archs) > 1 {
-		finalDigest, idx, err = publishIndex(ctx, bc, imgs)
+		finalDigest, idx, err = publishIndex(ctx, bc, imgs, ropt...)
 		if err != nil {
 			return fmt.Errorf("publishing image index: %w", err)
 		}
