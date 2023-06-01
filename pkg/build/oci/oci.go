@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -55,11 +55,7 @@ const (
 	LocalRepo   = "cache"
 )
 
-func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, logger log.Logger, opts options.Options) (oci.SignedImage, error) {
-	return buildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
-}
-
-func buildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string) (oci.SignedImage, error) {
+func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger) (oci.SignedImage, error) {
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		return nil, fmt.Errorf("accessing layer MediaType: %w", err)
@@ -188,13 +184,7 @@ func buildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 	}
 
 	si := signed.Image(v1Image)
-	var ent oci.SignedEntity
-	var err2 error
-	if ent, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
-		return nil, fmt.Errorf("attaching SBOM to image: %w", err2)
-	}
-
-	return ent.(oci.SignedImage), nil
+	return si, nil
 }
 
 func Copy(ctx context.Context, src, dst string, remoteOpts ...remote.Option) error {
@@ -222,11 +212,46 @@ func Copy(ctx context.Context, src, dst string, remoteOpts ...remote.Option) err
 	return nil
 }
 
+// PostAttachSBOMsFromIndex attaches SBOMs to an already published index and all of the referenced images
+func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sboms []types.SBOM,
+	logger log.Logger, tags []string, remoteOpts ...remote.Option) error {
+	manifest, err := idx.IndexManifest()
+	if err != nil {
+		return fmt.Errorf("failed to get index manifest: %w", err)
+	}
+	var g errgroup.Group
+	for _, m := range manifest.Manifests {
+		m := m
+		g.Go(func() error {
+			img, err := idx.SignedImage(m.Digest)
+			if err != nil {
+				return fmt.Errorf("failed to get image %s: %w", m.Digest, err)
+			}
+			if _, err := PostAttachSBOM(
+				ctx, img, sboms, m.Platform, logger, tags, remoteOpts...,
+			); err != nil {
+				return fmt.Errorf("attaching sboms to %s image: %w", m.Platform.String(), err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	if _, err := PostAttachSBOM(
+		ctx, idx, sboms, nil, logger, tags, remoteOpts...,
+	); err != nil {
+		return fmt.Errorf("attaching sboms to index: %w", err)
+	}
+	return nil
+}
+
 // PostAttachSBOM attaches the sboms to an already published image
-func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sbomPath string, sbomFormats []string,
-	arch types.Architecture, logger log.Logger, tags []string, remoteOpts ...remote.Option) (oci.SignedEntity, error) {
+func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sboms []types.SBOM,
+	platform *v1.Platform, logger log.Logger, tags []string, remoteOpts ...remote.Option) (oci.SignedEntity, error) {
 	var err2 error
-	if si, err2 = attachSBOM(si, sbomPath, sbomFormats, arch, logger); err2 != nil {
+	if si, err2 = attachSBOM(si, sboms, platform, logger); err2 != nil {
 		return nil, err2
 	}
 	var g errgroup.Group
@@ -248,39 +273,61 @@ func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sbomPath string, s
 }
 
 func attachSBOM(
-	si oci.SignedEntity, sbomPath string, sbomFormats []string,
-	arch types.Architecture, logger log.Logger,
+	si oci.SignedEntity, sboms []types.SBOM,
+	platform *v1.Platform, logger log.Logger,
 ) (oci.SignedEntity, error) {
-	// Attach the SBOM, e.g.
-	// TODO(kaniini): Allow all SBOM types to be uploaded.
-	if len(sbomFormats) == 0 {
-		log.DefaultLogger().Debugf("Not building sboms, no formats requested")
-		return si, nil
-	}
-
 	var mt ggcrtypes.MediaType
 	var path string
-	archName := arch.ToAPK()
-	if archName == "" {
-		archName = "index"
+
+	// get the index of the item
+	var (
+		h   v1.Hash
+		err error
+	)
+	platformName := "index"
+	if platform != nil {
+		platformName = platform.String()
 	}
-	switch sbomFormats[0] {
+	if i, ok := si.(oci.SignedImage); ok {
+		h, err = i.Digest()
+	} else if ii, ok := si.(oci.SignedImageIndex); ok {
+		h, err = ii.Digest()
+	} else {
+		return nil, errors.New("unable to cast signed signedentity as image or index")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("unable to get digest for signed item: %w", err)
+	}
+
+	// find the sbom for use
+	var matched []types.SBOM
+	for _, s := range sboms {
+		if s.Digest != h {
+			continue
+		}
+		if (s.Arch == "" && platform == nil) || types.ParseArchitecture(s.Arch).ToOCIPlatform().String() == platform.String() {
+			matched = append(matched, s)
+		}
+	}
+	if len(matched) == 0 {
+		return nil, fmt.Errorf("unable to find sbom for digest %s and platform %s", h, platformName)
+	}
+
+	switch matched[0].Format {
 	case "spdx":
 		mt = ctypes.SPDXJSONMediaType
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.spdx.json", archName))
 	case "cyclonedx":
 		mt = ctypes.CycloneDXJSONMediaType
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.cdx", archName))
 	case "idb":
 		mt = "application/vnd.apko.installed-db"
-		path = filepath.Join(sbomPath, fmt.Sprintf("sbom-%s.idb", archName))
 	default:
-		return nil, fmt.Errorf("unsupported SBOM format: %s", sbomFormats[0])
+		return nil, fmt.Errorf("unsupported SBOM format: %s", matched[0].Format)
 	}
-	if len(sbomFormats) > 1 {
+	if len(matched) > 1 {
 		// When we have multiple formats, warn that we're picking the first.
 		logger.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
 	}
+	path = matched[0].Path
 
 	sbom, err := os.ReadFile(path)
 	if err != nil {
@@ -297,7 +344,7 @@ func attachSBOM(
 	} else if ii, ok := si.(oci.SignedImageIndex); ok {
 		si, aterr = ocimutate.AttachFileToImageIndex(ii, "sbom", f)
 	} else {
-		return nil, errors.New("unable to cast signed signedentity as image or index")
+		return nil, errors.New("unable to cast signed entity as image or index")
 	}
 	if aterr != nil {
 		return nil, fmt.Errorf("attaching file to image: %w", aterr)
@@ -307,7 +354,7 @@ func attachSBOM(
 }
 
 func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) error {
-	v1Image, err := buildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger, opts.SBOMPath, opts.SBOMFormats)
+	v1Image, err := BuildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger)
 	if err != nil {
 		return err
 	}
@@ -382,12 +429,67 @@ func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef st
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayer(ctx, layer, ic, created, arch, logger, sbomPath, sbomFormats, local, shouldPushTags, tags, remoteOpts...)
+func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, local, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (digests []name.Digest, err error) {
+	manifest, err := idx.IndexManifest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index manifest: %w", err)
+	}
+	var (
+		g   errgroup.Group
+		mtx sync.Mutex
+	)
+	for _, m := range manifest.Manifests {
+		m := m
+		g.Go(func() error {
+			img, err := idx.SignedImage(m.Digest)
+			if err != nil {
+				return fmt.Errorf("failed to get image for %v from index: %w", m, err)
+			}
+			if dig, err := PublishImage(ctx, img, local, shouldPushTags, logger, tags, remoteOpts...); err != nil {
+				return err
+			} else {
+				mtx.Lock()
+				digests = append(digests, dig)
+				mtx.Unlock()
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return digests, nil
 }
 
-func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, sbomPath string, sbomFormats []string, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
-	v1Image, err := buildImageFromLayer(layer, ic, created, arch, logger, sbomPath, sbomFormats)
+func PublishImage(ctx context.Context, image oci.SignedImage, local, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
+	h, err := image.Digest()
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
+	}
+
+	digest := name.Digest{}
+	if shouldPushTags {
+		for _, tag := range tags {
+			logger.Printf("publishing image tag %v", tag)
+			digest, err = publishTagFromImage(ctx, image, tag, h, local, logger, remoteOpts...)
+			if err != nil {
+				return name.Digest{}, err
+			}
+		}
+	} else {
+		logger.Printf("publishing image without tag (digest only)")
+		digestOnly := fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())
+		digest, err = publishTagFromImage(ctx, image, digestOnly, h, local, logger, remoteOpts...)
+		if err != nil {
+			return name.Digest{}, err
+		}
+	}
+
+	return digest, nil
+}
+
+func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, local, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
+	v1Image, err := BuildImageFromLayer(layer, ic, created, arch, logger)
 	if err != nil {
 		return name.Digest{}, nil, err
 	}
@@ -418,15 +520,14 @@ func publishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 	return digest, v1Image, nil
 }
 
-func PublishIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ctx, ggcrtypes.OCIImageIndex, ic, imgs, logger, local, shouldPushTags, tags, remoteOpts...)
+// GenerateIndex generates an OCI image index from the given image configurations. The index is stored in memory.
+func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
+	return generateIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs)
 }
-
-func PublishDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ctx, ggcrtypes.DockerManifestList, ic, imgs, logger, local, shouldPushTags, tags, remoteOpts...)
+func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
+	return generateIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs)
 }
-
-func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
+func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -462,7 +563,15 @@ func publishIndexWithMediaType(ctx context.Context, mediaType ggcrtypes.MediaTyp
 			},
 		})
 	}
+	h, err := idx.Digest()
+	if err != nil {
+		return name.Digest{}, idx, err
+	}
+	digest, err := name.NewDigest(fmt.Sprintf("%s@%s", "image", h.String()))
+	return digest, idx, err
+}
 
+func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
 	// TODO(jason): Also set annotations on the index. ggcr's
 	// pkg/v1/mutate.Annotations will drop the interface methods from
 	// oci.SignedImageIndex, so we may need to reimplement
@@ -581,72 +690,40 @@ func publishTagFromIndex(ctx context.Context, index oci.SignedImageIndex, imageR
 	return ref.Context().Digest(hash.String()), nil
 }
 
-// BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
-// Uses the standard OCI media type for the image index.
+// BuildIndex builds a self-container tar.gz file containing the index and its individual images for all architectures.
 // Returns the digest and the path to the combined tar.gz.
-func BuildIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger log.Logger) (name.Digest, error) {
-	return buildIndexWithMediaType(outfile, ggcrtypes.OCIImageIndex, ic, imgs, tags, logger)
-}
-
-// BuildIndex builds an index in a tar.gz file containing all architectures, given their individual image tar.gz files.
-// Uses the legacy docker media type for the image index, i.e. multiarch manifest.
-// Returns the digest and the path to the combined tar.gz.
-func BuildDockerIndex(outfile string, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger log.Logger) (name.Digest, error) {
-	return buildIndexWithMediaType(outfile, ggcrtypes.DockerManifestList, ic, imgs, tags, logger)
-}
-
-func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, tags []string, logger log.Logger) (name.Digest, error) {
-	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
+func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string, logger log.Logger) (name.Digest, error) {
 	tagsToImages := make(map[name.Tag]v1.Image)
-	archs := make([]types.Architecture, 0, len(imgs))
-	for arch := range imgs {
-		archs = append(archs, arch)
+	var imgs = make([]oci.SignedImage, 0)
+	manifest, err := idx.IndexManifest()
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("failed to get index manifest: %w", err)
 	}
-	sort.Slice(archs, func(i, j int) bool {
-		return archs[i].String() < archs[j].String()
-	})
-	for _, arch := range archs {
-		logger.Printf("adding %s to index", arch)
-		img := imgs[arch]
-		mt, err := img.MediaType()
-		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to get mediatype for image: %w", err)
-		}
 
-		h, err := img.Digest()
+	var parsedTags = make([]name.Tag, 0)
+	for _, tag := range tags {
+		parsedTag, err := name.NewTag(tag)
 		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to compute digest for image: %w", err)
+			return name.Digest{}, fmt.Errorf("failed to parse tag %s: %w", tag, err)
 		}
-
-		size, err := img.Size()
+		parsedTags = append(parsedTags, parsedTag)
+	}
+	for _, m := range manifest.Manifests {
+		arch := m.Platform.Architecture
+		img, err := idx.SignedImage(m.Digest)
 		if err != nil {
-			return name.Digest{}, fmt.Errorf("failed to compute size for image: %w", err)
+			return name.Digest{}, fmt.Errorf("failed to get image for manifest %s: %w", m.Digest, err)
 		}
-		for _, tagName := range tags {
-			ref, err := name.NewTag(tagName)
+		imgs = append(imgs, img)
+		for _, ref := range parsedTags {
+			ref, err = name.NewTag(fmt.Sprintf("%s-%s", ref.Name(), strings.ReplaceAll(arch, "/", "_")))
 			if err != nil {
-				return name.Digest{}, fmt.Errorf("failed to parse tag %s: %w", tagName, err)
-			}
-			ref, err = name.NewTag(fmt.Sprintf("%s-%s", ref.Name(), strings.ReplaceAll(arch.String(), "/", "_")))
-			if err != nil {
-				return name.Digest{}, fmt.Errorf("failed to parse tag %s: %w", tagName, err)
-			}
-
-			if err != nil {
-				return name.Digest{}, fmt.Errorf("failed to create tag for image: %w", err)
+				return name.Digest{}, fmt.Errorf("failed to get image for manifest %s: %w", m.Digest, err)
 			}
 			tagsToImages[ref] = img
 		}
-		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
-			Add: img,
-			Descriptor: v1.Descriptor{
-				MediaType: mt,
-				Digest:    h,
-				Size:      size,
-				Platform:  arch.ToOCIPlatform(),
-			},
-		})
 	}
+
 	f, err := os.OpenFile(outfile, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("failed to open outfile %s: %w", outfile, err)
@@ -696,8 +773,7 @@ func buildIndexWithMediaType(outfile string, mediaType ggcrtypes.MediaType, _ ty
 	defer tw.Close()
 
 	// write each manifest file
-	for _, arch := range archs {
-		img := imgs[arch]
+	for _, img := range imgs {
 		raw, err := img.RawManifest()
 		if err != nil {
 			return name.Digest{}, fmt.Errorf("failed to get raw manifest: %w", err)

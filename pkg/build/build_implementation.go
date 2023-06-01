@@ -47,6 +47,8 @@ import (
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
+const indexFile = "index.json"
+
 //counterfeiter:generate . buildImplementation
 
 type buildImplementation interface {
@@ -54,6 +56,8 @@ type buildImplementation interface {
 	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
 	// BuildTarball build from the layout in a working directory to an OCI image layer tarball
 	BuildTarball(*options.Options, fs.FS) (targz string, diffid hash.Hash, digest hash.Hash, size int64, err error)
+	// WriteIndex write an index to the working directory
+	WriteIndex(*options.Options, coci.SignedImageIndex) (file string, size int64, err error)
 	// GenerateSBOM generate a software-bill-of-materials for the image
 	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
 	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
@@ -76,10 +80,10 @@ type buildImplementation interface {
 	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) (fs.FS, error)
 	// WriteSupervisionTree insert the configuration files and binaries in the working directory for s6 to operate
 	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
-	// GenerateIndexSBOM generate an SBOM for the index
-	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) error
-	// GenerateImageSBOM generate an SBOM for the image contents
-	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) error
+	// GenerateIndexSBOM generate an SBOM for the index and return the paths to the files holding it
+	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) ([]types.SBOM, error)
+	// GenerateImageSBOM generate an SBOM for the image contents and return the paths to the files holding it
+	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) ([]types.SBOM, error)
 	// AdditionalTags generate additional tags for apk packages
 	AdditionalTags(apkfs.FullFS, *options.Options) error
 	// InstallBusyboxLinks install busybox symlinks, if busybox is installed
@@ -157,40 +161,49 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 }
 
 // GenerateImageSBOM generates an sbom for an image
-func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) error {
+func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) ([]types.SBOM, error) {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
-		return nil
+		return nil, nil
 	}
 
 	s := newSBOM(di.workdirFS, o, ic)
 
 	if err := s.ReadLayerTarball(o.TarballPath); err != nil {
-		return fmt.Errorf("reading layer tar: %w", err)
+		return nil, fmt.Errorf("reading layer tar: %w", err)
 	}
 
 	if err := s.ReadReleaseData(); err != nil {
-		return fmt.Errorf("getting os-release: %w", err)
+		return nil, fmt.Errorf("getting os-release: %w", err)
 	}
 
 	if err := s.ReadPackageIndex(); err != nil {
-		return fmt.Errorf("getting installed packages from sbom: %w", err)
+		return nil, fmt.Errorf("getting installed packages from sbom: %w", err)
 	}
 
 	// Get the image digest
 	h, err := img.Digest()
 	if err != nil {
-		return fmt.Errorf("getting %s image digest: %w", o.Arch, err)
+		return nil, fmt.Errorf("getting %s image digest: %w", o.Arch, err)
 	}
 
 	s.Options.ImageInfo.ImageDigest = h.String()
 	s.Options.ImageInfo.Arch = o.Arch
 
-	if _, err := s.Generate(); err != nil {
-		return fmt.Errorf("generating SBOMs: %w", err)
+	var sboms = make([]types.SBOM, 0)
+	files, err := s.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("generating sbom: %w", err)
 	}
-
-	return nil
+	for _, f := range files {
+		sboms = append(sboms, types.SBOM{
+			Path:   f,
+			Format: o.SBOMFormats[0],
+			Arch:   o.Arch.String(),
+			Digest: h,
+		})
+	}
+	return sboms, nil
 }
 
 // GenerateSBOM generates an SBOM for an apko layer
@@ -347,6 +360,27 @@ func buildImage(
 	return nil
 }
 
+// WriteIndex saves the index file from the given image configuration.
+func (di *defaultBuildImplementation) WriteIndex(o *options.Options, idx coci.SignedImageIndex) (string, int64, error) {
+	outfile := filepath.Join(o.TempDir(), indexFile)
+
+	b, err := idx.RawManifest()
+	if err != nil {
+		return "", 0, fmt.Errorf("getting raw manifest: %w", err)
+	}
+	if err := os.WriteFile(outfile, b, 0644); err != nil { //nolint:gosec // this file is fine to be readable
+		return "", 0, fmt.Errorf("writing index file: %w", err)
+	}
+
+	stat, err := os.Stat(outfile)
+	if err != nil {
+		return "", 0, fmt.Errorf("stat(%q): %w", outfile, err)
+	}
+
+	o.Logger().Infof("built index file as %s", outfile)
+	return outfile, stat.Size(), nil
+}
+
 func buildPackageList(
 	fsys apkfs.FullFS, di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
 ) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
@@ -403,10 +437,10 @@ func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration
 func (di *defaultBuildImplementation) GenerateIndexSBOM(
 	o *options.Options, ic *types.ImageConfiguration,
 	indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
-) error {
+) ([]types.SBOM, error) {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping index SBOM generation")
-		return nil
+		return nil, nil
 	}
 
 	s := newSBOM(di.workdirFS, o, ic)
@@ -415,7 +449,7 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())
 	if err != nil {
-		return errors.New("getting index hash")
+		return nil, errors.New("getting index hash")
 	}
 	s.Options.ImageInfo.IndexDigest = h
 
@@ -437,12 +471,12 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 	for arch, i := range imgs {
 		sbomHash, err := khash.SHA256ForFile(filepath.Join(s.Options.OutputDir, fmt.Sprintf("sbom-%s.%s", arch.ToAPK(), ext)))
 		if err != nil {
-			return fmt.Errorf("checksumming %s SBOM: %w", arch, err)
+			return nil, fmt.Errorf("checksumming %s SBOM: %w", arch, err)
 		}
 
 		d, err := i.Digest()
 		if err != nil {
-			return fmt.Errorf("getting arch image digest: %w", err)
+			return nil, fmt.Errorf("getting arch image digest: %w", err)
 		}
 
 		s.Options.ImageInfo.Images = append(
@@ -453,10 +487,17 @@ func (di *defaultBuildImplementation) GenerateIndexSBOM(
 				SBOMDigest: sbomHash,
 			})
 	}
-
-	if _, err := s.GenerateIndex(); err != nil {
-		return fmt.Errorf("generting index SBOM: %w", err)
+	files, err := s.GenerateIndex()
+	if err != nil {
+		return nil, fmt.Errorf("generating index SBOM: %w", err)
 	}
-
-	return nil
+	var sboms = make([]types.SBOM, 0, len(files))
+	for _, f := range files {
+		sboms = append(sboms, types.SBOM{
+			Path:   f,
+			Format: o.SBOMFormats[0],
+			Digest: h,
+		})
+	}
+	return sboms, nil
 }

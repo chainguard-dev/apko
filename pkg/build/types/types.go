@@ -345,3 +345,10 @@ func ParseArchitectures(in []string) []Architecture {
 	})
 	return archs
 }
+
+type SBOM struct {
+	Arch   string
+	Path   string
+	Format string
+	Digest v1.Hash
+}
