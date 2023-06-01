@@ -19,14 +19,14 @@ require (
 	github.com/sigstore/cosign/v2 v2.0.3-0.20230425232139-17cc13812d8a
 	github.com/sirupsen/logrus v1.9.2
 	github.com/spf13/cobra v1.7.0
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.8.4
 	gitlab.alpinelinux.org/alpine/go v0.7.0
 	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
 	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
 	golang.org/x/term v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
-	sigs.k8s.io/release-utils v0.7.3
+	sigs.k8s.io/release-utils v0.7.5-0.20230601212346-3866fe05b204
 )
 
 require (

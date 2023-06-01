@@ -1,0 +1,14 @@
+contents:
+  keyring:
+    - ./testdata/local-melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - tzdata
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64

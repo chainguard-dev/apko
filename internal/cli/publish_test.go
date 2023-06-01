@@ -16,24 +16,69 @@ package cli_test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom"
 )
 
 func TestPublish(t *testing.T) {
 	ctx := context.Background()
 
-	outputRefs := ""
-	archs := []types.Architecture{}
-	ropt := []remote.Option{}
-	opts := []build.Option{}
-
-	err := cli.PublishCmd(ctx, outputRefs, archs, ropt, opts...)
+	// Set up a registry that requires we see a magic header.
+	// This allows us to make sure that remote options are getting passed
+	// around to anything that hits the registry.
+	r := registry.New()
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		require.Equal(t, req.Header.Get("Magic"), "SecretValue")
+		r.ServeHTTP(w, req)
+	})
+	s := httptest.NewServer(h)
+	defer s.Close()
+	u, err := url.Parse(s.URL)
 	require.NoError(t, err)
+
+	st := &sentinel{s.Client().Transport}
+	dst := fmt.Sprintf("%s/test/publish", u.Host)
+
+	config := filepath.Join("testdata", "tzdata.yaml")
+
+	outputRefs := ""
+	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+	ropt := []remote.Option{remote.WithTransport(st)}
+	opts := []build.Option{build.WithConfig(config), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
+
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, opts...)
+	require.NoError(t, err)
+
+	ref, err := name.ParseReference(dst)
+	require.NoError(t, err)
+
+	idx, err := remote.Index(ref, ropt...)
+	require.NoError(t, err)
+
+	// Not strictly necessary, but this will validate that the index is well-formed.
+	require.NoError(t, validate.Index(idx))
+}
+
+type sentinel struct {
+	rt http.RoundTripper
+}
+
+func (s *sentinel) RoundTrip(in *http.Request) (*http.Response, error) {
+	in.Header.Set("Magic", "SecretValue")
+	return s.rt.RoundTrip(in)
 }

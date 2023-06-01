@@ -1,0 +1,26 @@
+{
+  "Signature": null,
+  "Description": "",
+  "Packages": [
+    {
+      "Name": "tzdata",
+      "Version": "2023c-r0",
+      "Arch": "x86_64",
+      "Description": "Timezone data provided by IANA",
+      "License": "Public-Domain",
+      "Origin": "tzdata",
+      "Maintainer": "",
+      "URL": "",
+      "Checksum": "cqHqtzyUwOe6vmn181m/+Pj7pZM=",
+      "Dependencies": null,
+      "Provides": null,
+      "InstallIf": null,
+      "Size": 536352,
+      "InstalledSize": 2795958,
+      "ProviderPriority": 0,
+      "BuildTime": "2023-04-14T22:26:16Z",
+      "RepoCommit": "c2d64c74cb3d3cef89f62bcaadb1947413a40f01",
+      "Replaces": ""
+    }
+  ]
+}
