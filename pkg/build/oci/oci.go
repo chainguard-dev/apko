@@ -156,6 +156,9 @@ func buildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 	}
 
 	// Set these environment variables if they are not already set.
+	if ic.Environment == nil {
+		ic.Environment = map[string]string{}
+	}
 	for k, v := range map[string]string{
 		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
