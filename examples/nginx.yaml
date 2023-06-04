@@ -39,3 +39,5 @@ paths:
 
 work-dir: /usr/share/nginx
 
+annotations:
+  foo: bar

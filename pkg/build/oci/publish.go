@@ -82,11 +82,6 @@ func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 // platform, defaulting to the one on which the docker daemon is running.
 // PublishIndex will determine that platform and use it to publish the updated index.
 func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
-	// TODO(jason): Also set annotations on the index. ggcr's
-	// pkg/v1/mutate.Annotations will drop the interface methods from
-	// oci.SignedImageIndex, so we may need to reimplement
-	// mutate.Annotations in ocimutate to keep it for now.
-
 	// If attempting to save locally, pick the native architecture
 	// and use that cached image for local tags
 	// Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
