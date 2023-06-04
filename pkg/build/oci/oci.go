@@ -155,21 +155,24 @@ func buildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		cfg.Config.WorkingDir = ic.WorkDir
 	}
 
-	if len(ic.Environment) > 0 {
-		envs := []string{}
-
-		for k, v := range ic.Environment {
-			envs = append(envs, fmt.Sprintf("%s=%s", k, v))
-		}
-		sort.Strings(envs)
-
-		cfg.Config.Env = envs
-	} else {
-		cfg.Config.Env = []string{
-			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-			"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+	// Set these environment variables if they are not already set.
+	if ic.Environment == nil {
+		ic.Environment = map[string]string{}
+	}
+	for k, v := range map[string]string{
+		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+	} {
+		if _, found := ic.Environment[k]; !found {
+			ic.Environment[k] = v
 		}
 	}
+	envs := []string{}
+	for k, v := range ic.Environment {
+		envs = append(envs, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(envs)
+	cfg.Config.Env = envs
 
 	if ic.Accounts.RunAs != "" {
 		cfg.Config.User = ic.Accounts.RunAs
