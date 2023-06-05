@@ -50,6 +50,7 @@ func buildCmd() *cobra.Command {
 	var buildOptions []string
 	var logPolicy []string
 	var rawAnnotations []string
+	var cacheDir string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -112,6 +113,7 @@ bill of materials) describing the image contents.
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
 				build.WithBuildOptions(buildOptions),
+				build.WithCacheDir(cacheDir),
 			)
 		},
 	}
@@ -132,6 +134,7 @@ bill of materials) describing the image contents.
 	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 
 	return cmd
 }

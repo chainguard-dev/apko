@@ -63,6 +63,7 @@ func publish() *cobra.Command {
 	var writeSBOM bool
 	var local bool
 	var stageTags string
+	var cacheDir string
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -135,6 +136,7 @@ in a keychain.`,
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
 					build.WithBuildOptions(buildOptions),
+					build.WithCacheDir(cacheDir),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
@@ -170,6 +172,7 @@ in a keychain.`,
 	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
