@@ -47,6 +47,7 @@ type Options struct {
 	TagSuffix               string             `json:"tagSuffix,omitempty"`
 	Local                   bool               `json:"local,omitempty"`
 	StageTags               string             `json:"stageTags,omitempty"`
+	CacheDir                string             `json:"cacheDir,omitempty"`
 
 	Log log.Logger
 }

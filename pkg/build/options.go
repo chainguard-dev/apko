@@ -193,6 +193,14 @@ func WithAnnotations(annotations map[string]string) Option {
 	}
 }
 
+// WithCacheDir set the cache directory to use
+func WithCacheDir(cacheDir string) Option {
+	return func(bc *Context) error {
+		bc.Options.CacheDir = cacheDir
+		return nil
+	}
+}
+
 // WithBuildOptions applies configured patches which have been requested to the ImageConfiguration.
 // Deprecated: Use WithExtraPackages.
 func WithBuildOptions(buildOptions []string) Option {

@@ -58,6 +58,7 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),
 		apkimpl.WithIgnoreMknodErrors(true),
+		apkimpl.WithCache(o.CacheDir),
 	)
 	a := &APK{
 		Options: o,
