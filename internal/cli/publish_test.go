@@ -60,8 +60,9 @@ func TestPublish(t *testing.T) {
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	ropt := []remote.Option{remote.WithTransport(st)}
 	opts := []build.Option{build.WithConfig(config), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
+	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
 
-	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, opts...)
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, opts, publishOpts)
 	require.NoError(t, err)
 
 	ref, err := name.ParseReference(dst)

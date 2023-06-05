@@ -10,12 +10,13 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.package oci_test
+// limitations under the License.
 
-package oci_test
+package oci
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -23,16 +24,16 @@ import (
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
-	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
-	"chainguard.dev/apko/pkg/options"
 )
 
 func TestBuildImageFromLayer(t *testing.T) {
 	layer := static.NewLayer([]byte("hello"), ggcrtypes.OCILayer)
 	diffID, err := layer.DiffID()
 	require.NoError(t, err)
+	now := time.Now()
+	v1now := v1.Time{Time: now}
 
 	for _, c := range []struct {
 		desc string
@@ -46,12 +47,14 @@ func TestBuildImageFromLayer(t *testing.T) {
 		want: &v1.ConfigFile{
 			Author: "github.com/chainguard-dev/apko",
 			History: []v1.History{{
+				Created:   v1now,
 				Author:    "apko",
 				CreatedBy: "apko",
 				Comment:   "This is an apko single-layer image",
 			}},
-			OS:     "linux",
-			RootFS: v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
+			Created: v1now,
+			OS:      "linux",
+			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
 					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -70,12 +73,14 @@ func TestBuildImageFromLayer(t *testing.T) {
 		want: &v1.ConfigFile{
 			Author: "github.com/chainguard-dev/apko",
 			History: []v1.History{{
+				Created:   v1now,
 				Author:    "apko",
 				CreatedBy: "apko",
 				Comment:   "This is an apko single-layer image",
 			}},
-			OS:     "linux",
-			RootFS: v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
+			Created: v1now,
+			OS:      "linux",
+			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
@@ -96,12 +101,14 @@ func TestBuildImageFromLayer(t *testing.T) {
 		want: &v1.ConfigFile{
 			Author: "github.com/chainguard-dev/apko",
 			History: []v1.History{{
+				Created:   v1now,
 				Author:    "apko",
 				CreatedBy: "apko",
 				Comment:   "This is an apko single-layer image",
 			}},
-			OS:     "linux",
-			RootFS: v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
+			Created: v1now,
+			OS:      "linux",
+			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
@@ -122,12 +129,14 @@ func TestBuildImageFromLayer(t *testing.T) {
 		want: &v1.ConfigFile{
 			Author: "github.com/chainguard-dev/apko",
 			History: []v1.History{{
+				Created:   v1now,
 				Author:    "apko",
 				CreatedBy: "apko",
 				Comment:   "This is an apko single-layer image",
 			}},
-			OS:     "linux",
-			RootFS: v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
+			Created: v1now,
+			OS:      "linux",
+			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
@@ -139,7 +148,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 		},
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
-			got, err := oci.BuildImageFromLayer(layer, c.cfg, log.DefaultLogger(), options.Options{})
+			got, err := BuildImageFromLayer(layer, c.cfg, now, types.ParseArchitecture(""), log.DefaultLogger())
 			require.NoError(t, err)
 			gotcfg, err := got.ConfigFile()
 			require.NoError(t, err)
@@ -148,4 +157,8 @@ func TestBuildImageFromLayer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildImageTarballFromLayer(t *testing.T) {
+
 }

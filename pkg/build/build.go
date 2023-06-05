@@ -76,13 +76,19 @@ func (bc *Context) BuildTarball() (string, hash.Hash, hash.Hash, int64, error) {
 	return bc.impl.BuildTarball(&bc.Options, bc.fs)
 }
 
-func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) error {
+// WriteIndex calls the underlying implementation's WriteIndex
+// which takes the an index struct and saves it to the working directory.
+func (bc *Context) WriteIndex(idx coci.SignedImageIndex) (string, int64, error) {
+	return bc.impl.WriteIndex(&bc.Options, idx)
+}
+
+func (bc *Context) GenerateImageSBOM(arch types.Architecture, img coci.SignedImage) ([]types.SBOM, error) {
 	opts := bc.Options
 	opts.Arch = arch
 	return bc.impl.GenerateImageSBOM(&opts, &bc.ImageConfiguration, img)
 }
 
-func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) error {
+func (bc *Context) GenerateIndexSBOM(indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) ([]types.SBOM, error) {
 	return bc.impl.GenerateIndexSBOM(&bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
 }
 

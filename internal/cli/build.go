@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -93,6 +93,10 @@ bill of materials) describing the image contents.
 				sbomFormats = []string{}
 			}
 			return BuildCmd(cmd.Context(), args[1], args[2], archs,
+				[]string{args[1]},
+				writeSBOM,
+				sbomPath,
+				logger,
 				build.WithConfig(args[0]),
 				build.WithDockerMediatypes(useDockerMediaTypes),
 				build.WithBuildDate(buildDate),
@@ -100,9 +104,9 @@ bill of materials) describing the image contents.
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
-				build.WithTags(args[1]),
 				build.WithExtraRepos(extraRepos),
 				build.WithExtraPackages(extraPackages),
+				build.WithTags(args[1]),
 				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
@@ -132,28 +136,48 @@ bill of materials) describing the image contents.
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.Architecture, opts ...build.Option) error {
+func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	// build all of the components in the working directory
+	idx, sboms, err := buildImageComponents(ctx, wd, archs, opts...)
 	if err != nil {
 		return err
 	}
 
-	if err := bc.Refresh(); err != nil {
-		return err
+	// bundle the parts of the image into a tarball
+	if _, err := oci.BuildIndex(outputTarGZ, idx, append([]string{imageRef}, tags...), logger); err != nil {
+		return fmt.Errorf("bundling image: %w", err)
 	}
 
-	if bc.Options.SBOMPath == "" {
-		dir, err := filepath.Abs(outputTarGZ)
-		if err != nil {
-			return fmt.Errorf("resolving output file path: %w", err)
+	// copy sboms over to the sbomPath target directory
+	for _, sbom := range sboms {
+		if err := os.Rename(sbom.Path, filepath.Join(sbomPath, filepath.Base(sbom.Path))); err != nil {
+			return fmt.Errorf("moving sbom: %w", err)
 		}
-		bc.Options.SBOMPath = filepath.Dir(dir)
+	}
+
+	logrus.Infof(
+		"Final index tgz at: %s", outputTarGZ,
+	)
+
+	return nil
+}
+
+// buildImage build all of the components of an image in a single working directory.
+// Each layer is a separate file, as are config, manifests, index and sbom.
+func buildImageComponents(ctx context.Context, wd string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, err error) {
+	bc, err := build.New(wd, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := bc.Refresh(); err != nil {
+		return nil, nil, err
 	}
 
 	// cases:
@@ -178,13 +202,22 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
-	bc.Options.TempDir()
-	defer os.RemoveAll(bc.Options.TempDir())
+
+	// workDir, passed to us, is where we will lay out the various image filesystems
+	// under it we will have:
+	//  <arch>/ - the rootfs for each architecture
+	//  image/ - the summary layer files and sboms for each architecture
+	// imageDir, created here, is where the final artifacts will be: layer tars, indexes, etc.
 
 	bc.Logger().Printf("building tags %v", bc.Options.Tags)
 
 	var errg errgroup.Group
-	workDir := bc.Options.WorkDir
+	workDir := wd
+	imageDir := filepath.Join(workDir, "image")
+	if err := os.MkdirAll(imageDir, 0755); err != nil {
+		return nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
+	}
+
 	imgs := map[types.Architecture]coci.SignedImage{}
 	contexts := map[types.Architecture]*build.Context{}
 	imageTars := map[types.Architecture]string{}
@@ -196,13 +229,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	bc.Options.SBOMFormats = []string{}
 	bc.Options.WantSBOM = false
 
-	var finalDigest name.Digest
-
-	defer func() {
-		for _, f := range imageTars {
-			_ = os.Remove(f)
-		}
-	}()
+	mtx := sync.Mutex{}
 
 	// We compute the "build date epoch" of the multi-arch image to be the
 	// maximum "build date epoch" of the per-arch images.  If the user has
@@ -216,7 +243,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		wd := filepath.Join(workDir, arch.ToAPK())
 		bc, err := build.New(wd, opts...)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		// we do not generate SBOMs for each arch, only possibly for final image
@@ -234,11 +261,13 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 			if err := bc.Refresh(); err != nil {
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
+			bc.Options.TarballPath = filepath.Join(imageDir, bc.Options.TarballFileName())
 
 			layerTarGZ, layer, err := bc.BuildLayer()
 			if err != nil {
-				return fmt.Errorf("failed to build layer image: %w", err)
+				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
+			imageTars[arch] = layerTarGZ
 
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
@@ -254,63 +283,75 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 				multiArchBDE = bc.Options.SourceDateEpoch
 			}
 
-			imageTars[arch] = layerTarGZ
 			img, err := oci.BuildImageFromLayer(
-				layer, bc.ImageConfiguration, bc.Logger(), bc.Options)
+				layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Logger())
 			if err != nil {
-				return fmt.Errorf("failed to build OCI image: %w", err)
+				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
+			mtx.Lock()
 			imgs[arch] = img
+			mtx.Unlock()
+
 			return nil
 		})
 	}
 	if err := errg.Wait(); err != nil {
-		return err
+		return nil, nil, err
 	}
+
+	// generate the index
+	finalDigest, idx, err := oci.GenerateIndex(ctx, bc.ImageConfiguration, imgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
+	}
+	if _, _, err := bc.WriteIndex(idx); err != nil {
+		return nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
+	}
+
 	bc.Options.SourceDateEpoch = multiArchBDE
 
 	bc.Options.SBOMFormats = formats
-	sbomPath := bc.Options.SBOMPath
 
+	// the sboms are saved to the same working directory as the image components
 	if wantSBOM {
 		logrus.Info("Generating arch image SBOMs")
-		var g errgroup.Group
+		var (
+			g   errgroup.Group
+			mtx sync.Mutex
+		)
 		for arch, img := range imgs {
 			arch, img := arch, img
 			bc := contexts[arch]
 
 			// override the SBOM options
-			bc.Options.SBOMFormats = formats
 			bc.Options.WantSBOM = true
-			bc.Options.SBOMPath = sbomPath
+			bc.Options.SBOMFormats = formats
+			bc.Options.SBOMPath = imageDir
 
 			g.Go(func() error {
-				if err := bc.GenerateImageSBOM(arch, img); err != nil {
+				outputs, err := bc.GenerateImageSBOM(arch, img)
+				if err != nil {
 					return fmt.Errorf("generating sbom for %s: %w", arch, err)
 				}
+				mtx.Lock()
+				sboms = append(sboms, outputs...)
+				mtx.Unlock()
 				return nil
 			})
 		}
 
 		if err := g.Wait(); err != nil {
-			return err
+			return nil, nil, err
 		}
-	}
-
-	// finally generate the tar.gz file that includes all of the arch images and an index
-	finalDigest, err = oci.BuildIndex(outputTarGZ, bc.ImageConfiguration, imgs, bc.Options.Tags, bc.Logger())
-	if err != nil {
-		return fmt.Errorf("failed to build index: %w", err)
-	}
-	if wantSBOM {
-		if err := bc.GenerateIndexSBOM(finalDigest, imgs); err != nil {
-			return fmt.Errorf("generating index SBOM: %w", err)
+		bc.Options.WantSBOM = true
+		bc.Options.SBOMFormats = formats
+		bc.Options.SBOMPath = imageDir
+		files, err := bc.GenerateIndexSBOM(finalDigest, imgs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
 		}
+		sboms = append(sboms, files...)
 	}
 
-	bc.Logger().Infof(
-		"Final index tgz at: %s", outputTarGZ,
-	)
-
-	return nil
+	return idx, sboms, nil
 }

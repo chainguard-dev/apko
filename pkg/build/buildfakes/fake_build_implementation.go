@@ -66,7 +66,7 @@ type FakeBuildImplementation struct {
 		result4 int64
 		result5 error
 	}
-	GenerateImageSBOMStub        func(*options.Options, *types.ImageConfiguration, oci.SignedImage) error
+	GenerateImageSBOMStub        func(*options.Options, *types.ImageConfiguration, oci.SignedImage) ([]types.SBOM, error)
 	generateImageSBOMMutex       sync.RWMutex
 	generateImageSBOMArgsForCall []struct {
 		arg1 *options.Options
@@ -74,12 +74,14 @@ type FakeBuildImplementation struct {
 		arg3 oci.SignedImage
 	}
 	generateImageSBOMReturns struct {
-		result1 error
+		result1 []types.SBOM
+		result2 error
 	}
 	generateImageSBOMReturnsOnCall map[int]struct {
-		result1 error
+		result1 []types.SBOM
+		result2 error
 	}
-	GenerateIndexSBOMStub        func(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]oci.SignedImage) error
+	GenerateIndexSBOMStub        func(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]oci.SignedImage) ([]types.SBOM, error)
 	generateIndexSBOMMutex       sync.RWMutex
 	generateIndexSBOMArgsForCall []struct {
 		arg1 *options.Options
@@ -88,10 +90,12 @@ type FakeBuildImplementation struct {
 		arg4 map[types.Architecture]oci.SignedImage
 	}
 	generateIndexSBOMReturns struct {
-		result1 error
+		result1 []types.SBOM
+		result2 error
 	}
 	generateIndexSBOMReturnsOnCall map[int]struct {
-		result1 error
+		result1 []types.SBOM
+		result2 error
 	}
 	GenerateOSReleaseStub        func(fs.FullFS, *options.Options, *types.ImageConfiguration) error
 	generateOSReleaseMutex       sync.RWMutex
@@ -260,6 +264,22 @@ type FakeBuildImplementation struct {
 	}
 	validateImageConfigurationReturnsOnCall map[int]struct {
 		result1 error
+	}
+	WriteIndexStub        func(*options.Options, oci.SignedImageIndex) (string, int64, error)
+	writeIndexMutex       sync.RWMutex
+	writeIndexArgsForCall []struct {
+		arg1 *options.Options
+		arg2 oci.SignedImageIndex
+	}
+	writeIndexReturns struct {
+		result1 string
+		result2 int64
+		result3 error
+	}
+	writeIndexReturnsOnCall map[int]struct {
+		result1 string
+		result2 int64
+		result3 error
 	}
 	WriteSupervisionTreeStub        func(*s6.Context, *types.ImageConfiguration) error
 	writeSupervisionTreeMutex       sync.RWMutex
@@ -480,7 +500,7 @@ func (fake *FakeBuildImplementation) BuildTarballReturnsOnCall(i int, result1 st
 	}{result1, result2, result3, result4, result5}
 }
 
-func (fake *FakeBuildImplementation) GenerateImageSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 oci.SignedImage) error {
+func (fake *FakeBuildImplementation) GenerateImageSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 oci.SignedImage) ([]types.SBOM, error) {
 	fake.generateImageSBOMMutex.Lock()
 	ret, specificReturn := fake.generateImageSBOMReturnsOnCall[len(fake.generateImageSBOMArgsForCall)]
 	fake.generateImageSBOMArgsForCall = append(fake.generateImageSBOMArgsForCall, struct {
@@ -496,9 +516,9 @@ func (fake *FakeBuildImplementation) GenerateImageSBOM(arg1 *options.Options, ar
 		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeBuildImplementation) GenerateImageSBOMCallCount() int {
@@ -507,7 +527,7 @@ func (fake *FakeBuildImplementation) GenerateImageSBOMCallCount() int {
 	return len(fake.generateImageSBOMArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) GenerateImageSBOMCalls(stub func(*options.Options, *types.ImageConfiguration, oci.SignedImage) error) {
+func (fake *FakeBuildImplementation) GenerateImageSBOMCalls(stub func(*options.Options, *types.ImageConfiguration, oci.SignedImage) ([]types.SBOM, error)) {
 	fake.generateImageSBOMMutex.Lock()
 	defer fake.generateImageSBOMMutex.Unlock()
 	fake.GenerateImageSBOMStub = stub
@@ -520,30 +540,33 @@ func (fake *FakeBuildImplementation) GenerateImageSBOMArgsForCall(i int) (*optio
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeBuildImplementation) GenerateImageSBOMReturns(result1 error) {
+func (fake *FakeBuildImplementation) GenerateImageSBOMReturns(result1 []types.SBOM, result2 error) {
 	fake.generateImageSBOMMutex.Lock()
 	defer fake.generateImageSBOMMutex.Unlock()
 	fake.GenerateImageSBOMStub = nil
 	fake.generateImageSBOMReturns = struct {
-		result1 error
-	}{result1}
+		result1 []types.SBOM
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) GenerateImageSBOMReturnsOnCall(i int, result1 error) {
+func (fake *FakeBuildImplementation) GenerateImageSBOMReturnsOnCall(i int, result1 []types.SBOM, result2 error) {
 	fake.generateImageSBOMMutex.Lock()
 	defer fake.generateImageSBOMMutex.Unlock()
 	fake.GenerateImageSBOMStub = nil
 	if fake.generateImageSBOMReturnsOnCall == nil {
 		fake.generateImageSBOMReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 []types.SBOM
+			result2 error
 		})
 	}
 	fake.generateImageSBOMReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 []types.SBOM
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) GenerateIndexSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 name.Digest, arg4 map[types.Architecture]oci.SignedImage) error {
+func (fake *FakeBuildImplementation) GenerateIndexSBOM(arg1 *options.Options, arg2 *types.ImageConfiguration, arg3 name.Digest, arg4 map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
 	fake.generateIndexSBOMMutex.Lock()
 	ret, specificReturn := fake.generateIndexSBOMReturnsOnCall[len(fake.generateIndexSBOMArgsForCall)]
 	fake.generateIndexSBOMArgsForCall = append(fake.generateIndexSBOMArgsForCall, struct {
@@ -560,9 +583,9 @@ func (fake *FakeBuildImplementation) GenerateIndexSBOM(arg1 *options.Options, ar
 		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeBuildImplementation) GenerateIndexSBOMCallCount() int {
@@ -571,7 +594,7 @@ func (fake *FakeBuildImplementation) GenerateIndexSBOMCallCount() int {
 	return len(fake.generateIndexSBOMArgsForCall)
 }
 
-func (fake *FakeBuildImplementation) GenerateIndexSBOMCalls(stub func(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]oci.SignedImage) error) {
+func (fake *FakeBuildImplementation) GenerateIndexSBOMCalls(stub func(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]oci.SignedImage) ([]types.SBOM, error)) {
 	fake.generateIndexSBOMMutex.Lock()
 	defer fake.generateIndexSBOMMutex.Unlock()
 	fake.GenerateIndexSBOMStub = stub
@@ -584,27 +607,30 @@ func (fake *FakeBuildImplementation) GenerateIndexSBOMArgsForCall(i int) (*optio
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeBuildImplementation) GenerateIndexSBOMReturns(result1 error) {
+func (fake *FakeBuildImplementation) GenerateIndexSBOMReturns(result1 []types.SBOM, result2 error) {
 	fake.generateIndexSBOMMutex.Lock()
 	defer fake.generateIndexSBOMMutex.Unlock()
 	fake.GenerateIndexSBOMStub = nil
 	fake.generateIndexSBOMReturns = struct {
-		result1 error
-	}{result1}
+		result1 []types.SBOM
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeBuildImplementation) GenerateIndexSBOMReturnsOnCall(i int, result1 error) {
+func (fake *FakeBuildImplementation) GenerateIndexSBOMReturnsOnCall(i int, result1 []types.SBOM, result2 error) {
 	fake.generateIndexSBOMMutex.Lock()
 	defer fake.generateIndexSBOMMutex.Unlock()
 	fake.GenerateIndexSBOMStub = nil
 	if fake.generateIndexSBOMReturnsOnCall == nil {
 		fake.generateIndexSBOMReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 []types.SBOM
+			result2 error
 		})
 	}
 	fake.generateIndexSBOMReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 []types.SBOM
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeBuildImplementation) GenerateOSRelease(arg1 fs.FullFS, arg2 *options.Options, arg3 *types.ImageConfiguration) error {
@@ -1430,6 +1456,74 @@ func (fake *FakeBuildImplementation) ValidateImageConfigurationReturnsOnCall(i i
 	}{result1}
 }
 
+func (fake *FakeBuildImplementation) WriteIndex(arg1 *options.Options, arg2 oci.SignedImageIndex) (string, int64, error) {
+	fake.writeIndexMutex.Lock()
+	ret, specificReturn := fake.writeIndexReturnsOnCall[len(fake.writeIndexArgsForCall)]
+	fake.writeIndexArgsForCall = append(fake.writeIndexArgsForCall, struct {
+		arg1 *options.Options
+		arg2 oci.SignedImageIndex
+	}{arg1, arg2})
+	stub := fake.WriteIndexStub
+	fakeReturns := fake.writeIndexReturns
+	fake.recordInvocation("WriteIndex", []interface{}{arg1, arg2})
+	fake.writeIndexMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeBuildImplementation) WriteIndexCallCount() int {
+	fake.writeIndexMutex.RLock()
+	defer fake.writeIndexMutex.RUnlock()
+	return len(fake.writeIndexArgsForCall)
+}
+
+func (fake *FakeBuildImplementation) WriteIndexCalls(stub func(*options.Options, oci.SignedImageIndex) (string, int64, error)) {
+	fake.writeIndexMutex.Lock()
+	defer fake.writeIndexMutex.Unlock()
+	fake.WriteIndexStub = stub
+}
+
+func (fake *FakeBuildImplementation) WriteIndexArgsForCall(i int) (*options.Options, oci.SignedImageIndex) {
+	fake.writeIndexMutex.RLock()
+	defer fake.writeIndexMutex.RUnlock()
+	argsForCall := fake.writeIndexArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeBuildImplementation) WriteIndexReturns(result1 string, result2 int64, result3 error) {
+	fake.writeIndexMutex.Lock()
+	defer fake.writeIndexMutex.Unlock()
+	fake.WriteIndexStub = nil
+	fake.writeIndexReturns = struct {
+		result1 string
+		result2 int64
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeBuildImplementation) WriteIndexReturnsOnCall(i int, result1 string, result2 int64, result3 error) {
+	fake.writeIndexMutex.Lock()
+	defer fake.writeIndexMutex.Unlock()
+	fake.WriteIndexStub = nil
+	if fake.writeIndexReturnsOnCall == nil {
+		fake.writeIndexReturnsOnCall = make(map[int]struct {
+			result1 string
+			result2 int64
+			result3 error
+		})
+	}
+	fake.writeIndexReturnsOnCall[i] = struct {
+		result1 string
+		result2 int64
+		result3 error
+	}{result1, result2, result3}
+}
+
 func (fake *FakeBuildImplementation) WriteSupervisionTree(arg1 *s6.Context, arg2 *types.ImageConfiguration) error {
 	fake.writeSupervisionTreeMutex.Lock()
 	ret, specificReturn := fake.writeSupervisionTreeReturnsOnCall[len(fake.writeSupervisionTreeArgsForCall)]
@@ -1531,6 +1625,8 @@ func (fake *FakeBuildImplementation) Invocations() map[string][][]interface{} {
 	defer fake.resolvePackagesMutex.RUnlock()
 	fake.validateImageConfigurationMutex.RLock()
 	defer fake.validateImageConfigurationMutex.RUnlock()
+	fake.writeIndexMutex.RLock()
+	defer fake.writeIndexMutex.RUnlock()
 	fake.writeSupervisionTreeMutex.RLock()
 	defer fake.writeSupervisionTreeMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

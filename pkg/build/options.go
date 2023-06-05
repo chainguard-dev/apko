@@ -100,27 +100,6 @@ func WithSBOM(path string) Option {
 	}
 }
 
-func WithPackageVersionTag(pvt string) Option {
-	return func(bc *Context) error {
-		bc.Options.PackageVersionTag = pvt
-		return nil
-	}
-}
-
-func WithPackageVersionTagStem(packageVersionTagStem bool) Option {
-	return func(bc *Context) error {
-		bc.Options.PackageVersionTagStem = packageVersionTagStem
-		return nil
-	}
-}
-
-func WithPackageVersionTagPrefix(packageVersionTagPrefix string) Option {
-	return func(bc *Context) error {
-		bc.Options.PackageVersionTagPrefix = packageVersionTagPrefix
-		return nil
-	}
-}
-
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
 		bc.Options.SBOMFormats = formats
@@ -210,30 +189,6 @@ func WithAnnotations(annotations map[string]string) Option {
 		for k, v := range annotations {
 			bc.ImageConfiguration.Annotations[k] = v
 		}
-		return nil
-	}
-}
-
-// WithTagSuffix sets a tag suffix to use, e.g. `-glibc`.
-func WithTagSuffix(tagSuffix string) Option {
-	return func(bc *Context) error {
-		bc.Options.TagSuffix = tagSuffix
-		return nil
-	}
-}
-
-// WithLocal sets whether to publish image to local Docker daemon.
-func WithLocal(local bool) Option {
-	return func(bc *Context) error {
-		bc.Options.Local = local
-		return nil
-	}
-}
-
-// WithStageTags prevents tagging, and innstead writes all tags to the filename provided.
-func WithStageTags(stageTags string) Option {
-	return func(bc *Context) error {
-		bc.Options.StageTags = stageTags
 		return nil
 	}
 }

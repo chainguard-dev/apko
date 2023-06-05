@@ -19,21 +19,16 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
@@ -124,27 +119,34 @@ in a keychain.`,
 			remoteOpts = append(remoteOpts, remote.Reuse(puller))
 
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
-				build.WithConfig(args[0]),
-				build.WithDockerMediatypes(useDockerMediaTypes),
-				build.WithTags(args[1:]...),
-				build.WithBuildDate(buildDate),
-				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
-				build.WithSBOM(sbomPath),
-				build.WithSBOMFormats(sbomFormats),
-				build.WithExtraKeys(extraKeys),
-				build.WithExtraRepos(extraRepos),
-				build.WithExtraPackages(extraPackages),
-				build.WithLogger(logger),
-				build.WithDebugLogging(debugEnabled),
-				build.WithVCS(withVCS),
-				build.WithAnnotations(annotations),
-				build.WithPackageVersionTag(packageVersionTag),
-				build.WithPackageVersionTagStem(packageVersionTagStem),
-				build.WithPackageVersionTagPrefix(packageVersionTagPrefix),
-				build.WithTagSuffix(tagSuffix),
-				build.WithLocal(local),
-				build.WithStageTags(stageTags),
-				build.WithBuildOptions(buildOptions),
+				[]build.Option{
+					build.WithConfig(args[0]),
+					build.WithDockerMediatypes(useDockerMediaTypes),
+					build.WithBuildDate(buildDate),
+					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
+					build.WithSBOM(sbomPath),
+					build.WithSBOMFormats(sbomFormats),
+					build.WithExtraKeys(extraKeys),
+					build.WithExtraRepos(extraRepos),
+					build.WithExtraPackages(extraPackages),
+					build.WithTags(args[1:]...),
+					build.WithLogger(logger),
+					build.WithDebugLogging(debugEnabled),
+					build.WithVCS(withVCS),
+					build.WithAnnotations(annotations),
+					build.WithBuildOptions(buildOptions),
+				},
+				[]PublishOption{
+					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
+					WithPackageVersionTag(packageVersionTag),
+					WithPackageVersionTagStem(packageVersionTagStem),
+					WithPackageVersionTagPrefix(packageVersionTagPrefix),
+					WithTagSuffix(tagSuffix),
+					WithLocal(local),
+					WithStageTags(stageTags),
+					WithLogger(logger),
+					WithTags(args[1:]...),
+				},
 			); err != nil {
 				return err
 			}
@@ -152,176 +154,103 @@ in a keychain.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
-	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
-	cmd.Flags().BoolVar(&packageVersionTagStem, "package-version-tag-stem", false, "add additional tags by stemming the package version")
-	cmd.Flags().StringVar(&packageVersionTagPrefix, "package-version-tag-prefix", "", "prefix for package version tag(s)")
-	cmd.Flags().StringVar(&tagSuffix, "tag-suffix", "", "suffix to use for automatically generated tags")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
+	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
+
+	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
+	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
+	cmd.Flags().BoolVar(&packageVersionTagStem, "package-version-tag-stem", false, "add additional tags by stemming the package version")
+	cmd.Flags().StringVar(&packageVersionTagPrefix, "package-version-tag-prefix", "", "prefix for package version tag(s)")
+	cmd.Flags().StringVar(&tagSuffix, "tag-suffix", "", "suffix to use for automatically generated tags")
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
 	cmd.Flags().StringVar(&stageTags, "stage-tags", "", "path to file to write list of tags to instead of publishing them")
+	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, opts ...build.Option) error {
+func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, buildOpts []build.Option, publishOpts []PublishOption) error {
+	var opts publishOpt
+	for _, opt := range publishOpts {
+		if err := opt(&opts); err != nil {
+			return err
+		}
+	}
+
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	// build all of the components in the working directory
+	idx, sboms, err := buildImageComponents(ctx, wd, archs, buildOpts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to build image components: %w", err)
 	}
 
-	// cases:
-	// - archs set: use those archs
-	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
-	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs
-	switch {
-	case len(archs) != 0:
-		bc.ImageConfiguration.Archs = archs
-	case len(bc.ImageConfiguration.Archs) != 0:
-		// do nothing
-	default:
-		bc.ImageConfiguration.Archs = types.AllArchs
-	}
-	// save the final set we will build
-	archs = bc.ImageConfiguration.Archs
-	bc.Logger().Infof(
-		"Publishing images for %d architectures: %+v",
-		len(bc.ImageConfiguration.Archs),
-		bc.ImageConfiguration.Archs,
+	var (
+		stageTags       = opts.stageTags
+		shouldPushTags  = stageTags == ""
+		local           = opts.local
+		logger          = opts.logger
+		tags            = opts.tags
+		additionalTags  []string
+		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
+		builtReferences = make([]string, 0)
 	)
+	// safety
+	if logger == nil {
+		logger = log.NewLogger(os.Stderr)
+	}
+	// publish each arch-specific image
+	refs, err := oci.PublishImagesFromIndex(ctx, idx, local, shouldPushTags, logger, tags, ropt...)
+	if err != nil {
+		return fmt.Errorf("publishing images from index: %w", err)
+	}
+	for _, ref := range refs {
+		builtReferences = append(builtReferences, ref.String())
+	}
 
-	// The build context options is sometimes copied in the next functions. Ensure
-	// we have the directory defined and created by invoking the function early.
-	bc.Options.TempDir()
-	defer os.RemoveAll(bc.Options.TempDir())
+	// publish the index
+	finalDigest, _, err := oci.PublishIndex(ctx, idx, logger, local, shouldPushTags, tags, ropt...)
+	if err != nil {
+		return fmt.Errorf("publishing image index: %w", err)
+	}
+	builtReferences = append(builtReferences, finalDigest.String())
 
-	bc.Logger().Printf("building tags %v", bc.Options.Tags)
-
-	var errg errgroup.Group
-	workDir := bc.Options.WorkDir
-	imgs := map[types.Architecture]coci.SignedImage{}
-	contexts := map[types.Architecture]*build.Context{}
-
-	// This is a hack to skip the SBOM generation during
-	// image build. Will be removed when global options are a thing.
-	formats := bc.Options.SBOMFormats
-	wantSBOM := bc.Options.WantSBOM
-	bc.Options.SBOMFormats = []string{}
-	bc.Options.WantSBOM = false
-
-	var finalDigest name.Digest
-	var idx coci.SignedImageIndex
-
-	// References, collect'em all!
-	builtReferences := []string{}
-	additionalTags := []string{}
-
-	var mu sync.Mutex
-
-	// We compute the "build date epoch" of the multi-arch image to be the
-	// maximum "build date epoch" of the per-arch images.  If the user has
-	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
-	// computation.
-	multiArchBDE := bc.Options.SourceDateEpoch
-
-	for _, arch := range archs {
-		arch := arch
-		// working directory for this architecture
-		wd := filepath.Join(workDir, arch.ToAPK())
-		bc, err := build.New(wd, opts...)
-		if err != nil {
-			return err
+	// output any file info requested
+	// If provided, this is the name of the file to write digest referenced into
+	if outputRefs != "" {
+		//nolint:gosec // Make image ref file readable by non-root
+		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0666); err != nil {
+			return fmt.Errorf("failed to write digest: %w", err)
 		}
-
-		// we do not generate SBOMs for each arch, only possibly for final image
-		bc.Options.SBOMFormats = []string{}
-		bc.Options.WantSBOM = false
-		bc.ImageConfiguration.Archs = archs
-
-		// save the build context for later
-		contexts[arch] = bc
-
-		errg.Go(func() error {
-			bc.Options.Arch = arch
-			bc.Options.WorkDir = wd
-
-			if err := bc.Refresh(); err != nil {
-				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
-			}
-
-			_, layer, err := bc.BuildLayer()
-			if err != nil {
-				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
-			}
-
-			// Compute the "build date epoch" from the packages that were
-			// installed.  The "build date epoch" is the MAX of the builddate
-			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
-			// explicitly set by the user, that trumps this.
-			// This computation will only affect the timestamp of the image
-			// itself and its SBOMs, since the timestamps on files come from the
-			// APKs.
-			if bc.Options.SourceDateEpoch, err = bc.GetBuildDateEpoch(); err != nil {
-				return fmt.Errorf("failed to determine build date epoch: %w", err)
-			}
-			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
-				multiArchBDE = bc.Options.SourceDateEpoch
-			}
-
-			var img coci.SignedImage
-			dig, img, err := publishImage(ctx, bc, layer, arch, ropt...)
-			if err != nil {
-				return fmt.Errorf("publishing %s image: %w", arch, err)
-			}
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			// This should be the same across architectures
-			additionalTags = bc.Options.Tags
-			finalDigest = dig
-			builtReferences = append(builtReferences, dig.String())
-			imgs[arch] = img
-
-			return nil
-		})
-	}
-	if err := errg.Wait(); err != nil {
-		return err
-	}
-	bc.Options.SourceDateEpoch = multiArchBDE
-
-	if len(archs) > 1 {
-		finalDigest, idx, err = publishIndex(ctx, bc, imgs, ropt...)
-		if err != nil {
-			return fmt.Errorf("publishing image index: %w", err)
-		}
-		builtReferences = append(builtReferences, finalDigest.String())
 	}
 
-	if bc.Options.StageTags != "" {
-		allTags := bc.Options.Tags
+	// If saving local, exit early (no SBOMs etc.)
+	if local {
+		logger.Printf("using local option, exiting early")
+		fmt.Println(strings.Split(finalDigest.String(), "@")[0])
+		return nil
+	}
+
+	if !shouldPushTags {
+		allTags := tags
 		allTags = append(allTags, additionalTags...)
 		tmp := map[string]bool{}
 		for _, tag := range allTags {
@@ -335,10 +264,10 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			sortedUniqueTags = append(sortedUniqueTags, k)
 		}
 		sort.Strings(sortedUniqueTags)
-		bc.Logger().Printf("Writing list of tags to %s (%d total)", bc.Options.StageTags, len(sortedUniqueTags))
+		logger.Printf("Writing list of tags to %s (%d total)", stageTags, len(sortedUniqueTags))
 
 		//nolint:gosec // Make tags file readable by non-root
-		if err := os.WriteFile(bc.Options.StageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0666); err != nil {
+		if err := os.WriteFile(stageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0666); err != nil {
 			return fmt.Errorf("failed to write tags: %w", err)
 		}
 	} else {
@@ -347,7 +276,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		for _, at := range additionalTags {
 			at := at
 			if skipLocalCopy {
-				bc.Logger().Warnf("skipping local domain tag %s", at)
+				logger.Warnf("skipping local domain tag %s", at)
 				continue
 			}
 			g.Go(func() error {
@@ -359,67 +288,14 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	}
 
-	// If saving local, exit early (no SBOMs etc.)
-	if bc.Options.Local {
-		bc.Logger().Printf("using local option, exiting early")
-		fmt.Println(strings.Split(finalDigest.String(), "@")[0])
-		return nil
-	}
-
-	bc.Options.SBOMFormats = formats
-	sbomPath := bc.Options.SBOMPath
-	if bc.Options.SBOMPath == "" {
-		sbomPath = bc.Options.TempDir()
-	}
-
+	// publish each arch-specific sbom
+	// publish the index sbom
 	if wantSBOM {
-		bc.Options.Log.Infof("Generating arch image SBOMs")
-		var g errgroup.Group
-		for arch, img := range imgs {
-			arch, img := arch, img
-			bc := contexts[arch]
-
-			bc.Options.WantSBOM = true
-			bc.Options.SBOMFormats = formats
-			bc.Options.SBOMPath = sbomPath
-
-			g.Go(func() error {
-				if err := bc.GenerateImageSBOM(arch, img); err != nil {
-					return fmt.Errorf("generating sbom for %s: %w", arch, err)
-				}
-
-				if _, err := oci.PostAttachSBOM(
-					ctx, img, sbomPath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags, ropt...,
-				); err != nil {
-					return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
-				}
-
-				return nil
-			})
-		}
-
-		if err := g.Wait(); err != nil {
-			return err
-		}
-
-		if err := bc.GenerateIndexSBOM(finalDigest, imgs); err != nil {
-			return fmt.Errorf("generating index SBOM: %w", err)
-		}
-
-		if idx != nil {
-			if _, err := oci.PostAttachSBOM(
-				ctx, idx, sbomPath, bc.Options.SBOMFormats, types.Architecture(""), bc.Logger(), bc.Options.Tags, ropt...,
-			); err != nil {
-				return fmt.Errorf("attaching sboms to index: %w", err)
-			}
-		}
-	}
-
-	// If provided, this is the name of the file to write digest referenced into
-	if outputRefs != "" {
-		//nolint:gosec // Make image ref file readable by non-root
-		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0666); err != nil {
-			return fmt.Errorf("failed to write digest: %w", err)
+		// all sboms will be in the same directory
+		if err := oci.PostAttachSBOMsFromIndex(
+			ctx, idx, sboms, logger, tags, ropt...,
+		); err != nil {
+			return fmt.Errorf("attaching sboms to index: %w", err)
 		}
 	}
 
@@ -428,38 +304,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	fmt.Println(finalDigest)
 
 	return nil
-}
-
-// publishImage publishes a specific architecture image
-func publishImage(ctx context.Context, bc *build.Context, layer v1.Layer, arch types.Architecture, ropt ...remote.Option) (imgDigest name.Digest, img coci.SignedImage, err error) {
-	shouldPushTags := bc.Options.StageTags == ""
-	imgDigest, img, err = oci.PublishImageFromLayer(ctx,
-		layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, arch, bc.Logger(),
-		bc.Options.SBOMPath, bc.Options.SBOMFormats, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...,
-	)
-	if err != nil {
-		return name.Digest{}, nil, fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
-	}
-	return imgDigest, img, nil
-}
-
-// publishIndex publishes the new image index
-func publishIndex(ctx context.Context, bc *build.Context, imgs map[types.Architecture]coci.SignedImage, ropt ...remote.Option) (
-	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
-) {
-	shouldPushTags := bc.Options.StageTags == ""
-	if bc.Options.UseDockerMediaTypes {
-		indexDigest, idx, err = oci.PublishDockerIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...)
-		if err != nil {
-			return name.Digest{}, nil, fmt.Errorf("failed to build Docker index: %w", err)
-		}
-	} else {
-		indexDigest, idx, err = oci.PublishIndex(ctx, bc.ImageConfiguration, imgs, bc.Options.Log, bc.Options.Local, shouldPushTags, bc.Options.Tags, ropt...)
-		if err != nil {
-			return name.Digest{}, nil, fmt.Errorf("failed to build OCI index: %w", err)
-		}
-	}
-	return indexDigest, idx, nil
 }
 
 func parseAnnotations(rawAnnotations []string) (map[string]string, error) {
