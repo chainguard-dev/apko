@@ -16,7 +16,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +27,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
@@ -159,7 +162,8 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 	// copy sboms over to the sbomPath target directory
 	for _, sbom := range sboms {
-		if err := os.Rename(sbom.Path, filepath.Join(sbomPath, filepath.Base(sbom.Path))); err != nil {
+		// because os.Rename fails across partitions, we do our own
+		if err := rename(sbom.Path, filepath.Join(sbomPath, filepath.Base(sbom.Path))); err != nil {
 			return fmt.Errorf("moving sbom: %w", err)
 		}
 	}
@@ -357,4 +361,31 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	}
 
 	return idx, sboms, nil
+}
+
+// rename just like os.Rename, but does a copy and delete if the rename fails
+func rename(from, to string) error {
+	err := os.Rename(from, to)
+	if err == nil {
+		return nil
+	}
+	// we can handle cross-device rename errors
+	if !errors.Is(err, unix.EXDEV) {
+		return err
+	}
+	f1, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer f1.Close()
+	f2, err := os.Create(to)
+	if err != nil {
+		return err
+	}
+	defer f2.Close()
+	_, err = io.Copy(f2, f1)
+	if err != nil {
+		return err
+	}
+	return os.Remove(from)
 }
