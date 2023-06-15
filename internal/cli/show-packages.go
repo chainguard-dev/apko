@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 
 	"github.com/spf13/cobra"
 
@@ -26,22 +27,79 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
+const (
+	formatNameSpaceVersion                 = `{{ .Name }} {{ .Version }}`
+	formatNameSpaceVersionWithSource       = `{{ .Name }} {{ .Version }} {{ .Source }}`
+	formatNameSpaceEqualsVersion           = `{{ .Name }}={{ .Version }}`
+	formatNameSpaceEqualsVersionWithSource = `{{ .Name }}={{ .Version }} {{ .Source }}`
+	formatNameBracketsVersion              = `{{ .Name }} ({{ .Version }})`
+	formatNameBracketsVersionWithSource    = `{{ .Name }} ({{ .Version }}) {{ .Source }}`
+	formatPkgLock                          = `- {{ .Name }}={{ .Version }}`
+	formatPkgLockWithSource                = `- {{ .Name }}={{ .Version }} # {{ .Source }}`
+	showPkgsFormatDefault                  = formatNameSpaceVersion
+)
+
+var (
+	showPkgsFormats = map[string]string{
+		"name-version":          formatNameSpaceVersion,
+		"name-version-source":   formatNameSpaceVersionWithSource,
+		"name=version":          formatNameSpaceEqualsVersion,
+		"name=version-source":   formatNameSpaceEqualsVersionWithSource,
+		"name-(version)":        formatNameBracketsVersion,
+		"name-(version)-source": formatNameBracketsVersionWithSource,
+		"packagelock":           formatPkgLock,
+		"packagelock-source":    formatPkgLockWithSource,
+	}
+)
+
+type pkgInfo struct {
+	Name    string
+	Version string
+	Source  string
+}
+
 func showPackages() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var archstrs []string
+	var format string
+	var tmpl string
 
 	cmd := &cobra.Command{
 		Use:   "show-packages",
 		Short: "Show the packages and versions that would be installed by a configuration",
 		Long: `Show the packages and versions that would be installed by a configuration.
-The result is similar to the first stages of a build, but does not actuall install anything.
+The result is identical to the first stages of a build, but does not actuall install anything.
+
+The output is one of several pre-defined formats, or can be customized to any go template, using
+the provided vars. See https://pkg.go.dev/text/template for more information. Available vars are
+.Name, .Version, .Source
+
+The pre-defined formats are:
+  name-version:          {{ .Name }} {{ .Version }}
+  name-version-source:   {{ .Name }} {{ .Version }} {{ .Source }}
+  name=version:          {{ .Name }}={{ .Version }}
+  name=version-source:   {{ .Name }}={{ .Version }} {{ .Source }}
+  name-(version):        {{ .Name }} ({{ .Version }})
+  name-(version)-source: {{ .Name }} ({{ .Version }}) {{ .Source }}
+  packagelock:               - {{ .Name }}={{ .Version }}
+  packagelock-source:        - {{ .Name }}={{ .Version }} # {{ .Source }}
+
+The default format is name-version.
+
+packagelock and packagelock-source are particularly useful for inserting back into a yaml list of packages.
 `,
 		Example: `  apko show-packages <config.yaml>`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			archs := types.ParseArchitectures(archstrs)
-			return ShowPackagesCmd(cmd.Context(), archs,
+			if t, ok := showPkgsFormats[format]; ok {
+				tmpl = t
+			} else {
+				// assume it's a template
+				tmpl = format
+			}
+			return ShowPackagesCmd(cmd.Context(), tmpl, archs,
 				build.WithConfig(args[0]),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
@@ -52,11 +110,12 @@ The result is similar to the first stages of a build, but does not actuall insta
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
+	cmd.Flags().StringVar(&format, "format", showPkgsFormatDefault, "format for showing packages; if pre-defined from list, will use that, else go template. See https://pkg.go.dev/text/template for more information. Available vars are `.Name`, `.Version`, `.Source`")
 
 	return cmd
 }
 
-func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...build.Option) error {
+func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architecture, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -98,6 +157,10 @@ func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...bu
 	defer os.RemoveAll(bc.Options.TempDir())
 
 	workDir := bc.Options.WorkDir
+	tmpl, err := template.New("format").Parse(format)
+	if err != nil {
+		return fmt.Errorf("failed to parse format: %w", err)
+	}
 
 	for _, arch := range archs {
 		arch := arch
@@ -125,10 +188,16 @@ func ShowPackagesCmd(ctx context.Context, archs []types.Architecture, opts ...bu
 			return fmt.Errorf("failed to get package list for image: %w", err)
 		}
 		fmt.Println(arch)
+		var p pkgInfo
 		for _, pkg := range pkgs {
-			fmt.Printf("  %s %s\n", pkg.Name, pkg.Version)
+			p.Name = pkg.Name
+			p.Version = pkg.Version
+			p.Source = pkg.Url()
+			if err = tmpl.Execute(os.Stdout, p); err != nil {
+				return fmt.Errorf("failed to execute template: %w", err)
+			}
+			fmt.Println()
 		}
-		fmt.Println()
 	}
 	return nil
 }
