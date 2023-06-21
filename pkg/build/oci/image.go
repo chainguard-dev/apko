@@ -132,6 +132,13 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		cfg.Config.WorkingDir = ic.WorkDir
 	}
 
+	if ic.Volumes != nil {
+		cfg.Config.Volumes = make(map[string]struct{})
+		for _, v := range ic.Volumes {
+			cfg.Config.Volumes[v] = struct{}{}
+		}
+	}
+
 	// Set these environment variables if they are not already set.
 	if ic.Environment == nil {
 		ic.Environment = map[string]string{}
