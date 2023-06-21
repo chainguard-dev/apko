@@ -54,8 +54,27 @@ func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs 
 
 // generateIndexWithMediaType generates an index or docker manifest list from the given imgs. The index type
 // is provided by the `mediaType` parameter.
-func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
-	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
+func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
+	// If annotations are set and we're using the OCI mediaType, set annotations on the index.
+	annotations := map[string]string{}
+	if mediaType == ggcrtypes.OCIImageIndex {
+		annotations = ic.Annotations
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		if ic.VCSUrl != "" {
+			if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
+				annotations["org.opencontainers.image.source"] = url
+				annotations["org.opencontainers.image.revision"] = hash
+			}
+		}
+	}
+
+	idx := signed.ImageIndex(
+		mutate.IndexMediaType(
+			mutate.Annotations(empty.Index, annotations).(v1.ImageIndex),
+			mediaType),
+	)
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
