@@ -144,6 +144,14 @@ type ImageConfiguration struct {
 	//
 	// Deprecated: Use WithExtraPackages.
 	Options map[string]BuildOption `yaml:"options,omitempty"`
+	// Optional: A list of volumes to configure
+	//
+	// This is _not_ the same as Paths, but refers to the OCI spec "volumes"
+	// field used by some container runtimes (docker) to create volumes at
+	// runtime. For most use cases, this is not needed, but consider using this
+	// when the image requires special volume configuration at runtime for
+	// supported container runtimes.
+	Volumes []string `yaml:"volumes,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
