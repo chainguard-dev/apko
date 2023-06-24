@@ -184,7 +184,7 @@ func (i INode) Mode() fs.FileMode {
 
 func (i INode) ModTime() time.Time {
 	ts, tns := i.UnderlayINode.Mtim.Unix()
-	return time.Unix(ts, tns)
+	return time.Unix(ts, tns).UTC()
 }
 
 func (i INode) Name() string {
