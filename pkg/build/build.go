@@ -250,7 +250,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 			return nil, fmt.Errorf("failed to parse SOURCE_DATE_EPOCH: %w", err)
 		}
 
-		bc.Options.SourceDateEpoch = time.Unix(sec, 0)
+		bc.Options.SourceDateEpoch = time.Unix(sec, 0).UTC()
 	}
 
 	// if arch is missing default to the running program's arch
