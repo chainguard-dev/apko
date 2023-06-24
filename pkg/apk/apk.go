@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
@@ -83,14 +84,15 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		if err := a.impl.InitKeyring(context.Background(), ic.Contents.Keyring, a.Options.ExtraKeyFiles); err != nil {
+		keyring := sets.List(sets.New(ic.Contents.Keyring...).Insert(a.Options.ExtraKeyFiles...))
+		if err := a.impl.InitKeyring(context.Background(), keyring, nil); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		repos := append(ic.Contents.Repositories, a.Options.ExtraRepos...) // nolint:gocritic
+		repos := sets.List(sets.New(ic.Contents.Repositories...).Insert(a.Options.ExtraRepos...))
 		if err := a.impl.SetRepositories(repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
@@ -98,7 +100,7 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 	})
 
 	eg.Go(func() error {
-		packages := append(ic.Contents.Packages, a.Options.ExtraPackages...) //nolint:gocritic
+		packages := sets.List(sets.New(ic.Contents.Packages...).Insert(a.Options.ExtraPackages...))
 		if err := a.impl.SetWorld(packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
