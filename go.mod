@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
-	github.com/chainguard-dev/go-apk v0.0.0-20230615173409-89c81e982f86
+	github.com/chainguard-dev/go-apk v0.0.0-20230623221358-f867b780f14b
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.6.1
@@ -26,6 +26,7 @@ require (
 	golang.org/x/sys v0.9.0
 	golang.org/x/term v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/apimachinery v0.26.1
 	sigs.k8s.io/release-utils v0.7.5-0.20230601212346-3866fe05b204
 )
 
