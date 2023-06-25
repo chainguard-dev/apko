@@ -58,12 +58,12 @@ func buildMinirootFS() *cobra.Command {
 			logger := log.NewLogger(logWriter)
 
 			return BuildMinirootFSCmd(cmd.Context(),
+				build.WithLogger(logger),
 				build.WithConfig(args[0]),
 				build.WithTarball(args[1]),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
-				build.WithLogger(logger),
 				build.WithDebugLogging(debugEnabled),
 			)
 		},
