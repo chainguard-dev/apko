@@ -17,7 +17,6 @@ package options
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"time"
@@ -53,7 +52,7 @@ type Options struct {
 }
 
 var Default = Options{
-	Log:             &log.Adapter{Out: io.Discard, Level: log.InfoLevel},
+	Log:             &log.Adapter{Out: os.Stderr, Level: log.InfoLevel},
 	Arch:            types.ParseArchitecture(runtime.GOARCH),
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
 }
