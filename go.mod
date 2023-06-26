@@ -26,7 +26,7 @@ require (
 	golang.org/x/sys v0.9.0
 	golang.org/x/term v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.26.1
+	k8s.io/apimachinery v0.27.3
 	sigs.k8s.io/release-utils v0.7.5-0.20230601212346-3866fe05b204
 )
 
@@ -77,8 +77,8 @@ require (
 	github.com/go-git/go-billy/v5 v5.4.1 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
 	github.com/go-openapi/errors v0.20.3 // indirect
-	github.com/go-openapi/jsonpointer v0.19.5 // indirect
-	github.com/go-openapi/jsonreference v0.20.0 // indirect
+	github.com/go-openapi/jsonpointer v0.19.6 // indirect
+	github.com/go-openapi/jsonreference v0.20.1 // indirect
 	github.com/go-openapi/loads v0.21.2 // indirect
 	github.com/go-openapi/runtime v0.26.0 // indirect
 	github.com/go-openapi/spec v0.20.9 // indirect
