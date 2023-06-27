@@ -49,56 +49,11 @@ import (
 
 const indexFile = "index.json"
 
-//counterfeiter:generate . buildImplementation
-
-type buildImplementation interface {
-	// Refresh initialize build, set options, and get a jail and emulation executor and s6 supervisor config
-	Refresh(*options.Options) (*s6.Context, *exec.Executor, error)
-	// BuildTarball build from the layout in a working directory to an OCI image layer tarball
-	BuildTarball(*options.Options, fs.FS) (targz string, diffid hash.Hash, digest hash.Hash, size int64, err error)
-	// WriteIndex write an index to the working directory
-	WriteIndex(*options.Options, coci.SignedImageIndex) (file string, size int64, err error)
-	// GenerateSBOM generate a software-bill-of-materials for the image
-	GenerateSBOM(*options.Options, *types.ImageConfiguration) error
-	// InitializeApk do all of the steps to set up apk for installing packages in the working directory
-	InitializeApk(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
-	// InstallPackages install the packages
-	InstallPackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
-	// InstalledPackages fetches the installed package list
-	InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error)
-	// ResolvePackages resolve the names and versions of packages to be installed
-	ResolvePackages(apkfs.FullFS, *options.Options, *types.ImageConfiguration) ([]*repository.RepositoryPackage, []string, error)
-	// MutateAccounts set up the user accounts and groups in the working directory
-	MutateAccounts(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
-	// MutatePaths set permissions and ownership on files based on the ImageConfiguration
-	MutatePaths(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
-	// GenerateOSRelase generate /etc/os-release in the working directory
-	GenerateOSRelease(apkfs.FullFS, *options.Options, *types.ImageConfiguration) error
-	// ValidateImageConfiguration check that the supplied ImageConfiguration is valid
-	ValidateImageConfiguration(*types.ImageConfiguration) error
-	// BuildImage based on the ImageConfiguration, run all of the steps to generate the laid out paths in the working directory
-	BuildImage(*options.Options, *types.ImageConfiguration, *exec.Executor, *s6.Context) (fs.FS, error)
-	// WriteSupervisionTree insert the configuration files and binaries in the working directory for s6 to operate
-	WriteSupervisionTree(*s6.Context, *types.ImageConfiguration) error
-	// GenerateIndexSBOM generate an SBOM for the index and return the paths to the files holding it
-	GenerateIndexSBOM(*options.Options, *types.ImageConfiguration, name.Digest, map[types.Architecture]coci.SignedImage) ([]types.SBOM, error)
-	// GenerateImageSBOM generate an SBOM for the image contents and return the paths to the files holding it
-	GenerateImageSBOM(*options.Options, *types.ImageConfiguration, coci.SignedImage) ([]types.SBOM, error)
-	// AdditionalTags generate additional tags for apk packages
-	AdditionalTags(apkfs.FullFS, *options.Options) error
-	// InstallBusyboxLinks install busybox symlinks, if busybox is installed
-	InstallBusyboxLinks(apkfs.FullFS, *options.Options) error
-	// InstallLdconfigLinks install ldconfig symlinks
-	InstallLdconfigLinks(apkfs.FullFS) error
-	// InstallCharDevices install character devices
-	InstallCharDevices(apkfs.FullFS) error
-}
-
-type defaultBuildImplementation struct {
+type buildImplementation struct {
 	workdirFS apkfs.FullFS
 }
 
-func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.Executor, error) {
+func (di *buildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.Executor, error) {
 	o.TarballPath = ""
 
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
@@ -115,7 +70,7 @@ func (di *defaultBuildImplementation) Refresh(o *options.Options) (*s6.Context, 
 	return s6.New(di.workdirFS, o.Logger()), executor, nil
 }
 
-func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, hash.Hash, hash.Hash, int64, error) {
+func (di *buildImplementation) BuildTarball(o *options.Options, fsys fs.FS) (string, hash.Hash, hash.Hash, int64, error) {
 	var outfile *os.File
 	var err error
 
@@ -161,7 +116,7 @@ func (di *defaultBuildImplementation) BuildTarball(o *options.Options, fsys fs.F
 }
 
 // GenerateImageSBOM generates an sbom for an image
-func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) ([]types.SBOM, error) {
+func (di *buildImplementation) GenerateImageSBOM(o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) ([]types.SBOM, error) {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
 		return nil, nil
@@ -207,7 +162,7 @@ func (di *defaultBuildImplementation) GenerateImageSBOM(o *options.Options, ic *
 }
 
 // GenerateSBOM generates an SBOM for an apko layer
-func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types.ImageConfiguration) error {
+func (di *buildImplementation) GenerateSBOM(o *options.Options, ic *types.ImageConfiguration) error {
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
 		return nil
@@ -236,7 +191,7 @@ func (di *defaultBuildImplementation) GenerateSBOM(o *options.Options, ic *types
 	return nil
 }
 
-func (di *defaultBuildImplementation) InitializeApk(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+func (di *buildImplementation) InitializeApk(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
 	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
 	if err != nil {
 		return err
@@ -244,7 +199,7 @@ func (di *defaultBuildImplementation) InitializeApk(fsys apkfs.FullFS, o *option
 	return apk.Initialize(ic)
 }
 
-func (di *defaultBuildImplementation) InstallPackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+func (di *buildImplementation) InstallPackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
 	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
 	if err != nil {
 		return err
@@ -252,7 +207,7 @@ func (di *defaultBuildImplementation) InstallPackages(fsys apkfs.FullFS, o *opti
 	return apk.Install()
 }
 
-func (di *defaultBuildImplementation) InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error) {
+func (di *buildImplementation) InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error) {
 	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
 	if err != nil {
 		return nil, err
@@ -260,7 +215,7 @@ func (di *defaultBuildImplementation) InstalledPackages(fsys apkfs.FullFS, o *op
 	return apk.GetInstalled()
 }
 
-func (di *defaultBuildImplementation) ResolvePackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+func (di *buildImplementation) ResolvePackages(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
 	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
 	if err != nil {
 		return nil, nil, err
@@ -268,7 +223,7 @@ func (di *defaultBuildImplementation) ResolvePackages(fsys apkfs.FullFS, o *opti
 	return apk.ResolvePackages()
 }
 
-func (di *defaultBuildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Options) error {
+func (di *buildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Options) error {
 	at, err := chainguardAPK.AdditionalTags(fsys, *o)
 	if err != nil {
 		return err
@@ -280,7 +235,7 @@ func (di *defaultBuildImplementation) AdditionalTags(fsys apkfs.FullFS, o *optio
 	return nil
 }
 
-func (di *defaultBuildImplementation) BuildImage(
+func (di *buildImplementation) BuildImage(
 	o *options.Options, ic *types.ImageConfiguration, e *exec.Executor, s6context *s6.Context,
 ) (fs.FS, error) {
 	if err := buildImage(di.workdirFS, di, o, ic, s6context); err != nil {
@@ -298,7 +253,7 @@ func (di *defaultBuildImplementation) BuildImage(
 // TODO(puerco): In order to have a structure we can mock, we need to split
 // image building to its own interface or split out to its own package.
 func buildImage(
-	fsys apkfs.FullFS, di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
+	fsys apkfs.FullFS, di *buildImplementation, o *options.Options, ic *types.ImageConfiguration,
 	s6context *s6.Context,
 ) error {
 	o.Logger().Infof("doing pre-flight checks")
@@ -361,7 +316,7 @@ func buildImage(
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func (di *defaultBuildImplementation) WriteIndex(o *options.Options, idx coci.SignedImageIndex) (string, int64, error) {
+func (di *buildImplementation) WriteIndex(o *options.Options, idx coci.SignedImageIndex) (string, int64, error) {
 	outfile := filepath.Join(o.TempDir(), indexFile)
 
 	b, err := idx.RawManifest()
@@ -382,7 +337,7 @@ func (di *defaultBuildImplementation) WriteIndex(o *options.Options, idx coci.Si
 }
 
 func buildPackageList(
-	fsys apkfs.FullFS, di buildImplementation, o *options.Options, ic *types.ImageConfiguration,
+	fsys apkfs.FullFS, di *buildImplementation, o *options.Options, ic *types.ImageConfiguration,
 ) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
 	o.Logger().Infof("doing pre-flight checks")
 	if err := di.ValidateImageConfiguration(ic); err != nil {
@@ -434,7 +389,7 @@ func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration
 	return s
 }
 
-func (di *defaultBuildImplementation) GenerateIndexSBOM(
+func (di *buildImplementation) GenerateIndexSBOM(
 	o *options.Options, ic *types.ImageConfiguration,
 	indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
 ) ([]types.SBOM, error) {

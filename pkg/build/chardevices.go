@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func (di *defaultBuildImplementation) InstallCharDevices(fsys apkfs.FullFS) error {
+func (di *buildImplementation) InstallCharDevices(fsys apkfs.FullFS) error {
 	devices := []struct {
 		path  string
 		major uint32

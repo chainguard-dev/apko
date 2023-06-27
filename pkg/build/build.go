@@ -51,7 +51,7 @@ import (
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
 type Context struct {
-	impl buildImplementation
+	impl *buildImplementation
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ImageConfiguration types.ImageConfiguration
 	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
@@ -225,7 +225,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
 		Options: options.Default,
-		impl: &defaultBuildImplementation{
+		impl: &buildImplementation{
 			workdirFS: fs,
 		},
 		fs: fs,
@@ -279,10 +279,6 @@ func (bc *Context) Refresh() error {
 	bc.s6 = s6
 
 	return nil
-}
-
-func (bc *Context) SetImplementation(i buildImplementation) {
-	bc.impl = i
 }
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing

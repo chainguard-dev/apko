@@ -101,7 +101,7 @@ func getSoname(vfs apkfs.OpenReaderAtFS, path string) (string, error) {
 	return dynStrings[0], nil
 }
 
-func (di *defaultBuildImplementation) InstallLdconfigLinks(fsys apkfs.FullFS) error {
+func (di *buildImplementation) InstallLdconfigLinks(fsys apkfs.FullFS) error {
 	linksMap, err := ldconfig(fsys, "/lib")
 	if err != nil {
 		return err

@@ -27,7 +27,7 @@ import (
 	"chainguard.dev/apko/pkg/passwd"
 )
 
-func (di *defaultBuildImplementation) appendGroup(
+func (di *buildImplementation) appendGroup(
 	o *options.Options, groups []passwd.GroupEntry, group types.Group,
 ) []passwd.GroupEntry {
 	o.Logger().Printf("creating group %d(%s)", group.GID, group.GroupName)
@@ -57,7 +57,7 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	}
 }
 
-func (di *defaultBuildImplementation) MutateAccounts(
+func (di *buildImplementation) MutateAccounts(
 	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
 ) error {
 	var eg errgroup.Group

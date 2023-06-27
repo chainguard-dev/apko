@@ -50,7 +50,7 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 	}
 	t.Run("with busybox-paths manifest", func(t *testing.T) {
 		var err error
-		di := &defaultBuildImplementation{}
+		di := &buildImplementation{}
 		fsys := apkfs.NewMemFS()
 		buildBusybox(fsys, t)
 		err = fsys.WriteFile("/etc/busybox-paths.d/busybox", []byte(strings.Join(fakeLinks, "\n")), 0755)
@@ -71,7 +71,7 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 	})
 	t.Run("without busybox-paths manifest", func(t *testing.T) {
 		var err error
-		di := &defaultBuildImplementation{}
+		di := &buildImplementation{}
 		fsys := apkfs.NewMemFS()
 		buildBusybox(fsys, t)
 		err = di.InstallBusyboxLinks(fsys, &options.Options{})
