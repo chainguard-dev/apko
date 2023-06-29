@@ -142,7 +142,7 @@ bill of materials) describing the image contents.
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
+func BuildCmd(ctx context.Context, imageRef, outputTar string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -156,7 +156,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	}
 
 	// bundle the parts of the image into a tarball
-	if _, err := oci.BuildIndex(outputTarGZ, idx, append([]string{imageRef}, tags...), logger); err != nil {
+	if _, err := oci.BuildIndex(outputTar, idx, append([]string{imageRef}, tags...), logger); err != nil {
 		return fmt.Errorf("bundling image: %w", err)
 	}
 
@@ -169,7 +169,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	}
 
 	logrus.Infof(
-		"Final index tgz at: %s", outputTarGZ,
+		"Final image at: %s", outputTarOrLayoutDir,
 	)
 
 	return nil

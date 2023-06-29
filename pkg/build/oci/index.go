@@ -117,8 +117,8 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 	return digest, idx, err
 }
 
-// BuildIndex builds a self-contained tar.gz file containing the index and its individual images for all architectures.
-// Returns the digest and the path to the combined tar.gz.
+// BuildIndex builds a self-contained tar file containing the index and its individual images for all architectures.
+// Returns the digest.
 func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string, logger log.Logger) (name.Digest, error) {
 	tagsToImages := make(map[name.Tag]v1.Image)
 	var imgs = make([]oci.SignedImage, 0)
@@ -165,7 +165,7 @@ func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string, logger 
 		return name.Digest{}, err
 	}
 	if err := v1tar.MultiWrite(tagsToImages, f); err != nil {
-		return name.Digest{}, fmt.Errorf("failed to write index to tgz: %w", err)
+		return name.Digest{}, fmt.Errorf("failed to write index to tar: %w", err)
 	}
 
 	// to append to a tar archive, you need to find the last file in the archive
