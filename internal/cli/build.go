@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/google/go-containerregistry/pkg/v1/layout"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -68,7 +69,7 @@ command, e.g.
 Along the image, apko will generate CycloneDX and SPDX SBOMs (software
 bill of materials) describing the image contents.
 `,
-		Example: `  apko build <config.yaml> <tag> <output.tar>`,
+		Example: `  apko build <config.yaml> <tag> <output.tar|output-layout/>`,
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(logPolicy) == 0 {
@@ -142,7 +143,7 @@ bill of materials) describing the image contents.
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, imageRef, outputTar string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
+func BuildCmd(ctx context.Context, imageRef, outputTarOrLayoutDir string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -155,9 +156,24 @@ func BuildCmd(ctx context.Context, imageRef, outputTar string, archs []types.Arc
 		return err
 	}
 
-	// bundle the parts of the image into a tarball
-	if _, err := oci.BuildIndex(outputTar, idx, append([]string{imageRef}, tags...), logger); err != nil {
-		return fmt.Errorf("bundling image: %w", err)
+	if fi, err := os.Stat(outputTarOrLayoutDir); err == nil && fi.IsDir() {
+		// bundle the parts of the image into an OCI layout dir
+		if _, err := layout.Write(outputTarOrLayoutDir, idx); err != nil {
+			return fmt.Errorf("writing image layout: %w", err)
+		}
+
+		logrus.Infof(
+			"Final image layout at: %s", outputTarOrLayoutDir,
+		)
+	} else {
+		// bundle the parts of the image into a tarball
+		if _, err := oci.BuildIndex(outputTarOrLayoutDir, idx, append([]string{imageRef}, tags...), logger); err != nil {
+			return fmt.Errorf("bundling image: %w", err)
+		}
+
+		logrus.Infof(
+			"Final image tar at: %s", outputTarOrLayoutDir,
+		)
 	}
 
 	// copy sboms over to the sbomPath target directory
@@ -167,10 +183,6 @@ func BuildCmd(ctx context.Context, imageRef, outputTar string, archs []types.Arc
 			return fmt.Errorf("moving sbom: %w", err)
 		}
 	}
-
-	logrus.Infof(
-		"Final image at: %s", outputTarOrLayoutDir,
-	)
 
 	return nil
 }
