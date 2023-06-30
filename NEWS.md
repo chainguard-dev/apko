@@ -1,3 +1,19 @@
+# Changes from 0.8.0 to 0.9.0
+
+* Use external `go-apk` library instead of internal APK implementation.
+
+* Retry fetching packages on failure.
+
+* Deprecate configured build options in favor of the `--extra-packages`
+  command line option.
+
+* Compute build timestamps from latest installed APK if `SOURCE_DATE_EPOCH`
+  is unset.
+
+* Stop fetching Alpine keyring for non-Alpine distributions.
+
+* Cache fetched APKs which have been downloaded from configured repositories.
+
 # Changes from 0.7.3 to 0.8.0
 
 * Add support for fuzzy version matching using the tilde operator (`~`).
