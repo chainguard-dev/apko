@@ -183,7 +183,7 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 			return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 		}
 
-		pkgs, _, err := bc.BuildPackageList()
+		pkgs, _, err := bc.BuildPackageList(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get package list for image: %w", err)
 		}

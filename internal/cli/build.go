@@ -26,6 +26,7 @@ import (
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -178,6 +179,9 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 // buildImage build all of the components of an image in a single working directory.
 // Each layer is a separate file, as are config, manifests, index and sbom.
 func buildImageComponents(ctx context.Context, wd string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, err error) {
+	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
+	defer span.End()
+
 	bc, err := build.New(wd, opts...)
 	if err != nil {
 		return nil, nil, err
@@ -270,7 +274,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			}
 			bc.Options.TarballPath = filepath.Join(imageDir, bc.Options.TarballFileName())
 
-			layerTarGZ, layer, err := bc.BuildLayer()
+			layerTarGZ, layer, err := bc.BuildLayer(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
@@ -336,7 +340,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			bc.Options.SBOMPath = imageDir
 
 			g.Go(func() error {
-				outputs, err := bc.GenerateImageSBOM(arch, img)
+				outputs, err := bc.GenerateImageSBOM(ctx, arch, img)
 				if err != nil {
 					return fmt.Errorf("generating sbom for %s: %w", arch, err)
 				}
@@ -353,7 +357,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		bc.Options.WantSBOM = true
 		bc.Options.SBOMFormats = formats
 		bc.Options.SBOMPath = imageDir
-		files, err := bc.GenerateIndexSBOM(finalDigest, imgs)
+		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
 		}

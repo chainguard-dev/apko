@@ -30,6 +30,7 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	ociremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 	"github.com/sigstore/cosign/v2/pkg/oci/walk"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -82,6 +83,9 @@ func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageCo
 // platform, defaulting to the one on which the docker daemon is running.
 // PublishIndex will determine that platform and use it to publish the updated index.
 func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
+	ctx, span := otel.Tracer("apko").Start(ctx, "PublishIndex")
+	defer span.End()
+
 	// If attempting to save locally, pick the native architecture
 	// and use that cached image for local tags
 	// Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
@@ -255,6 +259,9 @@ func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef st
 // The only difference between this and PublishIndex is that PublishIndex pushes out all blobs and referenced manifests
 // from within the index. This adds pushing the referenced SignedImage artifacts along with appropriate tags.
 func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, local, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (digests []name.Digest, err error) {
+	ctx, span := otel.Tracer("apko").Start(ctx, "PublishImagesFromIndex")
+	defer span.End()
+
 	manifest, err := idx.IndexManifest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get index manifest: %w", err)
@@ -344,6 +351,9 @@ func writePeripherals(tag name.Reference, logger log.Logger, opt ...remote.Optio
 
 // Copt copies an image from one registry repository to another.
 func Copy(ctx context.Context, src, dst string, remoteOpts ...remote.Option) error {
+	ctx, span := otel.Tracer("apko").Start(ctx, "oci.Copy")
+	defer span.End()
+
 	log.DefaultLogger().Infof("Copying %s to %s", src, dst)
 	srcRef, err := name.ParseReference(src)
 	if err != nil {

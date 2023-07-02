@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build"
@@ -187,6 +188,9 @@ in a keychain.`,
 }
 
 func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, buildOpts []build.Option, publishOpts []PublishOption) error {
+	ctx, span := otel.Tracer("apko").Start(ctx, "PublishCmd")
+	defer span.End()
+
 	var opts publishOpt
 	for _, opt := range publishOpts {
 		if err := opt(&opts); err != nil {
