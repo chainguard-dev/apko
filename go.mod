@@ -24,7 +24,7 @@ require (
 	gitlab.alpinelinux.org/alpine/go v0.7.1-0.20230613043312-f696350aabb4
 	go.opentelemetry.io/otel v1.16.0
 	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.9.0
+	golang.org/x/sys v0.10.0
 	golang.org/x/term v0.9.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.27.3
