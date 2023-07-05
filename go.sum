@@ -100,8 +100,8 @@ github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/bwesterb/go-ristretto v1.2.0/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
-github.com/chainguard-dev/go-apk v0.0.0-20230630173347-b8abc44cc8ca h1:g7/vJI92M86VPfiIWd9We4+Y3ptj1T0CaAsQGZcV4ho=
-github.com/chainguard-dev/go-apk v0.0.0-20230630173347-b8abc44cc8ca/go.mod h1:4oM1wL0ag+5GmaQcGwnhP3dbyPt4iu21laDovCf/t3s=
+github.com/chainguard-dev/go-apk v0.0.0-20230705164040-61f000049aac h1:ViEFSyPqOjWDHu1UuKOHdGVffa9A3VV0XQ0cSqHgXBM=
+github.com/chainguard-dev/go-apk v0.0.0-20230705164040-61f000049aac/go.mod h1:sNZqgAX8clMvo10Lg0NmoO4ry71+S/LmIgrPZogBMzs=
 github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08 h1:9Qh4lJ/KMr5iS1zfZ8I97+3MDpiKjl+0lZVUNBhdvRs=
 github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08/go.mod h1:MAuu1uDJNOS3T3ui0qmKdPUwm59+bO19BbTph2wZafE=
 github.com/cloudflare/circl v1.1.0/go.mod h1:prBCrKB9DV4poKZY1l9zBXg2QJY7mvgRvtMxxK7fi4I=
