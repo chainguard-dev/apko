@@ -14,6 +14,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jinzhu/copier v0.3.5
+	github.com/klauspost/pgzip v1.2.5
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
 	github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a
 	github.com/sigstore/cosign/v2 v2.1.1
@@ -22,7 +23,6 @@ require (
 	github.com/stretchr/testify v1.8.4
 	gitlab.alpinelinux.org/alpine/go v0.7.1-0.20230613043312-f696350aabb4
 	go.opentelemetry.io/otel v1.16.0
-	golang.org/x/build v0.0.0-20220928220451-9294235e16f5
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.9.0
 	golang.org/x/term v0.9.0
@@ -100,7 +100,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/compress v1.16.5 // indirect
+	github.com/klauspost/compress v1.16.6 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20221109233200-85aa52084eaf // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -126,6 +126,7 @@ require (
 	go.mongodb.org/mongo-driver v1.11.3 // indirect
 	go.opentelemetry.io/otel/metric v1.16.0 // indirect
 	go.opentelemetry.io/otel/trace v1.16.0 // indirect
+	golang.org/x/build v0.0.0-20220928220451-9294235e16f5 // indirect
 	golang.org/x/crypto v0.10.0 // indirect
 	golang.org/x/mod v0.11.0 // indirect
 	golang.org/x/net v0.11.0 // indirect

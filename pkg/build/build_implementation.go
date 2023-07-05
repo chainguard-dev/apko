@@ -26,8 +26,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
-	gzip "golang.org/x/build/pargzip"
 
 	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
