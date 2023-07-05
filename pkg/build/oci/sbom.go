@@ -28,6 +28,7 @@ import (
 	ocimutate "github.com/sigstore/cosign/v2/pkg/oci/mutate"
 	"github.com/sigstore/cosign/v2/pkg/oci/static"
 	ctypes "github.com/sigstore/cosign/v2/pkg/types"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -37,6 +38,9 @@ import (
 // PostAttachSBOMsFromIndex attaches SBOMs to an already published index and all of the referenced images
 func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sboms []types.SBOM,
 	logger log.Logger, tags []string, remoteOpts ...remote.Option) error {
+	ctx, span := otel.Tracer("apko").Start(ctx, "PostAttachSBOMsFromIndex")
+	defer span.End()
+
 	manifest, err := idx.IndexManifest()
 	if err != nil {
 		return fmt.Errorf("failed to get index manifest: %w", err)

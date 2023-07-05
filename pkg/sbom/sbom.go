@@ -18,6 +18,7 @@ package sbom
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -28,6 +29,7 @@ import (
 	osr "github.com/dominodatalab/os-release"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
@@ -130,7 +132,10 @@ func (s *SBOM) GenerateIndex() ([]string, error) {
 }
 
 // ReadLayerTarball reads an apko layer tarball and adds its metadata to the SBOM options
-func (s *SBOM) ReadLayerTarball(path string) error {
+func (s *SBOM) ReadLayerTarball(ctx context.Context, path string) error {
+	_, span := otel.Tracer("apko").Start(ctx, "ReadLayerTarball")
+	defer span.End()
+
 	return s.impl.ReadLayerTarball(&s.Options, path)
 }
 

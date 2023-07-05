@@ -74,10 +74,10 @@ type Option func(*APK) error
 
 // Initialize sets the image in Context.WorkDir according to the image configuration,
 // and does everything short of installing the packages.
-func (a *APK) Initialize(ic *types.ImageConfiguration) error {
+func (a *APK) Initialize(ctx context.Context, ic *types.ImageConfiguration) error {
 	// initialize apk
 	alpineVersions := parseOptionsFromRepositories(ic.Contents.Repositories)
-	if err := a.impl.InitDB(context.Background(), alpineVersions...); err != nil {
+	if err := a.impl.InitDB(ctx, alpineVersions...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
@@ -85,7 +85,7 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 
 	eg.Go(func() error {
 		keyring := sets.List(sets.New(ic.Contents.Keyring...).Insert(a.Options.ExtraKeyFiles...))
-		if err := a.impl.InitKeyring(context.Background(), keyring, nil); err != nil {
+		if err := a.impl.InitKeyring(ctx, keyring, nil); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
 		}
 		return nil
@@ -115,15 +115,15 @@ func (a *APK) Initialize(ic *types.ImageConfiguration) error {
 }
 
 // Install install packages. Only works if already initialized.
-func (a *APK) Install() error {
+func (a *APK) Install(ctx context.Context) error {
 	// sync reality with desired apk world
-	return a.impl.FixateWorld(context.Background(), &a.Options.SourceDateEpoch)
+	return a.impl.FixateWorld(ctx, &a.Options.SourceDateEpoch)
 }
 
 // ResolvePackages gets list of packages that should be installed
-func (a *APK) ResolvePackages() (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+func (a *APK) ResolvePackages(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
 	// sync reality with desired apk world
-	return a.impl.ResolveWorld(context.Background())
+	return a.impl.ResolveWorld(ctx)
 }
 
 func (a *APK) GetInstalled() ([]*apkimpl.InstalledPackage, error) {

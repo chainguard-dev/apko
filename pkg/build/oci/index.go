@@ -33,6 +33,7 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	ocimutate "github.com/sigstore/cosign/v2/pkg/oci/mutate"
 	"github.com/sigstore/cosign/v2/pkg/oci/signed"
+	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
@@ -42,6 +43,9 @@ import (
 // will be "application/vnd.oci.image.index.v1+json".
 // The index is stored in memory.
 func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage) (name.Digest, oci.SignedImageIndex, error) {
+	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndex")
+	defer span.End()
+
 	return generateIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs)
 }
 
