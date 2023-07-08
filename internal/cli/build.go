@@ -278,7 +278,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
-			imageTars[arch] = layerTarGZ
 
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
@@ -301,6 +300,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			}
 			mtx.Lock()
 			imgs[arch] = img
+			imageTars[arch] = layerTarGZ
 			mtx.Unlock()
 
 			return nil
