@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -99,7 +100,8 @@ func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Opti
 
 	digest := sha256.New()
 
-	gzw := gzip.NewWriter(io.MultiWriter(digest, outfile))
+	buf := bufio.NewWriterSize(outfile, 1<<22)
+	gzw := gzip.NewWriter(io.MultiWriter(digest, buf))
 
 	diffid := sha256.New()
 
@@ -108,6 +110,10 @@ func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Opti
 	}
 	if err := gzw.Close(); err != nil {
 		return "", nil, nil, 0, fmt.Errorf("closing gzip writer: %w", err)
+	}
+
+	if err := buf.Flush(); err != nil {
+		return "", nil, nil, 0, fmt.Errorf("flushing %s: %w", outfile.Name(), err)
 	}
 
 	stat, err := outfile.Stat()
