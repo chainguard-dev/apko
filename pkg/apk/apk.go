@@ -55,13 +55,16 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 	// apko does not execute the scripts, so they do not matter. This buys us flexibility
 	// to run without root privileges, or even on non-Linux.
-	apkImpl, _ := apkimpl.New(
+	apkImpl, err := apkimpl.New(
 		apkimpl.WithFS(fsys),
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),
 		apkimpl.WithIgnoreMknodErrors(true),
 		apkimpl.WithCache(o.CacheDir),
 	)
+	if err != nil {
+		return nil, err
+	}
 	a := &APK{
 		Options: o,
 		impl:    apkImpl,
