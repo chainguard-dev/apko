@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -55,13 +56,30 @@ func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
 
 	// apko does not execute the scripts, so they do not matter. This buys us flexibility
 	// to run without root privileges, or even on non-Linux.
-	apkImpl, err := apkimpl.New(
+	apkOpts := []apkimpl.Option{
 		apkimpl.WithFS(fsys),
 		apkimpl.WithLogger(o.Logger()),
 		apkimpl.WithArch(o.Arch.ToAPK()),
 		apkimpl.WithIgnoreMknodErrors(true),
-		apkimpl.WithCache(o.CacheDir),
-	)
+	}
+	// only try to pass the cache dir if one of the following is true:
+	// - the user has explicitly set a cache dir
+	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
+	// if neither of these are true, then we don't want to pass a cache dir, because
+	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
+	// is not set.
+
+	// note that this is not easy to do in a switch statement, because of the second
+	// condition, if err := ...; err == nil {}
+	if o.CacheDir != "" {
+		apkOpts = append(apkOpts, apkimpl.WithCache(o.CacheDir))
+	} else if _, err := os.UserCacheDir(); err == nil {
+		apkOpts = append(apkOpts, apkimpl.WithCache(o.CacheDir))
+	} else {
+		o.Logger().Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	}
+
+	apkImpl, err := apkimpl.New(apkOpts...)
 	if err != nil {
 		return nil, err
 	}
