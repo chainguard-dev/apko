@@ -229,33 +229,49 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return nil
 	}
 
-	targetElementIDs := []string{}
-
 	// Cycle the top level elements...
+	elementIDs := map[string]struct{}{}
 	for _, elementID := range internalDoc.DocumentDescribes {
-		// ... searching for a 1st level package
-		for _, pkg := range internalDoc.Packages {
-			// that matches the name
-			if pkg.ID == elementID && p.Name == pkg.Name {
-				targetElementIDs = append(targetElementIDs, pkg.ID)
-				// TODO: Logf("Found package %s describing %s", pkg.ID, p.Name)
-			}
+		elementIDs[elementID] = struct{}{}
+	}
+
+	// ... searching for a 1st level package
+	targetElementIDs := map[string]struct{}{}
+	for _, pkg := range internalDoc.Packages {
+		// that matches the name
+		if p.Name != pkg.Name {
+			continue
 		}
 
-		// Copy the targetElementIDs
-		copiedElements := &map[string]struct{}{}
-		for _, id := range targetElementIDs {
-			if err := copySBOMElement(id, internalDoc, doc, copiedElements); err != nil {
-				return fmt.Errorf("copying element: %w", err)
-			}
+		if _, ok := elementIDs[pkg.ID]; !ok {
+			continue
+		}
 
-			// Search for a package in the new SBOM describing the same thing
-			for _, pkg := range doc.Packages {
-				// TODO: Think if we need to match version too
-				if pkg.Name == p.Name {
-					replacePackage(doc, pkg.ID, id)
-					break
-				}
+		targetElementIDs[pkg.ID] = struct{}{}
+		if len(targetElementIDs) == len(elementIDs) {
+			// Exit early if we found them all.
+			break
+		}
+	}
+
+	// Copy the targetElementIDs
+	todo := make(map[string]struct{}, len(internalDoc.Relationships))
+	for id := range targetElementIDs {
+		todo[id] = struct{}{}
+	}
+
+	if err := copySBOMElements(internalDoc, doc, todo); err != nil {
+		return fmt.Errorf("copying element: %w", err)
+	}
+
+	// TODO: This loop seems very wrong.
+	for id := range targetElementIDs {
+		// Search for a package in the new SBOM describing the same thing
+		for _, pkg := range doc.Packages {
+			// TODO: Think if we need to match version too
+			if pkg.Name == p.Name {
+				replacePackage(doc, pkg.ID, id)
+				break
 			}
 		}
 	}
@@ -263,49 +279,52 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	return nil
 }
 
-func copySBOMElement(spdxid string, sourceDoc, targetDoc *Document, copiedElements *map[string]struct{}) error {
-	if _, ok := (*copiedElements)[spdxid]; ok {
-		return nil
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
+	// Walk the graph looking for things to copy.
+	// Loop until we don't find any new todos.
+	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
+		for _, r := range sourceDoc.Relationships {
+			if _, ok := todo[r.Element]; ok {
+				todo[r.Related] = struct{}{}
+			}
+		}
 	}
 
-	// TODO: Logf(" Copying SBOM element %s to targetSBOM", spdxid)
+	// Now copy everything over.
+	done := make(map[string]struct{}, len(todo))
 
-	// Check if we're dealing with a package
-	copied := false
 	for _, p := range sourceDoc.Packages {
-		if p.ID == spdxid {
+		if _, ok := todo[p.ID]; ok {
 			targetDoc.Packages = append(targetDoc.Packages, p)
-			copied = true
-			break
+			done[p.ID] = struct{}{}
 		}
 	}
 
-	if !copied {
-		for _, f := range sourceDoc.Files {
-			if f.ID == spdxid {
-				targetDoc.Files = append(targetDoc.Files, f)
-				copied = true
-				break
-			}
+	for _, f := range sourceDoc.Files {
+		if _, ok := todo[f.ID]; ok {
+			targetDoc.Files = append(targetDoc.Files, f)
+			done[f.ID] = struct{}{}
 		}
 	}
 
-	if !copied {
-		return fmt.Errorf("unable to find element %s in source document", spdxid)
-	}
-
-	(*copiedElements)[spdxid] = struct{}{}
-
-	// Now tranfer all related elements.
 	for _, r := range sourceDoc.Relationships {
-		if r.Element == spdxid {
-			if err := copySBOMElement(r.Related, sourceDoc, targetDoc, copiedElements); err != nil {
-				return fmt.Errorf("copying element to target SBOM: %w", err)
-			}
-			// If successful add the relationships to the target doc
+		if _, ok := todo[r.Element]; ok {
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
 		}
 	}
+
+	if missed := len(todo) - len(done); missed != 0 {
+		missing := make([]string, 0, missed)
+
+		for want := range todo {
+			if _, ok := done[want]; !ok {
+				missing = append(missing, want)
+			}
+		}
+
+		return fmt.Errorf("unable to find %d elements in source document: %v", missed, missing)
+	}
+
 	return nil
 }
 
