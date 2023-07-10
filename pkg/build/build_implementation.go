@@ -137,7 +137,16 @@ func (di *buildImplementation) GenerateImageSBOM(ctx context.Context, o *options
 
 	s := newSBOM(di.workdirFS, o, ic)
 
-	if err := s.ReadLayerTarball(ctx, o.TarballPath); err != nil {
+	m, err := img.Manifest()
+	if err != nil {
+		return nil, fmt.Errorf("getting %s manifest: %w", o.Arch, err)
+	}
+
+	if len(m.Layers) != 1 {
+		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", o.Arch, len(m.Layers))
+	}
+
+	if err := s.SetLayerDigest(ctx, m.Layers[0].Digest); err != nil {
 		return nil, fmt.Errorf("reading layer tar: %w", err)
 	}
 
@@ -175,7 +184,7 @@ func (di *buildImplementation) GenerateImageSBOM(ctx context.Context, o *options
 }
 
 // GenerateSBOM generates an SBOM for an apko layer
-func (di *buildImplementation) GenerateSBOM(ctx context.Context, o *options.Options, ic *types.ImageConfiguration) error {
+func (di *buildImplementation) GenerateSBOM(ctx context.Context, o *options.Options, ic *types.ImageConfiguration, digest v1.Hash) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "GenerateSBOM")
 	defer span.End()
 
@@ -186,7 +195,7 @@ func (di *buildImplementation) GenerateSBOM(ctx context.Context, o *options.Opti
 
 	s := newSBOM(di.workdirFS, o, ic)
 
-	if err := s.ReadLayerTarball(ctx, o.TarballPath); err != nil {
+	if err := s.SetLayerDigest(ctx, digest); err != nil {
 		return fmt.Errorf("reading layer tar: %w", err)
 	}
 

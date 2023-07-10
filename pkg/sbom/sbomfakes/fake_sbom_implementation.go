@@ -7,6 +7,7 @@ import (
 
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
@@ -51,18 +52,6 @@ type FakeSbomImplementation struct {
 		result1 []string
 		result2 error
 	}
-	ReadLayerTarballStub        func(*options.Options, string) error
-	readLayerTarballMutex       sync.RWMutex
-	readLayerTarballArgsForCall []struct {
-		arg1 *options.Options
-		arg2 string
-	}
-	readLayerTarballReturns struct {
-		result1 error
-	}
-	readLayerTarballReturnsOnCall map[int]struct {
-		result1 error
-	}
 	ReadPackageIndexStub        func(fs.FS, *options.Options, string) ([]*repository.Package, error)
 	readPackageIndexMutex       sync.RWMutex
 	readPackageIndexArgsForCall []struct {
@@ -89,6 +78,18 @@ type FakeSbomImplementation struct {
 		result1 error
 	}
 	readReleaseDataReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SetLayerDigestStub        func(*options.Options, v1.Hash) error
+	setLayerDigestMutex       sync.RWMutex
+	setLayerDigestArgsForCall []struct {
+		arg1 *options.Options
+		arg2 v1.Hash
+	}
+	setLayerDigestReturns struct {
+		result1 error
+	}
+	setLayerDigestReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
@@ -287,68 +288,6 @@ func (fake *FakeSbomImplementation) GenerateIndexReturnsOnCall(i int, result1 []
 	}{result1, result2}
 }
 
-func (fake *FakeSbomImplementation) ReadLayerTarball(arg1 *options.Options, arg2 string) error {
-	fake.readLayerTarballMutex.Lock()
-	ret, specificReturn := fake.readLayerTarballReturnsOnCall[len(fake.readLayerTarballArgsForCall)]
-	fake.readLayerTarballArgsForCall = append(fake.readLayerTarballArgsForCall, struct {
-		arg1 *options.Options
-		arg2 string
-	}{arg1, arg2})
-	stub := fake.ReadLayerTarballStub
-	fakeReturns := fake.readLayerTarballReturns
-	fake.recordInvocation("ReadLayerTarball", []interface{}{arg1, arg2})
-	fake.readLayerTarballMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeSbomImplementation) ReadLayerTarballCallCount() int {
-	fake.readLayerTarballMutex.RLock()
-	defer fake.readLayerTarballMutex.RUnlock()
-	return len(fake.readLayerTarballArgsForCall)
-}
-
-func (fake *FakeSbomImplementation) ReadLayerTarballCalls(stub func(*options.Options, string) error) {
-	fake.readLayerTarballMutex.Lock()
-	defer fake.readLayerTarballMutex.Unlock()
-	fake.ReadLayerTarballStub = stub
-}
-
-func (fake *FakeSbomImplementation) ReadLayerTarballArgsForCall(i int) (*options.Options, string) {
-	fake.readLayerTarballMutex.RLock()
-	defer fake.readLayerTarballMutex.RUnlock()
-	argsForCall := fake.readLayerTarballArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeSbomImplementation) ReadLayerTarballReturns(result1 error) {
-	fake.readLayerTarballMutex.Lock()
-	defer fake.readLayerTarballMutex.Unlock()
-	fake.ReadLayerTarballStub = nil
-	fake.readLayerTarballReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeSbomImplementation) ReadLayerTarballReturnsOnCall(i int, result1 error) {
-	fake.readLayerTarballMutex.Lock()
-	defer fake.readLayerTarballMutex.Unlock()
-	fake.ReadLayerTarballStub = nil
-	if fake.readLayerTarballReturnsOnCall == nil {
-		fake.readLayerTarballReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.readLayerTarballReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeSbomImplementation) ReadPackageIndex(arg1 fs.FS, arg2 *options.Options, arg3 string) ([]*repository.Package, error) {
 	fake.readPackageIndexMutex.Lock()
 	ret, specificReturn := fake.readPackageIndexReturnsOnCall[len(fake.readPackageIndexArgsForCall)]
@@ -478,6 +417,68 @@ func (fake *FakeSbomImplementation) ReadReleaseDataReturnsOnCall(i int, result1 
 	}{result1}
 }
 
+func (fake *FakeSbomImplementation) SetLayerDigest(arg1 *options.Options, arg2 v1.Hash) error {
+	fake.setLayerDigestMutex.Lock()
+	ret, specificReturn := fake.setLayerDigestReturnsOnCall[len(fake.setLayerDigestArgsForCall)]
+	fake.setLayerDigestArgsForCall = append(fake.setLayerDigestArgsForCall, struct {
+		arg1 *options.Options
+		arg2 v1.Hash
+	}{arg1, arg2})
+	stub := fake.SetLayerDigestStub
+	fakeReturns := fake.setLayerDigestReturns
+	fake.recordInvocation("SetLayerDigest", []interface{}{arg1, arg2})
+	fake.setLayerDigestMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSbomImplementation) SetLayerDigestCallCount() int {
+	fake.setLayerDigestMutex.RLock()
+	defer fake.setLayerDigestMutex.RUnlock()
+	return len(fake.setLayerDigestArgsForCall)
+}
+
+func (fake *FakeSbomImplementation) SetLayerDigestCalls(stub func(*options.Options, v1.Hash) error) {
+	fake.setLayerDigestMutex.Lock()
+	defer fake.setLayerDigestMutex.Unlock()
+	fake.SetLayerDigestStub = stub
+}
+
+func (fake *FakeSbomImplementation) SetLayerDigestArgsForCall(i int) (*options.Options, v1.Hash) {
+	fake.setLayerDigestMutex.RLock()
+	defer fake.setLayerDigestMutex.RUnlock()
+	argsForCall := fake.setLayerDigestArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeSbomImplementation) SetLayerDigestReturns(result1 error) {
+	fake.setLayerDigestMutex.Lock()
+	defer fake.setLayerDigestMutex.Unlock()
+	fake.SetLayerDigestStub = nil
+	fake.setLayerDigestReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeSbomImplementation) SetLayerDigestReturnsOnCall(i int, result1 error) {
+	fake.setLayerDigestMutex.Lock()
+	defer fake.setLayerDigestMutex.Unlock()
+	fake.SetLayerDigestStub = nil
+	if fake.setLayerDigestReturnsOnCall == nil {
+		fake.setLayerDigestReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setLayerDigestReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeSbomImplementation) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -487,12 +488,12 @@ func (fake *FakeSbomImplementation) Invocations() map[string][][]interface{} {
 	defer fake.generateMutex.RUnlock()
 	fake.generateIndexMutex.RLock()
 	defer fake.generateIndexMutex.RUnlock()
-	fake.readLayerTarballMutex.RLock()
-	defer fake.readLayerTarballMutex.RUnlock()
 	fake.readPackageIndexMutex.RLock()
 	defer fake.readPackageIndexMutex.RUnlock()
 	fake.readReleaseDataMutex.RLock()
 	defer fake.readReleaseDataMutex.RUnlock()
+	fake.setLayerDigestMutex.RLock()
+	defer fake.setLayerDigestMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

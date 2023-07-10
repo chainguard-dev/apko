@@ -17,19 +17,16 @@ package sbom
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	osr "github.com/dominodatalab/os-release"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
-	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator"
@@ -132,11 +129,8 @@ func (s *SBOM) GenerateIndex() ([]string, error) {
 }
 
 // ReadLayerTarball reads an apko layer tarball and adds its metadata to the SBOM options
-func (s *SBOM) ReadLayerTarball(ctx context.Context, path string) error {
-	_, span := otel.Tracer("apko").Start(ctx, "ReadLayerTarball")
-	defer span.End()
-
-	return s.impl.ReadLayerTarball(&s.Options, path)
+func (s *SBOM) SetLayerDigest(ctx context.Context, digest v1.Hash) error {
+	return s.impl.SetLayerDigest(&s.Options, digest)
 }
 
 //counterfeiter:generate . sbomImplementation
@@ -146,7 +140,7 @@ type sbomImplementation interface {
 	Generate(*options.Options, map[string]generator.Generator) ([]string, error)
 	CheckGenerators(*options.Options, map[string]generator.Generator) error
 	GenerateIndex(*options.Options, map[string]generator.Generator) ([]string, error)
-	ReadLayerTarball(*options.Options, string) error
+	SetLayerDigest(*options.Options, v1.Hash) error
 }
 
 type defaultSBOMImplementation struct{}
@@ -247,17 +241,7 @@ func (di *defaultSBOMImplementation) GenerateIndex(opts *options.Options, genera
 }
 
 // ReadLayerTarball reads an apko layer adding its digest to the sbom options
-func (di *defaultSBOMImplementation) ReadLayerTarball(opts *options.Options, tarballPath string) error {
-	f, err := os.Open(tarballPath)
-	if err != nil {
-		return fmt.Errorf("failed to open tar.gz: %w", err)
-	}
-	defer f.Close()
-
-	digest, _, err := v1.SHA256(bufio.NewReader(f))
-	if err != nil {
-		return fmt.Errorf("could not calculate layer digest: %w", err)
-	}
+func (di *defaultSBOMImplementation) SetLayerDigest(opts *options.Options, digest v1.Hash) error {
 	opts.ImageInfo.LayerDigest = digest.String()
 	return nil
 }

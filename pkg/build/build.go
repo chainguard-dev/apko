@@ -94,8 +94,8 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	return bc.impl.GenerateIndexSBOM(ctx, &bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
 }
 
-func (bc *Context) GenerateSBOM(ctx context.Context) error {
-	return bc.impl.GenerateSBOM(ctx, &bc.Options, &bc.ImageConfiguration)
+func (bc *Context) GenerateSBOM(ctx context.Context, digest v1.Hash) error {
+	return bc.impl.GenerateSBOM(ctx, &bc.Options, &bc.ImageConfiguration, digest)
 }
 
 func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
@@ -183,9 +183,14 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, err
 	}
 
+	h := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	}
+
 	// generate SBOM
 	if bc.Options.WantSBOM {
-		if err := bc.GenerateSBOM(ctx); err != nil {
+		if err := bc.GenerateSBOM(ctx, h); err != nil {
 			return "", nil, fmt.Errorf("generating SBOMs: %w", err)
 		}
 	} else {
@@ -200,10 +205,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	l := &layer{
 		filename: layerTarGZ,
 		desc: &v1.Descriptor{
-			Digest: v1.Hash{
-				Algorithm: "sha256",
-				Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
-			},
+			Digest:    h,
 			Size:      size,
 			MediaType: mt,
 		},
