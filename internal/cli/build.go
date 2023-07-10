@@ -289,19 +289,22 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			if bc.Options.SourceDateEpoch, err = bc.GetBuildDateEpoch(); err != nil {
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
-			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
-				multiArchBDE = bc.Options.SourceDateEpoch
-			}
 
 			img, err := oci.BuildImageFromLayer(
 				layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Logger())
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
+
 			mtx.Lock()
+			defer mtx.Unlock()
+
 			imgs[arch] = img
 			imageTars[arch] = layerTarGZ
-			mtx.Unlock()
+
+			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
+				multiArchBDE = bc.Options.SourceDateEpoch
+			}
 
 			return nil
 		})
@@ -345,8 +348,9 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 					return fmt.Errorf("generating sbom for %s: %w", arch, err)
 				}
 				mtx.Lock()
+				defer mtx.Unlock()
+
 				sboms = append(sboms, outputs...)
-				mtx.Unlock()
 				return nil
 			})
 		}
