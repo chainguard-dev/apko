@@ -27,6 +27,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
@@ -249,7 +250,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	}
 
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
-	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
+	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
 		// The value MUST be an ASCII representation of an integer
 		// with no fractional component, identical to the output
 		// format of date +%s.
