@@ -138,9 +138,7 @@ func mutateSymLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation
 	return nil
 }
 
-func (di *buildImplementation) MutatePaths(
-	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
-) error {
+func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
 	for _, mut := range ic.Paths {
 		pm, ok := pathMutators[mut.Type]
 		if !ok {

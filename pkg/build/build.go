@@ -21,23 +21,17 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
-	"io/fs"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
-	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/hashicorp/go-multierror"
-	coci "github.com/sigstore/cosign/v2/pkg/oci"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 	"go.opentelemetry.io/otel"
 	"gopkg.in/yaml.v3"
 
@@ -53,7 +47,6 @@ import (
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
 type Context struct {
-	impl *buildImplementation
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ImageConfiguration types.ImageConfiguration
 	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
@@ -68,37 +61,6 @@ func (bc *Context) Summarize() {
 	bc.Logger().Printf("build context:")
 	bc.Options.Summarize(bc.Logger())
 	bc.ImageConfiguration.Summarize(bc.Logger())
-}
-
-// BuildTarball calls the underlying implementation's BuildTarball
-// which takes the fully populated working directory and saves it to
-// an OCI image layer tar.gz file.
-func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Hash, int64, error) {
-	return bc.impl.BuildTarball(ctx, &bc.Options, bc.fs)
-}
-
-// WriteIndex calls the underlying implementation's WriteIndex
-// which takes the an index struct and saves it to the working directory.
-func (bc *Context) WriteIndex(idx coci.SignedImageIndex) (string, int64, error) {
-	return bc.impl.WriteIndex(&bc.Options, idx)
-}
-
-func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img coci.SignedImage) ([]types.SBOM, error) {
-	opts := bc.Options
-	opts.Arch = arch
-	return bc.impl.GenerateImageSBOM(ctx, &opts, &bc.ImageConfiguration, img)
-}
-
-func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage) ([]types.SBOM, error) {
-	return bc.impl.GenerateIndexSBOM(ctx, &bc.Options, &bc.ImageConfiguration, indexDigest, imgs)
-}
-
-func (bc *Context) GenerateSBOM(ctx context.Context, digest v1.Hash) error {
-	return bc.impl.GenerateSBOM(ctx, &bc.Options, &bc.ImageConfiguration, digest)
-}
-
-func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
-	return bc.impl.InstalledPackages(bc.fs, &bc.Options)
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
@@ -118,9 +80,8 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 	return bde, nil
 }
 
-func (bc *Context) BuildImage(ctx context.Context) (fs.FS, error) {
-	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	if err := buildImage(ctx, bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration, bc.s6); err != nil {
+func (bc *Context) BuildImage(ctx context.Context) error {
+	if err := bc.buildImage(ctx); err != nil {
 		logger := bc.Options.Logger()
 		logger.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ImageConfiguration)
@@ -129,14 +90,9 @@ func (bc *Context) BuildImage(ctx context.Context) (fs.FS, error) {
 		} else {
 			logger.Debugf("image configuration:\n%s", string(b))
 		}
-		return nil, err
+		return err
 	}
-	return bc.fs, nil
-}
-
-func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
-	// TODO(puerco): Point to final interface (see comment on buildImage fn)
-	return buildPackageList(ctx, bc.fs, bc.impl, &bc.Options, &bc.ImageConfiguration)
+	return nil
 }
 
 func (bc *Context) Logger() log.Logger {
@@ -157,7 +113,7 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	bc.Summarize()
 
 	// build image filesystem
-	if _, err := bc.BuildImage(ctx); err != nil {
+	if err := bc.BuildImage(ctx); err != nil {
 		return "", nil, err
 	}
 
@@ -234,10 +190,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
 		Options: options.Default,
-		impl: &buildImplementation{
-			workdirFS: fs,
-		},
-		fs: fs,
+		fs:      fs,
 	}
 	bc.Options.WorkDir = workDir
 
@@ -275,16 +228,11 @@ func New(workDir string, opts ...Option) (*Context, error) {
 	return &bc, nil
 }
 
-// Refresh initializes the build process by calling the underlying implementation's
-// Refresh(), which includes getting the chroot/proot jailed process executor (and
-// possibly architecture emulator), sets those on the Context, and returns.
+// Refresh initializes the build process by creating a new s6 context.
 func (bc *Context) Refresh() error {
-	s6, err := bc.impl.Refresh(&bc.Options)
-	if err != nil {
-		return err
-	}
+	bc.Options.TarballPath = ""
 
-	bc.s6 = s6
+	bc.s6 = s6.New(bc.fs, bc.Logger())
 
 	return nil
 }
