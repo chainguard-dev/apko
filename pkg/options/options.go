@@ -28,7 +28,6 @@ import (
 
 type Options struct {
 	UseDockerMediaTypes     bool               `json:"useDockerMediaTypes,omitempty"`
-	WantSBOM                bool               `json:"wantSBOM,omitempty"`
 	WithVCS                 bool               `json:"withVCS,omitempty"`
 	WorkDir                 string             `json:"workDir,omitempty"`
 	TarballPath             string             `json:"tarballPath,omitempty"`

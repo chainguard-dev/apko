@@ -103,9 +103,6 @@ func WithSBOM(path string) Option {
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
 		bc.Options.SBOMFormats = formats
-		if len(formats) > 0 {
-			bc.Options.WantSBOM = true
-		}
 		return nil
 	}
 }

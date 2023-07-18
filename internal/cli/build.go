@@ -233,13 +233,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	contexts := map[types.Architecture]*build.Context{}
 	imageTars := map[types.Architecture]string{}
 
-	// This is a hack to skip the SBOM generation during
-	// image build. Will be removed when global options are a thing.
-	formats := bc.Options.SBOMFormats
-	wantSBOM := bc.Options.WantSBOM
-	bc.Options.SBOMFormats = []string{}
-	bc.Options.WantSBOM = false
-
 	mtx := sync.Mutex{}
 
 	// We compute the "build date epoch" of the multi-arch image to be the
@@ -256,11 +249,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		if err != nil {
 			return nil, nil, err
 		}
-
-		// we do not generate SBOMs for each arch, only possibly for final image
-		bc.Options.SBOMFormats = []string{}
-		bc.Options.WantSBOM = false
-		bc.ImageConfiguration.Archs = archs
 
 		// save the build context for later
 		contexts[arch] = bc
@@ -324,10 +312,8 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 
 	bc.Options.SourceDateEpoch = multiArchBDE
 
-	bc.Options.SBOMFormats = formats
-
 	// the sboms are saved to the same working directory as the image components
-	if wantSBOM {
+	if len(bc.Options.SBOMFormats) != 0 {
 		logrus.Info("Generating arch image SBOMs")
 		var (
 			g   errgroup.Group
@@ -338,8 +324,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			bc := contexts[arch]
 
 			// override the SBOM options
-			bc.Options.WantSBOM = true
-			bc.Options.SBOMFormats = formats
 			bc.Options.SBOMPath = imageDir
 
 			g.Go(func() error {
@@ -358,8 +342,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		if err := g.Wait(); err != nil {
 			return nil, nil, err
 		}
-		bc.Options.WantSBOM = true
-		bc.Options.SBOMFormats = formats
 		bc.Options.SBOMPath = imageDir
 		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
 		if err != nil {
