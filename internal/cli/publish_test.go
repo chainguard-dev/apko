@@ -73,6 +73,14 @@ func TestPublish(t *testing.T) {
 
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
+
+	digest, err := idx.Digest()
+	require.NoError(t, err)
+
+	// This test will fail if we ever make a change in apko that changes the image.
+	// Sometimes, this is intentional, and we need to change this and bump the version.
+	want := "sha256:489409eae744e35f71e225151b741ac57f352c35d577f50dce60624ff0d33f98"
+	require.Equal(t, want, digest.String())
 }
 
 type sentinel struct {
