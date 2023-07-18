@@ -26,9 +26,7 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-func maybeGenerateVendorReleaseFile(
-	fsys apkfs.FullFS, ic *types.ImageConfiguration,
-) error {
+func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 	if ic.OSRelease.ID == "" || ic.OSRelease.VersionID == "" {
 		return nil
 	}
@@ -54,9 +52,7 @@ func maybeGenerateVendorReleaseFile(
 	return nil
 }
 
-func (di *buildImplementation) GenerateOSRelease(
-	fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration,
-) error {
+func GenerateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
 	path := filepath.Join("etc", "os-release")
 
 	osReleaseExists := true

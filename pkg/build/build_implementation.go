@@ -22,10 +22,8 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
@@ -36,39 +34,24 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
-	coci "github.com/sigstore/cosign/v2/pkg/oci"
+	"github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 	khash "sigs.k8s.io/release-utils/hash"
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
-	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
-const indexFile = "index.json"
-
-type buildImplementation struct {
-	workdirFS apkfs.FullFS
-}
-
-func (di *buildImplementation) Refresh(o *options.Options) (*s6.Context, error) {
-	o.TarballPath = ""
-
-	hostArch := types.ParseArchitecture(runtime.GOARCH)
-
-	if !o.Arch.Compatible(hostArch) {
-		o.Logger().Warnf("%q requires QEMU binfmt emulation to be configured (not compatible with %q)", o.Arch, hostArch)
-	}
-
-	return s6.New(di.workdirFS, o.Logger()), nil
-}
-
-func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Options, fsys fs.FS) (string, hash.Hash, hash.Hash, int64, error) {
+// BuildTarball takes the fully populated working directory and saves it to
+// an OCI image layer tar.gz file.
+func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Hash, int64, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildTarball")
 	defer span.End()
+
+	o := bc.Options
 
 	var outfile *os.File
 	var err error
@@ -99,7 +82,7 @@ func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Opti
 
 	diffid := sha256.New()
 
-	if err := tw.WriteTar(ctx, io.MultiWriter(diffid, gzw), fsys); err != nil {
+	if err := tw.WriteTar(ctx, io.MultiWriter(diffid, gzw), bc.fs); err != nil {
 		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 	if err := gzw.Close(); err != nil {
@@ -119,8 +102,11 @@ func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Opti
 	return outfile.Name(), diffid, digest, stat.Size(), nil
 }
 
-// GenerateImageSBOM generates an sbom for an image
-func (di *buildImplementation) GenerateImageSBOM(ctx context.Context, o *options.Options, ic *types.ImageConfiguration, img coci.SignedImage) ([]types.SBOM, error) {
+func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img oci.SignedImage) ([]types.SBOM, error) {
+	ic := bc.ImageConfiguration
+	o := bc.Options
+	o.Arch = arch
+
 	ctx, span := otel.Tracer("apko").Start(ctx, "GenerateImageSBOM")
 	defer span.End()
 
@@ -129,7 +115,7 @@ func (di *buildImplementation) GenerateImageSBOM(ctx context.Context, o *options
 		return nil, nil
 	}
 
-	s := newSBOM(di.workdirFS, o, ic)
+	s := newSBOM(bc.fs, &o, &ic)
 
 	m, err := img.Manifest()
 	if err != nil {
@@ -178,16 +164,19 @@ func (di *buildImplementation) GenerateImageSBOM(ctx context.Context, o *options
 }
 
 // GenerateSBOM generates an SBOM for an apko layer
-func (di *buildImplementation) GenerateSBOM(ctx context.Context, o *options.Options, ic *types.ImageConfiguration, digest v1.Hash) error {
+func (bc *Context) GenerateSBOM(ctx context.Context, digest v1.Hash) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "GenerateSBOM")
 	defer span.End()
+
+	o := bc.Options
+	ic := bc.ImageConfiguration
 
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping SBOM generation")
 		return nil
 	}
 
-	s := newSBOM(di.workdirFS, o, ic)
+	s := newSBOM(bc.fs, &o, &ic)
 
 	if err := s.SetLayerDigest(ctx, digest); err != nil {
 		return fmt.Errorf("reading layer tar: %w", err)
@@ -210,39 +199,15 @@ func (di *buildImplementation) GenerateSBOM(ctx context.Context, o *options.Opti
 	return nil
 }
 
-func (di *buildImplementation) InitializeApk(ctx context.Context, fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
-	if err != nil {
-		return err
-	}
-	return apk.Initialize(ctx, ic)
-}
-
-func (di *buildImplementation) InstallPackages(ctx context.Context, fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
-	if err != nil {
-		return err
-	}
-	return apk.Install(ctx)
-}
-
-func (di *buildImplementation) InstalledPackages(fsys apkfs.FullFS, o *options.Options) ([]*apkimpl.InstalledPackage, error) {
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
+	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.Options)
 	if err != nil {
 		return nil, err
 	}
 	return apk.GetInstalled()
 }
 
-func (di *buildImplementation) ResolvePackages(ctx context.Context, fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
-	if err != nil {
-		return nil, nil, err
-	}
-	return apk.ResolvePackages(ctx)
-}
-
-func (di *buildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Options) error {
+func additionalTags(fsys apkfs.FullFS, o *options.Options) error {
 	at, err := chainguardAPK.AdditionalTags(fsys, *o)
 	if err != nil {
 		return err
@@ -254,60 +219,45 @@ func (di *buildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Opti
 	return nil
 }
 
-func (di *buildImplementation) BuildImage(
-	ctx context.Context,
-	o *options.Options, ic *types.ImageConfiguration, s6context *s6.Context,
-) (fs.FS, error) {
-	if err := buildImage(ctx, di.workdirFS, di, o, ic, s6context); err != nil {
-		return nil, err
-	}
-	return di.workdirFS, nil
-}
-
-// buildImage is a temporary function to make the fakes work.
-// This function only installs everything onto a temporary filesystem path
-// as defined by o.WorkDir.
-// A later stage should add things like busybox symlinks or ldconfig, etc.
-// after which it can be loaded into a tarball.
-//
-// TODO(puerco): In order to have a structure we can mock, we need to split
-// image building to its own interface or split out to its own package.
-func buildImage(
-	ctx context.Context,
-	fsys apkfs.FullFS, di *buildImplementation, o *options.Options, ic *types.ImageConfiguration,
-	s6context *s6.Context,
-) error {
+func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
+	fsys, o, ic := bc.fs, &bc.Options, &bc.ImageConfiguration
+
 	o.Logger().Infof("doing pre-flight checks")
-	if err := di.ValidateImageConfiguration(ic); err != nil {
+	if err := ic.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
 	o.Logger().Infof("building image fileystem in %s", o.WorkDir)
 
-	if err := di.InitializeApk(ctx, fsys, o, ic); err != nil {
+	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	if err != nil {
+		return err
+	}
+
+	if err := apk.Initialize(ctx, ic); err != nil {
 		return fmt.Errorf("initializing apk: %w", err)
 	}
 
-	if err := di.InstallPackages(ctx, fsys, o, ic); err != nil {
+	if err := apk.Install(ctx); err != nil {
 		return fmt.Errorf("installing apk packages: %w", err)
 	}
 
-	if err := di.AdditionalTags(fsys, o); err != nil {
+	if err := additionalTags(fsys, o); err != nil {
 		return fmt.Errorf("adding additional tags: %w", err)
 	}
 
-	if err := di.MutateAccounts(fsys, o, ic); err != nil {
+	if err := mutateAccounts(fsys, o, ic); err != nil {
 		return fmt.Errorf("failed to mutate accounts: %w", err)
 	}
 
-	if err := di.MutatePaths(fsys, o, ic); err != nil {
+	if err := mutatePaths(fsys, o, ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	if err := di.GenerateOSRelease(fsys, o, ic); err != nil {
+	if err := GenerateOSRelease(fsys, o, ic); err != nil {
 		if errors.Is(err, ErrOSReleaseAlreadyPresent) {
 			o.Logger().Warnf("did not generate /etc/os-release: %v", err)
 		} else {
@@ -315,22 +265,22 @@ func buildImage(
 		}
 	}
 
-	if err := di.WriteSupervisionTree(s6context, ic); err != nil {
+	if err := bc.s6.WriteSupervisionTree(ic.Entrypoint.Services); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
 	// add busybox symlinks
-	if err := di.InstallBusyboxLinks(fsys, o); err != nil {
+	if err := installBusyboxLinks(fsys, o); err != nil {
 		return err
 	}
 
 	// add ldconfig links
-	if err := di.InstallLdconfigLinks(fsys); err != nil {
+	if err := installLdconfigLinks(fsys); err != nil {
 		return err
 	}
 
 	// add necessary character devices
-	if err := di.InstallCharDevices(fsys); err != nil {
+	if err := installCharDevices(fsys); err != nil {
 		return err
 	}
 
@@ -340,8 +290,10 @@ func buildImage(
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func (di *buildImplementation) WriteIndex(o *options.Options, idx coci.SignedImageIndex) (string, int64, error) {
-	outfile := filepath.Join(o.TempDir(), indexFile)
+func (bc *Context) WriteIndex(idx oci.SignedImageIndex) (string, int64, error) {
+	o := bc.Options
+
+	outfile := filepath.Join(o.TempDir(), "index.json")
 
 	b, err := idx.RawManifest()
 	if err != nil {
@@ -360,22 +312,24 @@ func (di *buildImplementation) WriteIndex(o *options.Options, idx coci.SignedIma
 	return outfile, stat.Size(), nil
 }
 
-func buildPackageList(
-	ctx context.Context,
-	fsys apkfs.FullFS, di *buildImplementation, o *options.Options, ic *types.ImageConfiguration,
-) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+	fsys, o, ic := bc.fs, &bc.Options, &bc.ImageConfiguration
 	o.Logger().Infof("doing pre-flight checks")
-	if err := di.ValidateImageConfiguration(ic); err != nil {
+	if err := ic.Validate(); err != nil {
 		return toInstall, conflicts, fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
 	o.Logger().Infof("building apk info in %s", o.WorkDir)
 
-	if err := di.InitializeApk(ctx, fsys, o, ic); err != nil {
+	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	if err != nil {
+		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
+	}
+	if err := apk.Initialize(ctx, ic); err != nil {
 		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
 	}
 
-	if toInstall, conflicts, err = di.ResolvePackages(ctx, fsys, o, ic); err != nil {
+	if toInstall, conflicts, err = apk.ResolvePackages(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
 	o.Logger().Infof("finished gathering apk info in %s", o.WorkDir)
@@ -414,20 +368,19 @@ func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration
 	return s
 }
 
-func (di *buildImplementation) GenerateIndexSBOM(
-	ctx context.Context,
-	o *options.Options, ic *types.ImageConfiguration,
-	indexDigest name.Digest, imgs map[types.Architecture]coci.SignedImage,
-) ([]types.SBOM, error) {
+func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
+
+	o := bc.Options
+	ic := bc.ImageConfiguration
 
 	if len(o.SBOMFormats) == 0 {
 		o.Logger().Warnf("skipping index SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(di.workdirFS, o, ic)
+	s := newSBOM(bc.fs, &o, &ic)
 	o.Logger().Infof("Generating index SBOM")
 
 	// Add the image digest

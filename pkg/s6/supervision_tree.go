@@ -15,7 +15,6 @@
 package s6
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,18 +63,9 @@ func (sc *Context) WriteSupervisionTree(services Services) error {
 	sc.Log.Infof("generating supervision tree")
 
 	// generate the leaves
-	for service, descriptor := range services {
-		service, ok := service.(string)
-		if !ok {
-			return errors.New("service name is not string")
-		}
-
-		if svccmd, ok := descriptor.(string); ok {
-			if err := sc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
-				return err
-			}
-		} else {
-			return errors.New("complex services are not yet supported")
+	for service, svccmd := range services {
+		if err := sc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
+			return err
 		}
 	}
 

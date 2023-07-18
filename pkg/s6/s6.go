@@ -20,7 +20,7 @@ import (
 	"chainguard.dev/apko/pkg/log"
 )
 
-type Services map[interface{}]interface{}
+type Services map[string]string
 
 type Context struct {
 	fs  apkfs.FullFS
