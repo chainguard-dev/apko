@@ -31,7 +31,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
@@ -216,7 +215,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		local           = opts.local
 		logger          = opts.logger
 		tags            = opts.tags
-		additionalTags  []string
 		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
@@ -257,10 +255,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if !shouldPushTags {
-		allTags := tags
-		allTags = append(allTags, additionalTags...)
 		tmp := map[string]bool{}
-		for _, tag := range allTags {
+		for _, tag := range tags {
 			if !strings.Contains(tag, ":") {
 				tag = fmt.Sprintf("%s:latest", tag)
 			}
@@ -276,22 +272,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		//nolint:gosec // Make tags file readable by non-root
 		if err := os.WriteFile(stageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0666); err != nil {
 			return fmt.Errorf("failed to write tags: %w", err)
-		}
-	} else {
-		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
-		var g errgroup.Group
-		for _, at := range additionalTags {
-			at := at
-			if skipLocalCopy {
-				logger.Warnf("skipping local domain tag %s", at)
-				continue
-			}
-			g.Go(func() error {
-				return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
-			})
-		}
-		if err := g.Wait(); err != nil {
-			return err
 		}
 	}
 
