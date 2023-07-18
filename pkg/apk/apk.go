@@ -47,10 +47,6 @@ func AdditionalTags(fsys fs.FS, opts options.Options) ([]string, error) {
 			opts.Log.Warnf("Version for package %s is empty", pkg.Name)
 			continue
 		}
-		if opts.TagSuffix != "" {
-			version += opts.TagSuffix
-		}
-		opts.Log.Debugf("Found version, images will be tagged with %s", version)
 
 		additionalTags, err := appendTag(opts, fmt.Sprintf("%s%s", opts.PackageVersionTagPrefix, version))
 		if err != nil {
@@ -64,6 +60,12 @@ func AdditionalTags(fsys fs.FS, opts options.Options) ([]string, error) {
 				return nil, err
 			}
 			additionalTags = append(additionalTags, stemmedTags...)
+		}
+
+		if opts.TagSuffix != "" {
+			for i, t := range additionalTags {
+				additionalTags[i] = t + opts.TagSuffix
+			}
 		}
 
 		opts.Log.Infof("Returning additional tags %v", additionalTags)

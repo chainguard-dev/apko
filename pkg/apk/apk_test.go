@@ -45,10 +45,10 @@ V:10.45.6-r5
 A:bop
 
 `
-	if err := os.MkdirAll(filepath.Join(td, "lib/apk/db/"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(td, "lib/apk/db/"), 0o755); err != nil {
 		require.Error(t, err, "mkdir all dirs failed")
 	}
-	if err := os.WriteFile(filepath.Join(td, "lib/apk/db/installed"), []byte(contents), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(td, "lib/apk/db/installed"), []byte(contents), 0o755); err != nil {
 		require.Error(t, err, "write file failed")
 	}
 	tests := []struct {
@@ -56,6 +56,7 @@ A:bop
 		packageVersionTag       string
 		packageVersionTagStem   bool
 		packageVersionTagPrefix string
+		tagSuffix               string
 		tags                    []string
 		expectedTags            []string
 	}{
@@ -64,7 +65,8 @@ A:bop
 			packageVersionTag: "go",
 			tags:              []string{"gcr.io/myimage/go:latest"},
 			expectedTags:      []string{"gcr.io/myimage/go:1.18"},
-		}, {
+		},
+		{
 			description:       "nginx has no version",
 			packageVersionTag: "nginx",
 			tags:              []string{"gcr.io/myimage/nginx:latest"},
@@ -76,6 +78,14 @@ A:bop
 			packageVersionTagStem: false,
 			tags:                  []string{"gcr.io/myimage/boop:latest"},
 			expectedTags:          []string{"gcr.io/myimage/boop:10.45.6-r5"},
+		},
+		{
+			description:           "tag with boop (suffixed)",
+			packageVersionTag:     "boop",
+			packageVersionTagStem: false,
+			tagSuffix:             "-boom",
+			tags:                  []string{"gcr.io/myimage/boop:latest"},
+			expectedTags:          []string{"gcr.io/myimage/boop:10.45.6-r5-boom"},
 		},
 		{
 			description:           "tag with boop (stemmed)",
@@ -102,6 +112,33 @@ A:bop
 				"gcr.io/myimage/boop:bam-10",
 			},
 		},
+		{
+			description:           "tag with boop (stemmed and suffixed)",
+			packageVersionTag:     "boop",
+			packageVersionTagStem: true,
+			tagSuffix:             "-boom",
+			tags:                  []string{"gcr.io/myimage/boop:latest"},
+			expectedTags: []string{
+				"gcr.io/myimage/boop:10.45.6-r5-boom",
+				"gcr.io/myimage/boop:10.45.6-boom",
+				"gcr.io/myimage/boop:10.45-boom",
+				"gcr.io/myimage/boop:10-boom",
+			},
+		},
+		{
+			description:             "tag with boop (stemmed, prefixed, and suffixed)",
+			packageVersionTag:       "boop",
+			packageVersionTagStem:   true,
+			packageVersionTagPrefix: "bam-",
+			tagSuffix:               "-boom",
+			tags:                    []string{"gcr.io/myimage/boop:latest"},
+			expectedTags: []string{
+				"gcr.io/myimage/boop:bam-10.45.6-r5-boom",
+				"gcr.io/myimage/boop:bam-10.45.6-boom",
+				"gcr.io/myimage/boop:bam-10.45-boom",
+				"gcr.io/myimage/boop:bam-10-boom",
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(tt *testing.T) {
@@ -109,6 +146,7 @@ A:bop
 				PackageVersionTag:       test.packageVersionTag,
 				PackageVersionTagStem:   test.packageVersionTagStem,
 				PackageVersionTagPrefix: test.packageVersionTagPrefix,
+				TagSuffix:               test.tagSuffix,
 				Tags:                    test.tags,
 				WorkDir:                 td,
 				Log:                     &log.Adapter{Out: io.Discard},
