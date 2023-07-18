@@ -123,12 +123,8 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	bc, err := build.New(ctx, wd, opts...)
 	if err != nil {
-		return err
-	}
-
-	if err := bc.Refresh(); err != nil {
 		return err
 	}
 
@@ -165,13 +161,9 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := slices.Clone(opts)
 		bopts = append(bopts, build.WithArch(arch))
-		bc, err := build.New(wd, bopts...)
+		bc, err := build.New(ctx, wd, bopts...)
 		if err != nil {
 			return err
-		}
-
-		if err := bc.Refresh(); err != nil {
-			return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 		}
 
 		pkgs, _, err := bc.BuildPackageList(ctx)
