@@ -29,15 +29,15 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		bc.Options.Log.Printf("loading config file: %s", configFile)
+		bc.o.Log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(configFile, bc.Logger()); err != nil {
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
-		bc.ImageConfiguration = ic
-		bc.ImageConfigFile = configFile
+		bc.ic = ic
+		bc.imageConfigFile = configFile
 
 		return nil
 	}
@@ -46,7 +46,7 @@ func WithConfig(configFile string) Option {
 // WithTags sets the tags for the build context.
 func WithTags(tags ...string) Option {
 	return func(bc *Context) error {
-		bc.Options.Tags = tags
+		bc.o.Tags = tags
 		return nil
 	}
 }
@@ -54,7 +54,7 @@ func WithTags(tags ...string) Option {
 // WithTarball sets the output path of the layer tarball.
 func WithTarball(path string) Option {
 	return func(bc *Context) error {
-		bc.Options.TarballPath = path
+		bc.o.TarballPath = path
 		return nil
 	}
 }
@@ -65,7 +65,7 @@ func WithTarball(path string) Option {
 // build process.
 func WithAssertions(a ...Assertion) Option {
 	return func(bc *Context) error {
-		bc.Assertions = append(bc.Assertions, a...)
+		bc.assertions = append(bc.assertions, a...)
 		return nil
 	}
 }
@@ -78,7 +78,7 @@ func WithBuildDate(s string) Option {
 	return func(bc *Context) error {
 		// default to 0 for reproducibility
 		if s == "" {
-			bc.Options.SourceDateEpoch = time.Unix(0, 0).UTC()
+			bc.o.SourceDateEpoch = time.Unix(0, 0).UTC()
 			return nil
 		}
 
@@ -87,43 +87,51 @@ func WithBuildDate(s string) Option {
 			return err
 		}
 
-		bc.Options.SourceDateEpoch = t
+		bc.o.SourceDateEpoch = t
 
+		return nil
+	}
+}
+
+// WithSourceDateEpoch is like WithBuildDate but not a string.
+func WithSourceDateEpoch(t time.Time) Option {
+	return func(bc *Context) error {
+		bc.o.SourceDateEpoch = t
 		return nil
 	}
 }
 
 func WithSBOM(path string) Option {
 	return func(bc *Context) error {
-		bc.Options.SBOMPath = path
+		bc.o.SBOMPath = path
 		return nil
 	}
 }
 
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
-		bc.Options.SBOMFormats = formats
+		bc.o.SBOMFormats = formats
 		return nil
 	}
 }
 
 func WithExtraKeys(keys []string) Option {
 	return func(bc *Context) error {
-		bc.Options.ExtraKeyFiles = keys
+		bc.o.ExtraKeyFiles = keys
 		return nil
 	}
 }
 
 func WithExtraRepos(repos []string) Option {
 	return func(bc *Context) error {
-		bc.Options.ExtraRepos = repos
+		bc.o.ExtraRepos = repos
 		return nil
 	}
 }
 
 func WithExtraPackages(packages []string) Option {
 	return func(bc *Context) error {
-		bc.Options.ExtraPackages = packages
+		bc.o.ExtraPackages = packages
 		return nil
 	}
 }
@@ -132,7 +140,7 @@ func WithExtraPackages(packages []string) Option {
 // to use when building.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
-		bc.ImageConfiguration = ic
+		bc.ic = ic
 		return nil
 	}
 }
@@ -140,7 +148,7 @@ func WithImageConfiguration(ic types.ImageConfiguration) Option {
 // WithArch sets the architecture for the build context.
 func WithArch(arch types.Architecture) Option {
 	return func(bc *Context) error {
-		bc.Options.Arch = arch
+		bc.o.Arch = arch
 		return nil
 	}
 }
@@ -148,7 +156,7 @@ func WithArch(arch types.Architecture) Option {
 // WithDockerMediatypes determine whether to use Docker mediatypes for the build context.
 func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 	return func(bc *Context) error {
-		bc.Options.UseDockerMediaTypes = useDockerMediaTypes
+		bc.o.UseDockerMediaTypes = useDockerMediaTypes
 		return nil
 	}
 }
@@ -156,7 +164,7 @@ func WithDockerMediatypes(useDockerMediaTypes bool) Option {
 // WithLogger sets the log.Logger implementation to be used by the build context.
 func WithLogger(logger log.Logger) Option {
 	return func(bc *Context) error {
-		bc.Options.Log = logger
+		bc.o.Log = logger
 		return nil
 	}
 }
@@ -165,7 +173,7 @@ func WithLogger(logger log.Logger) Option {
 func WithDebugLogging(enable bool) Option {
 	return func(bc *Context) error {
 		if enable {
-			bc.Options.Log.SetLevel(log.DebugLevel)
+			bc.o.Log.SetLevel(log.DebugLevel)
 		}
 		return nil
 	}
@@ -174,7 +182,7 @@ func WithDebugLogging(enable bool) Option {
 // WithVCS enables VCS URL probing for the build context.
 func WithVCS(enable bool) Option {
 	return func(bc *Context) error {
-		bc.Options.WithVCS = enable
+		bc.o.WithVCS = enable
 		return nil
 	}
 }
@@ -184,7 +192,7 @@ func WithVCS(enable bool) Option {
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
 		for k, v := range annotations {
-			bc.ImageConfiguration.Annotations[k] = v
+			bc.ic.Annotations[k] = v
 		}
 		return nil
 	}
@@ -193,7 +201,7 @@ func WithAnnotations(annotations map[string]string) Option {
 // WithCacheDir set the cache directory to use
 func WithCacheDir(cacheDir string) Option {
 	return func(bc *Context) error {
-		bc.Options.CacheDir = cacheDir
+		bc.o.CacheDir = cacheDir
 		return nil
 	}
 }
@@ -203,8 +211,8 @@ func WithCacheDir(cacheDir string) Option {
 func WithBuildOptions(buildOptions []string) Option {
 	return func(bc *Context) error {
 		for _, opt := range buildOptions {
-			if bo, ok := bc.ImageConfiguration.Options[opt]; ok { //nolint:staticcheck
-				if err := bo.Apply(&bc.ImageConfiguration); err != nil {
+			if bo, ok := bc.ic.Options[opt]; ok { //nolint:staticcheck
+				if err := bo.Apply(&bc.ic); err != nil {
 					return err
 				}
 			}

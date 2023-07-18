@@ -95,7 +95,7 @@ type Option func(*APK) error
 
 // Initialize sets the image in Context.WorkDir according to the image configuration,
 // and does everything short of installing the packages.
-func (a *APK) Initialize(ctx context.Context, ic *types.ImageConfiguration) error {
+func (a *APK) Initialize(ctx context.Context, ic types.ImageConfiguration) error {
 	// initialize apk
 	alpineVersions := parseOptionsFromRepositories(ic.Contents.Repositories)
 	if err := a.impl.InitDB(ctx, alpineVersions...); err != nil {

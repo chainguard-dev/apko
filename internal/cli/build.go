@@ -27,6 +27,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -169,9 +170,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 		}
 	}
 
-	logrus.Infof(
-		"Final index tgz at: %s", outputTarGZ,
-	)
+	logrus.Infof("Final index tgz at: %s", outputTarGZ)
 
 	return nil
 }
@@ -191,25 +190,23 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		return nil, nil, err
 	}
 
+	ic := bc.ImageConfiguration()
+
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
 	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs
 	switch {
 	case len(archs) != 0:
-		bc.ImageConfiguration.Archs = archs
-	case len(bc.ImageConfiguration.Archs) != 0:
+		ic.Archs = archs
+	case len(ic.Archs) != 0:
 		// do nothing
 	default:
-		bc.ImageConfiguration.Archs = types.AllArchs
+		ic.Archs = types.AllArchs
 	}
 	// save the final set we will build
-	archs = bc.ImageConfiguration.Archs
-	bc.Logger().Infof(
-		"Building images for %d architectures: %+v",
-		len(bc.ImageConfiguration.Archs),
-		bc.ImageConfiguration.Archs,
-	)
+	archs = ic.Archs
+	bc.Logger().Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -220,7 +217,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	//  image/ - the summary layer files and sboms for each architecture
 	// imageDir, created here, is where the final artifacts will be: layer tars, indexes, etc.
 
-	bc.Logger().Printf("building tags %v", bc.Options.Tags)
+	bc.Logger().Printf("building tags %v", bc.Tags())
 
 	var errg errgroup.Group
 	workDir := wd
@@ -239,13 +236,19 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	// maximum "build date epoch" of the per-arch images.  If the user has
 	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
 	// computation.
-	multiArchBDE := bc.Options.SourceDateEpoch
+	multiArchBDE := bc.SourceDateEpoch()
 
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
 		wd := filepath.Join(workDir, arch.ToAPK())
-		bc, err := build.New(wd, opts...)
+		bopts := slices.Clone(opts)
+		bopts = append(bopts,
+			build.WithArch(arch),
+			build.WithTarball(filepath.Join(imageDir, bc.TarballFilename())),
+			build.WithSBOM(imageDir),
+		)
+		bc, err := build.New(wd, bopts...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -254,13 +257,9 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		contexts[arch] = bc
 
 		errg.Go(func() error {
-			bc.Options.Arch = arch
-			bc.Options.WorkDir = wd
-
 			if err := bc.Refresh(); err != nil {
 				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
 			}
-			bc.Options.TarballPath = filepath.Join(imageDir, bc.Options.TarballFileName())
 
 			layerTarGZ, layer, err := bc.BuildLayer(ctx)
 			if err != nil {
@@ -274,12 +273,12 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			// This computation will only affect the timestamp of the image
 			// itself and its SBOMs, since the timestamps on files come from the
 			// APKs.
-			if bc.Options.SourceDateEpoch, err = bc.GetBuildDateEpoch(); err != nil {
+			bde, err := bc.GetBuildDateEpoch()
+			if err != nil {
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
 
-			img, err := oci.BuildImageFromLayer(
-				layer, bc.ImageConfiguration, bc.Options.SourceDateEpoch, bc.Options.Arch, bc.Logger())
+			img, err := oci.BuildImageFromLayer(layer, bc.ImageConfiguration(), bde, bc.Arch(), bc.Logger())
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
@@ -290,8 +289,8 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			imgs[arch] = img
 			imageTars[arch] = layerTarGZ
 
-			if bc.Options.SourceDateEpoch.After(multiArchBDE) {
-				multiArchBDE = bc.Options.SourceDateEpoch
+			if bde.After(multiArchBDE) {
+				multiArchBDE = bde
 			}
 
 			return nil
@@ -302,7 +301,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	}
 
 	// generate the index
-	finalDigest, idx, err := oci.GenerateIndex(ctx, bc.ImageConfiguration, imgs)
+	finalDigest, idx, err := oci.GenerateIndex(ctx, ic, imgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
 	}
@@ -310,10 +309,8 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		return nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
 	}
 
-	bc.Options.SourceDateEpoch = multiArchBDE
-
 	// the sboms are saved to the same working directory as the image components
-	if len(bc.Options.SBOMFormats) != 0 {
+	if bc.WantSBOM() {
 		logrus.Info("Generating arch image SBOMs")
 		var (
 			g   errgroup.Group
@@ -322,9 +319,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		for arch, img := range imgs {
 			arch, img := arch, img
 			bc := contexts[arch]
-
-			// override the SBOM options
-			bc.Options.SBOMPath = imageDir
 
 			g.Go(func() error {
 				outputs, err := bc.GenerateImageSBOM(ctx, arch, img)
@@ -342,7 +336,16 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		if err := g.Wait(); err != nil {
 			return nil, nil, err
 		}
-		bc.Options.SBOMPath = imageDir
+
+		opts = append(opts,
+			build.WithImageConfiguration(ic),        // We mutate Archs above.
+			build.WithSourceDateEpoch(multiArchBDE), // Maximum child's time.
+			build.WithSBOM(imageDir),
+		)
+		bc, err := build.New(wd, opts...)
+		if err != nil {
+			return nil, nil, err
+		}
 		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
