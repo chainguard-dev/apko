@@ -42,7 +42,6 @@ import (
 
 	chainguardAPK "chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 	"chainguard.dev/apko/pkg/sbom"
@@ -55,7 +54,7 @@ type buildImplementation struct {
 	workdirFS apkfs.FullFS
 }
 
-func (di *buildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.Executor, error) {
+func (di *buildImplementation) Refresh(o *options.Options) (*s6.Context, error) {
 	o.TarballPath = ""
 
 	hostArch := types.ParseArchitecture(runtime.GOARCH)
@@ -64,12 +63,7 @@ func (di *buildImplementation) Refresh(o *options.Options) (*s6.Context, *exec.E
 		o.Logger().Warnf("%q requires QEMU binfmt emulation to be configured (not compatible with %q)", o.Arch, hostArch)
 	}
 
-	executor, err := exec.New(o.WorkDir, o.Logger())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return s6.New(di.workdirFS, o.Logger()), executor, nil
+	return s6.New(di.workdirFS, o.Logger()), nil
 }
 
 func (di *buildImplementation) BuildTarball(ctx context.Context, o *options.Options, fsys fs.FS) (string, hash.Hash, hash.Hash, int64, error) {
@@ -262,7 +256,7 @@ func (di *buildImplementation) AdditionalTags(fsys apkfs.FullFS, o *options.Opti
 
 func (di *buildImplementation) BuildImage(
 	ctx context.Context,
-	o *options.Options, ic *types.ImageConfiguration, e *exec.Executor, s6context *s6.Context,
+	o *options.Options, ic *types.ImageConfiguration, s6context *s6.Context,
 ) (fs.FS, error) {
 	if err := buildImage(ctx, di.workdirFS, di, o, ic, s6context); err != nil {
 		return nil, err

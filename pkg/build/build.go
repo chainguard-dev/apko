@@ -42,7 +42,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/exec"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
@@ -59,7 +58,6 @@ type Context struct {
 	ImageConfiguration types.ImageConfiguration
 	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
 	ImageConfigFile string
-	executor        *exec.Executor
 	s6              *s6.Context
 	Assertions      []Assertion
 	Options         options.Options
@@ -281,12 +279,11 @@ func New(workDir string, opts ...Option) (*Context, error) {
 // Refresh(), which includes getting the chroot/proot jailed process executor (and
 // possibly architecture emulator), sets those on the Context, and returns.
 func (bc *Context) Refresh() error {
-	s6, executor, err := bc.impl.Refresh(&bc.Options)
+	s6, err := bc.impl.Refresh(&bc.Options)
 	if err != nil {
 		return err
 	}
 
-	bc.executor = executor
 	bc.s6 = s6
 
 	return nil
