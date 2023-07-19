@@ -48,30 +48,31 @@ import (
 // build options, and the `buildImplementation`, which handles the actual build.
 type Context struct {
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
-	ImageConfiguration types.ImageConfiguration
-	// ImageConfigFile path to the config file used, if any, to load the ImageConfiguration
-	ImageConfigFile string
+	ic types.ImageConfiguration
+	o  options.Options
+
+	// imageConfigFile path to the config file used, if any, to load the ImageConfiguration
+	imageConfigFile string
 	s6              *s6.Context
-	Assertions      []Assertion
-	Options         options.Options
+	assertions      []Assertion
 	fs              apkfs.FullFS
 }
 
 func (bc *Context) Summarize() {
 	bc.Logger().Printf("build context:")
-	bc.Options.Summarize(bc.Logger())
-	bc.ImageConfiguration.Summarize(bc.Logger())
+	bc.o.Summarize(bc.Logger())
+	bc.ic.Summarize(bc.Logger())
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
-		return bc.Options.SourceDateEpoch, nil
+		return bc.o.SourceDateEpoch, nil
 	}
 	pl, err := bc.InstalledPackages()
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine installed packages: %w", err)
 	}
-	bde := bc.Options.SourceDateEpoch
+	bde := bc.o.SourceDateEpoch
 	for _, p := range pl {
 		if p.BuildTime.After(bde) {
 			bde = p.BuildTime
@@ -82,13 +83,12 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 
 func (bc *Context) BuildImage(ctx context.Context) error {
 	if err := bc.buildImage(ctx); err != nil {
-		logger := bc.Options.Logger()
-		logger.Debugf("buildImage failed: %v", err)
-		b, err2 := yaml.Marshal(bc.ImageConfiguration)
+		bc.Logger().Debugf("buildImage failed: %v", err)
+		b, err2 := yaml.Marshal(bc.ic)
 		if err2 != nil {
-			logger.Debugf("failed to marshal image configuration: %v", err2)
+			bc.Logger().Debugf("failed to marshal image configuration: %v", err2)
 		} else {
-			logger.Debugf("image configuration:\n%s", string(b))
+			bc.Logger().Debugf("image configuration:\n%s", string(b))
 		}
 		return err
 	}
@@ -96,7 +96,7 @@ func (bc *Context) BuildImage(ctx context.Context) error {
 }
 
 func (bc *Context) Logger() log.Logger {
-	return bc.Options.Logger()
+	return bc.o.Logger()
 }
 
 // BuildLayer given the context set up, including
@@ -144,7 +144,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	}
 
 	mt := v1types.OCILayer
-	if bc.Options.UseDockerMediaTypes {
+	if bc.o.UseDockerMediaTypes {
 		mt = v1types.DockerLayer
 	}
 
@@ -163,10 +163,11 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 
 	return layerTarGZ, l, nil
 }
+
 func (bc *Context) runAssertions() error {
 	var eg multierror.Group
 
-	for _, a := range bc.Assertions {
+	for _, a := range bc.assertions {
 		a := a
 		eg.Go(func() error { return a(bc) })
 	}
@@ -180,10 +181,10 @@ func (bc *Context) runAssertions() error {
 func New(workDir string, opts ...Option) (*Context, error) {
 	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
-		Options: options.Default,
-		fs:      fs,
+		o:  options.Default,
+		fs: fs,
 	}
-	bc.Options.WorkDir = workDir
+	bc.o.WorkDir = workDir
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -203,17 +204,17 @@ func New(workDir string, opts ...Option) (*Context, error) {
 			return nil, fmt.Errorf("failed to parse SOURCE_DATE_EPOCH: %w", err)
 		}
 
-		bc.Options.SourceDateEpoch = time.Unix(sec, 0).UTC()
+		bc.o.SourceDateEpoch = time.Unix(sec, 0).UTC()
 	}
 
 	// if arch is missing default to the running program's arch
 	zeroArch := types.Architecture("")
-	if bc.Options.Arch == zeroArch {
-		bc.Options.Arch = types.ParseArchitecture(runtime.GOARCH)
+	if bc.o.Arch == zeroArch {
+		bc.o.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
-	if bc.Options.WithVCS && bc.ImageConfiguration.VCSUrl == "" {
-		bc.ImageConfiguration.ProbeVCSUrl(bc.ImageConfigFile, bc.Logger())
+	if bc.o.WithVCS && bc.ic.VCSUrl == "" {
+		bc.ic.ProbeVCSUrl(bc.imageConfigFile, bc.Logger())
 	}
 
 	return &bc, nil
@@ -221,7 +222,7 @@ func New(workDir string, opts ...Option) (*Context, error) {
 
 // Refresh initializes the build process by creating a new s6 context.
 func (bc *Context) Refresh() error {
-	bc.Options.TarballPath = ""
+	bc.o.TarballPath = ""
 
 	bc.s6 = s6.New(bc.fs, bc.Logger())
 
@@ -268,4 +269,43 @@ func (l *layer) Size() (int64, error) {
 
 func (l *layer) MediaType() (v1types.MediaType, error) {
 	return l.desc.MediaType, nil
+}
+
+// Here be dragons:
+// There was previously a pattern of accessing build.New().Options for convenience.
+// This unfortunately led to a lot of mutation of build.Context.Options for convenience.
+// This led to impossible (for the humble author of this comment) to follow logic.
+// Ideally, these methods just go away over time, but for now this makes the diff simple
+// (and lets us track exactly what kind of Law of Demeter violations we rely on).
+
+func (bc *Context) ImageConfiguration() types.ImageConfiguration {
+	return bc.ic
+}
+
+func (bc *Context) TarballPath() string {
+	return bc.o.TarballPath
+}
+
+func (bc *Context) Arch() types.Architecture {
+	return bc.o.Arch
+}
+
+func (bc *Context) Tags() []string {
+	return bc.o.Tags
+}
+
+func (bc *Context) SourceDateEpoch() time.Time {
+	return bc.o.SourceDateEpoch
+}
+
+func (bc *Context) TarballFilename() string {
+	return bc.o.TarballFileName()
+}
+
+func (bc *Context) WantSBOM() bool {
+	return len(bc.o.SBOMFormats) != 0
+}
+
+func (bc *Context) TempDir() string {
+	return bc.o.TempDir()
 }

@@ -22,6 +22,7 @@ import (
 	"text/template"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
@@ -131,32 +132,28 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		return err
 	}
 
+	ic := bc.ImageConfiguration()
+
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
 	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs
 	switch {
 	case len(archs) != 0:
-		bc.ImageConfiguration.Archs = archs
-	case len(bc.ImageConfiguration.Archs) != 0:
+		ic.Archs = archs
+	case len(ic.Archs) != 0:
 		// do nothing
 	default:
-		bc.ImageConfiguration.Archs = types.AllArchs
+		ic.Archs = types.AllArchs
 	}
 	// save the final set we will build
-	archs = bc.ImageConfiguration.Archs
-	bc.Logger().Infof(
-		"Determining packages for %d architectures: %+v",
-		len(bc.ImageConfiguration.Archs),
-		bc.ImageConfiguration.Archs,
-	)
+	archs = ic.Archs
+	bc.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
-	bc.Options.TempDir()
-	defer os.RemoveAll(bc.Options.TempDir())
+	defer os.RemoveAll(bc.TempDir())
 
-	workDir := bc.Options.WorkDir
 	tmpl, err := template.New("format").Parse(format)
 	if err != nil {
 		return fmt.Errorf("failed to parse format: %w", err)
@@ -165,14 +162,13 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
-		wd := filepath.Join(workDir, arch.ToAPK())
-		bc, err := build.New(wd, opts...)
+		wd := filepath.Join(wd, arch.ToAPK())
+		bopts := slices.Clone(opts)
+		bopts = append(bopts, build.WithArch(arch))
+		bc, err := build.New(wd, bopts...)
 		if err != nil {
 			return err
 		}
-
-		bc.Options.Arch = arch
-		bc.Options.WorkDir = wd
 
 		if err := bc.Refresh(); err != nil {
 			return fmt.Errorf("failed to update build context for %q: %w", arch, err)

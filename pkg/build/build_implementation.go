@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
@@ -52,25 +54,23 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildTarball")
 	defer span.End()
 
-	o := bc.Options
-
 	var outfile *os.File
 	var err error
 
-	if o.TarballPath != "" {
-		outfile, err = os.Create(o.TarballPath)
+	if bc.o.TarballPath != "" {
+		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
-		outfile, err = os.Create(filepath.Join(o.TempDir(), o.TarballFileName()))
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
 	}
 	if err != nil {
 		return "", nil, nil, 0, fmt.Errorf("opening the build context tarball path failed: %w", err)
 	}
-	o.TarballPath = outfile.Name()
+	bc.o.TarballPath = outfile.Name()
 	defer outfile.Close()
 
 	// we use a general override of 0,0 for all files, but the specific overrides, that come from the installed package DB, come later
 	tw, err := tarball.NewContext(
-		tarball.WithSourceDateEpoch(o.SourceDateEpoch),
+		tarball.WithSourceDateEpoch(bc.o.SourceDateEpoch),
 	)
 	if err != nil {
 		return "", nil, nil, 0, fmt.Errorf("failed to construct tarball build context: %w", err)
@@ -99,32 +99,33 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 		return "", nil, nil, 0, fmt.Errorf("stat(%q): %w", outfile.Name(), err)
 	}
 
-	o.Logger().Infof("built image layer tarball as %s", outfile.Name())
+	bc.Logger().Infof("built image layer tarball as %s", outfile.Name())
 	return outfile.Name(), diffid, digest, stat.Size(), nil
 }
 
 func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img oci.SignedImage) ([]types.SBOM, error) {
-	ic := bc.ImageConfiguration
-	o := bc.Options
-	o.Arch = arch
-
 	ctx, span := otel.Tracer("apko").Start(ctx, "GenerateImageSBOM")
 	defer span.End()
 
-	if len(o.SBOMFormats) == 0 {
-		o.Logger().Warnf("skipping SBOM generation")
+	if !bc.WantSBOM() {
+		bc.Logger().Warnf("skipping SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(bc.fs, &o, &ic)
+	bde, err := bc.GetBuildDateEpoch()
+	if err != nil {
+		return nil, fmt.Errorf("computing build date epoch: %w", err)
+	}
+
+	s := newSBOM(bc.fs, bc.o, bc.ic, bde)
 
 	m, err := img.Manifest()
 	if err != nil {
-		return nil, fmt.Errorf("getting %s manifest: %w", o.Arch, err)
+		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
 	if len(m.Layers) != 1 {
-		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", o.Arch, len(m.Layers))
+		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
 	}
 
 	if err := s.SetLayerDigest(ctx, m.Layers[0].Digest); err != nil {
@@ -142,11 +143,11 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	// Get the image digest
 	h, err := img.Digest()
 	if err != nil {
-		return nil, fmt.Errorf("getting %s image digest: %w", o.Arch, err)
+		return nil, fmt.Errorf("getting %s image digest: %w", arch, err)
 	}
 
 	s.Options.ImageInfo.ImageDigest = h.String()
-	s.Options.ImageInfo.Arch = o.Arch
+	s.Options.ImageInfo.Arch = arch
 
 	var sboms = make([]types.SBOM, 0)
 	files, err := s.Generate()
@@ -154,10 +155,11 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("generating sbom: %w", err)
 	}
 	for _, f := range files {
+		log.Printf("f = %s", f)
 		sboms = append(sboms, types.SBOM{
 			Path:   f,
-			Format: o.SBOMFormats[0],
-			Arch:   o.Arch.String(),
+			Format: bc.o.SBOMFormats[0],
+			Arch:   arch.String(),
 			Digest: h,
 		})
 	}
@@ -165,7 +167,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 }
 
 func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
-	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.Options)
+	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
 	if err != nil {
 		return nil, err
 	}
@@ -188,21 +190,19 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
-	fsys, o, ic := bc.fs, &bc.Options, &bc.ImageConfiguration
-
-	o.Logger().Infof("doing pre-flight checks")
-	if err := ic.Validate(); err != nil {
+	bc.Logger().Infof("doing pre-flight checks")
+	if err := bc.ic.Validate(); err != nil {
 		return fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	o.Logger().Infof("building image fileystem in %s", o.WorkDir)
+	bc.Logger().Infof("building image fileystem in %s", bc.o.WorkDir)
 
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
 	if err != nil {
 		return err
 	}
 
-	if err := apk.Initialize(ctx, ic); err != nil {
+	if err := apk.Initialize(ctx, bc.ic); err != nil {
 		return fmt.Errorf("initializing apk: %w", err)
 	}
 
@@ -210,55 +210,53 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return fmt.Errorf("installing apk packages: %w", err)
 	}
 
-	if err := additionalTags(fsys, o); err != nil {
+	if err := additionalTags(bc.fs, &bc.o); err != nil {
 		return fmt.Errorf("adding additional tags: %w", err)
 	}
 
-	if err := mutateAccounts(fsys, o, ic); err != nil {
+	if err := mutateAccounts(bc.fs, &bc.o, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate accounts: %w", err)
 	}
 
-	if err := mutatePaths(fsys, o, ic); err != nil {
+	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	if err := GenerateOSRelease(fsys, o, ic); err != nil {
+	if err := GenerateOSRelease(bc.fs, &bc.o, &bc.ic); err != nil {
 		if errors.Is(err, ErrOSReleaseAlreadyPresent) {
-			o.Logger().Warnf("did not generate /etc/os-release: %v", err)
+			bc.Logger().Warnf("did not generate /etc/os-release: %v", err)
 		} else {
 			return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 		}
 	}
 
-	if err := bc.s6.WriteSupervisionTree(ic.Entrypoint.Services); err != nil {
+	if err := bc.s6.WriteSupervisionTree(bc.ic.Entrypoint.Services); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
 	// add busybox symlinks
-	if err := installBusyboxLinks(fsys, o); err != nil {
+	if err := installBusyboxLinks(bc.fs, &bc.o); err != nil {
 		return err
 	}
 
 	// add ldconfig links
-	if err := installLdconfigLinks(fsys); err != nil {
+	if err := installLdconfigLinks(bc.fs); err != nil {
 		return err
 	}
 
 	// add necessary character devices
-	if err := installCharDevices(fsys); err != nil {
+	if err := installCharDevices(bc.fs); err != nil {
 		return err
 	}
 
-	o.Logger().Infof("finished building filesystem in %s", o.WorkDir)
+	bc.Logger().Infof("finished building filesystem in %s", bc.o.WorkDir)
 
 	return nil
 }
 
 // WriteIndex saves the index file from the given image configuration.
 func (bc *Context) WriteIndex(idx oci.SignedImageIndex) (string, int64, error) {
-	o := bc.Options
-
-	outfile := filepath.Join(o.TempDir(), "index.json")
+	outfile := filepath.Join(bc.o.TempDir(), "index.json")
 
 	b, err := idx.RawManifest()
 	if err != nil {
@@ -273,36 +271,35 @@ func (bc *Context) WriteIndex(idx oci.SignedImageIndex) (string, int64, error) {
 		return "", 0, fmt.Errorf("stat(%q): %w", outfile, err)
 	}
 
-	o.Logger().Infof("built index file as %s", outfile)
+	bc.Logger().Infof("built index file as %s", outfile)
 	return outfile, stat.Size(), nil
 }
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
-	fsys, o, ic := bc.fs, &bc.Options, &bc.ImageConfiguration
-	o.Logger().Infof("doing pre-flight checks")
-	if err := ic.Validate(); err != nil {
+	bc.Logger().Infof("doing pre-flight checks")
+	if err := bc.ic.Validate(); err != nil {
 		return toInstall, conflicts, fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	o.Logger().Infof("building apk info in %s", o.WorkDir)
+	bc.Logger().Infof("building apk info in %s", bc.o.WorkDir)
 
-	apk, err := chainguardAPK.NewWithOptions(fsys, *o)
+	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
 	if err != nil {
 		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
 	}
-	if err := apk.Initialize(ctx, ic); err != nil {
+	if err := apk.Initialize(ctx, bc.ic); err != nil {
 		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
 	}
 
 	if toInstall, conflicts, err = apk.ResolvePackages(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
-	o.Logger().Infof("finished gathering apk info in %s", o.WorkDir)
+	bc.Logger().Infof("finished gathering apk info in %s", bc.o.WorkDir)
 
 	return toInstall, conflicts, err
 }
 
-func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) *sbom.SBOM {
+func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) *sbom.SBOM {
 	s := sbom.NewWithFS(fsys, o.Arch)
 	// Parse the image reference
 	if len(o.Tags) > 0 {
@@ -315,7 +312,7 @@ func newSBOM(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration
 		}
 	}
 
-	s.Options.ImageInfo.SourceDateEpoch = o.SourceDateEpoch
+	s.Options.ImageInfo.SourceDateEpoch = bde
 	s.Options.Formats = o.SBOMFormats
 	s.Options.ImageInfo.VCSUrl = ic.VCSUrl
 
@@ -337,16 +334,13 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
 
-	o := bc.Options
-	ic := bc.ImageConfiguration
-
-	if len(o.SBOMFormats) == 0 {
-		o.Logger().Warnf("skipping index SBOM generation")
+	if !bc.WantSBOM() {
+		bc.Logger().Warnf("skipping index SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(bc.fs, &o, &ic)
-	o.Logger().Infof("Generating index SBOM")
+	s := newSBOM(bc.fs, bc.o, bc.ic, bc.o.SourceDateEpoch)
+	bc.Logger().Infof("Generating index SBOM")
 
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())
@@ -356,11 +350,11 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	s.Options.ImageInfo.IndexDigest = h
 
 	s.Options.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
-	if o.UseDockerMediaTypes {
+	if bc.o.UseDockerMediaTypes {
 		s.Options.ImageInfo.IndexMediaType = ggcrtypes.DockerManifestList
 	}
 	var ext string
-	switch o.SBOMFormats[0] {
+	switch bc.o.SBOMFormats[0] {
 	case "spdx":
 		ext = "spdx.json"
 	case "cyclonedx":
@@ -405,7 +399,7 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	for _, f := range files {
 		sboms = append(sboms, types.SBOM{
 			Path:   f,
-			Format: o.SBOMFormats[0],
+			Format: bc.o.SBOMFormats[0],
 			Digest: h,
 		})
 	}
