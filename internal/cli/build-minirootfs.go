@@ -86,12 +86,8 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(wd, opts...)
+	bc, err := build.New(ctx, wd, opts...)
 	if err != nil {
-		return err
-	}
-
-	if err := bc.Refresh(); err != nil {
 		return err
 	}
 

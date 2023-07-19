@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
@@ -56,6 +57,7 @@ type Context struct {
 	s6              *s6.Context
 	assertions      []Assertion
 	fs              apkfs.FullFS
+	apk             *apk.APK
 }
 
 func (bc *Context) Summarize() {
@@ -68,7 +70,7 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 	if _, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok {
 		return bc.o.SourceDateEpoch, nil
 	}
-	pl, err := bc.InstalledPackages()
+	pl, err := bc.apk.GetInstalled()
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine installed packages: %w", err)
 	}
@@ -175,10 +177,26 @@ func (bc *Context) runAssertions() error {
 	return eg.Wait().ErrorOrNil()
 }
 
+// NewOptions evaluates the build.Options in the same way as New().
+func NewOptions(workDir string, opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
+	bc := Context{
+		o: options.Default,
+	}
+	bc.o.WorkDir = workDir
+
+	for _, opt := range opts {
+		if err := opt(&bc); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return &bc.o, &bc.ic, nil
+}
+
 // New creates a build context.
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
-func New(workDir string, opts ...Option) (*Context, error) {
+func New(ctx context.Context, workDir string, opts ...Option) (*Context, error) {
 	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
 	bc := Context{
 		o:  options.Default,
@@ -217,16 +235,49 @@ func New(workDir string, opts ...Option) (*Context, error) {
 		bc.ic.ProbeVCSUrl(bc.imageConfigFile, bc.Logger())
 	}
 
-	return &bc, nil
-}
+	apkOpts := []apk.Option{
+		apk.WithFS(bc.fs),
+		apk.WithLogger(bc.Logger()),
+		apk.WithArch(bc.o.Arch.ToAPK()),
+		apk.WithIgnoreMknodErrors(true),
+	}
+	// only try to pass the cache dir if one of the following is true:
+	// - the user has explicitly set a cache dir
+	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
+	// if neither of these are true, then we don't want to pass a cache dir, because
+	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
+	// is not set.
 
-// Refresh initializes the build process by creating a new s6 context.
-func (bc *Context) Refresh() error {
-	bc.o.TarballPath = ""
+	// note that this is not easy to do in a switch statement, because of the second
+	// condition, if err := ...; err == nil {}
+	if bc.o.CacheDir != "" {
+		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir))
+	} else if _, err := os.UserCacheDir(); err == nil {
+		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir))
+	} else {
+		bc.Logger().Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	}
+
+	apkImpl, err := apk.New(apkOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	bc.apk = apkImpl
+
+	bc.Logger().Infof("doing pre-flight checks")
+	if err := bc.ic.Validate(); err != nil {
+		return nil, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	bc.Logger().Infof("building apk info in %s", bc.o.WorkDir)
+	if err := bc.initializeApk(ctx); err != nil {
+		return nil, fmt.Errorf("initializing apk: %w", err)
+	}
 
 	bc.s6 = s6.New(bc.fs, bc.Logger())
 
-	return nil
+	return &bc, nil
 }
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
@@ -288,18 +339,6 @@ func (bc *Context) TarballPath() string {
 
 func (bc *Context) Arch() types.Architecture {
 	return bc.o.Arch
-}
-
-func (bc *Context) Tags() []string {
-	return bc.o.Tags
-}
-
-func (bc *Context) SourceDateEpoch() time.Time {
-	return bc.o.SourceDateEpoch
-}
-
-func (bc *Context) TarballFilename() string {
-	return bc.o.TarballFileName()
 }
 
 func (bc *Context) WantSBOM() bool {

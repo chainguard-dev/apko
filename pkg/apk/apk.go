@@ -17,139 +17,17 @@ package apk
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
-	"archive/tar"
-	"context"
 	"fmt"
 	"io/fs"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
 
-	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
-	"gitlab.alpinelinux.org/alpine/go/repository"
-	"golang.org/x/sync/errgroup"
-	"k8s.io/apimachinery/pkg/util/sets"
 
-	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
 )
-
-type APK struct {
-	impl    *apkimpl.APK
-	fs      apkfs.FullFS
-	Options options.Options
-}
-
-func New() (*APK, error) {
-	return NewWithOptions(apkfs.DirFS("/"), options.Default)
-}
-
-func NewWithOptions(fsys apkfs.FullFS, o options.Options) (*APK, error) {
-	opts := options.Default
-	if o.Log == nil {
-		o.Log = opts.Log
-	}
-
-	// apko does not execute the scripts, so they do not matter. This buys us flexibility
-	// to run without root privileges, or even on non-Linux.
-	apkOpts := []apkimpl.Option{
-		apkimpl.WithFS(fsys),
-		apkimpl.WithLogger(o.Logger()),
-		apkimpl.WithArch(o.Arch.ToAPK()),
-		apkimpl.WithIgnoreMknodErrors(true),
-	}
-	// only try to pass the cache dir if one of the following is true:
-	// - the user has explicitly set a cache dir
-	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
-	// if neither of these are true, then we don't want to pass a cache dir, because
-	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
-	// is not set.
-
-	// note that this is not easy to do in a switch statement, because of the second
-	// condition, if err := ...; err == nil {}
-	if o.CacheDir != "" {
-		apkOpts = append(apkOpts, apkimpl.WithCache(o.CacheDir))
-	} else if _, err := os.UserCacheDir(); err == nil {
-		apkOpts = append(apkOpts, apkimpl.WithCache(o.CacheDir))
-	} else {
-		o.Logger().Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
-	}
-
-	apkImpl, err := apkimpl.New(apkOpts...)
-	if err != nil {
-		return nil, err
-	}
-	a := &APK{
-		Options: o,
-		impl:    apkImpl,
-		fs:      fsys,
-	}
-	return a, nil
-}
-
-type Option func(*APK) error
-
-// Initialize sets the image in Context.WorkDir according to the image configuration,
-// and does everything short of installing the packages.
-func (a *APK) Initialize(ctx context.Context, ic types.ImageConfiguration) error {
-	// initialize apk
-	alpineVersions := parseOptionsFromRepositories(ic.Contents.Repositories)
-	if err := a.impl.InitDB(ctx, alpineVersions...); err != nil {
-		return fmt.Errorf("failed to initialize apk database: %w", err)
-	}
-
-	var eg errgroup.Group
-
-	eg.Go(func() error {
-		keyring := sets.List(sets.New(ic.Contents.Keyring...).Insert(a.Options.ExtraKeyFiles...))
-		if err := a.impl.InitKeyring(ctx, keyring, nil); err != nil {
-			return fmt.Errorf("failed to initialize apk keyring: %w", err)
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		repos := sets.List(sets.New(ic.Contents.Repositories...).Insert(a.Options.ExtraRepos...))
-		if err := a.impl.SetRepositories(repos); err != nil {
-			return fmt.Errorf("failed to initialize apk repositories: %w", err)
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		packages := sets.List(sets.New(ic.Contents.Packages...).Insert(a.Options.ExtraPackages...))
-		if err := a.impl.SetWorld(packages); err != nil {
-			return fmt.Errorf("failed to initialize apk world: %w", err)
-		}
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Install install packages. Only works if already initialized.
-func (a *APK) Install(ctx context.Context) error {
-	// sync reality with desired apk world
-	return a.impl.FixateWorld(ctx, &a.Options.SourceDateEpoch)
-}
-
-// ResolvePackages gets list of packages that should be installed
-func (a *APK) ResolvePackages(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
-	// sync reality with desired apk world
-	return a.impl.ResolveWorld(ctx)
-}
-
-func (a *APK) GetInstalled() ([]*apkimpl.InstalledPackage, error) {
-	return a.impl.GetInstalled()
-}
 
 // AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
 // If --package-version-tag is set to a package name (e.g. go), then this function
@@ -241,22 +119,4 @@ func getStemmedVersionTags(opts options.Options, origRef string, version string)
 		return tags[j] < tags[i]
 	})
 	return tags, nil
-}
-
-func (a *APK) ListInitFiles() []tar.Header {
-	return a.impl.ListInitFiles()
-}
-
-var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
-
-func parseOptionsFromRepositories(repos []string) []string {
-	var versions = make([]string, 0)
-	for _, r := range repos {
-		parts := repoRE.FindStringSubmatch(r)
-		if len(parts) < 2 {
-			continue
-		}
-		versions = append(versions, parts[1])
-	}
-	return versions
 }

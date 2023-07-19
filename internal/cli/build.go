@@ -181,16 +181,10 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
 
-	bc, err := build.New(wd, opts...)
+	o, ic, err := build.NewOptions(wd, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if err := bc.Refresh(); err != nil {
-		return nil, nil, err
-	}
-
-	ic := bc.ImageConfiguration()
 
 	// cases:
 	// - archs set: use those archs
@@ -206,7 +200,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	bc.Logger().Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	o.Logger().Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -217,7 +211,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	//  image/ - the summary layer files and sboms for each architecture
 	// imageDir, created here, is where the final artifacts will be: layer tars, indexes, etc.
 
-	bc.Logger().Printf("building tags %v", bc.Tags())
+	o.Logger().Printf("building tags %v", o.Tags)
 
 	var errg errgroup.Group
 	workDir := wd
@@ -236,7 +230,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	// maximum "build date epoch" of the per-arch images.  If the user has
 	// explicitly set SOURCE_DATE_EPOCH, that will always trump this
 	// computation.
-	multiArchBDE := bc.SourceDateEpoch()
+	multiArchBDE := o.SourceDateEpoch
 
 	for _, arch := range archs {
 		arch := arch
@@ -245,10 +239,9 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		bopts := slices.Clone(opts)
 		bopts = append(bopts,
 			build.WithArch(arch),
-			build.WithTarball(filepath.Join(imageDir, bc.TarballFilename())),
 			build.WithSBOM(imageDir),
 		)
-		bc, err := build.New(wd, bopts...)
+		bc, err := build.New(ctx, wd, bopts...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -257,10 +250,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		contexts[arch] = bc
 
 		errg.Go(func() error {
-			if err := bc.Refresh(); err != nil {
-				return fmt.Errorf("failed to update build context for %q: %w", arch, err)
-			}
-
 			layerTarGZ, layer, err := bc.BuildLayer(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
@@ -301,10 +290,22 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	}
 
 	// generate the index
-	finalDigest, idx, err := oci.GenerateIndex(ctx, ic, imgs)
+	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
 	}
+
+	opts = append(opts,
+		build.WithImageConfiguration(*ic),       // We mutate Archs above.
+		build.WithSourceDateEpoch(multiArchBDE), // Maximum child's time.
+		build.WithSBOM(imageDir),
+	)
+
+	bc, err := build.New(ctx, wd, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if _, _, err := bc.WriteIndex(idx); err != nil {
 		return nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
 	}
@@ -337,15 +338,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			return nil, nil, err
 		}
 
-		opts = append(opts,
-			build.WithImageConfiguration(ic),        // We mutate Archs above.
-			build.WithSourceDateEpoch(multiArchBDE), // Maximum child's time.
-			build.WithSBOM(imageDir),
-		)
-		bc, err := build.New(wd, opts...)
-		if err != nil {
-			return nil, nil, err
-		}
 		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)

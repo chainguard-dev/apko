@@ -31,7 +31,6 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
-	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -166,14 +165,6 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	return sboms, nil
 }
 
-func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
-	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
-	if err != nil {
-		return nil, err
-	}
-	return apk.GetInstalled()
-}
-
 func additionalTags(fsys apkfs.FullFS, o *options.Options) error {
 	at, err := chainguardAPK.AdditionalTags(fsys, *o)
 	if err != nil {
@@ -190,23 +181,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
-	bc.Logger().Infof("doing pre-flight checks")
-	if err := bc.ic.Validate(); err != nil {
-		return fmt.Errorf("failed to validate configuration: %w", err)
-	}
-
-	bc.Logger().Infof("building image fileystem in %s", bc.o.WorkDir)
-
-	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
-	if err != nil {
-		return err
-	}
-
-	if err := apk.Initialize(ctx, bc.ic); err != nil {
-		return fmt.Errorf("initializing apk: %w", err)
-	}
-
-	if err := apk.Install(ctx); err != nil {
+	if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
 		return fmt.Errorf("installing apk packages: %w", err)
 	}
 
@@ -235,7 +210,12 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	}
 
 	// add busybox symlinks
-	if err := installBusyboxLinks(bc.fs, &bc.o); err != nil {
+	installed, err := bc.apk.GetInstalled()
+	if err != nil {
+		return fmt.Errorf("getting installed packages: %w", err)
+	}
+
+	if err := installBusyboxLinks(bc.fs, installed); err != nil {
 		return err
 	}
 
@@ -276,22 +256,7 @@ func (bc *Context) WriteIndex(idx oci.SignedImageIndex) (string, int64, error) {
 }
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
-	bc.Logger().Infof("doing pre-flight checks")
-	if err := bc.ic.Validate(); err != nil {
-		return toInstall, conflicts, fmt.Errorf("failed to validate configuration: %w", err)
-	}
-
-	bc.Logger().Infof("building apk info in %s", bc.o.WorkDir)
-
-	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.o)
-	if err != nil {
-		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
-	}
-	if err := apk.Initialize(ctx, bc.ic); err != nil {
-		return toInstall, conflicts, fmt.Errorf("initializing apk: %w", err)
-	}
-
-	if toInstall, conflicts, err = apk.ResolvePackages(ctx); err != nil {
+	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
 	bc.Logger().Infof("finished gathering apk info in %s", bc.o.WorkDir)

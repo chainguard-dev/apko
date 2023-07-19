@@ -4,12 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	impl "github.com/chainguard-dev/go-apk/pkg/apk"
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 	"gitlab.alpinelinux.org/alpine/go/repository"
-
-	"chainguard.dev/apko/pkg/options"
 )
 
 // Copyright 2023 Chainguard, Inc.
@@ -44,17 +42,20 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 		require.NoError(t, err)
 		err = fsys.MkdirAll("/lib/apk/db", 0755)
 		require.NoError(t, err)
-		pkgLines := impl.PackageToIndex(pkg)
+		pkgLines := apk.PackageToIndex(pkg)
 		err = fsys.WriteFile("/lib/apk/db/installed", []byte(strings.Join(pkgLines, "\n")+"\n\n"), 0755)
 		require.NoError(t, err)
 	}
+	installed := []*apk.InstalledPackage{{
+		Package: *pkg,
+	}}
 	t.Run("with busybox-paths manifest", func(t *testing.T) {
 		var err error
 		fsys := apkfs.NewMemFS()
 		buildBusybox(fsys, t)
 		err = fsys.WriteFile("/etc/busybox-paths.d/busybox", []byte(strings.Join(fakeLinks, "\n")), 0755)
 		require.NoError(t, err)
-		err = installBusyboxLinks(fsys, &options.Options{})
+		err = installBusyboxLinks(fsys, installed)
 		require.NoError(t, err)
 		for _, link := range fakeLinks {
 			_, err := fsys.Lstat(link)
@@ -72,7 +73,7 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 		var err error
 		fsys := apkfs.NewMemFS()
 		buildBusybox(fsys, t)
-		err = installBusyboxLinks(fsys, &options.Options{})
+		err = installBusyboxLinks(fsys, installed)
 		require.NoError(t, err)
 		for _, link := range fakeLinks {
 			_, err := fsys.Lstat(link)
