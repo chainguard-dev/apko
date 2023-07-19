@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -81,6 +82,49 @@ func TestPublish(t *testing.T) {
 	// Sometimes, this is intentional, and we need to change this and bump the version.
 	want := "sha256:489409eae744e35f71e225151b741ac57f352c35d577f50dce60624ff0d33f98"
 	require.Equal(t, want, digest.String())
+
+	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
+	sref, err := name.ParseReference(sdst)
+	require.NoError(t, err)
+
+	img, err := remote.Image(sref, ropt...)
+	require.NoError(t, err)
+
+	m, err := img.Manifest()
+	require.NoError(t, err)
+
+	// https://github.com/sigstore/cosign/issues/3120
+	got := m.Layers[0].Digest.String()
+
+	// This test will fail if we ever make a change in apko that changes the SBOM.
+	// Sometimes, this is intentional, and we need to change this and bump the version.
+	swant := "sha256:70c2a6ab80371ea64b053bcd00ba89436db97cb1dafdb0f7fa209659d7f6df32"
+	require.Equal(t, swant, got)
+
+	im, err := idx.IndexManifest()
+	require.NoError(t, err)
+
+	// We also want to check the children SBOMs because the index SBOM does not have
+	// references to the children SBOMs, just the children!
+	wantBoms := []string{
+		"sha256:c81802780ef743a7f4733c2365804cf2876d0b5a8af716a47ad17450de7ee882",
+		"sha256:efa5ff8b7ac1f4d7b08654c254c19ebef3bfad6850a1067367513f6284afdf94",
+	}
+
+	for i, m := range im.Manifests {
+		childBom := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(m.Digest.String(), ":", "-"))
+		childRef, err := name.ParseReference(childBom)
+		require.NoError(t, err)
+
+		img, err := remote.Image(childRef, ropt...)
+		require.NoError(t, err)
+
+		m, err := img.Manifest()
+		require.NoError(t, err)
+
+		got := m.Layers[0].Digest.String()
+		require.Equal(t, wantBoms[i], got)
+	}
 }
 
 type sentinel struct {
