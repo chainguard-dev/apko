@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
@@ -369,7 +370,15 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	}
 
 	// Load the images data into the SBOM generator options
-	for arch, i := range imgs {
+	archs := make([]types.Architecture, 0, len(imgs))
+	for arch := range imgs {
+		archs = append(archs, arch)
+	}
+	sort.Slice(archs, func(i, j int) bool {
+		return archs[i].String() < archs[j].String()
+	})
+	for _, arch := range archs {
+		i := imgs[arch]
 		sbomHash, err := khash.SHA256ForFile(filepath.Join(s.Options.OutputDir, fmt.Sprintf("sbom-%s.%s", arch.ToAPK(), ext)))
 		if err != nil {
 			return nil, fmt.Errorf("checksumming %s SBOM: %w", arch, err)
