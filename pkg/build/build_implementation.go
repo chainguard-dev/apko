@@ -163,42 +163,6 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	return sboms, nil
 }
 
-// GenerateSBOM generates an SBOM for an apko layer
-func (bc *Context) GenerateSBOM(ctx context.Context, digest v1.Hash) error {
-	ctx, span := otel.Tracer("apko").Start(ctx, "GenerateSBOM")
-	defer span.End()
-
-	o := bc.Options
-	ic := bc.ImageConfiguration
-
-	if len(o.SBOMFormats) == 0 {
-		o.Logger().Warnf("skipping SBOM generation")
-		return nil
-	}
-
-	s := newSBOM(bc.fs, &o, &ic)
-
-	if err := s.SetLayerDigest(ctx, digest); err != nil {
-		return fmt.Errorf("reading layer tar: %w", err)
-	}
-
-	if err := s.ReadReleaseData(); err != nil {
-		return fmt.Errorf("getting os-release: %w", err)
-	}
-
-	if err := s.ReadPackageIndex(); err != nil {
-		return fmt.Errorf("getting installed packages from sbom: %w", err)
-	}
-
-	s.Options.ImageInfo.Arch = o.Arch
-
-	if _, err := s.Generate(); err != nil {
-		return fmt.Errorf("generating SBOMs: %w", err)
-	}
-
-	return nil
-}
-
 func (bc *Context) InstalledPackages() ([]*apkimpl.InstalledPackage, error) {
 	apk, err := chainguardAPK.NewWithOptions(bc.fs, bc.Options)
 	if err != nil {

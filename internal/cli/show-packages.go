@@ -171,11 +171,6 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 			return err
 		}
 
-		// we do not generate SBOMs for each arch, only possibly for final image
-		bc.Options.SBOMFormats = []string{}
-		bc.Options.WantSBOM = false
-		bc.ImageConfiguration.Archs = archs
-
 		bc.Options.Arch = arch
 		bc.Options.WorkDir = wd
 

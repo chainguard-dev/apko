@@ -143,15 +143,6 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
 	}
 
-	// generate SBOM
-	if bc.Options.WantSBOM {
-		if err := bc.GenerateSBOM(ctx, h); err != nil {
-			return "", nil, fmt.Errorf("generating SBOMs: %w", err)
-		}
-	} else {
-		bc.Logger().Debugf("Not generating SBOMs (WantSBOM = false)")
-	}
-
 	mt := v1types.OCILayer
 	if bc.Options.UseDockerMediaTypes {
 		mt = v1types.DockerLayer
