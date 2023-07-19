@@ -19,10 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
-	"time"
 
-	"github.com/avast/retry-go"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
@@ -33,7 +30,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
-	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
 )
 
@@ -41,186 +37,77 @@ import (
 // `local` determines if it should push to the local docker daemon or to the actual registry.
 // `shouldPushTags` determines whether to push the tags provided in the `tags` parameter, or whether
 // to treat the first tag as a digest and push that instead.
-func PublishImage(ctx context.Context, image oci.SignedImage, local, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
-	h, err := image.Digest()
+func PublishImage(ctx context.Context, image oci.SignedImage, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
+	ref, err := name.ParseReference(tags[0])
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("parsing tag %q: %w", tags[0], err)
+	}
+
+	hash, err := image.Digest()
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
 	}
 
-	digest := name.Digest{}
+	dig := ref.Context().Digest(hash.String())
+
 	toPublish := tags
 	msg := "publish image tag"
+
 	if !shouldPushTags {
-		toPublish = []string{fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())}
+		toPublish = []string{dig.String()}
 		msg = "publishing image without tag (digest only)"
 	}
+
+	g, ctx := errgroup.WithContext(ctx)
 	for _, tag := range toPublish {
-		logger.Printf("%s %v", msg, tag)
-		digest, err = publishTagFromImage(ctx, image, tag, h, local, logger, remoteOpts...)
-		if err != nil {
-			return name.Digest{}, err
-		}
-	}
-
-	return digest, nil
-}
-
-// PublishImageFromLayer convenience function that creates an image from a v1.Layer, and then publishes that.
-// Just wraps BuildImageFromLayer and PublishImage.
-// Options provided are applied either to BuildImageFromlayer or PublishImage.
-func PublishImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger, local, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImage, error) {
-	v1Image, err := BuildImageFromLayer(layer, ic, created, arch, logger)
-	if err != nil {
-		return name.Digest{}, nil, err
-	}
-	dig, err := PublishImage(ctx, v1Image, local, shouldPushTags, logger, tags, remoteOpts...)
-	return dig, v1Image, err
-}
-
-// PublishIndex given an oci.SignedImageIndex, publish it to a registry.
-// `local` causes it to publish to the local docker daemon instead of the registry.
-// Note that docker, when provided with a multi-architecture index, will load just the image inside for the provided
-// platform, defaulting to the one on which the docker daemon is running.
-// PublishIndex will determine that platform and use it to publish the updated index.
-func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, local bool, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, oci.SignedImageIndex, error) {
-	ctx, span := otel.Tracer("apko").Start(ctx, "PublishIndex")
-	defer span.End()
-
-	// If attempting to save locally, pick the native architecture
-	// and use that cached image for local tags
-	// Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
-	if local {
-		im, err := idx.IndexManifest()
-		if err != nil {
-			return name.Digest{}, nil, err
-		}
-		goos, goarch := os.Getenv("GOOS"), os.Getenv("GOARCH")
-		if goos == "" {
-			goos = "linux"
-		}
-		if goarch == "" {
-			goarch = "amd64"
-		}
-		// Default to just using the first one in the list if we cannot match
-		useManifest := im.Manifests[0]
-		for _, manifest := range im.Manifests {
-			if manifest.Platform == nil {
-				continue
-			}
-			if manifest.Platform.OS != goos {
-				continue
-			}
-			if manifest.Platform.Architecture != goarch {
-				continue
-			}
-			useManifest = manifest
-		}
-		localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, useManifest.Digest.Hex)
-		logger.Printf("using best guess single-arch image for local tags: %s (%s/%s)", localSrcTagStr, goos, goarch)
-		localSrcTag, err := name.NewTag(localSrcTagStr)
-		if err != nil {
-			return name.Digest{}, nil, err
-		}
-		for _, tag := range tags {
-			localDstTag, err := name.NewTag(tag)
-			if err != nil {
-				return name.Digest{}, nil, err
-			}
-			if strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
-				logger.Warnf("skipping local domain tagging %s as %s", localSrcTag.Name(), localDstTag.Name())
-			} else {
-				logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
-				if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
-					return name.Digest{}, nil, err
-				}
-			}
-		}
-		digest, err := name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), useManifest.Digest.String()))
-		if err != nil {
-			return name.Digest{}, nil, err
-		}
-		return digest, idx, nil
-	}
-
-	h, err := idx.Digest()
-	if err != nil {
-		return name.Digest{}, nil, err
-	}
-
-	digest := name.Digest{}
-	msg := "publishing index tag"
-	toPublish := tags
-	if !shouldPushTags {
-		toPublish = []string{fmt.Sprintf("%s@%s", strings.Split(tags[0], ":")[0], h.String())}
-		msg = "publishing index without tag (digest only)"
-	}
-	for _, tag := range toPublish {
-		logger.Printf("%s %v", msg, tag)
-		digest, err = publishTagFromIndex(ctx, idx, tag, h, logger, remoteOpts...)
-		if err != nil {
-			return name.Digest{}, nil, err
-		}
-	}
-
-	return digest, idx, nil
-}
-
-// publishTagFromIndex publishes a single tag from an oci.SignedImageIndex,
-// as well as any attached signatures/SBoMs.
-func publishTagFromIndex(ctx context.Context, index oci.SignedImageIndex, imageRef string, hash v1.Hash, logger log.Logger, remoteOpts ...remote.Option) (name.Digest, error) {
-	ref, err := name.ParseReference(imageRef)
-	if err != nil {
-		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
-	}
-
-	var g errgroup.Group
-
-	// Write any attached SBOMs/signatures (recursively)
-	wp := writePeripherals(ref, logger, remoteOpts...)
-	if err := walk.SignedEntity(ctx, index, func(ctx context.Context, se oci.SignedEntity) error {
+		tag := tag
 		g.Go(func() error {
-			return wp(ctx, se)
+			logger.Printf("%s %v", msg, tag)
+			ref, err := name.ParseReference(tag)
+			if err != nil {
+				return fmt.Errorf("unable to parse reference: %w", err)
+			}
+
+			// Write any attached SBOMs/signatures.
+			wp := writePeripherals(ref, logger, remoteOpts...)
+			g.Go(func() error {
+				return wp(ctx, image)
+			})
+
+			g.Go(func() error {
+				return remote.Write(ref, image, remoteOpts...)
+			})
+
+			return nil
 		})
-		return nil
-	}); err != nil {
-		return name.Digest{}, err
 	}
 
-	g.Go(func() error {
-		return retry.Do(func() error {
-			return remote.WriteIndex(ref, index, remoteOpts...)
-		})
-	})
 	if err := g.Wait(); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
 
-	return ref.Context().Digest(hash.String()), nil
+	return dig, nil
 }
 
-// publishTagFromImage publishes a single tag from an oci.SignedImage,
-// as well as any attached signatures/SBoMs.
-// Supports pushing to local docker daemon via the `local` flag.
-func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger log.Logger, remoteOpts ...remote.Option) (name.Digest, error) {
-	imgRef, err := name.ParseReference(imageRef)
+func LoadImage(ctx context.Context, image oci.SignedImage, logger log.Logger, tags []string) (name.Reference, error) {
+	hash, err := image.Digest()
 	if err != nil {
-		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
+		return name.Digest{}, err
 	}
-
-	if local {
-		localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, hash.Hex)
-		localSrcTag, err := name.NewTag(localSrcTagStr)
-		if err != nil {
-			return name.Digest{}, err
-		}
-		logger.Infof("saving OCI image locally: %s", localSrcTag.Name())
-		resp, err := daemon.Write(localSrcTag, image)
-		if err != nil {
-			logger.Errorf("docker daemon error: %s", strings.ReplaceAll(resp, "\n", "\\n"))
-			return name.Digest{}, fmt.Errorf("failed to save OCI image locally: %w", err)
-		}
-		logger.Debugf("docker daemon response: %s", strings.ReplaceAll(resp, "\n", "\\n"))
-		localDstTag, err := name.NewTag(imageRef)
+	localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, hash.Hex)
+	localSrcTag, err := name.NewTag(localSrcTagStr)
+	if err != nil {
+		return name.Digest{}, err
+	}
+	logger.Infof("saving OCI image locally: %s", localSrcTag.Name())
+	resp, err := daemon.Write(localSrcTag, image)
+	if err != nil {
+		logger.Errorf("docker daemon error: %s", strings.ReplaceAll(resp, "\n", "\\n"))
+		return name.Digest{}, fmt.Errorf("failed to save OCI image locally: %w", err)
+	}
+	logger.Debugf("docker daemon response: %s", strings.ReplaceAll(resp, "\n", "\\n"))
+	for _, tag := range tags {
+		localDstTag, err := name.NewTag(tag)
 		if err != nil {
 			return name.Digest{}, err
 		}
@@ -232,33 +119,114 @@ func publishTagFromImage(ctx context.Context, image oci.SignedImage, imageRef st
 				return name.Digest{}, err
 			}
 		}
-		return name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), hash))
+	}
+	return localSrcTag, nil
+}
+
+// PublishIndex given an oci.SignedImageIndex, publish it to a registry.
+// `local` causes it to publish to the local docker daemon instead of the registry.
+// Note that docker, when provided with a multi-architecture index, will load just the image inside for the provided
+// platform, defaulting to the one on which the docker daemon is running.
+// PublishIndex will determine that platform and use it to publish the updated index.
+func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
+	// TODO(jason): Also set annotations on the index. ggcr's
+	// pkg/v1/mutate.Annotations will drop the interface methods from
+	// oci.SignedImageIndex, so we may need to reimplement
+	// mutate.Annotations in ocimutate to keep it for now.
+
+	ref, err := name.ParseReference(tags[0])
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("parsing tag %q: %w", tags[0], err)
 	}
 
-	var g errgroup.Group
+	h, err := idx.Digest()
+	if err != nil {
+		return name.Digest{}, err
+	}
 
-	// Write any attached SBOMs/signatures.
-	wp := writePeripherals(imgRef, logger, remoteOpts...)
-	g.Go(func() error {
-		return wp(ctx, image)
-	})
+	dig := ref.Context().Digest(h.String())
 
-	g.Go(func() error {
-		return retry.Do(func() error {
-			return remote.Write(imgRef, image, remoteOpts...)
+	toPublish := tags
+	msg := "publishing index tag"
+
+	if !shouldPushTags {
+		toPublish = []string{dig.String()}
+		msg = "publishing index without tag (digest only)"
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	for _, tag := range toPublish {
+		logger.Printf("%s %v", msg, tag)
+
+		ref, err := name.ParseReference(tag)
+		if err != nil {
+			return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
+		}
+
+		// Write any attached SBOMs/signatures (recursively)
+		g.Go(func() error {
+			wp := writePeripherals(ref, logger, remoteOpts...)
+			return walk.SignedEntity(ctx, idx, func(ctx context.Context, se oci.SignedEntity) error {
+				g.Go(func() error {
+					return wp(ctx, se)
+				})
+				return nil
+			})
 		})
-	})
 
+		g.Go(func() error {
+			return remote.WriteIndex(ref, idx, remoteOpts...)
+		})
+	}
 	if err := g.Wait(); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
 	}
-	return imgRef.Context().Digest(hash.String()), nil
+
+	return dig, nil
+}
+
+// If attempting to save locally, pick the native architecture
+// and use that cached image for local tags
+// Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
+func LoadIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, tags []string) (name.Reference, error) {
+	im, err := idx.IndexManifest()
+	if err != nil {
+		return name.Digest{}, err
+	}
+	goos, goarch := os.Getenv("GOOS"), os.Getenv("GOARCH")
+	if goos == "" {
+		goos = "linux"
+	}
+	if goarch == "" {
+		goarch = "amd64"
+	}
+	// Default to just using the first one in the list if we cannot match
+	useManifest := im.Manifests[0]
+	for _, manifest := range im.Manifests {
+		if manifest.Platform == nil {
+			continue
+		}
+		if manifest.Platform.OS != goos {
+			continue
+		}
+		if manifest.Platform.Architecture != goarch {
+			continue
+		}
+		useManifest = manifest
+	}
+	img, err := idx.SignedImage(useManifest.Digest)
+	if err != nil {
+		return name.Digest{}, fmt.Errorf("reading child image %q", useManifest.Digest.String())
+	}
+
+	logger.Printf("using best guess single-arch image for local tags (%s/%s)", goos, goarch)
+	return LoadImage(ctx, img, logger, tags)
 }
 
 // PublishImagesFromIndex publishes all images from an index to a remote registry.
 // The only difference between this and PublishIndex is that PublishIndex pushes out all blobs and referenced manifests
 // from within the index. This adds pushing the referenced SignedImage artifacts along with appropriate tags.
-func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, local, shouldPushTags bool, logger log.Logger, tags []string, remoteOpts ...remote.Option) (digests []name.Digest, err error) {
+func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, repo name.Repository, remoteOpts ...remote.Option) ([]name.Digest, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "PublishImagesFromIndex")
 	defer span.End()
 
@@ -266,24 +234,32 @@ func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, local
 	if err != nil {
 		return nil, fmt.Errorf("failed to get index manifest: %w", err)
 	}
-	var (
-		g   errgroup.Group
-		mtx sync.Mutex
-	)
-	for _, m := range manifest.Manifests {
-		m := m
+
+	digests := make([]name.Digest, len(manifest.Manifests))
+
+	g, ctx := errgroup.WithContext(ctx)
+	for i, m := range manifest.Manifests {
+		i, m := i, m
+
+		dig := repo.Digest(m.Digest.String())
+		digests[i] = dig
+
 		g.Go(func() error {
 			img, err := idx.SignedImage(m.Digest)
 			if err != nil {
 				return fmt.Errorf("failed to get image for %v from index: %w", m, err)
 			}
-			if dig, err := PublishImage(ctx, img, local, shouldPushTags, logger, tags, remoteOpts...); err != nil {
-				return err
-			} else {
-				mtx.Lock()
-				digests = append(digests, dig)
-				mtx.Unlock()
-			}
+
+			g.Go(func() error {
+				// Write any attached SBOMs/signatures.
+				wp := writePeripherals(dig, logger, remoteOpts...)
+				return wp(ctx, img)
+			})
+
+			g.Go(func() error {
+				return remote.Write(dig, img, remoteOpts...)
+			})
+
 			return nil
 		})
 	}
@@ -327,9 +303,7 @@ func writePeripherals(tag name.Reference, logger log.Logger, opt ...remote.Optio
 			return nil
 		}
 
-		if err := retry.Do(func() error {
-			return remote.Write(ref, f, opt...)
-		}); err != nil {
+		if err := remote.Write(ref, f, opt...); err != nil {
 			return fmt.Errorf("writing sbom: %w", err)
 		}
 
