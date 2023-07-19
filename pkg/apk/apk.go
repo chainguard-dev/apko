@@ -16,66 +16,65 @@ package apk
 
 import (
 	"fmt"
-	"io/fs"
 	"regexp"
 	"sort"
 	"strings"
 
+	apkimpl "github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 
-	"chainguard.dev/apko/pkg/options"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/log"
 )
 
 // AdditionalTags is a helper function used in conjunction with the --package-version-tag flag
 // If --package-version-tag is set to a package name (e.g. go), then this function
 // returns a list of all images that should be published with the associated version of that package tagged (e.g. 1.18)
-func AdditionalTags(fsys fs.FS, opts options.Options) ([]string, error) {
-	if opts.PackageVersionTag == "" {
+func AdditionalTags(pkgs []*apkimpl.InstalledPackage, logger log.Logger, tags []string, packageVersionTag, packageVersionTagPrefix, tagSuffix string, packageVersionTagStem bool) ([]string, error) {
+	if packageVersionTag == "" {
 		return nil, nil
 	}
-	pkgs, err := sbom.ReadPackageIndex(fsys)
-	if err != nil {
-		return nil, err
-	}
 	for _, pkg := range pkgs {
-		if pkg.Name != opts.PackageVersionTag {
+		if pkg.Name != packageVersionTag {
 			continue
 		}
 		version := pkg.Version
 		if version == "" {
-			opts.Log.Warnf("Version for package %s is empty", pkg.Name)
+			logger.Warnf("Version for package %s is empty", pkg.Name)
 			continue
 		}
-		if opts.TagSuffix != "" {
-			version += opts.TagSuffix
-		}
-		opts.Log.Debugf("Found version, images will be tagged with %s", version)
+		logger.Debugf("Found version, images will be tagged with %s", version)
 
-		additionalTags, err := appendTag(opts, fmt.Sprintf("%s%s", opts.PackageVersionTagPrefix, version))
+		additionalTags, err := appendTag(tags, fmt.Sprintf("%s%s", packageVersionTagPrefix, version))
 		if err != nil {
 			return nil, err
 		}
 
-		if opts.PackageVersionTagStem && len(additionalTags) > 0 {
-			opts.Log.Debugf("Adding stemmed version tags")
-			stemmedTags, err := getStemmedVersionTags(opts, additionalTags[0], version)
+		if packageVersionTagStem && len(additionalTags) > 0 {
+			logger.Debugf("Adding stemmed version tags")
+			stemmedTags, err := getStemmedVersionTags(packageVersionTagPrefix, additionalTags[0], version)
 			if err != nil {
 				return nil, err
 			}
 			additionalTags = append(additionalTags, stemmedTags...)
 		}
+		finalTags := additionalTags
+		if tagSuffix != "" {
+			finalTags = []string{}
+			for _, tag := range additionalTags {
+				finalTags = append(finalTags, fmt.Sprintf("%s%s", tag, tagSuffix))
+			}
+		}
 
-		opts.Log.Infof("Returning additional tags %v", additionalTags)
-		return additionalTags, nil
+		logger.Infof("Returning additional tags %v", finalTags)
+		return finalTags, nil
 	}
-	opts.Log.Warnf("No version info found for package %s, skipping additional tagging", opts.PackageVersionTag)
+	logger.Warnf("No version info found for package %s, skipping additional tagging", packageVersionTag)
 	return nil, nil
 }
 
-func appendTag(opts options.Options, newTag string) ([]string, error) {
-	newTags := make([]string, len(opts.Tags))
-	for i, t := range opts.Tags {
+func appendTag(tags []string, newTag string) ([]string, error) {
+	newTags := make([]string, len(tags))
+	for i, t := range tags {
 		nt, err := replaceTag(t, newTag)
 		if err != nil {
 			return nil, err
@@ -94,7 +93,7 @@ func replaceTag(img, newTag string) (string, error) {
 }
 
 // TODO: use version parser from https://gitlab.alpinelinux.org/alpine/go/-/tree/master/version
-func getStemmedVersionTags(opts options.Options, origRef string, version string) ([]string, error) {
+func getStemmedVersionTags(packageVersionTagPrefix string, origRef string, version string) ([]string, error) {
 	tags := []string{}
 	re := regexp.MustCompile("[.]+")
 	tmp := []string{}
@@ -106,7 +105,7 @@ func getStemmedVersionTags(opts options.Options, origRef string, version string)
 			additionalTag = strings.Join(tmp[:len(tmp)-1], "-")
 		}
 		additionalTag, err := replaceTag(origRef,
-			fmt.Sprintf("%s%s", opts.PackageVersionTagPrefix, additionalTag))
+			fmt.Sprintf("%s%s", packageVersionTagPrefix, additionalTag))
 		if err != nil {
 			return nil, err
 		}

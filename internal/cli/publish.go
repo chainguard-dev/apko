@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -206,7 +207,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	defer os.RemoveAll(wd)
 
 	// build all of the components in the working directory
-	idx, sboms, err := buildImageComponents(ctx, wd, archs, buildOpts...)
+	idx, sboms, pkgs, err := buildImageComponents(ctx, wd, archs, buildOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to build image components: %w", err)
 	}
@@ -237,6 +238,40 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return nil
 	}
 
+	// generate additional tags from the package information per architecture
+	tagsByArch := make(map[types.Architecture][]string)
+	for arch, pkgList := range pkgs {
+		addTags, err := apk.AdditionalTags(pkgList, opts.logger, tags, opts.packageVersionTag, opts.packageVersionTagPrefix, opts.tagSuffix, opts.packageVersionTagStem)
+		if err != nil {
+			return fmt.Errorf("failed to generate additional tags for arch %s: %w", arch, err)
+		}
+		tagsByArch[arch] = append(tags, addTags...)
+	}
+
+	// if the tags are not identical across arches, that is an error
+	allTagsMap := make(map[string]bool)
+	for arch, archTags := range tagsByArch {
+		if len(allTagsMap) == 0 {
+			for _, tag := range archTags {
+				allTagsMap[tag] = true
+			}
+			continue
+		}
+		if len(archTags) != len(allTagsMap) {
+			return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
+		}
+		for _, tag := range archTags {
+			if !allTagsMap[tag] {
+				return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
+			}
+		}
+	}
+	// and now generate a slice
+	allTags := make([]string, 0, len(allTagsMap))
+	for tag := range allTagsMap {
+		allTags = append(allTags, tag)
+	}
+
 	// publish each arch-specific image
 	// TODO: This should just happen as part of PublishIndex.
 	ref, err := name.ParseReference(tags[0])
@@ -252,7 +287,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	// publish the index
-	finalDigest, err := oci.PublishIndex(ctx, idx, logger, shouldPushTags, tags, ropt...)
+	finalDigest, err := oci.PublishIndex(ctx, idx, logger, shouldPushTags, allTags, ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing image index: %w", err)
 	}

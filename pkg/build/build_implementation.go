@@ -28,13 +28,10 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
-
-	chainguardAPK "chainguard.dev/apko/pkg/apk"
-	"chainguard.dev/apko/pkg/options"
 )
 
 // BuildTarball takes the fully populated working directory and saves it to
@@ -92,28 +89,12 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 	return outfile.Name(), diffid, digest, stat.Size(), nil
 }
 
-func additionalTags(fsys apkfs.FullFS, o *options.Options) error {
-	at, err := chainguardAPK.AdditionalTags(fsys, *o)
-	if err != nil {
-		return err
-	}
-	if at == nil {
-		return nil
-	}
-	o.Tags = append(o.Tags, at...)
-	return nil
-}
-
 func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
 	if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
 		return fmt.Errorf("installing apk packages: %w", err)
-	}
-
-	if err := additionalTags(bc.fs, &bc.o); err != nil {
-		return fmt.Errorf("adding additional tags: %w", err)
 	}
 
 	if err := mutateAccounts(bc.fs, &bc.o, &bc.ic); err != nil {
@@ -189,4 +170,8 @@ func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repositor
 	bc.Logger().Infof("finished gathering apk info in %s", bc.o.WorkDir)
 
 	return toInstall, conflicts, err
+}
+
+func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {
+	return bc.apk.GetInstalled()
 }

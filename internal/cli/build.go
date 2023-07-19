@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -152,7 +153,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 	defer os.RemoveAll(wd)
 
 	// build all of the components in the working directory
-	idx, sboms, err := buildImageComponents(ctx, wd, archs, opts...)
+	idx, sboms, _, err := buildImageComponents(ctx, wd, archs, opts...)
 	if err != nil {
 		return err
 	}
@@ -177,13 +178,13 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 // buildImage build all of the components of an image in a single working directory.
 // Each layer is a separate file, as are config, manifests, index and sbom.
-func buildImageComponents(ctx context.Context, wd string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, err error) {
+func buildImageComponents(ctx context.Context, wd string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, pkgs map[types.Architecture][]*apk.InstalledPackage, err error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
 
 	o, ic, err := build.NewOptions(wd, opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// cases:
@@ -217,7 +218,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	workDir := wd
 	imageDir := filepath.Join(workDir, "image")
 	if err := os.MkdirAll(imageDir, 0755); err != nil {
-		return nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
+		return nil, nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
 	}
 
 	imgs := map[types.Architecture]coci.SignedImage{}
@@ -232,6 +233,9 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	// computation.
 	multiArchBDE := o.SourceDateEpoch
 
+	// pkgs will hold a reference to installed packages by architecture
+	pkgs = make(map[types.Architecture][]*apk.InstalledPackage)
+
 	for _, arch := range archs {
 		arch := arch
 		// working directory for this architecture
@@ -243,7 +247,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		)
 		bc, err := build.New(ctx, wd, bopts...)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// save the build context for later
@@ -255,6 +259,11 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
 			}
 
+			installed, err := bc.InstalledPackages()
+			if err != nil {
+				return fmt.Errorf("failed to get installed packages for %q: %w", arch, err)
+			}
+			pkgs[arch] = installed
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
 			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
@@ -286,13 +295,13 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		})
 	}
 	if err := errg.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// generate the index
 	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
 	}
 
 	opts = append(opts,
@@ -303,11 +312,11 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 
 	bc, err := build.New(ctx, wd, opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if _, _, err := bc.WriteIndex(idx); err != nil {
-		return nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
 	}
 
 	// the sboms are saved to the same working directory as the image components
@@ -335,17 +344,17 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		}
 
 		if err := g.Wait(); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
+			return nil, nil, nil, fmt.Errorf("generating index SBOM: %w", err)
 		}
 		sboms = append(sboms, files...)
 	}
 
-	return idx, sboms, nil
+	return idx, sboms, pkgs, nil
 }
 
 // rename just like os.Rename, but does a copy and delete if the rename fails
