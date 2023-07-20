@@ -14,8 +14,6 @@
 
 package generator
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
-
 import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
@@ -24,8 +22,6 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
-
-//counterfeiter:generate . Generator
 
 type Generator interface {
 	Key() string
