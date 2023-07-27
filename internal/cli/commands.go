@@ -36,9 +36,9 @@ func New() *cobra.Command {
 		SilenceUsage:      true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			http.DefaultTransport = userAgentTransport{http.DefaultTransport}
-			if cwd != "" {
-				if err := os.Chdir(cwd); err != nil {
-					fmt.Printf("failed to change dir to %s: %v\n", cwd, err)
+			if workDir != "" {
+				if err := os.Chdir(workDir); err != nil {
+					fmt.Printf("failed to change dir to %s: %v\n", workDir, err)
 				}
 			}
 		},
