@@ -263,7 +263,11 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			if err != nil {
 				return fmt.Errorf("failed to get installed packages for %q: %w", arch, err)
 			}
+			// this should be unnecessary, as the arch list already is unique,
+			// but the race detector complains, so we can use it anyways
+			mtx.Lock()
 			pkgs[arch] = installed
+			mtx.Unlock()
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
 			// embedded in the installed APKs.  If SOURCE_DATE_EPOCH is
