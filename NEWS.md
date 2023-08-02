@@ -1,3 +1,17 @@
+# Changes from 0.9.0 to 0.10.0
+
+* Fix `--package-version-flag`.
+
+* Fix `--workdir` flag.
+
+* Switch from `pargzip` to `pgzip` for more efficient and faster compression.
+
+* Improve caching to speed up repeated installs of the same APKs.
+
+* Various small performance improvements.
+
+* Add OpenTelemetry spans for debugging performance issues.
+
 # Changes from 0.8.0 to 0.9.0
 
 * Use external `go-apk` library instead of internal APK implementation.

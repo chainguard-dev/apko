@@ -3,7 +3,6 @@ module chainguard.dev/apko
 go 1.20
 
 require (
-	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
 	github.com/chainguard-dev/go-apk v0.0.0-20230710230135-7fc46e8b3c4d
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08
@@ -15,7 +14,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jinzhu/copier v0.3.5
 	github.com/klauspost/pgzip v1.2.5
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.6.1
 	github.com/package-url/packageurl-go v0.1.1-0.20220203205134-d70459300c8a
 	github.com/sigstore/cosign/v2 v2.1.1
 	github.com/sirupsen/logrus v1.9.3
@@ -23,6 +21,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	gitlab.alpinelinux.org/alpine/go v0.7.1-0.20230613043312-f696350aabb4
 	go.opentelemetry.io/otel v1.16.0
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.9.0
 	golang.org/x/term v0.9.0

@@ -15,19 +15,13 @@
 package sbom
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
-
-	"chainguard.dev/apko/pkg/sbom/generator"
-	"chainguard.dev/apko/pkg/sbom/generator/generatorfakes"
-	"chainguard.dev/apko/pkg/sbom/options"
 )
-
-var errFake = fmt.Errorf("synthetic error")
 
 func TestReadReleaseData(t *testing.T) {
 	osinfoData := `ID=wolfi
@@ -37,38 +31,25 @@ VERSION_ID="2022, 20230914"
 HOME_URL="https://wolfi.dev"
 `
 	fsys := apkfs.NewMemFS()
-	require.NoError(
-		t, fsys.WriteFile(
-			"os-release", []byte(osinfoData), os.FileMode(0o644),
-		),
-	)
-	di := defaultSBOMImplementation{}
-
+	require.NoError(t, fsys.MkdirAll(filepath.Dir(osReleasePath), os.FileMode(0o644)))
+	require.NoError(t, fsys.WriteFile(osReleasePath, []byte(osinfoData), os.FileMode(0o644)))
 	// Non existent file, should err
-	require.Error(t, di.ReadReleaseData(fsys, &options.Options{}, "non-existent"))
-	opts := options.Options{}
-	require.NoError(t, di.ReadReleaseData(fsys, &opts, "os-release"))
-	require.Equal(t, "wolfi", opts.OS.ID, "id")
-	require.Equal(t, "Wolfi", opts.OS.Name, "name")
-	require.Equal(t, "2022, 20230914", opts.OS.Version, "version")
+	info, err := ReadReleaseData(fsys)
+	require.NoError(t, err)
+	require.Equal(t, "wolfi", info.ID, "id")
+	require.Equal(t, "Wolfi", info.Name, "name")
+	require.Equal(t, "2022, 20230914", info.VersionID, "version")
 }
 
 func TestReadReleaseData_EmptyDefaults(t *testing.T) {
 	fsys := apkfs.NewMemFS()
-	require.NoError(
-		t, fsys.WriteFile(
-			"os-release", nil, os.FileMode(0o644),
-		),
-	)
-	di := defaultSBOMImplementation{}
-
-	// Non existent file, should err
-	require.Error(t, di.ReadReleaseData(fsys, &options.Options{}, "non-existent"))
-	opts := options.Options{}
-	require.NoError(t, di.ReadReleaseData(fsys, &opts, "os-release"))
-	require.Equal(t, "", opts.OS.ID, "id")
-	require.Equal(t, "", opts.OS.Name, "name")
-	require.Equal(t, "", opts.OS.Version, "version")
+	require.NoError(t, fsys.MkdirAll(filepath.Dir(osReleasePath), os.FileMode(0o644)))
+	require.NoError(t, fsys.WriteFile(osReleasePath, nil, os.FileMode(0o644))) // Non existent file, should err
+	info, err := ReadReleaseData(fsys)
+	require.NoError(t, err)
+	require.Equal(t, "", info.ID, "id")
+	require.Equal(t, "", info.Name, "name")
+	require.Equal(t, "", info.VersionID, "version")
 }
 
 func TestReadPackageIndex(t *testing.T) {
@@ -121,98 +102,11 @@ Z:Q1/KAM0XSmA+YShex9ZKehdaf+mjw=
 
 `
 	fsys := apkfs.NewMemFS()
-	require.NoError(
-		t, fsys.WriteFile(
-			"installed", []byte(sampleDB), os.FileMode(0o644),
-		),
-	)
+	require.NoError(t, fsys.MkdirAll(filepath.Dir(packageIndexPath), os.FileMode(0o644)))
+	require.NoError(t, fsys.WriteFile(packageIndexPath, []byte(sampleDB), os.FileMode(0o644)))
 
-	// Write an invalid DB
-	require.NoError(
-		t, fsys.WriteFile(
-			"installed-corrupt",
-			[]byte("sldkjflskdjflsjdflkjsdlfkjsldfkj\nskdjfhksjdhfkjhsdkfjhksdjhf"),
-			os.FileMode(0o644),
-		),
-	)
-
-	di := defaultSBOMImplementation{}
-
-	// Non existent file must fail
-	opts := &options.Options{}
-	_, err := di.ReadPackageIndex(fsys, opts, "non-existent")
-	require.Error(t, err)
-	_, err = di.ReadPackageIndex(fsys, opts, "installed-corrupt")
-	require.Error(t, err)
-	pkg, err := di.ReadPackageIndex(fsys, opts, "installed")
+	pkg, err := ReadPackageIndex(fsys)
 	require.NoError(t, err)
 	require.NotNil(t, pkg)
 	require.Len(t, pkg, 2)
-}
-
-func TestCheckGenerators(t *testing.T) {
-	di := defaultSBOMImplementation{}
-	gen := generatorfakes.FakeGenerator{}
-
-	// No generators set
-	require.Error(t, di.CheckGenerators(
-		&options.Options{Formats: []string{"cyclonedx"}},
-		map[string]generator.Generator{},
-	))
-	// No generators enabled in the options
-	require.Error(t, di.CheckGenerators(
-		&options.Options{Formats: []string{}},
-		map[string]generator.Generator{"fake": &gen},
-	))
-	// No generator for specified format
-	require.Error(t, di.CheckGenerators(
-		&options.Options{Formats: []string{"cyclonedx"}},
-		map[string]generator.Generator{"fake": &gen},
-	))
-	// Success
-	require.NoError(t, di.CheckGenerators(
-		&options.Options{Formats: []string{"fake"}},
-		map[string]generator.Generator{"fake": &gen},
-	))
-}
-
-func TestGenerate(t *testing.T) {
-	di := defaultSBOMImplementation{}
-	outputDir := "/path/to/sbom"
-	formats := []string{"fake"}
-
-	for _, tc := range []struct {
-		prepare func(*generatorfakes.FakeGenerator)
-		opts    options.Options
-		assert  func([]string, error)
-	}{
-		{
-			// Success
-			prepare: func(fg *generatorfakes.FakeGenerator) {
-				fg.GenerateReturns(nil)
-			},
-			opts: options.Options{OutputDir: outputDir, Formats: formats},
-			assert: func(sboms []string, err error) {
-				require.NoError(t, err)
-				require.GreaterOrEqual(t, len(sboms), 1)
-			},
-		},
-		{
-			// Generate fails
-			prepare: func(fg *generatorfakes.FakeGenerator) {
-				fg.GenerateReturns(errFake)
-			},
-			opts: options.Options{OutputDir: outputDir, Formats: formats},
-			assert: func(s []string, err error) {
-				require.Error(t, err)
-			},
-		},
-	} {
-		mock := &generatorfakes.FakeGenerator{}
-		tc.prepare(mock)
-		res, err := di.Generate(
-			&tc.opts, map[string]generator.Generator{"fake": mock},
-		)
-		tc.assert(res, err)
-	}
 }

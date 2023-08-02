@@ -27,12 +27,14 @@ import (
 	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -205,7 +207,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	defer os.RemoveAll(wd)
 
 	// build all of the components in the working directory
-	idx, sboms, err := buildImageComponents(ctx, wd, archs, buildOpts...)
+	idx, sboms, pkgs, err := buildImageComponents(ctx, wd, archs, buildOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to build image components: %w", err)
 	}
@@ -224,8 +226,59 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	if logger == nil {
 		logger = log.NewLogger(os.Stderr)
 	}
+
+	if local {
+		// TODO: We shouldn't even need to build the index if we're loading a single image.
+		ref, err := oci.LoadIndex(ctx, idx, logger, tags)
+		if err != nil {
+			return fmt.Errorf("loading index: %w", err)
+		}
+		logger.Printf("using local option, exiting early")
+		fmt.Println(ref.String())
+		return nil
+	}
+
+	// generate additional tags from the package information per architecture
+	tagsByArch := make(map[types.Architecture][]string)
+	for arch, pkgList := range pkgs {
+		addTags, err := apk.AdditionalTags(pkgList, opts.logger, tags, opts.packageVersionTag, opts.packageVersionTagPrefix, opts.tagSuffix, opts.packageVersionTagStem)
+		if err != nil {
+			return fmt.Errorf("failed to generate additional tags for arch %s: %w", arch, err)
+		}
+		tagsByArch[arch] = append(tags, addTags...)
+	}
+
+	// if the tags are not identical across arches, that is an error
+	allTagsMap := make(map[string]bool)
+	for arch, archTags := range tagsByArch {
+		if len(allTagsMap) == 0 {
+			for _, tag := range archTags {
+				allTagsMap[tag] = true
+			}
+			continue
+		}
+		if len(archTags) != len(allTagsMap) {
+			return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
+		}
+		for _, tag := range archTags {
+			if !allTagsMap[tag] {
+				return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
+			}
+		}
+	}
+	// and now generate a slice
+	allTags := make([]string, 0, len(allTagsMap))
+	for tag := range allTagsMap {
+		allTags = append(allTags, tag)
+	}
+
 	// publish each arch-specific image
-	refs, err := oci.PublishImagesFromIndex(ctx, idx, local, shouldPushTags, logger, tags, ropt...)
+	// TODO: This should just happen as part of PublishIndex.
+	ref, err := name.ParseReference(tags[0])
+	if err != nil {
+		return fmt.Errorf("parsing %q as tag: %w", tags[0], err)
+	}
+	refs, err := oci.PublishImagesFromIndex(ctx, idx, logger, ref.Context(), ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing images from index: %w", err)
 	}
@@ -234,7 +287,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	// publish the index
-	finalDigest, _, err := oci.PublishIndex(ctx, idx, logger, local, shouldPushTags, tags, ropt...)
+	finalDigest, err := oci.PublishIndex(ctx, idx, logger, shouldPushTags, allTags, ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing image index: %w", err)
 	}
@@ -247,13 +300,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
 		}
-	}
-
-	// If saving local, exit early (no SBOMs etc.)
-	if local {
-		logger.Printf("using local option, exiting early")
-		fmt.Println(strings.Split(finalDigest.String(), "@")[0])
-		return nil
 	}
 
 	if !shouldPushTags {
@@ -278,11 +324,13 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			return fmt.Errorf("failed to write tags: %w", err)
 		}
 	} else {
+		// TODO: Why does this happen separately from PublishIndex?
 		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
-		var g errgroup.Group
+		g, ctx := errgroup.WithContext(ctx)
 		for _, at := range additionalTags {
 			at := at
 			if skipLocalCopy {
+				// TODO: We probably don't need this now that we return early.
 				logger.Warnf("skipping local domain tag %s", at)
 				continue
 			}
@@ -298,6 +346,8 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// publish each arch-specific sbom
 	// publish the index sbom
 	if wantSBOM {
+		// TODO: Why aren't these just attached to idx?
+
 		// all sboms will be in the same directory
 		if err := oci.PostAttachSBOMsFromIndex(
 			ctx, idx, sboms, logger, tags, ropt...,
