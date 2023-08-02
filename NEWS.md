@@ -1,3 +1,9 @@
+# Changes from 0.10.0 to 0.10.1
+
+* Improve error messages when modifying paths.
+
+* Optimize SBOM generation.
+
 # Changes from 0.9.0 to 0.10.0
 
 * Fix `--package-version-flag`.
