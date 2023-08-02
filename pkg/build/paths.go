@@ -146,12 +146,12 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 		}
 
 		if err := pm(fsys, o, mut); err != nil {
-			return err
+			return fmt.Errorf("%s mutation on %s: %w", mut.Type, mut.Path, err)
 		}
 
 		if mut.Type != "permissions" {
 			if err := mutatePermissions(fsys, o, mut); err != nil {
-				return err
+				return fmt.Errorf("%s mutation on %s: %w", mut.Type, mut.Path, err)
 			}
 		}
 	}
