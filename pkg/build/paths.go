@@ -43,10 +43,10 @@ func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uin
 	target := path
 
 	if err := fsys.Chmod(target, fs.FileMode(perms)); err != nil {
-		return err
+		return fmt.Errorf("chmod %q: %w", target, err)
 	}
 	if err := fsys.Chown(target, int(uid), int(gid)); err != nil {
-		return err
+		return fmt.Errorf("chown %q: %w", target, err)
 	}
 	return nil
 }
@@ -59,43 +59,33 @@ func mutateDirectory(fsys apkfs.FullFS, o *options.Options, mut types.PathMutati
 	}
 
 	if mut.Recursive {
-		if err := fs.WalkDir(fsys, mut.Path, func(path string, d fs.DirEntry, err error) error {
+		return fs.WalkDir(fsys, mut.Path, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 			if err := mutatePermissionsDirect(fsys, path, mut.Permissions, mut.UID, mut.GID); err != nil {
-				return err
+				return fmt.Errorf("mutating permissions for path %q: %w", path, err)
 			}
 			return nil
-		}); err != nil {
-			return err
-		}
+		})
 	}
-
 	return nil
 }
 
-func ensureParentDirectory(fsys apkfs.FullFS, mut types.PathMutation) error {
-	target := mut.Path
-	parent := filepath.Dir(target)
-
-	if err := fsys.MkdirAll(parent, 0755); err != nil {
-		return err
-	}
-
-	return nil
+func ensureParentDirectory(fsys apkfs.FullFS, path string) error {
+	return fsys.MkdirAll(filepath.Dir(path), 0755)
 }
 
 func mutateEmptyFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
 	target := mut.Path
 
-	if err := ensureParentDirectory(fsys, mut); err != nil {
-		return err
+	if err := ensureParentDirectory(fsys, target); err != nil {
+		return fmt.Errorf("ensuring parent directory for %q: %w", target, err)
 	}
 
 	file, err := fsys.Create(target)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating file %q: %w", target, err)
 	}
 	defer file.Close()
 
@@ -106,19 +96,19 @@ func mutateHardLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutatio
 	source := mut.Source
 	target := mut.Path
 
-	if err := ensureParentDirectory(fsys, mut); err != nil {
-		return err
+	if err := ensureParentDirectory(fsys, target); err != nil {
+		return fmt.Errorf("ensuring parent directory for %q: %w", target, err)
 	}
 
 	// overwrite link if already exists
 	if _, err := fsys.Lstat(target); err == nil {
 		if err := fsys.Remove(target); err != nil {
-			return fmt.Errorf("unable to remove old link: %w", err)
+			return fmt.Errorf("unable to remove old link %q: %w", target, err)
 		}
 	}
 
 	if err := fsys.Link(source, target); err != nil {
-		return err
+		return fmt.Errorf("linking %q -> %q: %w", source, target, err)
 	}
 
 	return nil
@@ -127,12 +117,12 @@ func mutateHardLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutatio
 func mutateSymLink(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
 	target := mut.Path
 
-	if err := ensureParentDirectory(fsys, mut); err != nil {
-		return err
+	if err := ensureParentDirectory(fsys, target); err != nil {
+		return fmt.Errorf("ensuring parent directory for %q: %w", target, err)
 	}
 
 	if err := fsys.Symlink(mut.Source, target); err != nil {
-		return err
+		return fmt.Errorf("symlinking %q -> %q: %w", mut.Source, target, err)
 	}
 
 	return nil
@@ -146,7 +136,7 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 		}
 
 		if err := pm(fsys, o, mut); err != nil {
-			return fmt.Errorf("%s mutation on %s: %w", mut.Type, mut.Path, err)
+			return fmt.Errorf("mutating path %q: %w", mut.Path, err)
 		}
 
 		if mut.Type != "permissions" {
