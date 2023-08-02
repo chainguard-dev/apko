@@ -191,6 +191,9 @@ func WithVCS(enable bool) Option {
 // Commandline annotations take precedence.
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
+		if bc.ic.Annotations == nil {
+			bc.ic.Annotations = make(map[string]string)
+		}
 		for k, v := range annotations {
 			bc.ic.Annotations[k] = v
 		}
