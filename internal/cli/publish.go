@@ -251,16 +251,18 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// if the tags are not identical across arches, that is an error
 	allTagsMap := make(map[string]bool)
 	for arch, archTags := range tagsByArch {
+		tagSet := make(map[string]bool)
+		for _, tag := range archTags {
+			tagSet[tag] = true
+		}
 		if len(allTagsMap) == 0 {
-			for _, tag := range archTags {
-				allTagsMap[tag] = true
-			}
+			allTagsMap = tagSet
 			continue
 		}
-		if len(archTags) != len(allTagsMap) {
+		if len(tagSet) != len(allTagsMap) {
 			return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
 		}
-		for _, tag := range archTags {
+		for tag := range tagSet {
 			if !allTagsMap[tag] {
 				return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
 			}
@@ -297,7 +299,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	// If provided, this is the name of the file to write digest referenced into
 	if outputRefs != "" {
 		//nolint:gosec // Make image ref file readable by non-root
-		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0666); err != nil {
+		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0o666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
 		}
 	}
@@ -320,7 +322,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		logger.Printf("Writing list of tags to %s (%d total)", stageTags, len(sortedUniqueTags))
 
 		//nolint:gosec // Make tags file readable by non-root
-		if err := os.WriteFile(stageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0666); err != nil {
+		if err := os.WriteFile(stageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0o666); err != nil {
 			return fmt.Errorf("failed to write tags: %w", err)
 		}
 	} else {
