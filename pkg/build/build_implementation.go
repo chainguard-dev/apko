@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
@@ -33,6 +34,24 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"gitlab.alpinelinux.org/alpine/go/repository"
 )
+
+// pgzip's default is GOMAXPROCS(0)
+//
+// This is fine for single builds, but we will starve CPU for larger builds.
+// 8 is our max because modern laptops tend to have ~8 performance cores, and
+// large CI machines tend to have ~64 cores.
+//
+// This gives us near 100% utility on workstations, allows us to do ~8
+// concurrent builds on giant machines, and uses only 1 core on tiny machines.
+var pgzipThreads = min(runtime.GOMAXPROCS(0), 8)
+
+func min(l, r int) int {
+	if l < r {
+		return l
+	}
+
+	return r
+}
 
 // BuildTarball takes the fully populated working directory and saves it to
 // an OCI image layer tar.gz file.
@@ -66,6 +85,9 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 
 	buf := bufio.NewWriterSize(outfile, 1<<22)
 	gzw := gzip.NewWriter(io.MultiWriter(digest, buf))
+	if err := gzw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+		return "", nil, nil, 0, fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err)
+	}
 
 	diffid := sha256.New()
 
