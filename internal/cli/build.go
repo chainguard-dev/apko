@@ -53,7 +53,6 @@ func buildCmd() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var extraPackages []string
-	var buildOptions []string
 	var logPolicy []string
 	var rawAnnotations []string
 	var cacheDir string
@@ -118,7 +117,6 @@ bill of materials) describing the image contents.
 				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
-				build.WithBuildOptions(buildOptions),
 				build.WithCacheDir(cacheDir),
 			)
 		},
@@ -135,7 +133,6 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVar(&buildOptions, "build-option", []string{}, "build options to enable")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
