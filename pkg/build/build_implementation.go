@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"chainguard.dev/apko/pkg/options"
+
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
@@ -165,24 +167,19 @@ func (bc *Context) buildImage(ctx context.Context) error {
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func (bc *Context) WriteIndex(idx oci.SignedImageIndex) (string, int64, error) {
-	outfile := filepath.Join(bc.o.TempDir(), "index.json")
+func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
+	outfile := filepath.Join(o.TempDir(), "index.json")
 
 	b, err := idx.RawManifest()
 	if err != nil {
-		return "", 0, fmt.Errorf("getting raw manifest: %w", err)
+		return "", fmt.Errorf("getting raw manifest: %w", err)
 	}
 	if err := os.WriteFile(outfile, b, 0644); err != nil { //nolint:gosec // this file is fine to be readable
-		return "", 0, fmt.Errorf("writing index file: %w", err)
+		return "", fmt.Errorf("writing index file: %w", err)
 	}
+	o.Logger().Infof("built index file as %s", outfile)
 
-	stat, err := os.Stat(outfile)
-	if err != nil {
-		return "", 0, fmt.Errorf("stat(%q): %w", outfile, err)
-	}
-
-	bc.Logger().Infof("built index file as %s", outfile)
-	return outfile, stat.Size(), nil
+	return outfile, nil
 }
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {

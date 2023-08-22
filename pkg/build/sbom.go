@@ -145,17 +145,17 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	return sboms, nil
 }
 
-func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
+func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
 
-	if !bc.WantSBOM() {
-		bc.Logger().Warnf("skipping index SBOM generation")
+	if len(o.SBOMFormats) == 0 {
+		o.Logger().Warnf("skipping SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(bc.fs, bc.o, bc.ic, bc.o.SourceDateEpoch)
-	bc.Logger().Infof("Generating index SBOM")
+	s := newSBOM(nil, o, ic, o.SourceDateEpoch)
+	o.Logger().Infof("Generating index SBOM")
 
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())
@@ -165,7 +165,7 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 	s.ImageInfo.IndexDigest = h
 
 	s.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
-	if bc.o.UseDockerMediaTypes {
+	if o.UseDockerMediaTypes {
 		s.ImageInfo.IndexMediaType = ggcrtypes.DockerManifestList
 	}
 
@@ -178,7 +178,7 @@ func (bc *Context) GenerateIndexSBOM(ctx context.Context, indexDigest name.Diges
 		return archs[i].String() < archs[j].String()
 	})
 
-	generators := generator.Generators(bc.fs)
+	generators := generator.Generators(nil)
 	var sboms = make([]types.SBOM, 0, len(generators))
 	for _, format := range s.Formats {
 		gen, ok := generators[format]

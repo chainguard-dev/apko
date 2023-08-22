@@ -311,17 +311,17 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		build.WithSBOM(imageDir),
 	)
 
-	bc, err := build.New(ctx, wd, opts...)
+	o, ic, err = build.NewOptions(wd, opts...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	if _, _, err := bc.WriteIndex(idx); err != nil {
+	if _, err := build.WriteIndex(o, idx); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
 	}
 
 	// the sboms are saved to the same working directory as the image components
-	if bc.WantSBOM() {
+	if len(o.SBOMFormats) != 0 {
 		logrus.Info("Generating arch image SBOMs")
 		var (
 			g   errgroup.Group
@@ -348,7 +348,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			return nil, nil, nil, err
 		}
 
-		files, err := bc.GenerateIndexSBOM(ctx, finalDigest, imgs)
+		files, err := build.GenerateIndexSBOM(ctx, *o, *ic, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("generating index SBOM: %w", err)
 		}
