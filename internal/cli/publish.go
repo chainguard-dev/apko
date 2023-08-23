@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -122,6 +123,7 @@ in a keychain.`,
 			remoteOpts = append(remoteOpts, remote.Reuse(puller))
 
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
+				sbomPath,
 				[]build.Option{
 					build.WithLogger(logger),
 					build.WithConfig(args[0]),
@@ -186,7 +188,7 @@ in a keychain.`,
 	return cmd
 }
 
-func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, buildOpts []build.Option, publishOpts []PublishOption) error {
+func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, sbomPath string, buildOpts []build.Option, publishOpts []PublishOption) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "PublishCmd")
 	defer span.End()
 
@@ -350,6 +352,16 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 			ctx, idx, sboms, logger, tags, ropt...,
 		); err != nil {
 			return fmt.Errorf("attaching sboms to index: %w", err)
+		}
+	}
+
+	// copy sboms over to the sbomPath target directory
+	if sbomPath != "" {
+		for _, sbom := range sboms {
+			// because os.Rename fails across partitions, we do our own
+			if err := rename(sbom.Path, filepath.Join(sbomPath, filepath.Base(sbom.Path))); err != nil {
+				return fmt.Errorf("moving sbom: %w", err)
+			}
 		}
 	}
 
