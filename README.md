@@ -16,35 +16,29 @@ Please note that apko is a work in progress and details are subject to change!
 
 ## Installation
 
-The quickest way to get apko running is to use the [OCI Container (Docker) image](https://github.com/chainguard-images/apko):
+You can install apko from Homebrew:
+
+```shell
+brew install apko
+```
+
+You can also install apko from source:
+
+```shell
+go install chainguard.dev/apko@latest
+```
+
+You can also use the apko container image:
 
 ```shell
 docker run cgr.dev/chainguard/apko version
 ```
-```
-     _      ____    _  __   ___
-    / \    |  _ \  | |/ /  / _ \
-   / _ \   | |_) | | ' /  | | | |
-  / ___ \  |  __/  | . \  | |_| |
- /_/   \_\ |_|     |_|\_\  \___/
-apko
 
-GitVersion:    v0.5.0-67-g9084217
-GitCommit:     9084217c907232b8c0bb87fd99c3e65eaa581a5b
-GitTreeState:  clean
-BuildDate:     '1970-01-01T00:00:00Z'
-GoVersion:     go1.18.5
-Compiler:      gc
-Platform:      linux/amd64
-```
-
-To use the examples, you'll generally want to mount your current directory into the container e.g:
+To use the examples, you'll generally want to mount your current directory into the container, e.g.:
 
 ```shell
 docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
-
-These examples use [Docker](https://docs.docker.com/get-docker/), but should also work with other runtimes such as [podman](https://podman.io/getting-started/installation).
 
 Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
 
