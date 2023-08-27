@@ -32,7 +32,7 @@ jobs:
         run: |
           make ci
 
-      - uses: goreleaser/goreleaser-action@336e29918d653399e599bfca99fadc1d7ffbc9f7 # v2.8.1
+      - uses: goreleaser/goreleaser-action@3fa32b8bb5620a2c1afe798654bbad59f9da4906 # v2.8.1
         with:
           version: latest
           install-only: true
