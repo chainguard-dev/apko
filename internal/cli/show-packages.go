@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"text/template"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 
@@ -123,12 +124,10 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(ctx, wd, opts...)
+	o, ic, err := build.NewOptions(opts...)
 	if err != nil {
 		return err
 	}
-
-	ic := bc.ImageConfiguration()
 
 	// cases:
 	// - archs set: use those archs
@@ -144,11 +143,11 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	bc.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
-	defer os.RemoveAll(bc.TempDir())
+	defer os.RemoveAll(o.TempDir())
 
 	tmpl, err := template.New("format").Parse(format)
 	if err != nil {
@@ -161,10 +160,12 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := slices.Clone(opts)
 		bopts = append(bopts, build.WithArch(arch))
-		bc, err := build.New(ctx, wd, bopts...)
+		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+		bc, err := build.New(ctx, fs, bopts...)
 		if err != nil {
 			return err
 		}
+		bc.Logger().Infof("using working directory %s", wd)
 
 		pkgs, _, err := bc.BuildPackageList(ctx)
 		if err != nil {

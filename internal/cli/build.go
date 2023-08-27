@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/chainguard-dev/go-apk/pkg/apk"
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -179,7 +180,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
 
-	o, ic, err := build.NewOptions(wd, opts...)
+	o, ic, err := build.NewOptions(opts...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -242,10 +243,15 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 			build.WithArch(arch),
 			build.WithSBOM(imageDir),
 		)
-		bc, err := build.New(ctx, wd, bopts...)
+
+		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+
+		bc, err := build.New(ctx, fs, bopts...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+
+		bc.Logger().Infof("using working directory %s", wd)
 
 		// save the build context for later
 		contexts[arch] = bc
@@ -311,7 +317,7 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 		build.WithSBOM(imageDir),
 	)
 
-	o, ic, err = build.NewOptions(wd, opts...)
+	o, ic, err = build.NewOptions(opts...)
 	if err != nil {
 		return nil, nil, nil, err
 	}

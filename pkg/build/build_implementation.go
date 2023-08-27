@@ -156,7 +156,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return err
 	}
 
-	bc.Logger().Infof("finished building filesystem in %s", bc.o.WorkDir)
+	bc.Logger().Infof("finished building filesystem")
 
 	return nil
 }
@@ -181,7 +181,7 @@ func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repositor
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
-	bc.Logger().Infof("finished gathering apk info in %s", bc.o.WorkDir)
+	bc.Logger().Infof("finished gathering apk info")
 
 	return toInstall, conflicts, err
 }
