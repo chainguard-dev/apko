@@ -151,11 +151,6 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return err
 	}
 
-	// add ldconfig links
-	if err := installLdconfigLinks(bc.fs); err != nil {
-		return err
-	}
-
 	// add necessary character devices
 	if err := installCharDevices(bc.fs); err != nil {
 		return err
