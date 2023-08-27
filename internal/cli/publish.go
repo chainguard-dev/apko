@@ -302,8 +302,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	if !shouldPushTags {
-		allTags := tags
-		allTags = append(allTags, additionalTags...)
 		tmp := map[string]bool{}
 		for _, tag := range allTags {
 			if !strings.Contains(tag, ":") {
