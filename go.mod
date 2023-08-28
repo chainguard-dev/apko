@@ -12,7 +12,7 @@ require (
 	github.com/google/go-containerregistry v0.16.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/jinzhu/copier v0.3.5
+	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.1
 	github.com/sigstore/cosign/v2 v2.1.1
