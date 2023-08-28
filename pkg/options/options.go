@@ -46,6 +46,7 @@ type Options struct {
 	Local                   bool               `json:"local,omitempty"`
 	StageTags               string             `json:"stageTags,omitempty"`
 	CacheDir                string             `json:"cacheDir,omitempty"`
+	Offline                 bool               `json:"offline,omitempty"`
 
 	Log log.Logger
 }
