@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +39,7 @@ import (
 
 func TestPublish(t *testing.T) {
 	ctx := context.Background()
+	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
 	// This allows us to make sure that remote options are getting passed
@@ -63,7 +65,11 @@ func TestPublish(t *testing.T) {
 	opts := []build.Option{build.WithConfig(config), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
 
-	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, opts, publishOpts)
+	sbomPath := filepath.Join(tmp, "sboms")
+	err = os.MkdirAll(sbomPath, 0o750)
+	require.NoError(t, err)
+
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, opts, publishOpts)
 	require.NoError(t, err)
 
 	ref, err := name.ParseReference(dst)
@@ -125,6 +131,11 @@ func TestPublish(t *testing.T) {
 		got := m.Layers[0].Digest.String()
 		require.Equal(t, wantBoms[i], got)
 	}
+
+	// Check that the sbomPath is not empty.
+	sboms, err := os.ReadDir(sbomPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, sboms)
 }
 
 type sentinel struct {
