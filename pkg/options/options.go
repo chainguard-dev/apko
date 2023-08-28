@@ -29,7 +29,6 @@ import (
 type Options struct {
 	UseDockerMediaTypes     bool               `json:"useDockerMediaTypes,omitempty"`
 	WithVCS                 bool               `json:"withVCS,omitempty"`
-	WorkDir                 string             `json:"workDir,omitempty"`
 	TarballPath             string             `json:"tarballPath,omitempty"`
 	Tags                    []string           `json:"tags,omitempty"`
 	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`

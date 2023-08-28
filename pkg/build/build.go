@@ -176,11 +176,10 @@ func (bc *Context) runAssertions() error {
 }
 
 // NewOptions evaluates the build.Options in the same way as New().
-func NewOptions(workDir string, opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
+func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
 	bc := Context{
 		o: options.Default,
 	}
-	bc.o.WorkDir = workDir
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -194,13 +193,11 @@ func NewOptions(workDir string, opts ...Option) (*options.Options, *types.ImageC
 // New creates a build context.
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
-func New(ctx context.Context, workDir string, opts ...Option) (*Context, error) {
-	fs := apkfs.DirFS(workDir, apkfs.WithCreateDir())
+func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error) {
 	bc := Context{
 		o:  options.Default,
 		fs: fs,
 	}
-	bc.o.WorkDir = workDir
 
 	for _, opt := range opts {
 		if err := opt(&bc); err != nil {
@@ -268,7 +265,6 @@ func New(ctx context.Context, workDir string, opts ...Option) (*Context, error) 
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
 	}
 
-	bc.Logger().Infof("building apk info in %s", bc.o.WorkDir)
 	if err := bc.initializeApk(ctx); err != nil {
 		return nil, fmt.Errorf("initializing apk: %w", err)
 	}

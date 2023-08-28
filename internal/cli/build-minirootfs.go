@@ -20,6 +20,7 @@ import (
 	"os"
 	"runtime"
 
+	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 
 	"chainguard.dev/apko/pkg/build"
@@ -86,7 +87,8 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	bc, err := build.New(ctx, wd, opts...)
+	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+	bc, err := build.New(ctx, fs, opts...)
 	if err != nil {
 		return err
 	}
