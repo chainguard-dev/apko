@@ -67,6 +67,7 @@ func publish() *cobra.Command {
 	var local bool
 	var stageTags string
 	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -139,7 +140,7 @@ in a keychain.`,
 					build.WithDebugLogging(debugEnabled),
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
-					build.WithCacheDir(cacheDir),
+					build.WithCacheDir(cacheDir, offline),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
@@ -175,6 +176,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")

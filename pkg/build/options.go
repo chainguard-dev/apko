@@ -202,9 +202,10 @@ func WithAnnotations(annotations map[string]string) Option {
 }
 
 // WithCacheDir set the cache directory to use
-func WithCacheDir(cacheDir string) Option {
+func WithCacheDir(cacheDir string, offline bool) Option {
 	return func(bc *Context) error {
 		bc.o.CacheDir = cacheDir
+		bc.o.Offline = offline
 		return nil
 	}
 }
