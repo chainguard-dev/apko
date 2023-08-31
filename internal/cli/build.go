@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -33,6 +32,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
+	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -178,7 +178,7 @@ func BuildCmd(ctx context.Context, imageRef, outputTarGZ string, archs []types.A
 
 // buildImage build all of the components of an image in a single working directory.
 // Each layer is a separate file, as are config, manifests, index and sbom.
-func buildImageComponents(ctx context.Context, wd string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, pkgs map[types.Architecture][]*apk.InstalledPackage, err error) {
+func buildImageComponents(ctx context.Context, workDir string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, pkgs map[types.Architecture][]*apk.InstalledPackage, err error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
 
@@ -215,7 +215,6 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 	o.Logger().Printf("building tags %v", o.Tags)
 
 	var errg errgroup.Group
-	workDir := wd
 	imageDir := filepath.Join(workDir, "image")
 	if err := os.MkdirAll(imageDir, 0755); err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
@@ -238,22 +237,16 @@ func buildImageComponents(ctx context.Context, wd string, archs []types.Architec
 
 	for _, arch := range archs {
 		arch := arch
-		// working directory for this architecture
-		wd := filepath.Join(workDir, arch.ToAPK())
 		bopts := slices.Clone(opts)
 		bopts = append(bopts,
 			build.WithArch(arch),
 			build.WithSBOM(imageDir),
 		)
 
-		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
-
-		bc, err := build.New(ctx, fs, bopts...)
+		bc, err := build.New(ctx, tarfs.New(), bopts...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-
-		bc.Logger().Infof("using working directory %s", wd)
 
 		// save the build context for later
 		contexts[arch] = bc

@@ -17,6 +17,7 @@ package tarfs
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -465,8 +466,22 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 	want, got := te, existing.te
 
 	if got == nil {
-		// This shouldn't happen.
-		return fmt.Errorf("conflicting file for %q has no tar entry", name)
+		if existing.data == nil {
+			return fmt.Errorf("conflicting file for %q has no tar entry", name)
+		}
+
+		// This can happen when go-apk's InitKeyring conflicts with alpine-keys.
+		// Since those files will be in memory, quickly compute the checksum and
+		// ignore this file if they match.
+		h := sha1.New() //nolint:gosec // this is what apk tools is using
+		h.Write(existing.data)
+		checksum := h.Sum(nil)
+
+		if bytes.Equal(want.checksum, checksum) {
+			return nil
+		}
+
+		return fmt.Errorf("conflicting file for %q with checksum %x, existing has checksum %x", name, want.checksum, checksum)
 	}
 
 	// Files have the same checksum, that's fine.
