@@ -36,6 +36,12 @@ paths:
     uid: 10000
     gid: 10000
     permissions: 0o644
+  - path: /var/lib/nginx/html/index.html
+    source: nginx/my-index.html
+    type: overlay-file
+    uid: 10000
+    gid: 10000
+    permissions: 0o644
 
 work-dir: /usr/share/nginx
 

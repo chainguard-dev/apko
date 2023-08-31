@@ -45,7 +45,7 @@ type PathMutation struct {
 	Path string
 	// The type of mutation to perform
 	//
-	// This can be one of: directory, empty-file, hardlink, symlink, permissions
+	// This can be one of: directory, empty-file, overlay-file, hardlink, symlink, permissions
 	Type string
 	// The mutation's desired user ID
 	UID uint32

@@ -15,8 +15,11 @@
 package build
 
 import (
+	"debug/elf"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
@@ -28,11 +31,12 @@ import (
 type PathMutator func(apkfs.FullFS, *options.Options, types.PathMutation) error
 
 var pathMutators = map[string]PathMutator{
-	"directory":   mutateDirectory,
-	"empty-file":  mutateEmptyFile,
-	"hardlink":    mutateHardLink,
-	"symlink":     mutateSymLink,
-	"permissions": mutatePermissions,
+	"directory":    mutateDirectory,
+	"empty-file":   mutateEmptyFile,
+	"overlay-file": mutateOverlayFile,
+	"hardlink":     mutateHardLink,
+	"symlink":      mutateSymLink,
+	"permissions":  mutatePermissions,
 }
 
 func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
@@ -147,4 +151,46 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 	}
 
 	return nil
+}
+
+func mutateOverlayFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	source := mut.Source
+	target := mut.Path
+
+	if err := ensureParentDirectory(fsys, target); err != nil {
+		return fmt.Errorf("ensuring parent directory for %q: %w", target, err)
+	}
+
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("opening source file %q: %w", source, err)
+	}
+	defer sourceFile.Close()
+
+	if isELFExecutable(source) {
+		return fmt.Errorf("source file %q: is a ELF file", source)
+	}
+
+	file, err := fsys.Create(target)
+	if err != nil {
+		return fmt.Errorf("creating file %q: %w", target, err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, sourceFile)
+	if err != nil {
+		return fmt.Errorf("error copying source %q: %q: %w", target, source, err)
+	}
+
+	return nil
+}
+
+func isELFExecutable(filename string) bool {
+	file, err := elf.Open(filename)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	return true
 }

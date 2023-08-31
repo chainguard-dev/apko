@@ -191,7 +191,7 @@ will set the environment variable named "FOO" to the value "bar".
 ### Paths
 
 `paths` defines filesystem operations that can be applied to the image. This includes
-setting permissions on files or directories as well as creating empty files, directories and links.
+setting permissions on files or directories as well as creating empty files, directories, links and copy configuration files.
 
 The `paths` element contains the following children:
 
@@ -199,6 +199,7 @@ The `paths` element contains the following children:
  - `type`: The type of file operation to perform. This can be:
    - `directory`: create an empty directory at the path
    - `empty-file`: create an empty file at the path
+   - `overlay-file`: add file at the path, copied from specified in host `source`
    - `hardlink`: create a hardlink (`ln`) at the path, linking to the value specified in `source`
    - `symlink`: create a symbolic link (`ln -s`) at the path, linking to the value specified in
      `source`
@@ -206,7 +207,7 @@ The `paths` element contains the following children:
  - `uid`: UID to associate with the file
  - `gid`: GID to associate with the file
  - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
- - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
+ - `source`: used in `hardlink` and `symlink`, this represents the path to link to. In `overlay-file` is used for specify the host path to copy.
 
 
 ### Includes
