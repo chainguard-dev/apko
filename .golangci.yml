@@ -8,8 +8,6 @@ linters-settings:
   forbidigo:
     forbid:
       - ^print.*$
-      - '^t\.Error.*$(# forbid t\.Error in favor of using testify\.)?'
-      - '^t\.Fatal.*$(# forbid t\.Fatal in favor of using testify\.)?'
   goheader:
     template-path: header.tmpl
     values:
