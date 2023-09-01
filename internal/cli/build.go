@@ -32,13 +32,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func buildCmd() *cobra.Command {
