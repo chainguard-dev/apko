@@ -411,7 +411,8 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		}
 
 		// For read-only opens, we just defer to the tarfs.
-		if flag&os.O_RDONLY != 0 {
+		write := flag&os.O_APPEND != 0 || flag&os.O_RDWR != 0 || flag&os.O_WRONLY != 0
+		if !write {
 			mf := newMemFile(anode, name, m, flag)
 
 			// rc gets used in Read() if it's set
