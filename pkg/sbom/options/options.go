@@ -26,7 +26,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	purl "github.com/package-url/packageurl-go"
-	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
