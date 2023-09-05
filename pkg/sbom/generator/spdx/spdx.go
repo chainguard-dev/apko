@@ -26,7 +26,7 @@ import (
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	purl "github.com/package-url/packageurl-go"
-	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/sbom/options"

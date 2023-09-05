@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	osr "github.com/dominodatalab/os-release"
-	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	"chainguard.dev/apko/pkg/sbom/options"
 )

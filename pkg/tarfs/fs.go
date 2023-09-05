@@ -32,7 +32,7 @@ import (
 	"time"
 
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-	"gitlab.alpinelinux.org/alpine/go/pkg/repository"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/sys/unix"
 )
 
