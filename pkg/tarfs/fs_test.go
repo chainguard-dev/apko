@@ -94,6 +94,7 @@ func TestTarFS(t *testing.T) {
 	file.PAXRecords = map[string]string{
 		"APK-TOOLS.checksum.SHA1": "Q1v+12wxZjoZUgI11oT2c7+ZUPjgw=",
 	}
+	pkg.Origin += "-different"
 	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err == nil {
 		t.Errorf("wanted conflicting checksum err, got nil")
 	}
