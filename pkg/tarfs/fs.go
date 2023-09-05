@@ -490,13 +490,12 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 		return nil
 	}
 
-	// At this point we know the files conflict, but it's okay if this file replaces that one.
-	if got.pkg.Origin != want.pkg.Origin {
-		return fmt.Errorf("conflicting file %q in %q has different origin %q != %q in %q", name, got.pkg.Name, got.pkg.Origin, want.pkg.Origin, want.pkg.Name)
-	}
+	sameOrigin := got.pkg.Origin == want.pkg.Origin
+	replaces := got.pkg.Name == want.pkg.Replaces
 
-	if got.pkg.Name != want.pkg.Replaces {
-		return fmt.Errorf("conflicting file %q in %q is not replaced by %q", name, got.pkg.Name, want.pkg.Name)
+	// At this point we know the files conflict, but it's okay if this file replaces that one.
+	if !sameOrigin && !replaces {
+		return fmt.Errorf("conflicting file %q in %q has different origin %q != %q in %q", name, got.pkg.Name, got.pkg.Origin, want.pkg.Origin, want.pkg.Name)
 	}
 
 	anode := &node{
