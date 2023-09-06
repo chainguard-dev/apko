@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
-	github.com/chainguard-dev/go-apk v0.0.0-20230905225536-84ea59b2c569
+	github.com/chainguard-dev/go-apk v0.0.0-20230906161245-0728258ab917
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.6.1
