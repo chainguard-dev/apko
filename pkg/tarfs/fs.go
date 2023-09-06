@@ -804,8 +804,17 @@ func (f *memFile) Close() error {
 	if f.node == nil || f.fs == nil {
 		return fs.ErrClosed
 	}
+
+	if f.rc != nil {
+		if err := f.rc.Close(); err != nil {
+			return err
+		}
+		f.rc = nil
+	}
+
 	f.fs = nil
 	f.node = nil
+
 	return nil
 }
 
