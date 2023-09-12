@@ -20,7 +20,7 @@ jobs:
           go-version: "1.20"
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2.2.0
+        uses: docker/setup-qemu-action@v3.0.0
 
       - name: build
         run: |
@@ -70,7 +70,7 @@ jobs:
           go-version: "1.20"
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2.2.0
+        uses: docker/setup-qemu-action@v3.0.0
 
       - name: build
         run: |
@@ -112,7 +112,7 @@ jobs:
           go-version: "1.20"
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2.2.0
+        uses: docker/setup-qemu-action@v3.0.0
 
       - name: build
         run: |
