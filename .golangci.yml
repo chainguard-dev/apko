@@ -19,7 +19,6 @@ linters-settings:
 linters:
   enable:
   - asciicheck
-  - depguard
   - errcheck
   - errorlint
   - forbidigo
