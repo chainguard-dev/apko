@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
         with:
-          go-version: "1.20"
+          go-version: '1.21'
           check-latest: true
 
       - name: build
@@ -23,10 +23,10 @@ jobs:
           ./apko version
 
       - name: Setup cosign (needed in CI tests)
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@11086d25041f77fe8fe7b9ea4e48e3b9192b8f19 # v3.1.2
 
       - name: Setup crane (needed in CI tests)
-        uses: imjasonh/setup-crane@v0.3
+        uses: imjasonh/setup-crane@00c9e93efa4e1138c9a7a5c594acd6c75a2fbf0c # v0.3
 
       - name: Run CI tests in hack/ci/
         run: |

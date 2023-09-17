@@ -5,7 +5,7 @@ before:
     - go mod download
 
 env:
-  - COSIGN_EXPERIMENTAL=true
+  - COSIGN_YES=true
 
 builds:
 - id: apko-build

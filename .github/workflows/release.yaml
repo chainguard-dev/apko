@@ -9,7 +9,7 @@ on:
     - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
 env:
-  GO_VERSION: "1.20"
+  GO_VERSION: '1.21'
 
 jobs:
   cli:
@@ -32,7 +32,7 @@ jobs:
 
     - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
 
-    - uses: sigstore/cosign-installer@c3667d99424e7e6047999fb6246c0da843953c65 # v2.3.0
+    - uses: sigstore/cosign-installer@11086d25041f77fe8fe7b9ea4e48e3b9192b8f19 # v3.1.2
 
     - uses: goreleaser/goreleaser-action@3fa32b8bb5620a2c1afe798654bbad59f9da4906 # v2.8.1
       with:
@@ -56,7 +56,7 @@ jobs:
 
     env:
       KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
-      COSIGN_EXPERIMENTAL: "true"
+      COSIGN_YES: "true"
 
     steps:
     - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.2.0
@@ -66,7 +66,7 @@ jobs:
 
     - uses: imjasonh/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.4
 
-    - uses: sigstore/cosign-installer@c3667d99424e7e6047999fb6246c0da843953c65 # v2.3.0
+    - uses: sigstore/cosign-installer@11086d25041f77fe8fe7b9ea4e48e3b9192b8f19 # v3.1.2
 
     - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
 
@@ -104,9 +104,9 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
 
-    - uses: imjasonh/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.4
+    - uses: ko-build/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.6
 
-    - uses: sigstore/cosign-installer@c3667d99424e7e6047999fb6246c0da843953c65 # v2.3.0
+    - uses: sigstore/cosign-installer@11086d25041f77fe8fe7b9ea4e48e3b9192b8f19 # v3.1.2
 
     - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
 
