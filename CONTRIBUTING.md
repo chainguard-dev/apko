@@ -10,7 +10,7 @@ If you are looking for a place to start take a look at the
 especially those marked with
 [good-first-issue](https://github.com/chainguard-dev/apko/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22).
 
-## Setting Up a Develpment Environment
+## Setting Up a Development Environment
 
 Running apko requires an environment with apk available. To make development 
 easier under any platform, we have created a script that uses apko itself to
