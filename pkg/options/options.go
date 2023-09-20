@@ -67,6 +67,9 @@ func (o *Options) Summarize(logger log.Logger) {
 }
 
 func (o *Options) Logger() log.Logger {
+	if o.Log != nil {
+		return o.Log
+	}
 	fields := log.Fields{}
 	emptyArch := types.Architecture("")
 
