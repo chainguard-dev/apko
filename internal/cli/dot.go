@@ -30,6 +30,7 @@ import (
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
 	"github.com/tmc/dot"
+	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
@@ -131,10 +132,12 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 
 	dmap := map[string][]string{}
 	pmap := map[string][]string{}
+	pkgMap := map[string]*repository.RepositoryPackage{}
 
 	for _, pkg := range pkgs {
 		dmap[pkg.Name] = pkg.Dependencies
 		pmap[pkg.Name] = pkg.Provides
+		pkgMap[pkg.Name] = pkg
 	}
 
 	args := []string{}
@@ -159,16 +162,19 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			deps[pkg] = struct{}{}
 		}
 
-		renderDeps := func(pkg string) {
-			n := dot.NewNode(pkg)
+		renderDeps := func(pkg *repository.RepositoryPackage) {
+			n := dot.NewNode(pkg.Name)
+			if err := n.Set("label", pkgver(pkg)); err != nil {
+				panic(err)
+			}
 			if web {
-				if err := n.Set("URL", link(args, pkg)); err != nil {
+				if err := n.Set("URL", link(args, pkg.Name)); err != nil {
 					panic(err)
 				}
 			}
 			out.AddNode(n)
 
-			for _, dep := range dmap[pkg] {
+			for _, dep := range dmap[pkg.Name] {
 				d := dot.NewNode(dep)
 				if web {
 					if !strings.Contains(dep, ":") {
@@ -180,7 +186,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 				out.AddNode(d)
 				if _, ok := edges[dep]; !ok || !span {
 					// This check is stupid but otherwise cycles render dumb.
-					if pkg != dep {
+					if pkg.Name != dep {
 						out.AddEdge(dot.NewEdge(n, d))
 						edges[dep] = struct{}{}
 					}
@@ -190,23 +196,30 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		}
 
 		done := map[string]struct{}{}
-		for _, pkg := range args {
+		for _, arg := range args {
+			pkg, ok := pkgMap[arg]
+			if !ok {
+				panic(fmt.Errorf("package not found: %q", arg))
+			}
 			renderDeps(pkg)
-			done[pkg] = struct{}{}
+			done[arg] = struct{}{}
 		}
 
 		for _, pkg := range pkgs {
 			if _, ok := done[pkg.Name]; ok {
 				continue
 			}
-			renderDeps(pkg.Name)
+			renderDeps(pkg)
 		}
 
-		renderProvs := func(pkg string) {
-			n := dot.NewNode(pkg)
+		renderProvs := func(pkg *repository.RepositoryPackage) {
+			n := dot.NewNode(pkg.Name)
+			if err := n.Set("label", pkgver(pkg)); err != nil {
+				panic(err)
+			}
 			out.AddNode(n)
 
-			for _, prov := range pmap[pkg] {
+			for _, prov := range pmap[pkg.Name] {
 				if _, ok := deps[prov]; !ok {
 					if before, _, ok := strings.Cut(prov, "="); ok {
 						if _, ok := deps[before]; ok {
@@ -225,24 +238,28 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 				}
 				p := dot.NewNode(prov)
 				out.AddNode(p)
-				if _, ok := edges[pkg]; !ok || !span {
+				if _, ok := edges[pkg.Name]; !ok || !span {
 					out.AddEdge(dot.NewEdge(p, n))
-					edges[pkg] = struct{}{}
+					edges[pkg.Name] = struct{}{}
 				}
 			}
 		}
 
 		done = map[string]struct{}{}
-		for _, pkg := range args {
+		for _, arg := range args {
+			pkg, ok := pkgMap[arg]
+			if !ok {
+				panic(fmt.Errorf("package not found: %q", arg))
+			}
 			renderProvs(pkg)
-			done[pkg] = struct{}{}
+			done[arg] = struct{}{}
 		}
 
 		for _, pkg := range pkgs {
 			if _, ok := done[pkg.Name]; ok {
 				continue
 			}
-			renderProvs(pkg.Name)
+			renderProvs(pkg)
 		}
 
 		return out
@@ -300,6 +317,10 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 
 	fmt.Println(out.String())
 	return nil
+}
+
+func pkgver(pkg *repository.RepositoryPackage) string {
+	return fmt.Sprintf("%s-%s", pkg.Name, pkg.Version)
 }
 
 func link(args []string, pkg string) string {
