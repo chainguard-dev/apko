@@ -70,14 +70,13 @@ func publish() *cobra.Command {
 	var offline bool
 
 	cmd := &cobra.Command{
-		Use:   "publish",
+		Use:   "publish <config.yaml> <tag...>",
 		Short: "Build and publish an image",
 		Long: `Publish a built image from a YAML configuration file.
 
 It is assumed that you have used "docker login" to store credentials
 in a keychain.`,
-		Example: `  apko publish <config.yaml> <tag...>`,
-		Args:    cobra.MinimumNArgs(2),
+		Example: `  apko publish hello-world.yaml hello:v1.0.0 --quiet`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(logPolicy) == 0 {
 				if quietEnabled {
@@ -85,6 +84,10 @@ in a keychain.`,
 				} else {
 					logPolicy = []string{"builtin:stderr"}
 				}
+			}
+
+			if len(args) < 2 {
+				return fmt.Errorf("requires at least 2 arg(s), 1 config file and at least 1 tag for the image")
 			}
 
 			logWriter, err := iocomb.Combine(logPolicy)
