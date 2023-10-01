@@ -3,9 +3,22 @@
 # Copyright 2022 Chainguard, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-BUILDER_ALPINE_TAG="3.16.0@sha256:686d8c9dfa6f3ccfc8230bc3178d23f84eeaf7e457f36f271ab1acc53015037c"
+BUILDER_ALPINE_TAG="edge@sha256:3e44438281baf26907675b99c9a4a421c4d4a57c954120327e703aa8329086bd"
 DEVENV_IMAGE_TARBALL="apko-inception.tar.gz"
 IMAGE_TAG="apko-inception"
+ARCH=$(uname -m)
+
+# Map apk-style arch string to the OCI-style equivalent
+case "$ARCH" in
+    "x86")
+        ARCH="_386";;
+    "x86_64")
+        ARCH="amd64";;
+    "aarch64")
+        ARCH="arm64";;
+    "armhf")
+        ARCH="armv6";;
+esac
 
 checkrepo() {
     grep "module chainguard.dev/apko" go.mod >/dev/null 2>&1 && return
@@ -16,7 +29,7 @@ checkrepo() {
 }
 
 run_builder() {
-    if ! (docker inspect apko-inception:latest >/dev/null 2>&1 ); then
+    if ! (docker inspect apko-inception:latest-$ARCH >/dev/null 2>&1 ); then
         set -e
         mkdir _output > /dev/null 2>&1 || : 
         docker run --rm -v $(pwd):/apko -w /apko -ti \
@@ -33,18 +46,18 @@ build_image() {
     set -e
     cat /etc/os-release
     apk add go
-    go run main.go build --sbom=false ./examples/apko-devenv.yaml ${IMAGE_TAG} ./_output/${DEVENV_IMAGE_TARBALL}
+    go run main.go build ./examples/apko-devenv.yaml ${IMAGE_TAG}:latest ./_output/${DEVENV_IMAGE_TARBALL} --sbom=false --arch=$ARCH
     chown ${BUILD_UID}:${BUILD_GID} _output/${DEVENV_IMAGE_TARBALL}
 }
 
 load_image() {
     set -e
-    docker rmi ${IMAGE_TAG}:latest 2>&1 || :
+    docker rmi ${IMAGE_TAG}:latest-$ARCH 2>&1 || :
     docker load < _output/${DEVENV_IMAGE_TARBALL}
 }
 
 run() {
-    docker run --rm -w /apko -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/apko -ti ${IMAGE_TAG}:latest hack/make-devenv.sh setup
+    docker run --rm -w /apko -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/apko -ti ${IMAGE_TAG}:latest-$ARCH hack/make-devenv.sh setup
 }
 
 setup() {
