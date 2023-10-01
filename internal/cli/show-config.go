@@ -73,7 +73,7 @@ func ShowConfigCmd(ctx context.Context, opts ...build.Option) error {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 
-	if err := enc.Encode(bc.ImageConfiguration); err != nil {
+	if err := enc.Encode(bc.ImageConfiguration()); err != nil {
 		return fmt.Errorf("failed to encode YAML document: %w", err)
 	}
 
