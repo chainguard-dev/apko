@@ -17,6 +17,7 @@ package types
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
@@ -85,6 +86,13 @@ func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error 
 		pkgs = append(pkgs, mergedIc.Contents.Packages...)
 		ic.Contents.Packages = pkgs
 	}
+
+	repos := make([]string, 0, len(ic.Contents.Repositories))
+	for _, repo := range ic.Contents.Repositories {
+		repo = strings.TrimRight(repo, "/")
+		repos = append(repos, repo)
+	}
+	ic.Contents.Repositories = repos
 
 	return nil
 }
