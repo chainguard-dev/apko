@@ -29,7 +29,7 @@ require (
 	golang.org/x/term v0.13.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.28.2
-	sigs.k8s.io/release-utils v0.7.5-0.20230601212346-3866fe05b204
+	sigs.k8s.io/release-utils v0.7.5
 )
 
 require (
