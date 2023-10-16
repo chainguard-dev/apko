@@ -186,6 +186,10 @@ func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repositor
 	return toInstall, conflicts, err
 }
 
+func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
+	return bc.apk.ResolveAndCalculateWorld(ctx)
+}
+
 func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {
 	return bc.apk.GetInstalled()
 }

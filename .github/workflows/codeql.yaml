@@ -13,7 +13,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+    - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
 
     - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v3.0.0
       with:
@@ -21,7 +21,7 @@ jobs:
         check-latest: true
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@04daf014b50eaf774287bf3f0f1869d4b4c4b913
+      uses: github/codeql-action/init@fdcae64e1484d349b3366718cdfef3d404390e85
       with:
         languages: go
 
@@ -29,4 +29,4 @@ jobs:
       run: make apko
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@04daf014b50eaf774287bf3f0f1869d4b4c4b913
+      uses: github/codeql-action/analyze@fdcae64e1484d349b3366718cdfef3d404390e85

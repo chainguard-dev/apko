@@ -121,7 +121,7 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 
 		if u.UID == 0 {
-			return fmt.Errorf("configured user %v has UID 0", u)
+			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
 		}
 	}
 
