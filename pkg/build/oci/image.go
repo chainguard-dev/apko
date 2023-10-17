@@ -30,6 +30,7 @@ import (
 	"github.com/google/shlex"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sigstore/cosign/v2/pkg/oci/signed"
+	"golang.org/x/exp/maps"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/log"
@@ -139,20 +140,21 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		}
 	}
 
+	env := maps.Clone(ic.Environment)
 	// Set these environment variables if they are not already set.
-	if ic.Environment == nil {
-		ic.Environment = map[string]string{}
+	if env == nil {
+		env = map[string]string{}
 	}
 	for k, v := range map[string]string{
 		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	} {
-		if _, found := ic.Environment[k]; !found {
-			ic.Environment[k] = v
+		if _, found := env[k]; !found {
+			env[k] = v
 		}
 	}
 	envs := []string{}
-	for k, v := range ic.Environment {
+	for k, v := range env {
 		envs = append(envs, fmt.Sprintf("%s=%s", k, v))
 	}
 	sort.Strings(envs)
