@@ -1,8 +1,20 @@
-# Changes from 0.10.0 to 0.10.1
+# Changes from 0.10.0 to 0.11.0
 
 * Improve error messages when modifying paths.
 
 * Optimize SBOM generation.
+
+* Add `apko dot`: https://github.com/chainguard-dev/apko/pull/894
+
+* Add hidden `apko resolve`: https://github.com/chainguard-dev/apko/pull/902
+
+* Allow writing to OCI layout directory: https://github.com/chainguard-dev/apko/pull/882
+
+* Add `--offline` flag: https://github.com/chainguard-dev/apko/pull/860
+
+* Performance improvements and bug fixes
+
+Full diff: https://github.com/chainguard-dev/apko/compare/v0.10.0..main
 
 # Changes from 0.9.0 to 0.10.0
 
