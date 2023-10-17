@@ -37,11 +37,7 @@ LDFLAGS=-buildid= -X $(PKG).gitVersion=$(GIT_VERSION) \
         -X $(PKG).gitTreeState=$(GIT_TREESTATE) \
         -X $(PKG).buildDate=$(BUILD_DATE)
 
-KO_DOCKER_REPO ?= ghcr.io/chainguard-dev/apko
 DIGEST ?=
-
-
-KOCACHE_PATH=/tmp/ko
 
 define create_kocache_path
   mkdir -p $(KOCACHE_PATH)
