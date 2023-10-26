@@ -1,3 +1,11 @@
+# Changes from 0.11.0 to 0.11.1
+
+* Add JSON tags to ImageConfiguration types: https://github.com/chainguard-dev/apko/pull/933
+
+* Pass UID and GID mapping to the tarball writer: https://github.com/chainguard-dev/apko/pull/932
+
+Full diff: https://github.com/chainguard-dev/apko/compare/v0.11.0..v0.11.1
+
 # Changes from 0.10.0 to 0.11.0
 
 * Improve error messages when modifying paths.
