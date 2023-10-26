@@ -93,7 +93,7 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 
 	diffid := sha256.New()
 
-	if err := tw.WriteTar(ctx, io.MultiWriter(diffid, gzw), bc.fs); err != nil {
+	if err := tw.WriteTar(ctx, io.MultiWriter(diffid, gzw), bc.fs, bc.fs); err != nil {
 		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 	if err := gzw.Close(); err != nil {
