@@ -1,3 +1,7 @@
+# Changes from 0.11.1 to 0.11.2
+
+* Fix a bug in version selection.
+
 # Changes from 0.11.0 to 0.11.1
 
 * Add JSON tags to ImageConfiguration types: https://github.com/chainguard-dev/apko/pull/933
