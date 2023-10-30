@@ -104,8 +104,8 @@ github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6r
 github.com/bwesterb/go-ristretto v1.2.3/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/chainguard-dev/go-apk v0.0.0-20231026173255-29e1987fa2ba h1:Lyhwc8omodIHzY4p5TzY6Pfut+26f9OEsPwoL2nWrmo=
-github.com/chainguard-dev/go-apk v0.0.0-20231026173255-29e1987fa2ba/go.mod h1:LHiVwyOFfuMy/j+HPkAqow7c/+frfMBqaEkKChgG3HA=
+github.com/chainguard-dev/go-apk v0.0.0-20231030174812-a5114d436c7a h1:f3m/NBTfmlLkwJ65s/4352OfuwQI/5cKWGT/MSgdwAw=
+github.com/chainguard-dev/go-apk v0.0.0-20231030174812-a5114d436c7a/go.mod h1:LHiVwyOFfuMy/j+HPkAqow7c/+frfMBqaEkKChgG3HA=
 github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08 h1:9Qh4lJ/KMr5iS1zfZ8I97+3MDpiKjl+0lZVUNBhdvRs=
 github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08/go.mod h1:MAuu1uDJNOS3T3ui0qmKdPUwm59+bO19BbTph2wZafE=
 github.com/cloudflare/circl v1.3.3 h1:fE/Qz0QdIGqeWfnwq0RE0R7MI51s0M2E4Ga9kq5AEMs=
