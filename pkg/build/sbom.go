@@ -56,12 +56,7 @@ func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, 
 	sopt.ImageInfo.SourceDateEpoch = bde
 	sopt.Formats = o.SBOMFormats
 	sopt.ImageInfo.VCSUrl = ic.VCSUrl
-
-	if o.UseDockerMediaTypes {
-		sopt.ImageInfo.ImageMediaType = ggcrtypes.DockerManifestSchema2
-	} else {
-		sopt.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
-	}
+	sopt.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
 
 	sopt.OutputDir = o.TempDir()
 	if o.SBOMPath != "" {
@@ -165,9 +160,6 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 	s.ImageInfo.IndexDigest = h
 
 	s.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
-	if o.UseDockerMediaTypes {
-		s.ImageInfo.IndexMediaType = ggcrtypes.DockerManifestList
-	}
 
 	// Make sure we have a determinstic for iterating over imgs.
 	archs := make([]types.Architecture, 0, len(imgs))

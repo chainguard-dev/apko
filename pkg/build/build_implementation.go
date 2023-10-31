@@ -129,12 +129,10 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	if err := GenerateOSRelease(bc.fs, &bc.o, &bc.ic); err != nil {
-		if errors.Is(err, ErrOSReleaseAlreadyPresent) {
-			bc.Logger().Warnf("did not generate /etc/os-release: %v", err)
-		} else {
-			return fmt.Errorf("failed to generate /etc/os-release: %w", err)
-		}
+	if err := generateOSRelease(bc.fs, &bc.o, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
+		bc.Logger().Infof("did not generate /etc/os-release: %v", err)
+	} else if err != nil {
+		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 	}
 
 	if err := bc.s6.WriteSupervisionTree(bc.ic.Entrypoint.Services); err != nil {

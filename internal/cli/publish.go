@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
@@ -35,7 +34,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
-	"chainguard.dev/apko/pkg/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -46,13 +44,8 @@ import (
 
 func publish() *cobra.Command {
 	var imageRefs string
-	var useDockerMediaTypes bool
 	var buildDate string
 	var sbomPath string
-	var packageVersionTag string
-	var packageVersionTagStem bool
-	var packageVersionTagPrefix string
-	var tagSuffix string
 	var sbomFormats []string
 	var archstrs []string
 	var extraKeys []string
@@ -65,7 +58,6 @@ func publish() *cobra.Command {
 	var withVCS bool
 	var writeSBOM bool
 	var local bool
-	var stageTags string
 	var cacheDir string
 	var offline bool
 
@@ -131,7 +123,6 @@ in a keychain.`,
 				[]build.Option{
 					build.WithLogger(logger),
 					build.WithConfig(args[0]),
-					build.WithDockerMediatypes(useDockerMediaTypes),
 					build.WithBuildDate(buildDate),
 					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 					build.WithSBOM(sbomPath),
@@ -148,12 +139,7 @@ in a keychain.`,
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 					WithLogger(logger),
-					WithPackageVersionTag(packageVersionTag),
-					WithPackageVersionTagStem(packageVersionTagStem),
-					WithPackageVersionTagPrefix(packageVersionTagPrefix),
-					WithTagSuffix(tagSuffix),
 					WithLocal(local),
-					WithStageTags(stageTags),
 					WithTags(args[1:]...),
 				},
 			); err != nil {
@@ -163,7 +149,6 @@ in a keychain.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&useDockerMediaTypes, "use-docker-mediatypes", false, "use Docker mediatypes for image layers/manifest")
 	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
 	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
@@ -182,12 +167,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
-	cmd.Flags().StringVar(&packageVersionTag, "package-version-tag", "", "Tag the final image with the version of the package passed in")
-	cmd.Flags().BoolVar(&packageVersionTagStem, "package-version-tag-stem", false, "add additional tags by stemming the package version")
-	cmd.Flags().StringVar(&packageVersionTagPrefix, "package-version-tag-prefix", "", "prefix for package version tag(s)")
-	cmd.Flags().StringVar(&tagSuffix, "tag-suffix", "", "suffix to use for automatically generated tags")
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
-	cmd.Flags().StringVar(&stageTags, "stage-tags", "", "path to file to write list of tags to instead of publishing them")
 	cmd.Flags().StringVar(&imageRefs, "image-refs", "", "path to file where a list of the published image references will be written")
 
 	return cmd
@@ -211,14 +191,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	defer os.RemoveAll(wd)
 
 	// build all of the components in the working directory
-	idx, sboms, pkgs, err := buildImageComponents(ctx, wd, archs, buildOpts...)
+	idx, sboms, err := buildImageComponents(ctx, wd, archs, buildOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to build image components: %w", err)
 	}
 
 	var (
-		stageTags       = opts.stageTags
-		shouldPushTags  = stageTags == ""
 		local           = opts.local
 		logger          = opts.logger
 		tags            = opts.tags
@@ -242,42 +220,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		return nil
 	}
 
-	// generate additional tags from the package information per architecture
-	tagsByArch := make(map[types.Architecture][]string)
-	for arch, pkgList := range pkgs {
-		addTags, err := apk.AdditionalTags(pkgList, opts.logger, tags, opts.packageVersionTag, opts.packageVersionTagPrefix, opts.tagSuffix, opts.packageVersionTagStem)
-		if err != nil {
-			return fmt.Errorf("failed to generate additional tags for arch %s: %w", arch, err)
-		}
-		tagsByArch[arch] = append(tags, addTags...)
-	}
-
-	// if the tags are not identical across arches, that is an error
-	allTagsMap := make(map[string]bool)
-	for arch, archTags := range tagsByArch {
-		tagSet := make(map[string]bool)
-		for _, tag := range archTags {
-			tagSet[tag] = true
-		}
-		if len(allTagsMap) == 0 {
-			allTagsMap = tagSet
-			continue
-		}
-		if len(tagSet) != len(allTagsMap) {
-			return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
-		}
-		for tag := range tagSet {
-			if !allTagsMap[tag] {
-				return fmt.Errorf("tags for arch %s are not identical to other arches", arch)
-			}
-		}
-	}
-	// and now generate a slice
-	allTags := make([]string, 0, len(allTagsMap))
-	for tag := range allTagsMap {
-		allTags = append(allTags, tag)
-	}
-
 	// publish each arch-specific image
 	// TODO: This should just happen as part of PublishIndex.
 	ref, err := name.ParseReference(tags[0])
@@ -293,7 +235,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	// publish the index
-	finalDigest, err := oci.PublishIndex(ctx, idx, logger, shouldPushTags, allTags, ropt...)
+	finalDigest, err := oci.PublishIndex(ctx, idx, logger, tags, ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing image index: %w", err)
 	}
@@ -308,43 +250,22 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		}
 	}
 
-	if !shouldPushTags {
-		tmp := map[string]bool{}
-		for _, tag := range allTags {
-			if !strings.Contains(tag, ":") {
-				tag = fmt.Sprintf("%s:latest", tag)
-			}
-			tmp[tag] = true
+	// TODO: Why does this happen separately from PublishIndex?
+	skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
+	g, ctx := errgroup.WithContext(ctx)
+	for _, at := range additionalTags {
+		at := at
+		if skipLocalCopy {
+			// TODO: We probably don't need this now that we return early.
+			logger.Warnf("skipping local domain tag %s", at)
+			continue
 		}
-		sortedUniqueTags := make([]string, 0, len(tmp))
-		for k := range tmp {
-			sortedUniqueTags = append(sortedUniqueTags, k)
-		}
-		sort.Strings(sortedUniqueTags)
-		logger.Printf("Writing list of tags to %s (%d total)", stageTags, len(sortedUniqueTags))
-
-		//nolint:gosec // Make tags file readable by non-root
-		if err := os.WriteFile(stageTags, []byte(strings.Join(sortedUniqueTags, "\n")+"\n"), 0o666); err != nil {
-			return fmt.Errorf("failed to write tags: %w", err)
-		}
-	} else {
-		// TODO: Why does this happen separately from PublishIndex?
-		skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
-		g, ctx := errgroup.WithContext(ctx)
-		for _, at := range additionalTags {
-			at := at
-			if skipLocalCopy {
-				// TODO: We probably don't need this now that we return early.
-				logger.Warnf("skipping local domain tag %s", at)
-				continue
-			}
-			g.Go(func() error {
-				return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
-			})
-		}
-		if err := g.Wait(); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// publish each arch-specific sbom
