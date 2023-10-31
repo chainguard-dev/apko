@@ -27,7 +27,6 @@ import (
 )
 
 type Options struct {
-	UseDockerMediaTypes     bool               `json:"useDockerMediaTypes,omitempty"`
 	WithVCS                 bool               `json:"withVCS,omitempty"`
 	TarballPath             string             `json:"tarballPath,omitempty"`
 	Tags                    []string           `json:"tags,omitempty"`
@@ -44,7 +43,6 @@ type Options struct {
 	PackageVersionTagPrefix string             `json:"packageVersionTagPrefix,omitempty"`
 	TagSuffix               string             `json:"tagSuffix,omitempty"`
 	Local                   bool               `json:"local,omitempty"`
-	StageTags               string             `json:"stageTags,omitempty"`
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 

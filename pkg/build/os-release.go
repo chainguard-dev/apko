@@ -52,7 +52,7 @@ func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, ic *types.ImageConfigurat
 	return nil
 }
 
-func GenerateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+func generateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
 	path := filepath.Join("etc", "os-release")
 
 	osReleaseExists := true

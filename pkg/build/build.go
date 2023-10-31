@@ -143,17 +143,12 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
 	}
 
-	mt := v1types.OCILayer
-	if bc.o.UseDockerMediaTypes {
-		mt = v1types.DockerLayer
-	}
-
 	l := &layer{
 		filename: layerTarGZ,
 		desc: &v1.Descriptor{
 			Digest:    h,
 			Size:      size,
-			MediaType: mt,
+			MediaType: v1types.OCILayer,
 		},
 		diffid: &v1.Hash{
 			Algorithm: "sha256",

@@ -128,7 +128,7 @@ func LoadImage(ctx context.Context, image oci.SignedImage, logger log.Logger, ta
 // Note that docker, when provided with a multi-architecture index, will load just the image inside for the provided
 // platform, defaulting to the one on which the docker daemon is running.
 // PublishIndex will determine that platform and use it to publish the updated index.
-func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
+func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logger, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
 	// TODO(jason): Also set annotations on the index. ggcr's
 	// pkg/v1/mutate.Annotations will drop the interface methods from
 	// oci.SignedImageIndex, so we may need to reimplement
@@ -147,16 +147,10 @@ func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, logger log.Logg
 	dig := ref.Context().Digest(h.String())
 
 	toPublish := tags
-	msg := "publishing index tag"
-
-	if !shouldPushTags {
-		toPublish = []string{dig.String()}
-		msg = "publishing index without tag (digest only)"
-	}
 
 	g, ctx := errgroup.WithContext(ctx)
 	for _, tag := range toPublish {
-		logger.Printf("%s %v", msg, tag)
+		logger.Printf("publishing index tag %v", tag)
 
 		ref, err := name.ParseReference(tag)
 		if err != nil {

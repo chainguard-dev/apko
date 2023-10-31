@@ -153,14 +153,6 @@ func WithArch(arch types.Architecture) Option {
 	}
 }
 
-// WithDockerMediatypes determine whether to use Docker mediatypes for the build context.
-func WithDockerMediatypes(useDockerMediaTypes bool) Option {
-	return func(bc *Context) error {
-		bc.o.UseDockerMediaTypes = useDockerMediaTypes
-		return nil
-	}
-}
-
 // WithLogger sets the log.Logger implementation to be used by the build context.
 func WithLogger(logger log.Logger) Option {
 	return func(bc *Context) error {
