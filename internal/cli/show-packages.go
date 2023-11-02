@@ -176,7 +176,7 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		for _, pkg := range pkgs {
 			p.Name = pkg.Name
 			p.Version = pkg.Version
-			p.Source = pkg.Url()
+			p.Source = pkg.URL()
 			if err = tmpl.Execute(os.Stdout, p); err != nil {
 				return fmt.Errorf("failed to execute template: %w", err)
 			}

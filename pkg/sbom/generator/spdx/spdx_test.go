@@ -21,10 +21,10 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 	"sigs.k8s.io/release-utils/command"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -41,7 +41,7 @@ var testOpts = &options.Options{
 		Version: "3.0",
 	},
 	FileName: "sbom",
-	Packages: []*repository.Package{
+	Packages: []*apk.Package{
 		{
 			Name:        "musl",
 			Version:     "1.2.2-r7",

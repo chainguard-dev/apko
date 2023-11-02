@@ -2,6 +2,8 @@ module chainguard.dev/apko
 
 go 1.21
 
+replace github.com/chainguard-dev/go-apk => ../go-apk
+
 require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
 	github.com/chainguard-dev/go-apk v0.0.0-20231030174812-a5114d436c7a
@@ -21,7 +23,6 @@ require (
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
-	gitlab.alpinelinux.org/alpine/go v0.8.1-0.20230928153721-5381bfaecf9b
 	go.opentelemetry.io/otel v1.19.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/sync v0.4.0

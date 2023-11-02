@@ -26,11 +26,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
 	"github.com/tmc/dot"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
@@ -132,7 +132,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 
 	dmap := map[string][]string{}
 	pmap := map[string][]string{}
-	pkgMap := map[string]*repository.RepositoryPackage{}
+	pkgMap := map[string]*apk.RepositoryPackage{}
 
 	for _, pkg := range pkgs {
 		dmap[pkg.Name] = pkg.Dependencies
@@ -162,7 +162,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			deps[pkg] = struct{}{}
 		}
 
-		renderDeps := func(pkg *repository.RepositoryPackage) {
+		renderDeps := func(pkg *apk.RepositoryPackage) {
 			n := dot.NewNode(pkg.Name)
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
@@ -212,7 +212,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			renderDeps(pkg)
 		}
 
-		renderProvs := func(pkg *repository.RepositoryPackage) {
+		renderProvs := func(pkg *apk.RepositoryPackage) {
 			n := dot.NewNode(pkg.Name)
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
@@ -319,7 +319,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	return nil
 }
 
-func pkgver(pkg *repository.RepositoryPackage) string {
+func pkgver(pkg *apk.RepositoryPackage) string {
 	return fmt.Sprintf("%s-%s", pkg.Name, pkg.Version)
 }
 

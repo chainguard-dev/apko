@@ -22,11 +22,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	purl "github.com/package-url/packageurl-go"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -52,7 +52,7 @@ type Options struct {
 	Formats []string
 
 	// Packages is alist of packages which will be listed in the SBOM
-	Packages []*repository.Package
+	Packages []*apk.Package
 }
 
 type PurlQualifiers map[string]string

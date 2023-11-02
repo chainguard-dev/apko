@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 	"golang.org/x/sys/unix"
 )
 
@@ -49,7 +49,7 @@ type tarEntry struct {
 	tfs      fs.FS
 	header   tar.Header
 	checksum []byte
-	pkg      *repository.Package
+	pkg      *apk.Package
 }
 
 type memFS struct {
@@ -100,7 +100,7 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 	return checksum, nil
 }
 
-func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *repository.Package) error {
+func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
