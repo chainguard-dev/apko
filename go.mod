@@ -2,7 +2,7 @@ module chainguard.dev/apko
 
 go 1.21
 
-replace github.com/chainguard-dev/go-apk => ../go-apk
+replace github.com/chainguard-dev/go-apk => github.com/imjasonh/go-apk v0.0.0-20231102173510-21faa78e6c46
 
 require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
