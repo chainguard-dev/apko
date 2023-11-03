@@ -20,8 +20,8 @@ import (
 	"io/fs"
 	"path/filepath"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	osr "github.com/dominodatalab/os-release"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -59,15 +59,15 @@ func ReadReleaseData(fsys fs.FS) (*osr.Data, error) {
 	return osr.Parse(string(osReleaseData)), nil
 }
 
-func ReadPackageIndex(fsys fs.FS) (packages []*repository.Package, err error) {
+func ReadPackageIndex(fsys fs.FS) (packages []*apk.Package, err error) {
 	installedDB, err := fsys.Open(packageIndexPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening APK installed db: %w", err)
 	}
 	defer installedDB.Close()
 
-	// repository.ParsePackageIndex closes the file itself
-	packages, err = repository.ParsePackageIndex(installedDB)
+	// apk.ParsePackageIndex closes the file itself
+	packages, err = apk.ParsePackageIndex(installedDB)
 	if err != nil {
 		return nil, fmt.Errorf("parsing APK installed db: %w", err)
 	}

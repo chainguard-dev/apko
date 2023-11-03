@@ -24,9 +24,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	purl "github.com/package-url/packageurl-go"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -390,7 +390,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 }
 
 // apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *repository.Package) Package {
+func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.Package) Package {
 	return Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,

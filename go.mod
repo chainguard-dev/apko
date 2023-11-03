@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220920003936-cd2dbcbbab49
-	github.com/chainguard-dev/go-apk v0.0.0-20231030174812-a5114d436c7a
+	github.com/chainguard-dev/go-apk v0.0.0-20231103143312-fc2ccc06eae1
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20220327082430-c57b701bfc08
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.10.0
@@ -21,7 +21,6 @@ require (
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
-	gitlab.alpinelinux.org/alpine/go v0.8.1-0.20230928153721-5381bfaecf9b
 	go.opentelemetry.io/otel v1.19.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/sync v0.4.0

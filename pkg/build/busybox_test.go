@@ -7,7 +7,6 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
 // Copyright 2023 Chainguard, Inc.
@@ -28,7 +27,7 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 	// these are links that definitely do *not* exist when using the standard files
 	fakeLinks := []string{"/bin/foo", "/bin/bar"}
 	trueLinks := []string{"/bin/ls", "/bin/grep"}
-	pkg := &repository.Package{
+	pkg := &apk.Package{
 		Name:    "busybox",
 		Version: "1.36.0", // version that we know exists in busybox_versions.go
 	}

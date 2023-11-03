@@ -203,7 +203,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 		for _, rpkg := range resolvedPkgs {
 			lockPkg := lockPkg{
 				Name:         rpkg.Package.Name,
-				URL:          rpkg.Package.Url(),
+				URL:          rpkg.Package.URL(),
 				Architecture: rpkg.Package.Arch,
 				Version:      rpkg.Package.Version,
 				Control: lockPkgRangeAndChecksum{
@@ -225,13 +225,13 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
 
-			if _, ok := repositories[rpkg.Package.Repository().Uri]; !ok {
+			if _, ok := repositories[rpkg.Package.Repository().URI]; !ok {
 				lock.Contents.Repositories = append(lock.Contents.Repositories, lockRepo{
-					Name:         stripURLScheme(rpkg.Package.Repository().Uri),
-					URL:          rpkg.Package.Repository().IndexUri(),
+					Name:         stripURLScheme(rpkg.Package.Repository().URI),
+					URL:          rpkg.Package.Repository().IndexURI(),
 					Architecture: arch.ToAPK(),
 				})
-				repositories[rpkg.Package.Repository().Uri] = true
+				repositories[rpkg.Package.Repository().URI] = true
 			}
 		}
 	}

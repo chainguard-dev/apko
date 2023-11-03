@@ -34,7 +34,6 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/sigstore/cosign/v2/pkg/oci"
-	"gitlab.alpinelinux.org/alpine/go/repository"
 )
 
 // pgzip's default is GOMAXPROCS(0)
@@ -175,7 +174,7 @@ func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
 	return outfile, nil
 }
 
-func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*repository.RepositoryPackage, conflicts []string, err error) {
+func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.RepositoryPackage, conflicts []string, err error) {
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
