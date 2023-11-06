@@ -37,7 +37,7 @@ docker run cgr.dev/chainguard/apko version
 To use the examples, you'll generally want to mount your current directory into the container, e.g.:
 
 ```shell
-docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
+docker run -v "$PWD":/work -w /work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
 
 Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
@@ -77,7 +77,7 @@ apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 or, with Docker:
 
 ```shell
-docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
+docker run -v "$PWD":/work  -w /work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
 
 You can then load the generated tar image into a Docker environment:
