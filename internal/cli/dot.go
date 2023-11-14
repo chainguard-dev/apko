@@ -58,7 +58,7 @@ apko dot --web example.yaml
 # Open browser to explore example.yaml, rendering a (almost) minimum spanning tree
 apko dot --web -S example.yaml
 `,
-		Example: `  apko show-packages <config.yaml>`,
+		Example: `  apko dot <config.yaml>`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			archs := types.ParseArchitectures(archstrs)
@@ -159,7 +159,15 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			n := dot.NewNode(pkg)
 			out.AddNode(n)
 			out.AddEdge(dot.NewEdge(file, n))
-			deps[pkg] = struct{}{}
+			if before, _, ok := strings.Cut(pkg, "~"); ok {
+				p := dot.NewNode(before)
+				out.AddNode(p)
+				out.AddEdge(dot.NewEdge(n, p))
+
+				deps[before] = struct{}{}
+			} else {
+				deps[pkg] = struct{}{}
+			}
 		}
 
 		renderDeps := func(pkg *apk.RepositoryPackage) {
@@ -175,6 +183,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			out.AddNode(n)
 
 			for _, dep := range dmap[pkg.Name] {
+				if before, _, ok := strings.Cut(dep, "~"); ok {
+					dep = before
+				}
 				d := dot.NewNode(dep)
 				if web {
 					if !strings.Contains(dep, ":") {
@@ -222,6 +233,17 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			for _, prov := range pmap[pkg.Name] {
 				if _, ok := deps[prov]; !ok {
 					if before, _, ok := strings.Cut(prov, "="); ok {
+						if _, ok := deps[before]; ok {
+							p := dot.NewNode(before)
+							if err := p.Set("shape", "rect"); err != nil {
+								panic(err)
+							}
+							out.AddNode(p)
+
+							out.AddEdge(dot.NewEdge(p, n))
+						}
+						continue
+					} else if before, _, ok := strings.Cut(prov, "~"); ok {
 						if _, ok := deps[before]; ok {
 							p := dot.NewNode(before)
 							if err := p.Set("shape", "rect"); err != nil {
