@@ -17,18 +17,14 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
-	"github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
@@ -99,9 +95,6 @@ in a keychain.`,
 
 			keychain := authn.NewMultiKeychain(
 				authn.DefaultKeychain,
-				google.Keychain,
-				authn.NewKeychainFromHelper(ecr.NewECRHelper(ecr.WithLogger(io.Discard))),
-				authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper()),
 				github.Keychain,
 			)
 			remoteOpts := []remote.Option{remote.WithAuthFromKeychain(keychain)}
