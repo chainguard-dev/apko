@@ -48,6 +48,6 @@ For example, if the latest version is `v0.11.5`, create a minor release `v0.12.0
 
 For consistency, we prefer to keep minor releases of Apko in-line with minor releases of the Terraform provider.
 
-This means that when you cut `v0.12.0`, we should also cut a release of tf-apko to `v0.12.0.
+This means that when you cut `v0.12.0`, we should also cut a release of tf-apko to `v0.12.0`.
 
 We don't bother trying to keep patch releases in-sync between these repos, so you don't have to do this on every new patch release.
