@@ -72,8 +72,11 @@ Along the image, apko will generate CycloneDX and SPDX SBOMs (software
 bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar|oci-layout-dir/>`,
-		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 3 {
+				return fmt.Errorf("requires 3 arg: 1 config file, a tag for the image, and an output path")
+			}
+
 			if len(logPolicy) == 0 {
 				if quietEnabled {
 					logPolicy = []string{"builtin:discard"}

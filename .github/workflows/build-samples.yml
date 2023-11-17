@@ -6,10 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Build a single-arch nginx image for each arch.
   build-nginx-on-all-arches:
     name: build-nginx-all-arches
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         arch: [x86_64, "386", armv7, aarch64, riscv64, s390x, ppc64le]
 
@@ -20,16 +22,47 @@ jobs:
           go-version-file: 'go.mod'
       - name: Setup QEMU
         uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
-
-      - name: build
-        run: |
+      - run: |
           make apko
-          ./apko version
-
-      - name: build image
-        timeout-minutes: 15
-        run: |
           ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --arch ${{ matrix.arch }}
+
+      - name: Check SBOM Conformance
+        run: |
+          set -euxo pipefail
+          if ! ls *.spdx.json; then
+            echo "no SBOMs found!"
+            exit 1
+          fi
+          for f in *.spdx.json; do
+            echo ::group::sbom.json
+            cat $f
+            echo ::endgroup::
+            docker run --rm -v $(pwd)/$f:/sbom.json cgr.dev/chainguard/ntia-conformance-checker -v --file /sbom.json
+          done
+
+  # Build a multi-arch nginx image for all archs.
+  build-nginx-multiarch:
+    name: build-nginx-multiarch
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
+        with:
+          go-version-file: 'go.mod'
+      - run: |
+          make apko
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar --debug
+
+      - name: Check SBOM Conformance
+        run: |
+          set -euxo pipefail
+          for f in *.spdx.json; do
+            echo ::group::sbom.json
+            cat $f
+            echo ::endgroup::
+            docker run --rm -v $(pwd)/$f:/sbom.json cgr.dev/chainguard/ntia-conformance-checker -v --file /sbom.json
+          done
 
   build-all-examples-one-arch:
     name: build-all-examples-amd64
@@ -43,16 +76,9 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
         with:
-          go-version: "1.21"
-          check-latest: true
-      - name: build
-        run: |
+          go-version-file: 'go.mod'
+      - run: |
           make apko
-          ./apko version
-
-      - name: build images
-        timeout-minutes: 15
-        run: |
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
             ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --arch amd64
@@ -66,26 +92,16 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
         with:
-          go-version: "1.21"
-          check-latest: true
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
-
-      - name: build
-        run: |
-          make apko
-          ./apko version
-
+          go-version-file: 'go.mod'
       - uses: chainguard-dev/actions/setup-registry@main
         with:
           port: 5000
 
       - name: build image (w/ source date epoch)
-        shell: bash
-        timeout-minutes: 15
         env:
           SOURCE_DATE_EPOCH: "0"
         run: |
+          make apko
           FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
 
           for idx in {2..10}
@@ -108,24 +124,14 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
         with:
-          go-version: "1.21"
-          check-latest: true
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
-
-      - name: build
-        run: |
-          make apko
-          ./apko version
-
+          go-version-file: 'go.mod'
       - uses: chainguard-dev/actions/setup-registry@main
         with:
           port: 5000
 
       - name: build image (w/ build date epoch)
-        shell: bash
-        timeout-minutes: 15
         run: |
+          make apko
           # Without SOURCE_DATE_EPOCH set, the timestamp of the image will be computed to be
           # the maximum build date of the resolved APKs.
           FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
@@ -155,10 +161,8 @@ jobs:
       - uses: chainguard-dev/actions/setup-registry@main
         with:
           port: 5000
-      - name: build
-        run: |
+      - run: |
           make apko
-          ./apko version
 
           # Build image with annotations.
           ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx)

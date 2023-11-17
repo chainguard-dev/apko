@@ -115,9 +115,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	if opts.ImageInfo.VCSUrl != "" {
 		if opts.ImageInfo.ImageDigest != "" {
-			addSourcePackage(opts.ImageInfo.VCSUrl, doc, imagePackage)
-		} else {
-			addSourcePackage(opts.ImageInfo.VCSUrl, doc, layerPackage)
+			addSourcePackage(opts.ImageInfo.VCSUrl, doc, imagePackage, opts)
 		}
 	}
 
@@ -221,8 +219,6 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return nil
 	}
 
-	// TODO: Logf("composing packages from %s into image SBOM", path)
-
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
 		// TODO: Log error parsing apk SBOM
@@ -302,6 +298,8 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 
 	for _, f := range sourceDoc.Files {
 		if _, ok := todo[f.ID]; ok {
+			f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
+
 			targetDoc.Files = append(targetDoc.Files, f)
 			done[f.ID] = struct{}{}
 		}
@@ -366,6 +364,8 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
+		Version:          opts.ImageInfo.ImageDigest,
+		Supplier:         "Organization: " + opts.OS.Name,
 		DownloadLocation: NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
@@ -397,6 +397,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.Package) Package {
 		)),
 		Name:             pkg.Name,
 		Version:          pkg.Version,
+		Supplier:         "Organization: " + opts.OS.Name,
 		FilesAnalyzed:    false,
 		LicenseConcluded: pkg.License,
 		Description:      pkg.Description,
@@ -436,6 +437,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
 		Originator:       "",
+		Supplier:         "Organization: " + opts.OS.Name,
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
@@ -500,6 +502,7 @@ type Package struct {
 	Description          string                   `json:"description,omitempty"`
 	DownloadLocation     string                   `json:"downloadLocation,omitempty"`
 	Originator           string                   `json:"originator,omitempty"`
+	Supplier             string                   `json:"supplier,omitempty"`
 	SourceInfo           string                   `json:"sourceInfo,omitempty"`
 	CopyrightText        string                   `json:"copyrightText,omitempty"`
 	PrimaryPurpose       string                   `json:"primaryPackagePurpose,omitempty"`
@@ -560,6 +563,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	indexPackage := Package{
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
+		Version:          opts.ImageInfo.IndexDigest.DeepCopy().String(),
+		Supplier:         "Organization: " + opts.OS.Name,
 		FilesAnalyzed:    false,
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
@@ -592,6 +597,8 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		doc.Packages = append(doc.Packages, Package{
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
+			Version:          fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
+			Supplier:         "Organization: " + opts.OS.Name,
 			FilesAnalyzed:    false,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
@@ -620,7 +627,9 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		})
 	}
 
-	addSourcePackage(opts.ImageInfo.VCSUrl, doc, &indexPackage)
+	if opts.ImageInfo.VCSUrl != "" {
+		addSourcePackage(opts.ImageInfo.VCSUrl, doc, &indexPackage, opts)
+	}
 
 	if err := renderDoc(doc, path); err != nil {
 		return fmt.Errorf("rendering document: %w", err)
@@ -630,7 +639,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 }
 
 // addSourcePackage creates a package describing the source code
-func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
+func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *options.Options) {
 	version := ""
 	checksums := []Checksum{}
 	packageName := vcsURL
@@ -648,16 +657,22 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package) {
 	packageName = strings.TrimPrefix(packageName, "git://")
 	packageName = strings.TrimPrefix(packageName, "https://")
 
+	downloadLocation := vcsURL
+	if vcsURL == "" {
+		downloadLocation = NOASSERTION
+	}
+
 	sourcePackage := Package{
 		ID:                   fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
 		Name:                 packageName,
 		Version:              version,
+		Supplier:             "Organization: " + opts.OS.Name,
 		FilesAnalyzed:        false,
 		HasFiles:             []string{},
 		LicenseInfoFromFiles: []string{},
 		PrimaryPurpose:       "SOURCE",
 		Description:          "Image configuration source",
-		DownloadLocation:     vcsURL,
+		DownloadLocation:     downloadLocation,
 		Checksums:            checksums,
 		ExternalRefs:         []ExternalRef{},
 	}
