@@ -131,7 +131,11 @@ func TestSourcePackage(t *testing.T) {
 	}
 
 	// Call the function
-	addSourcePackage(vcsURL, &doc, &imagePackage)
+	addSourcePackage(vcsURL, &doc, &imagePackage, &options.Options{
+		OS: options.OSInfo{
+			Name: "Testing",
+		},
+	})
 
 	// Verify the purl
 	require.Len(t, doc.Packages[0].ExternalRefs, 1)

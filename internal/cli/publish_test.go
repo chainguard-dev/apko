@@ -104,7 +104,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:8dcaffc88372c0b3bf08a04d5c7bb70e59fe22c7ff781f868f3bb8ea3d093eda"
+	swant := "sha256:2cbdb42a7b4160cdcd44836a583fa23985532e1641f026365f653006545ad90c"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
@@ -113,8 +113,8 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:24a4f1a47dd353ca8e33b0c6bad00b7efc8cabeb27338e3288c2290fd8aaf389",
-		"sha256:db34ca4a2ac9a03f037edbe0e208fb546e9ccd602d918bf10191ab6056ef8413",
+		"sha256:a6acf3531effec2dd296834096fccff905d73f6838d9f680419c9bfbedad42f7",
+		"sha256:91097a5a791914cf2456e540671d47d369ae980c5376844ae978e56c15e8957c",
 	}
 
 	for i, m := range im.Manifests {
