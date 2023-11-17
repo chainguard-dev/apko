@@ -41,7 +41,7 @@ var DefaultOptions = options.Options{
 		Images: []options.ArchImageInfo{},
 	},
 	FileName: "sbom",
-	Formats:  []string{"spdx", "cyclonedx"},
+	Formats:  []string{"spdx"},
 }
 
 // readReleaseDataInternal reads the information from /etc/os-release

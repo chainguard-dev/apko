@@ -63,13 +63,11 @@ func buildCmd() *cobra.Command {
 		Short: "Build an image from a YAML configuration file",
 		Long: `Build an image from a YAML configuration file.
 
-The generated image is in a format which can be used with the "docker load"
-command, e.g.
+The generated image is in a format which can be used with the "docker load" command, e.g.
 
   # docker load < output.tar
 
-Along the image, apko will generate CycloneDX and SPDX SBOMs (software
-bill of materials) describing the image contents.
+Along the image, apko will generate SPDX SBOMs (software bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar|oci-layout-dir/>`,
 		Args:    cobra.ExactArgs(3),
