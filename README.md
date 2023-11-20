@@ -4,13 +4,13 @@ Build and publish [OCI container images](https://opencontainers.org/) built from
 
 apko has the following key features:
 
- - **Fully reproducible by default.** Run apko twice and you will get exactly the same binary.
- - **Fast.** apko aims to build images in ms.
- - **Small.** apko generated images only contain what's needed by the application,
-   in the style of [distroless](https://github.com/GoogleContainerTools/distroless).
- - **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
- - **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
-   in a container without reaping or signalling issues.
+- **Fully reproducible by default.** Run apko twice and you will get exactly the same binary.
+- **Fast.** apko aims to build images in ms.
+- **Small.** apko generated images only contain what's needed by the application,
+  in the style of [distroless](https://github.com/GoogleContainerTools/distroless).
+- **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
+- **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
+  in a container without reaping or signalling issues.
 
 Please note that apko is a work in progress and details are subject to change!
 
@@ -60,11 +60,13 @@ entrypoint:
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
 ```
+
 We can build this with apko from any environment with apk tooling:
 
 ```shell
 apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
+
 ```
 ...
 2022/04/08 13:22:31 apko (aarch64): generating SBOM
@@ -85,12 +87,15 @@ You can then load the generated tar image into a Docker environment:
 ```shell
 docker load < apko-alpine.tar
 ```
+
 ```shell
 Loaded image: apko-alpine:test
 ```
+
 ```shell
 docker run -it apko-alpine:test
 ```
+
 ```
 e289dc84c4ad:/# echo boo!
 boo!
@@ -143,7 +148,7 @@ Tutorials and guides for apko can be found at the [Chainguard Academy](https://e
 
 For support, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko
 channel or [open an issue](https://github.com/chainguard-dev/apko/issue).
- 
+
 ## Related Work and Resources
 
 The [melange project](https://github.com/chainguard-dev/melange) is designed to produce apk packages to be used in apko.
@@ -153,4 +158,14 @@ The [ko](https://github.com/google/ko) project builds Go projects from source in
 The [kontain.me](https://github.com/imjasonh/kontain.me) service creates fresh container images on
 demand using different forms of declarative configuration (including ko and apko).
 
+## Editor integration
 
+### VSCode
+
+For autocompletion, we recommend using [redhat.vscode-yaml](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) with the following config:
+
+```json
+"yaml.schemas": {
+  "https://raw.githubusercontent.com/chainguard-dev/apko/main/pkg/build/types/schema.json": ["apko.yaml", "*.apko.yaml"],
+},
+```
