@@ -10,6 +10,7 @@ require (
 	github.com/google/go-containerregistry v0.16.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/invopop/jsonschema v0.12.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.2
@@ -36,6 +37,8 @@ require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c // indirect
 	github.com/acomagu/bufpipe v1.0.4 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cloudflare/circl v1.3.5 // indirect
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
@@ -92,6 +95,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/vbatts/tar-split v0.11.5 // indirect
+	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.lsp.dev/uri v0.3.0 // indirect
 	go.mongodb.org/mongo-driver v1.12.1 // indirect

@@ -1,0 +1,346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chainguard.dev/apko/pkg/build/types/image-configuration",
+  "$ref": "#/$defs/ImageConfiguration",
+  "$defs": {
+    "AccountsOption": {
+      "properties": {
+        "RunAs": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "RunAs"
+      ],
+      "description": "AccountsOption describes an optional deviation to an apko environment's run-as setting."
+    },
+    "BuildOption": {
+      "properties": {
+        "Contents": {
+          "$ref": "#/$defs/ContentsOption"
+        },
+        "Accounts": {
+          "$ref": "#/$defs/AccountsOption"
+        },
+        "Environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "Entrypoint": {
+          "$ref": "#/$defs/ImageEntrypoint"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Contents",
+        "Accounts",
+        "Environment",
+        "Entrypoint"
+      ],
+      "description": "BuildOption describes an optional deviation to an apko environment."
+    },
+    "ContentsOption": {
+      "properties": {
+        "Packages": {
+          "$ref": "#/$defs/ListOption"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Packages"
+      ],
+      "description": "ContentsOption describes an optional deviation to an apko environment's contents block."
+    },
+    "Group": {
+      "properties": {
+        "groupname": {
+          "type": "string",
+          "description": "Required: The name of the group"
+        },
+        "gid": {
+          "type": "integer",
+          "description": "Required: The group ID"
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Required: The list of members of the group"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageAccounts": {
+      "properties": {
+        "run-as": {
+          "type": "string",
+          "description": "Required: The user to run the container as. This can be a username or UID."
+        },
+        "users": {
+          "items": {
+            "$ref": "#/$defs/User"
+          },
+          "type": "array",
+          "description": "Required: List of users to populate the image with"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "type": "array",
+          "description": "Required: List of groups to populate the image with"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageConfiguration": {
+      "properties": {
+        "contents": {
+          "$ref": "#/$defs/ImageContents",
+          "description": "Required: The apk packages in the container image"
+        },
+        "entrypoint": {
+          "$ref": "#/$defs/ImageEntrypoint",
+          "description": "Required: The entrypoint of the container image\n\nThis typically is the path to the executable to run. Since many of\nimages do not include a shell, this should be the full path\nto the executable."
+        },
+        "cmd": {
+          "type": "string",
+          "description": "Optional: The command of the container image\n\nThese are the additional arguments to pass to the entrypoint."
+        },
+        "stop-signal": {
+          "type": "string",
+          "description": "Optional: The stop signal used to suspend the execution of the containers process"
+        },
+        "work-dir": {
+          "type": "string",
+          "description": "Optional: The working directory of the container"
+        },
+        "accounts": {
+          "$ref": "#/$defs/ImageAccounts",
+          "description": "Optional: Account configuration for the container image"
+        },
+        "archs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Optional: List of CPU architectures to build the container image for\n\nThe list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Optional: Envionment variables to set in the container image"
+        },
+        "paths": {
+          "items": {
+            "$ref": "#/$defs/PathMutation"
+          },
+          "type": "array",
+          "description": "Optional: List of paths mutations"
+        },
+        "os-release": {
+          "$ref": "#/$defs/OSRelease",
+          "description": "Optional: The /etc/os-release configuration for the container image"
+        },
+        "vcs-url": {
+          "type": "string",
+          "description": "Optional: The link to version control system for this container's source code"
+        },
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Optional: Annotations to apply to the images manifests"
+        },
+        "include": {
+          "type": "string",
+          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration"
+        },
+        "options": {
+          "additionalProperties": {
+            "$ref": "#/$defs/BuildOption"
+          },
+          "type": "object",
+          "description": "Optional: A map of named build option deviations\n\nDeprecated: Use WithExtraPackages."
+        },
+        "volumes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Optional: A list of volumes to configure\n\nThis is _not_ the same as Paths, but refers to the OCI spec \"volumes\"\nfield used by some container runtimes (docker) to create volumes at\nruntime. For most use cases, this is not needed, but consider using this\nwhen the image requires special volume configuration at runtime for\nsupported container runtimes."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageContents": {
+      "properties": {
+        "repositories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of apk repositories to use for pulling packages"
+        },
+        "keyring": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of public keys used to verify the desired repositories"
+        },
+        "packages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of packages to include in the image"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageEntrypoint": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Optional: The type of entrypoint. Only \"service-bundle\" is supported."
+        },
+        "command": {
+          "type": "string",
+          "description": "Required: The command of the entrypoint"
+        },
+        "shell-fragment": {
+          "type": "string",
+          "description": "Optional: The shell fragment of the entrypoint command"
+        },
+        "services": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ListOption": {
+      "properties": {
+        "Add": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "Remove": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Add",
+        "Remove"
+      ],
+      "description": "ListOption describes an optional deviation to a list, for example, a list of packages."
+    },
+    "OSRelease": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional: The name of the OS"
+        },
+        "id": {
+          "type": "string",
+          "description": "Optional: The unique identifier for the OS"
+        },
+        "version-id": {
+          "type": "string",
+          "description": "Optional: The unique identifier for the version of the OS"
+        },
+        "pretty-name": {
+          "type": "string",
+          "description": "Optional: The human readable description of the OS"
+        },
+        "home-url": {
+          "type": "string",
+          "description": "Optional: The URL of the homepage for the OS"
+        },
+        "bug-report-url": {
+          "type": "string",
+          "description": "Optional: The URL of the bug reporting website for the OS"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "PathMutation": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "The target path to mutate"
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of mutation to perform\n\nThis can be one of: directory, empty-file, hardlink, symlink, permissions"
+        },
+        "uid": {
+          "type": "integer",
+          "description": "The mutation's desired user ID"
+        },
+        "gid": {
+          "type": "integer",
+          "description": "The mutation's desired group ID"
+        },
+        "permissions": {
+          "type": "integer",
+          "description": "The permission bits for the path"
+        },
+        "source": {
+          "type": "string",
+          "description": "The source path to mutate"
+        },
+        "recursive": {
+          "type": "boolean",
+          "description": "Toggle whether to mutate recursively"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "User": {
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Required: The name of the user"
+        },
+        "uid": {
+          "type": "integer",
+          "description": "Required: The user ID"
+        },
+        "gid": {
+          "type": "integer",
+          "description": "Required: The user's group ID"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  }
+}
