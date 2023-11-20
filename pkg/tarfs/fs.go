@@ -491,7 +491,14 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 	}
 
 	sameOrigin := got.pkg.Origin == want.pkg.Origin
-	replaces := got.pkg.Name == want.pkg.Replaces
+
+	replaces := false
+	for _, replace := range want.pkg.Replaces {
+		if got.pkg.Name == replace {
+			replaces = true
+			break
+		}
+	}
 
 	// At this point we know the files conflict, but it's okay if this file replaces that one.
 	if !sameOrigin && !replaces {
