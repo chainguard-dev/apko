@@ -85,6 +85,14 @@ ko-resolve:  ## Build the image generate the Task YAML
 		--recursive --filename config/ > task.yaml
 
 ##########
+# codegen
+##########
+
+.PHONY: generate
+generate: ## Generates jsonschema for melange types.
+	go generate ./...
+
+##########
 # Build
 ##########
 
