@@ -99,7 +99,7 @@ func TestTarFS(t *testing.T) {
 		t.Errorf("wanted conflicting checksum err, got nil")
 	}
 
-	pkg.Replaces = pkg.Name
+	pkg.Replaces = []string{pkg.Name}
 	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err != nil {
 		t.Errorf("pkg replaces file, got %v", err)
 	}
