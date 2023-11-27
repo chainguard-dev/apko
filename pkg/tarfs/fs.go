@@ -490,8 +490,14 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 		return nil
 	}
 
-	sameOrigin := got.pkg.Origin == want.pkg.Origin
+	// If the existing file's package replaces the package we want to install, we don't need to write this file.
+	for _, replace := range got.pkg.Replaces {
+		if want.pkg.Name == replace {
+			return nil
+		}
+	}
 
+	// Otherwise, determine if the package we are installing replaces the existing package.
 	replaces := false
 	for _, replace := range want.pkg.Replaces {
 		if got.pkg.Name == replace {
@@ -499,6 +505,9 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 			break
 		}
 	}
+
+	// Or if they're from the same origin.
+	sameOrigin := got.pkg.Origin == want.pkg.Origin
 
 	// At this point we know the files conflict, but it's okay if this file replaces that one.
 	if !sameOrigin && !replaces {
