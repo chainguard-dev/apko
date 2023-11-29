@@ -1,3 +1,19 @@
+# Changes from 0.11.3 to 0.12.0
+
+* Fix installing packages with multiple replaces.
+* Fix files paths within SBOMs.
+
+# Changes from 0.11.2 to 0.11.3
+
+* Build with go 1.21.
+* Remove unused flags:
+  * `--use-docker-mediatypes`
+  * `--package-version-tag`
+  * `--package-version-tag-stem`
+  * `--package-version-tag-prefix`
+  * `--tag-suffix`
+  * `--stage-tags`
+
 # Changes from 0.11.1 to 0.11.2
 
 * Fix a bug in version selection.
