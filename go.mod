@@ -3,7 +3,7 @@ module chainguard.dev/apko
 go 1.21
 
 require (
-	github.com/chainguard-dev/go-apk v0.0.0-20231120201550-7b08e8f3b0fc
+	github.com/chainguard-dev/go-apk v0.0.0-20231218235333-2acefacd5846
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.10.0
 	github.com/google/go-cmp v0.6.0
@@ -111,5 +111,3 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
 )
-
-replace github.com/chainguard-dev/go-apk => github.com/chainguard-dev/go-apk v0.0.0-20231212142345-85b9cc9d5ea2
