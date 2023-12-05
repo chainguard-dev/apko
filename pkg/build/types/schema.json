@@ -81,7 +81,14 @@
     "ImageAccounts": {
       "properties": {
         "run-as": {
-          "type": "string",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "int"
+            }
+          ],
           "description": "Required: The user to run the container as. This can be a username or UID."
         },
         "users": {
