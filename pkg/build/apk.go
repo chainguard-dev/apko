@@ -15,6 +15,7 @@
 package build
 
 import (
+	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/lock"
 	"context"
 	"fmt"
@@ -55,7 +56,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			packages = pinWorldToResolvedVersions(packages, lock)
+			packages = pinWorldToResolvedVersions(packages, bc.o.Arch, lock)
 		}
 		if err := bc.apk.SetWorld(packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
@@ -70,16 +71,18 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	return nil
 }
 
-func pinWorldToResolvedVersions(packages []string, lock lock.Lock) []string {
+func pinWorldToResolvedVersions(packages []string, arch types.Architecture, lock lock.Lock) []string {
 	package2version := make(map[string]string)
 	for _, p := range lock.Contents.Packages {
-		if p.Architecture == "aarch64" {
+		if p.Architecture == arch.ToAPK() {
 			package2version[p.Name] = p.Version
 		}
 	}
 	lockedPackages := make([]string, len(packages))
 	for _, p := range packages {
-		lockedPackages = append(lockedPackages, p+"="+package2version[p])
+		// Seems that the redundant packages are not a problem for resolver
+		//lockedPackages = append(lockedPackages, p+"="+package2version[p])
+		lockedPackages = append(lockedPackages, p)
 	}
 	for pn, v := range package2version {
 		lockedPackages = append(lockedPackages, pn+"="+v)
