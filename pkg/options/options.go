@@ -45,6 +45,7 @@ type Options struct {
 	Local                   bool               `json:"local,omitempty"`
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
+	ResolvedFile            string             `json:"resolvedFile,omitempty"`
 
 	Log log.Logger
 }

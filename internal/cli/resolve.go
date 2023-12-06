@@ -15,9 +15,9 @@
 package cli
 
 import (
+	pkglock "chainguard.dev/apko/pkg/lock"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,42 +32,6 @@ import (
 	"chainguard.dev/apko/pkg/iocomb"
 	"chainguard.dev/apko/pkg/log"
 )
-
-type lock struct {
-	Version  string       `json:"version"`
-	Contents lockContents `json:"contents"`
-}
-
-type lockContents struct {
-	Keyrings     []lockKeyring `json:"keyring"`
-	Repositories []lockRepo    `json:"repositories"`
-	Packages     []lockPkg     `json:"packages"`
-}
-
-type lockPkg struct {
-	Name         string                  `json:"name"`
-	URL          string                  `json:"url"`
-	Version      string                  `json:"version"`
-	Architecture string                  `json:"architecture"`
-	Signature    lockPkgRangeAndChecksum `json:"signature"`
-	Control      lockPkgRangeAndChecksum `json:"control"`
-	Data         lockPkgRangeAndChecksum `json:"data"`
-}
-type lockPkgRangeAndChecksum struct {
-	Range    string `json:"range"`
-	Checksum string `json:"checksum"`
-}
-
-type lockRepo struct {
-	Name         string `json:"name"`
-	URL          string `json:"url"`
-	Architecture string `json:"architecture"`
-}
-
-type lockKeyring struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-}
 
 func resolve() *cobra.Command {
 	var extraKeys []string
@@ -164,19 +128,19 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 	// we have the directory defined and created by invoking the function early.
 	defer os.RemoveAll(o.TempDir())
 
-	lock := lock{
+	lock := pkglock.Lock{
 		Version: "v1",
-		Contents: lockContents{
-			Packages:     []lockPkg{},
-			Repositories: []lockRepo{},
-			Keyrings:     []lockKeyring{},
+		Contents: pkglock.LockContents{
+			Packages:     []pkglock.LockPkg{},
+			Repositories: []pkglock.LockRepo{},
+			Keyrings:     []pkglock.LockKeyring{},
 		},
 	}
 
 	repositories := map[string]bool{}
 
 	for _, keyring := range ic.Contents.Keyring {
-		lock.Contents.Keyrings = append(lock.Contents.Keyrings, lockKeyring{
+		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
 			Name: stripURLScheme(keyring),
 			URL:  keyring,
 		})
@@ -201,23 +165,23 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 		}
 
 		for _, rpkg := range resolvedPkgs {
-			lockPkg := lockPkg{
+			lockPkg := pkglock.LockPkg{
 				Name:         rpkg.Package.Name,
 				URL:          rpkg.Package.URL(),
 				Architecture: rpkg.Package.Arch,
 				Version:      rpkg.Package.Version,
-				Control: lockPkgRangeAndChecksum{
+				Control: pkglock.LockPkgRangeAndChecksum{
 					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize, rpkg.ControlSize-1),
 					Checksum: "sha1-" + base64.StdEncoding.EncodeToString(rpkg.ControlHash),
 				},
-				Data: lockPkgRangeAndChecksum{
+				Data: pkglock.LockPkgRangeAndChecksum{
 					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.ControlSize, rpkg.DataSize),
 					Checksum: "sha256-" + base64.StdEncoding.EncodeToString(rpkg.DataHash),
 				},
 			}
 
 			if rpkg.SignatureSize != 0 {
-				lockPkg.Signature = lockPkgRangeAndChecksum{
+				lockPkg.Signature = pkglock.LockPkgRangeAndChecksum{
 					Range:    fmt.Sprintf("bytes=0-%d", rpkg.SignatureSize-1),
 					Checksum: "sha1-" + base64.StdEncoding.EncodeToString(rpkg.SignatureHash),
 				}
@@ -226,7 +190,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
 
 			if _, ok := repositories[rpkg.Package.Repository().URI]; !ok {
-				lock.Contents.Repositories = append(lock.Contents.Repositories, lockRepo{
+				lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
 					Name:         stripURLScheme(rpkg.Package.Repository().URI),
 					URL:          rpkg.Package.Repository().IndexURI(),
 					Architecture: arch.ToAPK(),
@@ -235,13 +199,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 			}
 		}
 	}
-
-	jsonb, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshall json: %w", err)
-	}
-
-	return os.WriteFile(output, jsonb, os.ModePerm)
+	return lock.SaveToFile(output)
 }
 
 func stripURLScheme(url string) string {

@@ -15,6 +15,7 @@
 package build
 
 import (
+	"chainguard.dev/apko/pkg/lock"
 	"context"
 	"fmt"
 	"regexp"
@@ -49,6 +50,13 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
+		if bc.o.ResolvedFile != "" {
+			lock, err := lock.FromFile(bc.o.ResolvedFile)
+			if err != nil {
+				return err
+			}
+			packages = pinWorldToResolvedVersions(packages, lock)
+		}
 		if err := bc.apk.SetWorld(packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
@@ -60,6 +68,24 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func pinWorldToResolvedVersions(packages []string, lock lock.Lock) []string {
+	package2version := make(map[string]string)
+	for _, p := range lock.Contents.Packages {
+		if p.Architecture == "aarch64" {
+			package2version[p.Name] = p.Version
+		}
+	}
+	lockedPackages := make([]string, len(packages))
+	for _, p := range packages {
+		lockedPackages = append(lockedPackages, p+"="+package2version[p])
+	}
+	for pn, v := range package2version {
+		lockedPackages = append(lockedPackages, pn+"="+v)
+	}
+	fmt.Printf("Locked: %v", lockedPackages)
+	return lockedPackages
 }
 
 var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
