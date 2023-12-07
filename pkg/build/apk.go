@@ -15,8 +15,6 @@
 package build
 
 import (
-	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/lock"
 	"context"
 	"fmt"
 	"regexp"
@@ -51,13 +49,6 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
-		if bc.o.ResolvedFile != "" {
-			lock, err := lock.FromFile(bc.o.ResolvedFile)
-			if err != nil {
-				return err
-			}
-			packages = pinWorldToResolvedVersions(packages, bc.o.Arch, lock)
-		}
 		if err := bc.apk.SetWorld(packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
@@ -69,26 +60,6 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func pinWorldToResolvedVersions(packages []string, arch types.Architecture, lock lock.Lock) []string {
-	package2version := make(map[string]string)
-	for _, p := range lock.Contents.Packages {
-		if p.Architecture == arch.ToAPK() {
-			package2version[p.Name] = p.Version
-		}
-	}
-	lockedPackages := make([]string, len(packages))
-	for _, p := range packages {
-		// Seems that the redundant packages are not a problem for resolver
-		//lockedPackages = append(lockedPackages, p+"="+package2version[p])
-		lockedPackages = append(lockedPackages, p)
-	}
-	for pn, v := range package2version {
-		lockedPackages = append(lockedPackages, pn+"="+v)
-	}
-	fmt.Printf("Locked: %v", lockedPackages)
-	return lockedPackages
 }
 
 var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)

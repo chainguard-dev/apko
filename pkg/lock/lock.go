@@ -14,7 +14,8 @@ type Lock struct {
 type LockContents struct {
 	Keyrings     []LockKeyring `json:"keyring"`
 	Repositories []LockRepo    `json:"repositories"`
-	Packages     []LockPkg     `json:"packages"`
+	// Packages in order of installation -> for a single architecture.
+	Packages []LockPkg `json:"packages"`
 }
 
 type LockPkg struct {
@@ -25,6 +26,7 @@ type LockPkg struct {
 	Signature    LockPkgRangeAndChecksum `json:"signature"`
 	Control      LockPkgRangeAndChecksum `json:"control"`
 	Data         LockPkgRangeAndChecksum `json:"data"`
+	Checksum     string                  `jsin:"checksum"` // populated since Apko 0.12
 }
 type LockPkgRangeAndChecksum struct {
 	Range    string `json:"range"`

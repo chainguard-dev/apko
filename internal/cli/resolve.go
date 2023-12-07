@@ -178,6 +178,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.ControlSize, rpkg.DataSize),
 					Checksum: "sha256-" + base64.StdEncoding.EncodeToString(rpkg.DataHash),
 				},
+				Checksum: rpkg.Package.ChecksumString(),
 			}
 
 			if rpkg.SignatureSize != 0 {
