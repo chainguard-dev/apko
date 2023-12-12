@@ -15,7 +15,6 @@
 package cli
 
 import (
-	pkglock "chainguard.dev/apko/pkg/lock"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -30,6 +29,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/iocomb"
+	pkglock "chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/log"
 )
 

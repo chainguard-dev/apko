@@ -16,7 +16,6 @@ package build
 
 import (
 	"bufio"
-	"chainguard.dev/apko/pkg/lock"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -27,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 
 	gzip "github.com/klauspost/pgzip"

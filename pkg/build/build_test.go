@@ -15,12 +15,14 @@
 package build_test
 
 import (
-	"chainguard.dev/apko/pkg/build"
 	"context"
-	"github.com/chainguard-dev/go-apk/pkg/fs"
-	"github.com/stretchr/testify/require"
 	"path/filepath"
 	"testing"
+
+	"github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/build"
 )
 
 func TestBuildLayer(t *testing.T) {
