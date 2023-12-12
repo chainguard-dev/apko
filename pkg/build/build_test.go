@@ -52,12 +52,12 @@ func TestBuildImage(t *testing.T) {
 	require.Equal(t, installed[0].Version, "2023c-r0")
 }
 
-func TestBuildImageFromResolvedFile(t *testing.T) {
+func TestBuildImageFromLockFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
 		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithResolvedFile(filepath.Join("testdata", "tzdata.resolved.json")),
+		build.WithLockFile(filepath.Join("testdata", "tzdata.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -84,7 +84,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 
 	opts := []build.Option{
 		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithResolvedFile(filepath.Join("testdata", "tzdata.pre-0.11.resolved.json")),
+		build.WithLockFile(filepath.Join("testdata", "tzdata.pre-0.13.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -92,7 +92,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = bc.BuildImage(ctx)
-	require.Equal(t, "failed installation from resolved-file testdata/tzdata.pre-0.11.resolved.json: "+
-		"locked package tzdata has missing checksum (please regenerate the lock file (resolved-file) with Apko >=0.12)",
+	require.Equal(t, "failed installation from lockfile testdata/tzdata.pre-0.13.lock.json: "+
+		"locked package tzdata has missing checksum (please regenerate the lock file with Apko >=0.13)",
 		err.Error())
 }

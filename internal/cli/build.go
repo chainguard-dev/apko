@@ -57,7 +57,7 @@ func buildCmd() *cobra.Command {
 	var rawAnnotations []string
 	var cacheDir string
 	var offline bool
-	var resolvedFile string
+	var lockfile string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -122,7 +122,7 @@ bill of materials) describing the image contents.
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
 				build.WithCacheDir(cacheDir, offline),
-				build.WithResolvedFile(resolvedFile),
+				build.WithLockFile(lockfile),
 			)
 		},
 	}
@@ -143,7 +143,7 @@ bill of materials) describing the image contents.
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
-	cmd.Flags().StringVar(&resolvedFile, "resolved-file", "", "a path to .resolved.json file (e.g. produced by apko resolve) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 
 	return cmd
 }

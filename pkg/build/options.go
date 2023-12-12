@@ -202,9 +202,9 @@ func WithCacheDir(cacheDir string, offline bool) Option {
 	}
 }
 
-func WithResolvedFile(resolvedFile string) Option {
+func WithLockFile(lockFile string) Option {
 	return func(bc *Context) error {
-		bc.o.ResolvedFile = resolvedFile
+		bc.o.Lockfile = lockFile
 		return nil
 	}
 }

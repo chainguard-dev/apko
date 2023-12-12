@@ -117,14 +117,14 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
-	if bc.o.ResolvedFile != "" {
-		lock, err := lock.FromFile(bc.o.ResolvedFile)
+	if bc.o.Lockfile != "" {
+		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
-			return fmt.Errorf("failed to load resolved-file: %w", err)
+			return fmt.Errorf("failed to load lock-file: %w", err)
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
-			return fmt.Errorf("failed installation from resolved-file %s: %w", bc.o.ResolvedFile, err)
+			return fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
 		return bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
 	} else {

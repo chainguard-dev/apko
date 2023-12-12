@@ -26,7 +26,10 @@ type LockPkg struct {
 	Signature    LockPkgRangeAndChecksum `json:"signature"`
 	Control      LockPkgRangeAndChecksum `json:"control"`
 	Data         LockPkgRangeAndChecksum `json:"data"`
-	Checksum     string                  `jsin:"checksum"` // populated since Apko 0.12
+	// Checksum is APK-style: 'Q1' prefixed SHA1 hash of the second gzip stream (control stream) in the package.
+	// For data-consistency checks use Signature, Control & Data above.
+	// Populated since Apko 0.13.
+	Checksum string `json:"checksum"`
 }
 type LockPkgRangeAndChecksum struct {
 	Range    string `json:"range"`
@@ -44,21 +47,21 @@ type LockKeyring struct {
 	URL  string `json:"url"`
 }
 
-func FromFile(resolvedFile string) (Lock, error) {
-	payload, err := os.ReadFile(resolvedFile)
+func FromFile(lockFile string) (Lock, error) {
+	payload, err := os.ReadFile(lockFile)
 	if err != nil {
-		return Lock{}, fmt.Errorf("failed to load resolved-file: %w", err)
+		return Lock{}, fmt.Errorf("failed to load lockfile: %w", err)
 	}
 	var lock Lock
 	err = json.Unmarshal(payload, &lock)
 	return lock, err
 }
 
-func (lock Lock) SaveToFile(resolvedFile string) error {
+func (lock Lock) SaveToFile(lockFile string) error {
 	jsonb, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshall json: %w", err)
 	}
 
-	return os.WriteFile(resolvedFile, jsonb, os.ModePerm)
+	return os.WriteFile(lockFile, jsonb, os.ModePerm)
 }

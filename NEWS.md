@@ -1,3 +1,10 @@
+# Changes from 0.12.0 to 0.13.0
+
+* Add `apko build --lockfile` flag that makes the build use strict versions from the file
+* Add `apko lock`: https://github.com/chainguard-dev/apko/pull/979
+* Add per-package `checksum` field to the lockfile.
+* Deprecate `apko resolve` (please use `apko lock` instead).
+
 # Changes from 0.11.3 to 0.12.0
 
 * Fix installing packages with multiple replaces.

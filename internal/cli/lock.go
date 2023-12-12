@@ -33,7 +33,18 @@ import (
 	"chainguard.dev/apko/pkg/log"
 )
 
+func lock() *cobra.Command {
+	return lockInternal("lock", "lock.json", "")
+}
+
 func resolve() *cobra.Command {
+	return lockInternal(
+		"resolve",
+		"resolved.json",
+		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
+}
+
+func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
 	var archstrs []string
@@ -44,14 +55,15 @@ func resolve() *cobra.Command {
 	var quietEnabled bool
 
 	cmd := &cobra.Command{
-		Use: "resolve",
+		Use: cmdName,
 		// hidden for now until we get some feedback on it.
-		Hidden:  true,
-		Example: `apko resolve <config.yaml>`,
-		Args:    cobra.MinimumNArgs(1),
+		Hidden:     true,
+		Example:    fmt.Sprintf(`apko %v <config.yaml>`, cmdName),
+		Args:       cobra.MinimumNArgs(1),
+		Deprecated: deprecated,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output == "" {
-				output = fmt.Sprintf("%s.resolved.json", strings.TrimSuffix(args[0], filepath.Ext(args[0])))
+				output = fmt.Sprintf("%s."+extension, strings.TrimSuffix(args[0], filepath.Ext(args[0])))
 			}
 
 			if len(logPolicy) == 0 {

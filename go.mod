@@ -112,6 +112,4 @@ require (
 	gotest.tools/v3 v3.5.1 // indirect
 )
 
-replace (
-	github.com/chainguard-dev/go-apk => ../go-apk
-)
+replace github.com/chainguard-dev/go-apk => github.com/chainguard-dev/go-apk v0.0.0-20231212142345-85b9cc9d5ea2
