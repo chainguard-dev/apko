@@ -104,7 +104,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:2cbdb42a7b4160cdcd44836a583fa23985532e1641f026365f653006545ad90c"
+	swant := "sha256:80f7f856106465999bbd2d6d4eb3772120a2158e3f1726a166072348369ed7ad"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
