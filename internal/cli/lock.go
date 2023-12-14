@@ -18,11 +18,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
