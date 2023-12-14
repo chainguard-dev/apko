@@ -475,7 +475,8 @@ type ExternalDocumentRef struct {
 type CreationInfo struct {
 	Created            string   `json:"created"` // Date
 	Creators           []string `json:"creators"`
-	LicenseListVersion string   `json:"licenseListVersion"`
+	LicenseListVersion string   `json:"licenseListVersion,omitempty"`
+	CreatorComment     string   `json:"comment,omitempty"`
 }
 
 type File struct {
@@ -552,6 +553,11 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				"Organization: Chainguard, Inc",
 			},
 			LicenseListVersion: "3.16",
+			CreatorComment: `This SPDX document describes a multi-architecture container image index, containing one or more architecture-specific images.
+
+The packages described in this document refer to the images contained in the index, and not the contents of the images themselves.
+
+You can find the documents for the individual images in the index, containing the packages present in those images, by consulting the "VARIANT_OF" relationships in this document.`,
 		},
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
@@ -602,22 +608,18 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			FilesAnalyzed:    false,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
-			Checksums: []Checksum{
-				{
-					Algorithm: "SHA256",
-					Value:     info.Digest.DeepCopy().Hex,
-				},
-			},
-			ExternalRefs: []ExternalRef{
-				{
-					Category: ExtRefPackageManager,
-					Type:     ExtRefTypePurl,
-					Locator: purl.NewPackageURL(
-						purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
-						nil, "",
-					).String() + "?" + opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i]).String(),
-				},
-			},
+			Checksums: []Checksum{{
+				Algorithm: "SHA256",
+				Value:     info.Digest.DeepCopy().Hex,
+			}},
+			ExternalRefs: []ExternalRef{{
+				Category: ExtRefPackageManager,
+				Type:     ExtRefTypePurl,
+				Locator: purl.NewPackageURL(
+					purl.TypeOCI, "", opts.ImagePurlName(), info.Digest.DeepCopy().String(),
+					nil, "",
+				).String() + "?" + opts.ArchImagePurlQualifiers(&opts.ImageInfo.Images[i]).String(),
+			}},
 		})
 
 		doc.Relationships = append(doc.Relationships, Relationship{
