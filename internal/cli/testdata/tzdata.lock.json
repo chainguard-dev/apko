@@ -1,0 +1,63 @@
+{
+  "version": "v1",
+  "contents": {
+    "keyring": [
+      {
+        "name": "./testdata/local-melange.rsa.pub",
+        "url": "./testdata/local-melange.rsa.pub"
+      }
+    ],
+    "repositories": [
+      {
+        "name": "./testdata/packages/x86_64",
+        "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "./testdata/packages/aarch64",
+        "url": "./testdata/packages/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      }
+    ],
+    "packages": [
+      {
+        "name": "tzdata",
+        "url": "./testdata/packages/x86_64/tzdata-2023c-r0.apk",
+        "version": "2023c-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-661",
+          "checksum": "sha1-NwAMTTlFOtUpTD4PM7oDeqXJPRs="
+        },
+        "control": {
+          "range": "bytes=662-1001",
+          "checksum": "sha1-cqHqtzyUwOe6vmn181m/+Pj7pZM="
+        },
+        "data": {
+          "range": "bytes=1002-2795958",
+          "checksum": "sha256-uVo7RxyT+bPhxGzGvFNPKr8Mr9SLddFnQFNKbuejiJU="
+        },
+        "checksum": "Q1cqHqtzyUwOe6vmn181m/+Pj7pZM="
+      },
+      {
+        "name": "tzdata",
+        "url": "./testdata/packages/aarch64/tzdata-2023c-r0.apk",
+        "version": "2023c-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-657",
+          "checksum": "sha1-75tAuh0hlenwZz+W5deciQe+MXM="
+        },
+        "control": {
+          "range": "bytes=658-994",
+          "checksum": "sha1-FQRnkOaKJESC0rbxFxhxKeYYA2Y="
+        },
+        "data": {
+          "range": "bytes=995-2839843",
+          "checksum": "sha256-UQsYq5Qhh1prIi/AtAD4TwglbdmfKCtkjAsdrCchZ4Y="
+        },
+        "checksum": "Q1FQRnkOaKJESC0rbxFxhxKeYYA2Y="
+      }
+    ]
+  }
+}

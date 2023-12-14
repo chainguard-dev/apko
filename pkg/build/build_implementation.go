@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 
 	gzip "github.com/klauspost/pgzip"
@@ -116,8 +117,23 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
-	if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
-		return fmt.Errorf("installing apk packages: %w", err)
+	if bc.o.Lockfile != "" {
+		lock, err := lock.FromFile(bc.o.Lockfile)
+		if err != nil {
+			return fmt.Errorf("failed to load lock-file: %w", err)
+		}
+		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
+		if err != nil {
+			return fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
+		}
+		err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
+		if err != nil {
+			return fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
+		}
+	} else {
+		if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
+			return fmt.Errorf("installing apk packages: %w", err)
+		}
 	}
 
 	if err := mutateAccounts(bc.fs, &bc.o, &bc.ic); err != nil {

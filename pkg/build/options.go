@@ -201,3 +201,10 @@ func WithCacheDir(cacheDir string, offline bool) Option {
 		return nil
 	}
 }
+
+func WithLockFile(lockFile string) Option {
+	return func(bc *Context) error {
+		bc.o.Lockfile = lockFile
+		return nil
+	}
+}
