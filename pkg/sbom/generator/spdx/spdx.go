@@ -557,7 +557,10 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 
 The packages described in this document refer to the images contained in the index, and not the contents of the images themselves.
 
-You can find the documents for the individual images in the index, containing the packages present in those images, by consulting the "VARIANT_OF" relationships in this document.`,
+You can find the documents for the individual images in the index, containing the packages present in those images, by consulting the "VARIANT_OF" relationships in this document.
+
+For more info refer to https://github.com/spdx/spdx-examples/blob/master/semantics/oci-multiarch-index.md
+`,
 		},
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
