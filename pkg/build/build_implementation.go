@@ -124,9 +124,12 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
+			return fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
+		}
+		err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
+		if err != nil {
 			return fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-		return bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
 	} else {
 		if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
 			return fmt.Errorf("installing apk packages: %w", err)

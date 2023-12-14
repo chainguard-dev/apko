@@ -94,7 +94,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = bc.BuildImage(ctx)
-	require.Equal(t, "failed installation from lockfile testdata/tzdata.pre-0.13.lock.json: "+
+	require.Equal(t, "failed getting packages for install from lockfile testdata/tzdata.pre-0.13.lock.json: "+
 		"locked package tzdata has missing checksum (please regenerate the lock file with Apko >=0.13)",
 		err.Error())
 }
