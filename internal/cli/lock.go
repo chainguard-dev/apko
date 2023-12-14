@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,8 +150,6 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 		},
 	}
 
-	repositories := map[string]bool{}
-
 	for _, keyring := range ic.Contents.Keyring {
 		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
 			Name: stripURLScheme(keyring),
@@ -201,15 +200,14 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 			}
 
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
-
-			if _, ok := repositories[rpkg.Package.Repository().URI]; !ok {
-				lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
-					Name:         stripURLScheme(rpkg.Package.Repository().URI),
-					URL:          rpkg.Package.Repository().IndexURI(),
-					Architecture: arch.ToAPK(),
-				})
-				repositories[rpkg.Package.Repository().URI] = true
-			}
+		}
+		for _, repositoryURI := range ic.Contents.Repositories {
+			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+			lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
+				Name:         stripURLScheme(repo.URI),
+				URL:          repo.IndexURI(),
+				Architecture: arch.ToAPK(),
+			})
 		}
 	}
 	return lock.SaveToFile(output)
