@@ -1,0 +1,100 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom-sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "1970-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-sha256-685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-sha256-685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+      "name": "sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+      "versionInfo": "sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+      "filesAnalyzed": false,
+      "description": "Multi-arch image index",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Alpine Linux",
+      "sourceInfo": "Generated at image build time by apko",
+      "primaryPackagePurpose": "CONTAINER",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/golden@sha256%3A685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168?mediaType=application%2Fvnd.oci.image.index.v1%2Bjson",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sha256-e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926",
+      "name": "sha256:e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926",
+      "versionInfo": "sha256:e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926",
+      "filesAnalyzed": false,
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Alpine Linux",
+      "primaryPackagePurpose": "CONTAINER",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/golden@sha256%3Ae42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "name": "sha256:7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "versionInfo": "sha256:7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "filesAnalyzed": false,
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Alpine Linux",
+      "primaryPackagePurpose": "CONTAINER",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/golden@sha256%3A7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4?arch=arm64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+      "relationshipType": "VARIANT_OF",
+      "relatedSpdxElement": "SPDXRef-Package-sha256-e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168",
+      "relationshipType": "VARIANT_OF",
+      "relatedSpdxElement": "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4"
+    }
+  ]
+}
