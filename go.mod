@@ -26,7 +26,7 @@ require (
 	golang.org/x/sys v0.15.0
 	golang.org/x/term v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.28.3
+	k8s.io/apimachinery v0.29.0
 	sigs.k8s.io/release-utils v0.7.7
 )
 
