@@ -139,7 +139,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p); err != nil {
+		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -209,7 +209,7 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package) error {
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
 	path, err := locateApkSBOM(sx.fs, p)
 	if err != nil {
@@ -256,7 +256,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo); err != nil {
+	if err := copySBOMElements(internalDoc, doc, todo, ipkg); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
@@ -275,7 +275,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	return nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage) error {
 	// Walk the graph looking for things to copy.
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
@@ -284,6 +284,25 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 				todo[r.Related] = struct{}{}
 			}
 		}
+	}
+
+	// The APK SBOMs we are copying Files from may have duplicate file entries.
+	//
+	// A file can be overwritten if:
+	//  1. one package replaces another package
+	//  2. the packages are in the same origin
+	//
+	// Files with the same checksum are also skipped on install since they don't conflict.
+	//
+	// We need to reconcile these files that were overwritten or omitted to avoid having
+	// conflicting entries (different checksums) for the same file in our image SBOM.
+	// To do this, we consult /lib/apk/db/installed to know which package's file "won".
+	// Here, we create a set of the files that are owned by this package and only include
+	//
+	// those when copying from sourceDoc.Files.
+	ownedFiles := map[string]struct{}{}
+	for _, hdr := range ipkg.Files {
+		ownedFiles[hdr.Name] = struct{}{}
 	}
 
 	// Now copy everything over.
@@ -297,12 +316,19 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	}
 
 	for _, f := range sourceDoc.Files {
-		if _, ok := todo[f.ID]; ok {
-			f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
-
-			targetDoc.Files = append(targetDoc.Files, f)
-			done[f.ID] = struct{}{}
+		if _, ok := todo[f.ID]; !ok {
+			continue
 		}
+
+		done[f.ID] = struct{}{}
+
+		if _, ok := ownedFiles[f.Name]; !ok {
+			continue
+		}
+
+		f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
+
+		targetDoc.Files = append(targetDoc.Files, f)
 	}
 
 	for _, r := range sourceDoc.Relationships {
@@ -390,7 +416,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 }
 
 // apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.Package) Package {
+func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Package {
 	return Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,

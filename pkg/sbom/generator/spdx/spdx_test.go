@@ -41,18 +41,20 @@ var testOpts = &options.Options{
 		Version: "3.0",
 	},
 	FileName: "sbom",
-	Packages: []*apk.Package{
+	Packages: []*apk.InstalledPackage{
 		{
-			Name:        "musl",
-			Version:     "1.2.2-r7",
-			Arch:        "x86_64",
-			Description: "the musl c library (libc) implementation",
-			License:     "MIT",
-			Origin:      "musl",
-			Maintainer:  "Pkg Author <user@domain.com>",
-			Checksum: []byte{
-				0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
-				0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
+			Package: apk.Package{
+				Name:        "musl",
+				Version:     "1.2.2-r7",
+				Arch:        "x86_64",
+				Description: "the musl c library (libc) implementation",
+				License:     "MIT",
+				Origin:      "musl",
+				Maintainer:  "Pkg Author <user@domain.com>",
+				Checksum: []byte{
+					0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
+					0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
+				},
 			},
 		},
 	},
