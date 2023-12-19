@@ -80,14 +80,14 @@ func TestTarFS(t *testing.T) {
 	}
 	file.Typeflag = tar.TypeReg
 
-	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err == nil {
+	if _, err := tfs.WriteHeader(*file, tfs, &pkg.Package); err == nil {
 		t.Errorf("wanted missing checksum err, got nil")
 	}
 
 	file.PAXRecords = map[string]string{
 		"APK-TOOLS.checksum.SHA1": "Q1v+13wxZjoZUgI11oT2c7+ZUPjgw=",
 	}
-	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err != nil {
+	if _, err := tfs.WriteHeader(*file, tfs, &pkg.Package); err != nil {
 		t.Errorf("matching checksum should be skipped, got %v", err)
 	}
 
@@ -95,12 +95,12 @@ func TestTarFS(t *testing.T) {
 		"APK-TOOLS.checksum.SHA1": "Q1v+12wxZjoZUgI11oT2c7+ZUPjgw=",
 	}
 	pkg.Origin += "-different"
-	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err == nil {
+	if _, err := tfs.WriteHeader(*file, tfs, &pkg.Package); err == nil {
 		t.Errorf("wanted conflicting checksum err, got nil")
 	}
 
 	pkg.Replaces = []string{pkg.Name}
-	if err := tfs.WriteHeader(*file, tfs, &pkg.Package); err != nil {
+	if _, err := tfs.WriteHeader(*file, tfs, &pkg.Package); err != nil {
 		t.Errorf("pkg replaces file, got %v", err)
 	}
 }
