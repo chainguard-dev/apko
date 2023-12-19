@@ -1,0 +1,174 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom-sha256:6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "1970-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4"
+  ],
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File--etc-os-release",
+      "fileName": "etc/os-release",
+      "licenseConcluded": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "2a1171b49b2e3d59abad728c7b0480736ff792eb"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "1877864cb20a2a48b27fbae1dd33d90918a56c7e24e503976d0ceb3ab5c9eecd"
+        },
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "2b2935e9103b1755bf0e4028528accd9f082548180e9e70d9a15383005603ce314ca89c8280a98dc9cc429c6bfe3596c0c6faaa7f6dc9a4d195ce3f560014876"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File--etc-os-release",
+      "fileName": "etc/os-release",
+      "licenseConcluded": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "ca5e527bbb8a5cc9c4c2d2b4e29618d8ca3be5f8"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "53db9a78bf280b687690cdda8e275157713d725aaa54fe662f3bcf2f51eea457"
+        },
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "ab0cf3e8797ea0e989960f40808333150b4c1ee2fa056b1cc271a98da0e1e8638bbaf5e89aad91436fb3b994a74b1886714df6b153125e712b08d3eaacd24dd5"
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "name": "sha256:7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "versionInfo": "sha256:7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "filesAnalyzed": false,
+      "description": "apko container image",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Replaces",
+      "primaryPackagePurpose": "CONTAINER",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/golden@sha256%3A7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4?arch=arm64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
+      "name": "sha256:6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
+      "versionInfo": "1.0.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Replaces",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/golden@sha256%3A6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d?arch=arm64\u0026mediaType=application%2Fvnd.oci.image.layer.v1.tar%2Bgzip\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
+      "name": "pretend-baselayout",
+      "versionInfo": "1.0.0-r0",
+      "filesAnalyzed": true,
+      "hasFiles": [
+        "SPDXRef-File--etc-os-release"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Unknown",
+      "copyrightText": "\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:apk/unknown/pretend-baselayout@1.0.0-r0?arch=aarch64",
+          "referenceType": "purl"
+        }
+      ],
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "8058dd7b970804f7b4a4f6e10374b4d02a5a01f3"
+      }
+    },
+    {
+      "SPDXID": "SPDXRef-Package-replayout-1.0.0-r0",
+      "name": "replayout",
+      "versionInfo": "1.0.0-r0",
+      "filesAnalyzed": true,
+      "hasFiles": [
+        "SPDXRef-File--etc-os-release"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Unknown",
+      "copyrightText": "\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:apk/unknown/replayout@1.0.0-r0?arch=aarch64",
+          "referenceType": "purl"
+        }
+      ],
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "d70ccb53a479f44c7ac6f023492b3520f23c21b3"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
+    }
+  ]
+}
