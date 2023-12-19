@@ -1,0 +1,29 @@
+package:
+  name: replayout
+  version: 1.0.0
+  epoch: 0
+  description: "replacement baselayout"
+  copyright:
+    - license: MIT
+  dependencies:
+    replaces:
+      - pretend-baselayout
+    runtime:
+      - pretend-baselayout
+
+environment:
+  contents:
+    packages:
+      - busybox
+
+pipeline:
+  - name: Generate /etc/os-release
+    runs: |
+      mkdir -p ${{targets.destdir}}/etc
+      cat >${{targets.destdir}}/etc/os-release <<EOF
+      ID=replaces
+      NAME="Replaces"
+      PRETTY_NAME="Replaces"
+      VERSION_ID="${{package.version}}"
+      HOME_URL="https://example.com/"
+      EOF

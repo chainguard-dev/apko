@@ -1,0 +1,101 @@
+{
+  "version": "v1",
+  "contents": {
+    "keyring": [
+      {
+        "name": "./testdata/melange.rsa.pub",
+        "url": "./testdata/melange.rsa.pub"
+      }
+    ],
+    "repositories": [
+      {
+        "name": "./testdata/packages/x86_64",
+        "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "./testdata/packages/aarch64",
+        "url": "./testdata/packages/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      }
+    ],
+    "packages": [
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/x86_64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-684",
+          "checksum": "sha1-e4mtQNHHROPVjqH3vNZUtKTu5Uc="
+        },
+        "control": {
+          "range": "bytes=685-964",
+          "checksum": "sha1-cs+Hlyu5sY+1mmwKPedcRWj8E24="
+        },
+        "data": {
+          "range": "bytes=965-2899",
+          "checksum": "sha256-6Gbikm5tHIqetbTVz/wPcmtCcrO17ed1vPM6xuR0IrU="
+        },
+        "checksum": "Q1cs+Hlyu5sY+1mmwKPedcRWj8E24="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/x86_64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-684",
+          "checksum": "sha1-UCaIAliqYaIrol8/H5PAi8J5ihg="
+        },
+        "control": {
+          "range": "bytes=685-974",
+          "checksum": "sha1-ADqt8AXOdbDPVa9UeGNJngcURrk="
+        },
+        "data": {
+          "range": "bytes=975-2848",
+          "checksum": "sha256-irIVeq+6d/ZEIg59H1sjgVycwhfmwYwD79+Gv5DJXb0="
+        },
+        "checksum": "Q1ADqt8AXOdbDPVa9UeGNJngcURrk="
+      },
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/aarch64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-683",
+          "checksum": "sha1-HFPvVMM/+d7Rm+XbuxpEyWM4wR4="
+        },
+        "control": {
+          "range": "bytes=684-961",
+          "checksum": "sha1-IhHX8PA1MiPcnOa5ig/Wjr/qhbU="
+        },
+        "data": {
+          "range": "bytes=962-2900",
+          "checksum": "sha256-HxWjXtCvMsSYOmhE5OUPz9KQ4kpm0Ywg17OzSf3Ikl4="
+        },
+        "checksum": "Q1IhHX8PA1MiPcnOa5ig/Wjr/qhbU="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/aarch64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-688",
+          "checksum": "sha1-1N7VDS5GSkkT4bzQ5ZJ5VzWiR6w="
+        },
+        "control": {
+          "range": "bytes=689-977",
+          "checksum": "sha1-twZgE0XMokZ89rlCxtGjp+XgtIc="
+        },
+        "data": {
+          "range": "bytes=978-2849",
+          "checksum": "sha256-Mkciu4YKl5ibdvTTg7BQOBSN2xVT1GC5VBZ3/D4qz24="
+        },
+        "checksum": "Q1twZgE0XMokZ89rlCxtGjp+XgtIc="
+      }
+    ]
+  }
+}

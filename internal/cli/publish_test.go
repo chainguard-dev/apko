@@ -57,7 +57,7 @@ func TestPublish(t *testing.T) {
 	st := &sentinel{s.Client().Transport}
 	dst := fmt.Sprintf("%s/test/publish", u.Host)
 
-	config := filepath.Join("testdata", "tzdata.yaml")
+	config := filepath.Join("testdata", "apko.yaml")
 
 	outputRefs := ""
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
@@ -86,7 +86,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:add006b981a4421349eb1a0cb50044d2d7589ed2b3cfbbe2e7c30f005f79438f"
+	want := "sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168"
 	require.Equal(t, want, digest.String())
 
 	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
@@ -104,7 +104,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:2cbdb42a7b4160cdcd44836a583fa23985532e1641f026365f653006545ad90c"
+	swant := "sha256:89c0c452eab526bebac6d4e4ed8c14a3f9bfdf1e828438add5276a73fb657ae1"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
@@ -113,8 +113,8 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:a6acf3531effec2dd296834096fccff905d73f6838d9f680419c9bfbedad42f7",
-		"sha256:91097a5a791914cf2456e540671d47d369ae980c5376844ae978e56c15e8957c",
+		"sha256:bef40bcaa24ff513c1add5e0133a663519081ed5fd770a67609089ebb1b4a5a3",
+		"sha256:c400175e8fb4d7b3e2eb0442b7991716b3f6a770539f5e0f9d47e52a426e5431",
 	}
 
 	for i, m := range im.Manifests {
