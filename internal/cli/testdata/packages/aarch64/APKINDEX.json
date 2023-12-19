@@ -3,24 +3,50 @@
   "Description": "",
   "Packages": [
     {
-      "Name": "tzdata",
-      "Version": "2023c-r0",
+      "Name": "pretend-baselayout",
+      "Version": "1.0.0-r0",
       "Arch": "aarch64",
-      "Description": "Timezone data provided by IANA",
-      "License": "Public-Domain",
-      "Origin": "tzdata",
+      "Description": "replacement baselayout",
+      "License": "MIT",
+      "Origin": "pretend-baselayout",
       "Maintainer": "",
       "URL": "",
-      "Checksum": "FQRnkOaKJESC0rbxFxhxKeYYA2Y=",
+      "Checksum": "IhHX8PA1MiPcnOa5ig/Wjr/qhbU=",
       "Dependencies": null,
       "Provides": null,
       "InstallIf": null,
-      "Size": 537743,
-      "InstalledSize": 2839843,
+      "Size": 2328,
+      "InstalledSize": 2900,
       "ProviderPriority": 0,
-      "BuildTime": "2023-04-14T22:26:16Z",
-      "RepoCommit": "c2d64c74cb3d3cef89f62bcaadb1947413a40f01",
-      "Replaces": ""
+      "BuildTime": "1970-01-01T00:00:00Z",
+      "BuildDate": 0,
+      "RepoCommit": "",
+      "Replaces": null
+    },
+    {
+      "Name": "replayout",
+      "Version": "1.0.0-r0",
+      "Arch": "aarch64",
+      "Description": "replacement baselayout",
+      "License": "MIT",
+      "Origin": "replayout",
+      "Maintainer": "",
+      "URL": "",
+      "Checksum": "twZgE0XMokZ89rlCxtGjp+XgtIc=",
+      "Dependencies": [
+        "pretend-baselayout"
+      ],
+      "Provides": null,
+      "InstallIf": null,
+      "Size": 2339,
+      "InstalledSize": 2849,
+      "ProviderPriority": 0,
+      "BuildTime": "1970-01-01T00:00:00Z",
+      "BuildDate": 0,
+      "RepoCommit": "",
+      "Replaces": [
+        "pretend-baselayout"
+      ]
     }
   ]
 }

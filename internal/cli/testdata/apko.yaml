@@ -1,10 +1,10 @@
 contents:
   keyring:
-    - ./testdata/local-melange.rsa.pub
+    - ./testdata/melange.rsa.pub
   repositories:
     - ./testdata/packages
   packages:
-    - tzdata
+    - replayout
 
 entrypoint:
   command: /bin/sh -l

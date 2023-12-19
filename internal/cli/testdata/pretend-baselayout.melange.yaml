@@ -1,0 +1,24 @@
+package:
+  name: pretend-baselayout
+  version: 1.0.0
+  epoch: 0
+  description: "replacement baselayout"
+  copyright:
+    - license: MIT
+
+environment:
+  contents:
+    packages:
+      - busybox
+
+pipeline:
+  - name: Generate /etc/os-release
+    runs: |
+      mkdir -p ${{targets.destdir}}/etc
+      cat >${{targets.destdir}}/etc/os-release <<EOF
+      ID=pretend
+      NAME="Pretend"
+      PRETTY_NAME="Pretend"
+      VERSION_ID="${{package.version}}"
+      HOME_URL="https://example.com/"
+      EOF

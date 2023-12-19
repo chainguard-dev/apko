@@ -32,7 +32,7 @@ func TestBuildImage(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -49,17 +49,19 @@ func TestBuildImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Len(t, installed, 1)
-	require.Equal(t, installed[0].Name, "tzdata")
-	require.Equal(t, installed[0].Version, "2023c-r0")
+	require.Len(t, installed, 2)
+	require.Equal(t, installed[0].Name, "pretend-baselayout")
+	require.Equal(t, installed[0].Version, "1.0.0-r0")
+	require.Equal(t, installed[1].Name, "replayout")
+	require.Equal(t, installed[1].Version, "1.0.0-r0")
 }
 
 func TestBuildImageFromLockFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithLockFile(filepath.Join("testdata", "tzdata.lock.json")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithLockFile(filepath.Join("testdata", "apko.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -76,17 +78,19 @@ func TestBuildImageFromLockFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Len(t, installed, 1)
-	require.Equal(t, installed[0].Name, "tzdata")
-	require.Equal(t, installed[0].Version, "2023c-r0")
+	require.Len(t, installed, 2)
+	require.Equal(t, installed[0].Name, "pretend-baselayout")
+	require.Equal(t, installed[0].Version, "1.0.0-r0")
+	require.Equal(t, installed[1].Name, "replayout")
+	require.Equal(t, installed[1].Version, "1.0.0-r0")
 }
 
 func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithLockFile(filepath.Join("testdata", "tzdata.pre-0.13.lock.json")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithLockFile(filepath.Join("testdata", "apko.pre-0.13.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -94,7 +98,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = bc.BuildImage(ctx)
-	require.Equal(t, "failed getting packages for install from lockfile testdata/tzdata.pre-0.13.lock.json: "+
-		"locked package tzdata has missing checksum (please regenerate the lock file with Apko >=0.13)",
+	require.Equal(t, "failed getting packages for install from lockfile testdata/apko.pre-0.13.lock.json: "+
+		"locked package pretend-baselayout has missing checksum (please regenerate the lock file with Apko >=0.13)",
 		err.Error())
 }
