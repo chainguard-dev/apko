@@ -52,7 +52,7 @@ type Options struct {
 	Formats []string
 
 	// Packages is alist of packages which will be listed in the SBOM
-	Packages []*apk.Package
+	Packages []*apk.InstalledPackage
 }
 
 type PurlQualifiers map[string]string

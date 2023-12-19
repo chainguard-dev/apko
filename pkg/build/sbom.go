@@ -103,10 +103,11 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.OS.ID = info.ID
 	s.OS.Version = info.VersionID
 
-	pkgs, err := sbom.ReadPackageIndex(bc.fs)
+	pkgs, err := bc.apk.GetInstalled()
 	if err != nil {
 		return nil, fmt.Errorf("reading apk package index: %w", err)
 	}
+
 	s.Packages = pkgs
 
 	// Get the image digest

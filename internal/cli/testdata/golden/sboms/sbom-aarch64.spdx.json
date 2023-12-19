@@ -23,25 +23,6 @@
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "2a1171b49b2e3d59abad728c7b0480736ff792eb"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "1877864cb20a2a48b27fbae1dd33d90918a56c7e24e503976d0ceb3ab5c9eecd"
-        },
-        {
-          "algorithm": "SHA512",
-          "checksumValue": "2b2935e9103b1755bf0e4028528accd9f082548180e9e70d9a15383005603ce314ca89c8280a98dc9cc429c6bfe3596c0c6faaa7f6dc9a4d195ce3f560014876"
-        }
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File--etc-os-release",
-      "fileName": "etc/os-release",
-      "licenseConcluded": "NOASSERTION",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
           "checksumValue": "ca5e527bbb8a5cc9c4c2d2b4e29618d8ca3be5f8"
         },
         {
