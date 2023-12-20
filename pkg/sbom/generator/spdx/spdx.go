@@ -322,11 +322,11 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 
 		done[f.ID] = struct{}{}
 
+		f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
+
 		if _, ok := ownedFiles[f.Name]; !ok {
 			continue
 		}
-
-		f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
 
 		targetDoc.Files = append(targetDoc.Files, f)
 	}
