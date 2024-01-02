@@ -9,7 +9,6 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.16.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/pgzip v1.2.6
@@ -67,7 +66,6 @@ require (
 	github.com/go-openapi/validate v0.22.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
