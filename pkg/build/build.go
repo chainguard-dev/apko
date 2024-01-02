@@ -18,6 +18,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,8 +31,8 @@ import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/hashicorp/go-multierror"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -160,14 +161,24 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 }
 
 func (bc *Context) runAssertions() error {
-	var eg multierror.Group
+	errs := make([]error, len(bc.assertions))
 
-	for _, a := range bc.assertions {
-		a := a
-		eg.Go(func() error { return a(bc) })
+	var eg errgroup.Group
+	for i, a := range bc.assertions {
+		i, a := i, a
+		eg.Go(func() error {
+			errs[i] = a(bc)
+
+			// We don't want to fail early.
+			return nil
+		})
 	}
 
-	return eg.Wait().ErrorOrNil()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	return errors.Join(errs...)
 }
 
 // NewOptions evaluates the build.Options in the same way as New().
