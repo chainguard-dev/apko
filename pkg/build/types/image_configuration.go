@@ -97,19 +97,31 @@ func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error 
 	return nil
 }
 
+func (ic *ImageConfiguration) maybeLoadRemote(imageConfigPath string, logger log.Logger) error {
+	data, err := fetch.Fetch(imageConfigPath)
+	if err != nil {
+		return fmt.Errorf("unable to fetch remote include from git: %w", err)
+	}
+
+	return ic.parse(data, logger)
+}
+
 // Loads an image configuration given a configuration file path.
 func (ic *ImageConfiguration) Load(imageConfigPath string, logger log.Logger) error {
 	data, err := os.ReadFile(imageConfigPath)
-	if err == nil {
-		return ic.parse(data, logger)
-	}
-
-	// At this point, we're doing a remote config file.
-	logger.Warnf("remote configurations are an experimental feature and subject to change.")
-
-	data, err = fetch.Fetch(imageConfigPath)
 	if err != nil {
-		return fmt.Errorf("unable to fetch remote include from git: %w", err)
+		logger.Warnf("loading config file failed: %v", err)
+		logger.Warnf("attempting to load remote configuration")
+		logger.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
+
+		if err := ic.maybeLoadRemote(imageConfigPath, logger); err == nil {
+			return nil
+		} else {
+			// At this point, we're doing a remote config file.
+			logger.Warnf("loading remote configuration failed: %v", err)
+		}
+
+		return err
 	}
 
 	return ic.parse(data, logger)
