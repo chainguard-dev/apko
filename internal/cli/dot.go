@@ -43,6 +43,8 @@ func dotcmd() *cobra.Command {
 	var extraRepos []string
 	var archstrs []string
 	var web, span bool
+	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use:   "dot",
@@ -66,6 +68,7 @@ apko dot --web -S example.yaml
 				build.WithConfig(args[0]),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
+				build.WithCacheDir(cacheDir, offline),
 			)
 		},
 	}
@@ -75,6 +78,8 @@ apko dot --web -S example.yaml
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().BoolVarP(&span, "spanning-tree", "S", false, "does something like a spanning tree to avoid a huge number of edges")
 	cmd.Flags().BoolVar(&web, "web", false, "launch a browser")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	return cmd
 }
