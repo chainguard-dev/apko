@@ -19,10 +19,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
 
-	"chainguard.dev/apko/pkg/fetch"
 	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/vcs"
 )
@@ -42,49 +40,9 @@ func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger log.Log
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error {
+func (ic *ImageConfiguration) parse(configData []byte) error {
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
-	}
-
-	if ic.Include != "" {
-		logger.Printf("including %s for configuration", ic.Include)
-
-		baseIc := ImageConfiguration{}
-
-		if err := baseIc.Load(ic.Include, logger); err != nil {
-			return fmt.Errorf("failed to read include file: %w", err)
-		}
-
-		mergedIc := ImageConfiguration{}
-
-		// Copy the base configuration...
-		if err := copier.Copy(&mergedIc, &baseIc); err != nil {
-			return fmt.Errorf("failed to copy base configuration: %w", err)
-		}
-
-		// ... and then overlay the local configuration on top.
-		if err := copier.CopyWithOption(&mergedIc, ic, copier.Option{IgnoreEmpty: true}); err != nil {
-			return fmt.Errorf("failed to overlay specific configuration: %w", err)
-		}
-
-		// Now copy the merged configuration back to ic.
-		if err := copier.Copy(ic, &mergedIc); err != nil {
-			return fmt.Errorf("failed to copy merged configuration: %w", err)
-		}
-
-		// Merge packages, repositories and keyrings.
-		keyring := append([]string{}, baseIc.Contents.Keyring...)
-		keyring = append(keyring, mergedIc.Contents.Keyring...)
-		ic.Contents.Keyring = keyring
-
-		repos := append([]string{}, baseIc.Contents.Repositories...)
-		repos = append(repos, mergedIc.Contents.Repositories...)
-		ic.Contents.Repositories = repos
-
-		pkgs := append([]string{}, baseIc.Contents.Packages...)
-		pkgs = append(pkgs, mergedIc.Contents.Packages...)
-		ic.Contents.Packages = pkgs
 	}
 
 	repos := make([]string, 0, len(ic.Contents.Repositories))
@@ -97,34 +55,14 @@ func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error 
 	return nil
 }
 
-func (ic *ImageConfiguration) maybeLoadRemote(imageConfigPath string, logger log.Logger) error {
-	data, err := fetch.Fetch(imageConfigPath)
-	if err != nil {
-		return fmt.Errorf("unable to fetch remote include from git: %w", err)
-	}
-
-	return ic.parse(data, logger)
-}
-
 // Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(imageConfigPath string, logger log.Logger) error {
+func (ic *ImageConfiguration) Load(imageConfigPath string) error {
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
-		logger.Warnf("loading config file failed: %v", err)
-		logger.Warnf("attempting to load remote configuration")
-		logger.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
-
-		if err := ic.maybeLoadRemote(imageConfigPath, logger); err == nil {
-			return nil
-		} else {
-			// At this point, we're doing a remote config file.
-			logger.Warnf("loading remote configuration failed: %v", err)
-		}
-
 		return err
 	}
 
-	return ic.parse(data, logger)
+	return ic.parse(data)
 }
 
 // Do preflight checks and mutations on an image configuration.
