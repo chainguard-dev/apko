@@ -208,9 +208,6 @@ The `paths` element contains the following children:
  - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
  - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
 
-
-### Includes
-
 `include` defines a path to a configuration file which should be used as the base configuration,
 the configuration data is layered on top of this base configuration.  By default, there is no
 base configuration used.
