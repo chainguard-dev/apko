@@ -17,10 +17,13 @@ package build
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/chainguard-dev/clog"
 )
 
 type Assertion func(*Context) error
 
+// TODO(jason): Remove the optional parameter.
 func RequirePasswdFile(optional bool) Assertion {
 	return func(bc *Context) error {
 		path := filepath.Join("etc", "passwd")
@@ -28,7 +31,7 @@ func RequirePasswdFile(optional bool) Assertion {
 		_, err := bc.fs.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Logger().Warnf("%s is missing", path)
+				clog.DefaultLogger().Warnf("%s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/passwd file is missing: %w", err)
@@ -37,6 +40,7 @@ func RequirePasswdFile(optional bool) Assertion {
 	}
 }
 
+// TODO(jason): Remove the optional parameter.
 func RequireGroupFile(optional bool) Assertion {
 	return func(bc *Context) error {
 		path := filepath.Join("etc", "group")
@@ -44,7 +48,7 @@ func RequireGroupFile(optional bool) Assertion {
 		_, err := bc.fs.Stat(path)
 		if err != nil {
 			if optional {
-				bc.Logger().Warnf("%s is missing", path)
+				clog.DefaultLogger().Warnf("%s is missing", path)
 				return nil
 			}
 			return fmt.Errorf("/etc/group file is missing: %w", err)

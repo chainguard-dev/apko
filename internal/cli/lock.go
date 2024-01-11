@@ -18,10 +18,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
@@ -29,9 +31,7 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
 	pkglock "chainguard.dev/apko/pkg/lock"
-	"chainguard.dev/apko/pkg/log"
 )
 
 func lock() *cobra.Command {
@@ -51,10 +51,6 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	var archstrs []string
 	var output string
 
-	var logPolicy []string
-	var debugEnabled bool
-	var quietEnabled bool
-
 	cmd := &cobra.Command{
 		Use: cmdName,
 		// hidden for now until we get some feedback on it.
@@ -67,20 +63,6 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 				output = fmt.Sprintf("%s."+extension, strings.TrimSuffix(args[0], filepath.Ext(args[0])))
 			}
 
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
-
 			archs := types.ParseArchitectures(archstrs)
 
 			return ResolveCmd(
@@ -88,11 +70,9 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 				output,
 				archs,
 				[]build.Option{
-					build.WithLogger(logger),
 					build.WithConfig(args[0]),
 					build.WithExtraKeys(extraKeys),
 					build.WithExtraRepos(extraRepos),
-					build.WithDebugLogging(debugEnabled),
 				},
 			)
 		},
@@ -102,14 +82,12 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 
 	return cmd
 }
 
 func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, opts []build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -135,7 +113,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -160,6 +138,9 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
 		arch := arch
+		log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+		ctx = clog.WithLogger(ctx, log)
+
 		// working directory for this architecture
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := append(slices.Clone(opts), build.WithArch(arch))

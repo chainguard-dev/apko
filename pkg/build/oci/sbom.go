@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -32,12 +33,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 // PostAttachSBOMsFromIndex attaches SBOMs to an already published index and all of the referenced images
 func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sboms []types.SBOM,
-	logger log.Logger, tags []string, remoteOpts ...remote.Option) error {
+	tags []string, remoteOpts ...remote.Option) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "PostAttachSBOMsFromIndex")
 	defer span.End()
 
@@ -54,7 +54,7 @@ func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sbo
 				return fmt.Errorf("failed to get image %s: %w", m.Digest, err)
 			}
 			if _, err := PostAttachSBOM(
-				ctx, img, sboms, m.Platform, logger, tags, remoteOpts...,
+				ctx, img, sboms, m.Platform, tags, remoteOpts...,
 			); err != nil {
 				return fmt.Errorf("attaching sboms to %s image: %w", m.Platform.String(), err)
 			}
@@ -66,7 +66,7 @@ func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sbo
 	}
 
 	if _, err := PostAttachSBOM(
-		ctx, idx, sboms, nil, logger, tags, remoteOpts...,
+		ctx, idx, sboms, nil, tags, remoteOpts...,
 	); err != nil {
 		return fmt.Errorf("attaching sboms to index: %w", err)
 	}
@@ -75,9 +75,9 @@ func PostAttachSBOMsFromIndex(ctx context.Context, idx oci.SignedImageIndex, sbo
 
 // PostAttachSBOM attaches the sboms to a single already published image
 func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sboms []types.SBOM,
-	platform *v1.Platform, logger log.Logger, tags []string, remoteOpts ...remote.Option) (oci.SignedEntity, error) {
+	platform *v1.Platform, tags []string, remoteOpts ...remote.Option) (oci.SignedEntity, error) {
 	var err2 error
-	if si, err2 = attachSBOM(si, sboms, platform, logger); err2 != nil {
+	if si, err2 = attachSBOM(ctx, si, sboms, platform); err2 != nil {
 		return nil, err2
 	}
 	var g errgroup.Group
@@ -87,7 +87,7 @@ func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sboms []types.SBOM
 			return nil, fmt.Errorf("parsing reference: %w", err)
 		}
 		// Write any attached SBOMs/signatures.
-		wp := writePeripherals(ref, logger, remoteOpts...)
+		wp := writePeripherals(ctx, ref, remoteOpts...)
 		g.Go(func() error {
 			return wp(ctx, si)
 		})
@@ -100,9 +100,11 @@ func PostAttachSBOM(ctx context.Context, si oci.SignedEntity, sboms []types.SBOM
 
 // attachSBOM does the actual attachment of one or more SBOMs to a single image or index.
 func attachSBOM(
+	ctx context.Context,
 	si oci.SignedEntity, sboms []types.SBOM,
-	platform *v1.Platform, logger log.Logger,
+	platform *v1.Platform,
 ) (oci.SignedEntity, error) {
+	log := clog.FromContext(ctx)
 	var mt ggcrtypes.MediaType
 	var path string
 
@@ -152,7 +154,7 @@ func attachSBOM(
 	}
 	if len(matched) > 1 {
 		// When we have multiple formats, warn that we're picking the first.
-		logger.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
+		log.Warnf("multiple SBOM formats requested, uploading SBOM with media type: %s", mt)
 	}
 	path = matched[0].Path
 

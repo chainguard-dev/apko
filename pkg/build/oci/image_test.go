@@ -15,6 +15,7 @@
 package oci
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 func TestBuildImageFromLayer(t *testing.T) {
@@ -148,7 +148,8 @@ func TestBuildImageFromLayer(t *testing.T) {
 		},
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
-			got, err := BuildImageFromLayer(layer, c.cfg, now, types.ParseArchitecture(""), log.DefaultLogger())
+			ctx := context.Background()
+			got, err := BuildImageFromLayer(ctx, layer, c.cfg, now, types.ParseArchitecture(""))
 			require.NoError(t, err)
 			gotcfg, err := got.ConfigFile()
 			require.NoError(t, err)

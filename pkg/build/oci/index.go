@@ -36,7 +36,6 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 // GenerateIndex generates an OCI image index from the given imgs. The index type
@@ -123,7 +122,7 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 
 // BuildIndex builds a self-contained tar.gz file containing the index and its individual images for all architectures.
 // Returns the digest and the path to the combined tar.gz.
-func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string, logger log.Logger) (name.Digest, error) {
+func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string) (name.Digest, error) {
 	tagsToImages := make(map[name.Tag]v1.Image)
 	var imgs = make([]oci.SignedImage, 0)
 	manifest, err := idx.IndexManifest()

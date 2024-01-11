@@ -24,7 +24,7 @@ jobs:
         uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
       - run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --debug --arch ${{ matrix.arch }}
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
 
       - name: Check SBOM Conformance
         run: |
@@ -52,7 +52,7 @@ jobs:
           go-version-file: 'go.mod'
       - run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar --debug
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar
 
       - name: Check SBOM Conformance
         run: |
@@ -81,7 +81,7 @@ jobs:
           make apko
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
-            ./apko build ${cfg} ${name}:build /tmp/${name}.tar --debug --arch amd64
+            ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
           done
 
   build-alpine-source-date-epoch:

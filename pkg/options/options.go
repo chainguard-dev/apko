@@ -15,15 +15,13 @@
 package options
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
+	"log"
 	"os"
 	"runtime"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 type Options struct {
@@ -46,37 +44,11 @@ type Options struct {
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
-
-	Log log.Logger
 }
 
 var Default = Options{
-	Log:             &log.Adapter{Out: io.Discard, Level: log.InfoLevel},
 	Arch:            types.ParseArchitecture(runtime.GOARCH),
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
-}
-
-func (o *Options) Summarize(logger log.Logger) {
-	b, err := json.MarshalIndent(o, "", "\t")
-	if err != nil {
-		logger.Errorf("error marshalling build options: %v", err)
-	} else {
-		logger.Printf("build options:\n%s", string(b))
-	}
-}
-
-func (o *Options) Logger() log.Logger {
-	if o.Log != nil {
-		return o.Log
-	}
-	fields := log.Fields{}
-	emptyArch := types.Architecture("")
-
-	if o.Arch != emptyArch {
-		fields["arch"] = o.Arch.ToAPK()
-	}
-
-	return o.Log.WithFields(fields)
 }
 
 // Tempdir returns the temporary directory where apko will create
@@ -88,7 +60,7 @@ func (o *Options) TempDir() string {
 
 	path, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
 	if err != nil {
-		o.Logger().Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
+		log.Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
 	}
 	o.TempDirPath = path
 	return o.TempDirPath

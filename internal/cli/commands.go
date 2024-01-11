@@ -16,8 +16,11 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+
+	"chainguard.dev/apko/pkg/log"
 
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
@@ -30,19 +33,40 @@ func New() *cobra.Command {
 	if err != nil {
 		cwd = ""
 	}
+	var logPolicy []string
+	var logLevel string
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			http.DefaultTransport = userAgentTransport{http.DefaultTransport}
 			if workDir != "" {
 				if err := os.Chdir(workDir); err != nil {
-					fmt.Printf("failed to change dir to %s: %v\n", workDir, err)
+					return fmt.Errorf("failed to change dir to %s: %w", workDir, err)
 				}
 			}
+
+			var level slog.Level
+			switch logLevel {
+			case "debug":
+				level = slog.LevelDebug
+			case "info":
+				level = slog.LevelInfo
+			case "warn":
+				level = slog.LevelWarn
+			case "error":
+				level = slog.LevelError
+			default:
+				return fmt.Errorf("invalid log level: %s", logLevel)
+			}
+
+			slog.SetDefault(slog.New(log.Handler(logPolicy, level)))
+			return nil
 		},
 	}
+	cmd.PersistentFlags().StringSliceVar(&logPolicy, "log-policy", []string{"builtin:stderr"}, "log policy (e.g. builtin:stderr, /tmp/log/foo)")
+	cmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
 	cmd.AddCommand(buildCmd())

@@ -15,11 +15,13 @@
 package build
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
+
+	"github.com/chainguard-dev/clog"
 )
 
 // Option is an option for the build context.
@@ -27,12 +29,16 @@ type Option func(*Context) error
 
 // WithConfig sets the image configuration for the build context.
 // The image configuration is parsed from given config file.
+// TODO(jason): Remove this.
+// Deprecated: Use WithImageConfiguration instead.
 func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
-		bc.o.Log.Printf("loading config file: %s", configFile)
+		ctx := context.Background()
+		log := clog.FromContext(ctx)
+		log.Infof("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
-		if err := ic.Load(configFile, bc.Logger()); err != nil {
+		if err := ic.Load(ctx, configFile); err != nil {
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
@@ -149,24 +155,6 @@ func WithImageConfiguration(ic types.ImageConfiguration) Option {
 func WithArch(arch types.Architecture) Option {
 	return func(bc *Context) error {
 		bc.o.Arch = arch
-		return nil
-	}
-}
-
-// WithLogger sets the log.Logger implementation to be used by the build context.
-func WithLogger(logger log.Logger) Option {
-	return func(bc *Context) error {
-		bc.o.Log = logger
-		return nil
-	}
-}
-
-// WithDebugLogging sets the debug log level for the build context.
-func WithDebugLogging(enable bool) Option {
-	return func(bc *Context) error {
-		if enable {
-			bc.o.Log.SetLevel(log.DebugLevel)
-		}
 		return nil
 	}
 }

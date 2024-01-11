@@ -1,11 +1,8 @@
 package cli
 
-import "chainguard.dev/apko/pkg/log"
-
 type publishOpt struct {
-	local  bool
-	tags   []string
-	logger log.Logger
+	local bool
+	tags  []string
 }
 
 // PublishOption is an option for publishing
@@ -23,14 +20,6 @@ func WithLocal(local bool) PublishOption {
 func WithTags(tags ...string) PublishOption {
 	return func(p *publishOpt) error {
 		p.tags = tags
-		return nil
-	}
-}
-
-// WithLogger logger to use
-func WithLogger(logger log.Logger) PublishOption {
-	return func(p *publishOpt) error {
-		p.logger = logger
 		return nil
 	}
 }

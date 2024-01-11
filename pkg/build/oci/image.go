@@ -15,12 +15,14 @@
 package oci
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -33,17 +35,18 @@ import (
 	"golang.org/x/exp/maps"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger) (oci.SignedImage, error) {
+func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+	log := clog.FromContext(ctx)
+
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		return nil, fmt.Errorf("accessing layer MediaType: %w", err)
 	}
 	imageType := humanReadableImageType(mediaType)
-	logger.Printf("building image from layer")
+	log.Infof("building image from layer")
 
 	digest, err := layer.Digest()
 	if err != nil {
@@ -55,8 +58,8 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
-	logger.Printf("%s layer digest: %v", imageType, digest)
-	logger.Printf("%s layer diffID: %v", imageType, diffid)
+	log.Infof("%s layer digest: %v", imageType, digest)
+	log.Infof("%s layer diffID: %v", imageType, diffid)
 
 	adds := make([]mutate.Addendum, 0, 1)
 	adds = append(adds, mutate.Addendum{
@@ -177,8 +180,9 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 	return si, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) error {
-	v1Image, err := BuildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger)
+func BuildImageTarballFromLayer(ctx context.Context, imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, opts options.Options) error {
+	log := clog.FromContext(ctx)
+	v1Image, err := BuildImageFromLayer(ctx, layer, ic, opts.SourceDateEpoch, opts.Arch)
 	if err != nil {
 		return err
 	}
@@ -195,6 +199,6 @@ func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ str
 		return fmt.Errorf("unable to write image to disk: %w", err)
 	}
 
-	logger.Printf("output image file to %s", outputTarGZ)
+	log.Infof("output image file to %s", outputTarGZ)
 	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -33,8 +34,6 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
-	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/sbom"
 )
 
@@ -48,9 +47,6 @@ func publish() *cobra.Command {
 	var extraRepos []string
 	var extraPackages []string
 	var rawAnnotations []string
-	var logPolicy []string
-	var debugEnabled bool
-	var quietEnabled bool
 	var withVCS bool
 	var writeSBOM bool
 	var local bool
@@ -64,25 +60,11 @@ func publish() *cobra.Command {
 
 It is assumed that you have used "docker login" to store credentials
 in a keychain.`,
-		Example: `  apko publish hello-world.yaml hello:v1.0.0 --quiet`,
+		Example: `  apko publish hello-world.yaml hello:v1.0.0`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
 			if len(args) < 2 {
 				return fmt.Errorf("requires at least 2 arg(s), 1 config file and at least 1 tag for the image")
 			}
-
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
 
 			if !writeSBOM {
 				sbomFormats = []string{}
@@ -114,7 +96,6 @@ in a keychain.`,
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
-					build.WithLogger(logger),
 					build.WithConfig(args[0]),
 					build.WithBuildDate(buildDate),
 					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
@@ -124,14 +105,12 @@ in a keychain.`,
 					build.WithExtraRepos(extraRepos),
 					build.WithExtraPackages(extraPackages),
 					build.WithTags(args[1:]...),
-					build.WithDebugLogging(debugEnabled),
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
-					WithLogger(logger),
 					WithLocal(local),
 					WithTags(args[1:]...),
 				},
@@ -142,8 +121,6 @@ in a keychain.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
@@ -153,7 +130,6 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
@@ -166,6 +142,7 @@ in a keychain.`,
 }
 
 func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, sbomPath string, buildOpts []build.Option, publishOpts []PublishOption) error {
+	log := clog.FromContext(ctx)
 	ctx, span := otel.Tracer("apko").Start(ctx, "PublishCmd")
 	defer span.End()
 
@@ -190,24 +167,19 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	var (
 		local           = opts.local
-		logger          = opts.logger
 		tags            = opts.tags
 		additionalTags  []string
 		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
-	// safety
-	if logger == nil {
-		logger = log.NewLogger(os.Stderr)
-	}
 
 	if local {
 		// TODO: We shouldn't even need to build the index if we're loading a single image.
-		ref, err := oci.LoadIndex(ctx, idx, logger, tags)
+		ref, err := oci.LoadIndex(ctx, idx, tags)
 		if err != nil {
 			return fmt.Errorf("loading index: %w", err)
 		}
-		logger.Printf("using local option, exiting early")
+		log.Infof("using local option, exiting early")
 		fmt.Println(ref.String())
 		return nil
 	}
@@ -218,7 +190,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	if err != nil {
 		return fmt.Errorf("parsing %q as tag: %w", tags[0], err)
 	}
-	refs, err := oci.PublishImagesFromIndex(ctx, idx, logger, ref.Context(), ropt...)
+	refs, err := oci.PublishImagesFromIndex(ctx, idx, ref.Context(), ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing images from index: %w", err)
 	}
@@ -227,7 +199,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	// publish the index
-	finalDigest, err := oci.PublishIndex(ctx, idx, logger, tags, ropt...)
+	finalDigest, err := oci.PublishIndex(ctx, idx, tags, ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing image index: %w", err)
 	}
@@ -249,7 +221,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		at := at
 		if skipLocalCopy {
 			// TODO: We probably don't need this now that we return early.
-			logger.Warnf("skipping local domain tag %s", at)
+			log.Warnf("skipping local domain tag %s", at)
 			continue
 		}
 		g.Go(func() error {
@@ -267,7 +239,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 		// all sboms will be in the same directory
 		if err := oci.PostAttachSBOMsFromIndex(
-			ctx, idx, sboms, logger, tags, ropt...,
+			ctx, idx, sboms, tags, ropt...,
 		); err != nil {
 			return fmt.Errorf("attaching sboms to index: %w", err)
 		}

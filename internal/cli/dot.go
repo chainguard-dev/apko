@@ -17,7 +17,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -26,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/skratchdot/open-golang/open"
@@ -80,6 +80,7 @@ apko dot --web -S example.yaml
 }
 
 func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, web, span bool, opts ...build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -105,7 +106,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -123,7 +124,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	if err != nil {
 		return err
 	}
-	bc.Logger().Infof("using working directory %s", wd)
+	log.Infof("using working directory %s", wd)
 
 	pkgs, _, err := bc.BuildPackageList(ctx)
 	if err != nil {
@@ -300,14 +301,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 
 			out := render(nodes)
 
-			log.Printf("%s: rendering %v", r.URL, nodes)
+			log.Infof("%s: rendering %v", r.URL, nodes)
 			cmd := exec.Command("dot", "-Tsvg")
 			cmd.Stdin = strings.NewReader(out.String())
 			cmd.Stdout = w
 
 			if err := cmd.Run(); err != nil {
 				fmt.Fprintf(w, "error rendering %v: %v", nodes, err)
-				log.Fatal(err)
 			}
 		})
 
@@ -321,7 +321,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			ReadHeaderTimeout: 3 * time.Second,
 		}
 
-		log.Printf("%s", l.Addr().String())
+		log.Infof("%s", l.Addr().String())
 
 		var g errgroup.Group
 		g.Go(func() error {

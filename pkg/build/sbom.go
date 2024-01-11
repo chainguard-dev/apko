@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 
+	"github.com/chainguard-dev/clog"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -37,7 +39,8 @@ import (
 	khash "sigs.k8s.io/release-utils/hash"
 )
 
-func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) soptions.Options {
+func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) soptions.Options {
+	log := clog.FromContext(ctx)
 	sopt := sbom.DefaultOptions
 	sopt.FS = fsys
 	sopt.FileName = fmt.Sprintf("sbom-%s", o.Arch.ToAPK())
@@ -49,7 +52,7 @@ func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, 
 			sopt.ImageInfo.Tag = tag.TagStr()
 			sopt.ImageInfo.Name = tag.String()
 		} else {
-			o.Logger().Errorf("%s parsing tag %s, ignoring", o.Tags[0], err)
+			log.Errorf("%s parsing tag %s, ignoring", o.Tags[0], err)
 		}
 	}
 
@@ -67,11 +70,14 @@ func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, 
 }
 
 func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img oci.SignedImage) ([]types.SBOM, error) {
+	log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+	ctx = clog.WithLogger(ctx, log)
+
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateImageSBOM")
 	defer span.End()
 
 	if !bc.WantSBOM() {
-		bc.Logger().Warnf("skipping SBOM generation")
+		log.Warnf("skipping SBOM generation")
 		return nil, nil
 	}
 
@@ -89,8 +95,8 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
 	}
 
-	s := newSBOM(bc.fs, bc.o, bc.ic, bde)
-	bc.Logger().Infof("Generating image SBOM for %s", arch.String())
+	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
+	log.Infof("Generating image SBOM")
 
 	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
 
@@ -142,16 +148,17 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 }
 
 func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
+	log := clog.FromContext(ctx)
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
 
 	if len(o.SBOMFormats) == 0 {
-		o.Logger().Warnf("skipping SBOM generation")
+		log.Warnf("skipping SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(nil, o, ic, o.SourceDateEpoch)
-	o.Logger().Infof("Generating index SBOM")
+	s := newSBOM(ctx, nil, o, ic, o.SourceDateEpoch)
+	log.Infof("Generating index SBOM")
 
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())

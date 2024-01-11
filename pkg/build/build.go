@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -36,7 +37,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
@@ -59,10 +59,8 @@ type Context struct {
 	apk             *apk.APK
 }
 
-func (bc *Context) Summarize() {
-	bc.Logger().Printf("build context:")
-	bc.o.Summarize(bc.Logger())
-	bc.ic.Summarize(bc.Logger())
+func (bc *Context) Summarize(ctx context.Context) {
+	bc.ic.Summarize(ctx)
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
@@ -83,21 +81,18 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 }
 
 func (bc *Context) BuildImage(ctx context.Context) error {
+	log := clog.FromContext(ctx)
 	if err := bc.buildImage(ctx); err != nil {
-		bc.Logger().Debugf("buildImage failed: %v", err)
+		log.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ic)
 		if err2 != nil {
-			bc.Logger().Debugf("failed to marshal image configuration: %v", err2)
+			log.Debugf("failed to marshal image configuration: %v", err2)
 		} else {
-			bc.Logger().Debugf("image configuration:\n%s", string(b))
+			log.Debugf("image configuration:\n%s", string(b))
 		}
 		return err
 	}
 	return nil
-}
-
-func (bc *Context) Logger() log.Logger {
-	return bc.o.Logger()
 }
 
 // BuildLayer given the context set up, including
@@ -111,7 +106,7 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayer")
 	defer span.End()
 
-	bc.Summarize()
+	bc.Summarize(ctx)
 
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
@@ -200,6 +195,7 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
 func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error) {
+	log := clog.FromContext(ctx)
 	bc := Context{
 		o:  options.Default,
 		fs: fs,
@@ -233,12 +229,11 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	}
 
 	if bc.o.WithVCS && bc.ic.VCSUrl == "" {
-		bc.ic.ProbeVCSUrl(bc.imageConfigFile, bc.Logger())
+		bc.ic.ProbeVCSUrl(ctx, bc.imageConfigFile)
 	}
 
 	apkOpts := []apk.Option{
 		apk.WithFS(bc.fs),
-		apk.WithLogger(bc.Logger()),
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
 	}
@@ -256,7 +251,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	} else if _, err := os.UserCacheDir(); err == nil {
 		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
 	} else {
-		bc.Logger().Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}
 
 	apkImpl, err := apk.New(apkOpts...)
@@ -266,7 +261,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 
 	bc.apk = apkImpl
 
-	bc.Logger().Infof("doing pre-flight checks")
+	log.Infof("doing pre-flight checks")
 	if err := bc.ic.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
 	}
@@ -275,7 +270,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		return nil, fmt.Errorf("initializing apk: %w", err)
 	}
 
-	bc.s6 = s6.New(bc.fs, bc.Logger())
+	bc.s6 = s6.New(bc.fs)
 
 	return &bc, nil
 }
@@ -343,8 +338,4 @@ func (bc *Context) Arch() types.Architecture {
 
 func (bc *Context) WantSBOM() bool {
 	return len(bc.o.SBOMFormats) != 0
-}
-
-func (bc *Context) TempDir() string {
-	return bc.o.TempDir()
 }
