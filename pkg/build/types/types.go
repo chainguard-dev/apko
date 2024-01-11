@@ -140,10 +140,7 @@ type ImageConfiguration struct {
 	//
 	// The included configuration is deep merged with the parent configuration
 	Include string `json:"include,omitempty" yaml:"include,omitempty"`
-	// Optional: A map of named build option deviations
-	//
-	// Deprecated: Use WithExtraPackages.
-	Options map[string]BuildOption `json:"options,omitempty" yaml:"options,omitempty"`
+
 	// Optional: A list of volumes to configure
 	//
 	// This is _not_ the same as Paths, but refers to the OCI spec "volumes"

@@ -3,60 +3,6 @@
   "$id": "https://chainguard.dev/apko/pkg/build/types/image-configuration",
   "$ref": "#/$defs/ImageConfiguration",
   "$defs": {
-    "AccountsOption": {
-      "properties": {
-        "RunAs": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "RunAs"
-      ],
-      "description": "AccountsOption describes an optional deviation to an apko environment's run-as setting."
-    },
-    "BuildOption": {
-      "properties": {
-        "Contents": {
-          "$ref": "#/$defs/ContentsOption"
-        },
-        "Accounts": {
-          "$ref": "#/$defs/AccountsOption"
-        },
-        "Environment": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "Entrypoint": {
-          "$ref": "#/$defs/ImageEntrypoint"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Contents",
-        "Accounts",
-        "Environment",
-        "Entrypoint"
-      ],
-      "description": "BuildOption describes an optional deviation to an apko environment."
-    },
-    "ContentsOption": {
-      "properties": {
-        "Packages": {
-          "$ref": "#/$defs/ListOption"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Packages"
-      ],
-      "description": "ContentsOption describes an optional deviation to an apko environment's contents block."
-    },
     "Group": {
       "properties": {
         "groupname": {
@@ -168,13 +114,6 @@
           "type": "string",
           "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration"
         },
-        "options": {
-          "additionalProperties": {
-            "$ref": "#/$defs/BuildOption"
-          },
-          "type": "object",
-          "description": "Optional: A map of named build option deviations\n\nDeprecated: Use WithExtraPackages."
-        },
         "volumes": {
           "items": {
             "type": "string"
@@ -236,29 +175,6 @@
       },
       "additionalProperties": false,
       "type": "object"
-    },
-    "ListOption": {
-      "properties": {
-        "Add": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "Remove": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Add",
-        "Remove"
-      ],
-      "description": "ListOption describes an optional deviation to a list, for example, a list of packages."
     },
     "OSRelease": {
       "properties": {
