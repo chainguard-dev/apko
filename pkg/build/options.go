@@ -32,7 +32,7 @@ func WithConfig(configFile string) Option {
 		bc.o.Log.Printf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
-		if err := ic.Load(configFile, bc.Logger()); err != nil {
+		if err := ic.Load(configFile); err != nil {
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 

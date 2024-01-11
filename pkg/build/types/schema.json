@@ -164,10 +164,6 @@
           "type": "object",
           "description": "Optional: Annotations to apply to the images manifests"
         },
-        "include": {
-          "type": "string",
-          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration"
-        },
         "options": {
           "additionalProperties": {
             "$ref": "#/$defs/BuildOption"
