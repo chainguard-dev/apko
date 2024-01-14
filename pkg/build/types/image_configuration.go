@@ -24,8 +24,6 @@ import (
 	"github.com/chainguard-dev/clog"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
-
-	"chainguard.dev/apko/pkg/fetch"
 	"chainguard.dev/apko/pkg/vcs"
 )
 
@@ -103,35 +101,12 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 	return nil
 }
 
-func (ic *ImageConfiguration) maybeLoadRemote(ctx context.Context, imageConfigPath string, configHasher hash.Hash) error {
-	data, err := fetch.Fetch(imageConfigPath)
-	if err != nil {
-		return fmt.Errorf("unable to fetch remote include from git: %w", err)
-	}
-
-	return ic.parse(ctx, data, configHasher)
-}
-
 // Load - loads an image configuration given a configuration file path.
 // Populates configHasher with the configuration data loaded from the imageConfigPath and the other referenced files.
 // You can pass any dummy hasher (like fnv.New32()), if you don't care about the hash of the configuration.
 func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string, configHasher hash.Hash) error {
-	log := clog.FromContext(ctx)
-
 	data, err := os.ReadFile(imageConfigPath)
-
 	if err != nil {
-		log.Warnf("loading config file failed: %v", err)
-		log.Warnf("attempting to load remote configuration")
-		log.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
-
-		if err := ic.maybeLoadRemote(ctx, imageConfigPath, configHasher); err == nil {
-			return nil
-		} else {
-			// At this point, we're doing a remote config file.
-			log.Warnf("loading remote configuration failed: %v", err)
-		}
-
 		return err
 	}
 
