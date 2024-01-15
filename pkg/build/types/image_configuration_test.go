@@ -98,7 +98,7 @@ func TestIncludeMergedEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	//inherit and overwrited environments
+	// inherit and overwrited environments
 	expected := make(map[string]string)
 	expected["LANG"] = "en_US.utf8"
 	expected["LC_ALL"] = "C.utf8"
