@@ -1,0 +1,49 @@
+contents:
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - pretend-baselayout
+
+environment:
+  LANG: en_US.utf8
+  LC_ALL: en_US.utf8
+
+entrypoint:
+  command: /bin/echo
+
+cmd: hello
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 10000
+    - groupname: sameid
+      gid: 10001
+    - groupname: apko
+      gid: 50000
+  users:
+    - username: nonroot
+      uid: 10000
+    - username: apko
+      uid: 5000
+    - username: sameid
+      uid: 10001
+  run-as: nonroot
+
+paths:
+  - path: /work
+    type: directory
+    uid: 1000
+    gid: 10000
+    permissions: 0o640
+  - path: /testdata
+    type: directory
+    uid: 10000
+    gid: 10000
+    permissions: 0o700
+
+archs:
+- x86_64
+- aarch64

@@ -102,3 +102,28 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		"locked package pretend-baselayout has missing checksum (please regenerate the lock file with Apko >=0.13)",
 		err.Error())
 }
+
+func TestBuildImageWithLocalIncludeFile(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig(filepath.Join("testdata/include", "apko.yaml")),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = bc.BuildImage(ctx)
+
+	installed, err := bc.InstalledPackages()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, installed, 2)
+	require.Equal(t, installed[0].Name, "pretend-baselayout")
+	require.Equal(t, installed[0].Version, "1.0.0-r0")
+	require.Equal(t, installed[1].Name, "replayout")
+	require.Equal(t, installed[1].Version, "1.0.0-r0")
+}

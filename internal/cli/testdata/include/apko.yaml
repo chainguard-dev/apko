@@ -1,0 +1,44 @@
+include: testdata/include/base.yaml
+
+contents:
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - replayout
+
+
+entrypoint:
+  command: /bin/bash -l
+
+cmd: ls
+
+environment:
+  LANG: en_US.utf8
+  LC_ALL: C.utf8
+
+accounts:
+  groups:
+    - groupname: apko
+      gid: 10001
+  users:
+    - username: apko
+      uid: 10001
+  run-as: apko
+
+paths:
+  - path: /home/apko
+    type: directory
+    uid: 10001
+    gid: 10001
+    permissions: 0o644
+  - path: /work
+    type: directory
+    uid: 10001
+    gid: 10001
+    permissions: 0o644
+
+archs:
+- x86_64
+- aarch64

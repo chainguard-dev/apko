@@ -212,8 +212,8 @@ The `paths` element contains the following children:
 ### Includes
 
 `include` defines a path to a configuration file which should be used as the base configuration,
-the configuration data is layered on top of this base configuration.  By default, there is no
-base configuration used.
+the configuration data is layered on top of this base configuration. By default, there is no
+base configuration used. Top image configurations have priority over base configurations.
 
 The path should be a local file.  For example, the following include line would reference
 `examples/alpine-base.yaml` in the apko git repository:

@@ -89,6 +89,13 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 		pkgs := append([]string{}, baseIc.Contents.Packages...)
 		pkgs = append(pkgs, mergedIc.Contents.Packages...)
 		ic.Contents.Packages = pkgs
+
+		ic.Accounts.Users = mergeAccountUsers(baseIc, mergedIc)
+		ic.Accounts.Groups = mergeAccountGroups(baseIc, mergedIc)
+
+		ic.Environment = mergeEnvironment(baseIc, mergedIc)
+
+		ic.Paths = mergePaths(baseIc, mergedIc)
 	}
 
 	repos := make([]string, 0, len(ic.Contents.Repositories))
@@ -99,6 +106,86 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 	ic.Contents.Repositories = repos
 
 	return nil
+}
+
+// Merge paths if top image have not defined the same
+func mergePaths(baseIC, mergedIc ImageConfiguration) []PathMutation {
+	exists := make(map[string]bool)
+	paths := []PathMutation{}
+
+	for _, path := range mergedIc.Paths {
+		exists[path.Path] = true
+		paths = append(paths, path)
+	}
+
+	for _, path := range baseIC.Paths {
+		if _, ok := exists[path.Path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+
+	return paths
+}
+
+// Merge accounts users. Top image have priority for define users
+func mergeAccountUsers(baseIC, mergedIc ImageConfiguration) []User {
+	exists := make(map[string]bool)
+	uids := make(map[uint32]bool)
+	users := []User{}
+
+	for _, user := range mergedIc.Accounts.Users {
+		exists[user.UserName] = true
+		uids[user.UID] = true
+		users = append(users, user)
+	}
+
+	for _, user := range baseIC.Accounts.Users {
+		if _, ok := exists[user.UserName]; !ok {
+			if _, ok := uids[user.UID]; !ok {
+				users = append(users, user)
+			}
+		}
+	}
+
+	return users
+}
+
+// Merge accounts group. Top image have priority for define groups
+func mergeAccountGroups(baseIC, mergedIc ImageConfiguration) []Group {
+	exists := make(map[string]bool)
+	gids := make(map[uint32]bool)
+	groups := []Group{}
+
+	for _, group := range mergedIc.Accounts.Groups {
+		exists[group.GroupName] = true
+		gids[group.GID] = true
+		groups = append(groups, group)
+	}
+
+	for _, group := range baseIC.Accounts.Groups {
+		if _, ok := exists[group.GroupName]; !ok {
+			if _, ok := gids[group.GID]; !ok {
+				groups = append(groups, group)
+			}
+		}
+	}
+
+	return groups
+}
+
+// Merge environment variables from base config but if no exists in config.
+func mergeEnvironment(baseIC, mergedIc ImageConfiguration) map[string]string {
+	env := make(map[string]string)
+
+	for key, value := range baseIC.Environment {
+		env[key] = value
+	}
+
+	for key, value := range mergedIc.Environment {
+		env[key] = value
+	}
+
+	return env
 }
 
 // Load - loads an image configuration given a configuration file path.
