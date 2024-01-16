@@ -15,32 +15,72 @@
 package log
 
 import (
-	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
-	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 )
 
+// writerFromTarget returns a writer given a target specification.
+func writerFromTarget(target string) (io.Writer, error) {
+	switch target {
+	case "builtin:stderr":
+		return os.Stderr, nil
+	case "builtin:stdout":
+		return os.Stdout, nil
+	case "builtin:discard":
+		return io.Discard, nil
+	default:
+		if strings.Contains(target, "/") {
+			parent := filepath.Dir(target)
+			if err := os.MkdirAll(parent, 0o755); err != nil {
+				return nil, err
+			}
+		}
+
+		log.Println("writing log file to", target)
+		out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0o644)
+		if err != nil {
+			return nil, err
+		}
+
+		return out, nil
+	}
+}
+
+// writer returns a writer which writes to multiple target specifications.
+func writer(targets []string) (io.Writer, error) {
+	writers := []io.Writer{}
+
+	if len(targets) == 1 {
+		return writerFromTarget(targets[0])
+	}
+
+	for _, target := range targets {
+		writer, err := writerFromTarget(target)
+		if err != nil {
+			return nil, err
+		}
+
+		writers = append(writers, writer)
+	}
+
+	return io.MultiWriter(writers...), nil
+}
+
 const (
 	reset   = 0
-	red     = 31
-	green   = 32
 	yellow  = 33
-	blue    = 34
 	magenta = 35
-	cyan    = 36
 	gray    = 37
 )
-
-// A Formatter is a formatter that can be set on a logrus object to
-// apply our formatting policies.
-type Formatter struct {
-	logrus.Formatter
-}
 
 func isTerminal(w io.Writer) bool {
 	switch v := w.(type) {
@@ -59,58 +99,84 @@ func color(w io.Writer, color int) string {
 	return fmt.Sprintf("\x1b[%dm", color)
 }
 
-func levelToColor(entry *logrus.Entry) int {
-	switch entry.Level {
-	case logrus.PanicLevel, logrus.FatalLevel:
-		return red
-	case logrus.ErrorLevel:
+func levelToColor(r slog.Record) int {
+	switch r.Level {
+	case slog.LevelError:
 		return magenta
-	case logrus.WarnLevel:
+	case slog.LevelWarn:
 		return yellow
-	case logrus.InfoLevel:
-		return cyan
 	default:
 		return gray
 	}
 }
 
-func msgLevelToColor(entry *logrus.Entry) int {
-	switch entry.Level {
-	case logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel:
-		return levelToColor(entry)
-	default:
-		return gray
-	}
-}
-
-func levelEmoji(entry *logrus.Entry) string {
-	switch entry.Level {
-	case logrus.PanicLevel, logrus.FatalLevel:
-		return "🛑 "
-	case logrus.ErrorLevel:
+func levelEmoji(r slog.Record) string {
+	switch r.Level {
+	case slog.LevelError:
 		return "❌ "
-	case logrus.WarnLevel:
+	case slog.LevelWarn:
 		return "⚠️ "
-	case logrus.InfoLevel:
+	case slog.LevelInfo:
 		return "ℹ️ "
 	default:
 		return "❕"
 	}
 }
 
-// Format formats a logrus entry according to our formatting policies.
-func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
-	b := &bytes.Buffer{}
-	out := entry.Logger.Out
-	message := strings.TrimSuffix(entry.Message, "\n")
+func Handler(logPolicy []string, level slog.Level) slog.Handler {
+	out, err := writer(logPolicy)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &handler{out: out, level: level}
+}
 
-	if arch, ok := entry.Data["arch"]; ok {
-		fmt.Fprintf(b, "%s %s%-10s|%s %s%s%s", levelEmoji(entry), color(out, levelToColor(entry)), arch, color(out, reset), color(out, msgLevelToColor(entry)), message, color(out, reset))
-	} else {
-		fmt.Fprintf(b, "%s %s%-10s|%s %s%s%s", levelEmoji(entry), color(out, levelToColor(entry)), "", color(out, reset), color(out, msgLevelToColor(entry)), message, color(out, reset))
+type handler struct {
+	level slog.Level
+	out   io.Writer
+	attrs []slog.Attr
+
+	mu sync.Mutex
+}
+
+func (h *handler) Enabled(_ context.Context, l slog.Level) bool { return l >= h.level }
+func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &handler{attrs: append(h.attrs, attrs...), out: h.out}
+}
+
+func (h *handler) Handle(ctx context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.Enabled(ctx, r.Level) {
+		return nil
 	}
 
-	b.WriteByte('\n')
+	var arch string
+	for _, a := range h.attrs {
+		if a.Key == "arch" {
+			arch = a.Value.String()
+			break
+		}
+	}
+	if arch == "" {
+		r.Attrs(func(s slog.Attr) bool {
+			if s.Key == "arch" {
+				arch = s.Value.String()
+				return false
+			}
+			return true
+		})
+	}
+	if arch != "" {
+		fmt.Fprintf(h.out, "%s %s%-10s|%s %s%s%s\n", levelEmoji(r), color(h.out, levelToColor(r)), arch, color(h.out, reset), color(h.out, levelToColor(r)), r.Message, color(h.out, reset))
+	} else {
+		fmt.Fprintf(h.out, "%s %s%-10s|%s %s%s%s\n", levelEmoji(r), color(h.out, levelToColor(r)), "", color(h.out, reset), color(h.out, levelToColor(r)), r.Message, color(h.out, reset))
+	}
 
-	return b.Bytes(), nil
+	return nil
 }
+
+// This handler doesn't support groups.
+// TODO(jason): Support groups.
+func (h *handler) WithGroup(string) slog.Handler { return h }

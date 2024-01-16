@@ -15,15 +15,16 @@
 package build
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/chainguard-dev/clog"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
 )
 
 func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
@@ -52,7 +53,9 @@ func maybeGenerateVendorReleaseFile(fsys apkfs.FullFS, ic *types.ImageConfigurat
 	return nil
 }
 
-func generateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+func generateOSRelease(ctx context.Context, fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
+	log := clog.FromContext(ctx)
+
 	path := filepath.Join("etc", "os-release")
 
 	osReleaseExists := true
@@ -60,7 +63,7 @@ func generateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageCon
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		o.Logger().Warnf("did not find /etc/os-release at %s", path)
+		log.Warnf("did not find /etc/os-release at %s", path)
 		osReleaseExists = false
 	}
 
@@ -79,7 +82,7 @@ func generateOSRelease(fsys apkfs.FullFS, o *options.Options, ic *types.ImageCon
 
 	if ic.OSRelease.ID != "" {
 		if ic.OSRelease.ID == "unknown" {
-			o.Logger().Warnf("distro ID not specified and /etc/os-release does not already exist")
+			log.Warnf("distro ID not specified and /etc/os-release does not already exist")
 		}
 		_, err := fmt.Fprintf(w, "ID=%s\n", ic.OSRelease.ID)
 		if err != nil {

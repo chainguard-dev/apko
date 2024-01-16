@@ -17,10 +17,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"text/template"
 
+	"github.com/chainguard-dev/clog"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
@@ -118,6 +120,7 @@ packagelock and packagelock-source are particularly useful for inserting back in
 }
 
 func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architecture, opts ...build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -143,7 +146,7 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -156,6 +159,9 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 
 	for _, arch := range archs {
 		arch := arch
+		log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+		ctx = clog.WithLogger(ctx, log)
+
 		// working directory for this architecture
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := slices.Clone(opts)
@@ -165,7 +171,7 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		if err != nil {
 			return err
 		}
-		bc.Logger().Infof("using working directory %s", wd)
+		log.Infof("using working directory %s", wd)
 
 		pkgs, _, err := bc.BuildPackageList(ctx)
 		if err != nil {

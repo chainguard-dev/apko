@@ -15,44 +15,48 @@
 package types
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
 
 	"chainguard.dev/apko/pkg/fetch"
-	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/vcs"
 )
 
 // Attempt to probe an upstream VCS URL if known.
-func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger log.Logger) {
+func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
+	log := clog.FromContext(ctx)
+
 	url, err := vcs.ProbeDirFromPath(imageConfigPath)
 	if err != nil {
-		logger.Debugf("failed to probe VCS URL: %v", err)
+		log.Debugf("failed to probe VCS URL: %v", err)
 		return
 	}
 
 	if url != "" {
 		ic.VCSUrl = url
-		logger.Printf("detected %s as VCS URL", ic.VCSUrl)
+		log.Infof("detected %s as VCS URL", ic.VCSUrl)
 	}
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error {
+func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte) error {
+	log := clog.FromContext(ctx)
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
 	if ic.Include != "" {
-		logger.Printf("including %s for configuration", ic.Include)
+		log.Infof("including %s for configuration", ic.Include)
 
 		baseIc := ImageConfiguration{}
 
-		if err := baseIc.Load(ic.Include, logger); err != nil {
+		if err := baseIc.Load(ctx, ic.Include); err != nil {
 			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
@@ -97,34 +101,35 @@ func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error 
 	return nil
 }
 
-func (ic *ImageConfiguration) maybeLoadRemote(imageConfigPath string, logger log.Logger) error {
+func (ic *ImageConfiguration) maybeLoadRemote(ctx context.Context, imageConfigPath string) error {
 	data, err := fetch.Fetch(imageConfigPath)
 	if err != nil {
 		return fmt.Errorf("unable to fetch remote include from git: %w", err)
 	}
 
-	return ic.parse(data, logger)
+	return ic.parse(ctx, data)
 }
 
 // Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(imageConfigPath string, logger log.Logger) error {
+func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string) error {
+	log := clog.FromContext(ctx)
 	data, err := os.ReadFile(imageConfigPath)
 	if err != nil {
-		logger.Warnf("loading config file failed: %v", err)
-		logger.Warnf("attempting to load remote configuration")
-		logger.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
+		log.Warnf("loading config file failed: %v", err)
+		log.Warnf("attempting to load remote configuration")
+		log.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
 
-		if err := ic.maybeLoadRemote(imageConfigPath, logger); err == nil {
+		if err := ic.maybeLoadRemote(ctx, imageConfigPath); err == nil {
 			return nil
 		} else {
 			// At this point, we're doing a remote config file.
-			logger.Warnf("loading remote configuration failed: %v", err)
+			log.Warnf("loading remote configuration failed: %v", err)
 		}
 
 		return err
 	}
 
-	return ic.parse(data, logger)
+	return ic.parse(ctx, data)
 }
 
 // Do preflight checks and mutations on an image configuration.
@@ -187,42 +192,44 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize(logger log.Logger) {
-	logger.Printf("image configuration:")
-	logger.Printf("  contents:")
-	logger.Printf("    repositories: %v", ic.Contents.Repositories)
-	logger.Printf("    keyring:      %v", ic.Contents.Keyring)
-	logger.Printf("    packages:     %v", ic.Contents.Packages)
+func (ic *ImageConfiguration) Summarize(ctx context.Context) {
+	log := clog.FromContext(ctx)
+
+	log.Infof("image configuration:")
+	log.Infof("  contents:")
+	log.Infof("    repositories: %v", ic.Contents.Repositories)
+	log.Infof("    keyring:      %v", ic.Contents.Keyring)
+	log.Infof("    packages:     %v", ic.Contents.Packages)
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
-		logger.Printf("  entrypoint:")
-		logger.Printf("    type:    %s", ic.Entrypoint.Type)
-		logger.Printf("    command:     %s", ic.Entrypoint.Command)
-		logger.Printf("    service: %v", ic.Entrypoint.Services)
-		logger.Printf("    shell fragment: %v", ic.Entrypoint.ShellFragment)
+		log.Infof("  entrypoint:")
+		log.Infof("    type:    %s", ic.Entrypoint.Type)
+		log.Infof("    command:     %s", ic.Entrypoint.Command)
+		log.Infof("    service: %v", ic.Entrypoint.Services)
+		log.Infof("    shell fragment: %v", ic.Entrypoint.ShellFragment)
 	}
 	if ic.Cmd != "" {
-		logger.Printf("  cmd: %s", ic.Cmd)
+		log.Infof("  cmd: %s", ic.Cmd)
 	}
 	if ic.StopSignal != "" {
-		logger.Printf("  stop signal: %s", ic.StopSignal)
+		log.Infof("  stop signal: %s", ic.StopSignal)
 	}
 
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
-		logger.Printf("  accounts:")
-		logger.Printf("    runas:  %s", ic.Accounts.RunAs)
-		logger.Printf("    users:")
+		log.Infof("  accounts:")
+		log.Infof("    runas:  %s", ic.Accounts.RunAs)
+		log.Infof("    users:")
 		for _, u := range ic.Accounts.Users {
-			logger.Printf("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
+			log.Infof("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
 		}
-		logger.Printf("    groups:")
+		log.Infof("    groups:")
 		for _, g := range ic.Accounts.Groups {
-			logger.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
+			log.Infof("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
 		}
 	}
 	if len(ic.Annotations) > 0 {
-		logger.Printf("    annotations:")
+		log.Infof("    annotations:")
 		for k, v := range ic.Annotations {
-			logger.Printf("      %s: %s", k, v)
+			log.Infof("      %s: %s", k, v)
 		}
 	}
 }

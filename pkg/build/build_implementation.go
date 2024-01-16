@@ -32,6 +32,7 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/sigstore/cosign/v2/pkg/oci"
@@ -58,6 +59,8 @@ func min(l, r int) int {
 // BuildTarball takes the fully populated working directory and saves it to
 // an OCI image layer tar.gz file.
 func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Hash, int64, error) {
+	log := clog.FromContext(ctx)
+
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildTarball")
 	defer span.End()
 
@@ -109,11 +112,13 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 		return "", nil, nil, 0, fmt.Errorf("stat(%q): %w", outfile.Name(), err)
 	}
 
-	bc.Logger().Infof("built image layer tarball as %s", outfile.Name())
+	log.Infof("built image layer tarball as %s", outfile.Name())
 	return outfile.Name(), diffid, digest, stat.Size(), nil
 }
 
 func (bc *Context) buildImage(ctx context.Context) error {
+	log := clog.FromContext(ctx)
+
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
@@ -136,7 +141,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		}
 	}
 
-	if err := mutateAccounts(bc.fs, &bc.o, &bc.ic); err != nil {
+	if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate accounts: %w", err)
 	}
 
@@ -144,13 +149,13 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	if err := generateOSRelease(bc.fs, &bc.o, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
-		bc.Logger().Infof("did not generate /etc/os-release: %v", err)
+	if err := generateOSRelease(ctx, bc.fs, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
+		log.Infof("did not generate /etc/os-release: %v", err)
 	} else if err != nil {
 		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 	}
 
-	if err := bc.s6.WriteSupervisionTree(bc.ic.Entrypoint.Services); err != nil {
+	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {
 		return fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
@@ -169,13 +174,14 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return err
 	}
 
-	bc.Logger().Infof("finished building filesystem")
+	log.Infof("finished building filesystem")
 
 	return nil
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
+func WriteIndex(ctx context.Context, o *options.Options, idx oci.SignedImageIndex) (string, error) {
+	log := clog.FromContext(ctx)
 	outfile := filepath.Join(o.TempDir(), "index.json")
 
 	b, err := idx.RawManifest()
@@ -185,16 +191,17 @@ func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
 	if err := os.WriteFile(outfile, b, 0644); err != nil { //nolint:gosec // this file is fine to be readable
 		return "", fmt.Errorf("writing index file: %w", err)
 	}
-	o.Logger().Infof("built index file as %s", outfile)
+	log.Infof("built index file as %s", outfile)
 
 	return outfile, nil
 }
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.RepositoryPackage, conflicts []string, err error) {
+	log := clog.FromContext(ctx)
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
-	bc.Logger().Infof("finished gathering apk info")
+	log.Infof("finished gathering apk info")
 
 	return toInstall, conflicts, err
 }

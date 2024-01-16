@@ -30,7 +30,6 @@ import (
 	"chainguard.dev/apko/internal/cli"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 func TestBuild(t *testing.T) {
@@ -48,7 +47,7 @@ func TestBuild(t *testing.T) {
 	err := os.MkdirAll(sbomPath, 0o750)
 	require.NoError(t, err)
 
-	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, log.DefaultLogger(), opts...)
+	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, opts...)
 	require.NoError(t, err)
 
 	root, err := layout.ImageIndexFromPath(tmp)

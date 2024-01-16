@@ -15,15 +15,20 @@
 package s6
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/chainguard-dev/clog"
 )
 
-func (sc *Context) CreateSupervisionDirectory(name string) (string, error) {
+func (sc *Context) CreateSupervisionDirectory(ctx context.Context, name string) (string, error) {
+	log := clog.FromContext(ctx)
+
 	svbase := "sv"
 	svcdir := filepath.Join(svbase, name)
-	sc.Log.Debugf("  supervision dir: %s", svcdir)
+	log.Debugf("  supervision dir: %s", svcdir)
 
 	if err := sc.fs.MkdirAll(svcdir, 0777); err != nil {
 		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
@@ -44,10 +49,11 @@ func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error
 	return nil
 }
 
-func (sc *Context) WriteSupervisionServiceSimple(name string, command string) error {
-	sc.Log.Debugf("simple service: %s => %s", name, command)
+func (sc *Context) WriteSupervisionServiceSimple(ctx context.Context, name string, command string) error {
+	log := clog.FromContext(ctx)
+	log.Debugf("simple service: %s => %s", name, command)
 
-	svcdir, err := sc.CreateSupervisionDirectory(name)
+	svcdir, err := sc.CreateSupervisionDirectory(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -59,12 +65,13 @@ func (sc *Context) WriteSupervisionServiceSimple(name string, command string) er
 	return nil
 }
 
-func (sc *Context) WriteSupervisionTree(services Services) error {
-	sc.Log.Infof("generating supervision tree")
+func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) error {
+	log := clog.FromContext(ctx)
+	log.Infof("generating supervision tree")
 
 	// generate the leaves
 	for service, svccmd := range services {
-		if err := sc.WriteSupervisionServiceSimple(service, svccmd); err != nil {
+		if err := sc.WriteSupervisionServiceSimple(ctx, service, svccmd); err != nil {
 			return err
 		}
 	}

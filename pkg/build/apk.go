@@ -41,7 +41,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
-		if err := bc.apk.SetRepositories(repos); err != nil {
+		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
@@ -49,7 +49,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
-		if err := bc.apk.SetWorld(packages); err != nil {
+		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil

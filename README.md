@@ -104,16 +104,6 @@ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
 
 See the [docs](./docs/apko_file.md) for details of the file format and the [examples directory](./examples) for more, err, examples!
 
-## Debugging apko Builds
-
-To include debug-level information on apko builds, add `--debug` to your build command:
-
-```shell
-docker run --rm -v ${PWD}:/work cgr.dev/chainguard/apko build --debug \
-  apko.yaml hello-minicli:test hello-minicli.tar \
-  -k melange.rsa.pub
-```
-
 ## Why
 
 apko was created by [Chainguard](https://www.chainguard.dev), who require secure and reproducible
@@ -143,7 +133,7 @@ Tutorials and guides for apko can be found at the [Chainguard Academy](https://e
 
 For support, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko
 channel or [open an issue](https://github.com/chainguard-dev/apko/issue).
- 
+
 ## Related Work and Resources
 
 The [melange project](https://github.com/chainguard-dev/melange) is designed to produce apk packages to be used in apko.
