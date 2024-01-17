@@ -8,7 +8,16 @@ import (
 
 type Lock struct {
 	Version  string       `json:"version"`
+	Config   *Config      `json:"config,omitempty"`
 	Contents LockContents `json:"contents"`
+}
+
+// Origin describes the source file used to generate the lock file.
+// Used to detect that the origin got changed without regenerating the lockfile.
+type Config struct {
+	Name string `json:"name,omitempty"`
+	// This checksum also covers included files and command-line settings that influence the artifacts resolution.
+	DeepChecksum string `json:"checksum,omitempty"`
 }
 
 type LockContents struct {

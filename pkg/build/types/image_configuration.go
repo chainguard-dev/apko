@@ -17,6 +17,7 @@ package types
 import (
 	"context"
 	"fmt"
+	"hash"
 	"os"
 	"strings"
 
@@ -45,8 +46,9 @@ func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath s
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte) error {
+func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, configHasher hash.Hash) error {
 	log := clog.FromContext(ctx)
+	configHasher.Write(configData)
 	if err := yaml.Unmarshal(configData, ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
@@ -56,7 +58,7 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte) erro
 
 		baseIc := ImageConfiguration{}
 
-		if err := baseIc.Load(ctx, ic.Include); err != nil {
+		if err := baseIc.Load(ctx, ic.Include, configHasher); err != nil {
 			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
@@ -101,25 +103,29 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte) erro
 	return nil
 }
 
-func (ic *ImageConfiguration) maybeLoadRemote(ctx context.Context, imageConfigPath string) error {
+func (ic *ImageConfiguration) maybeLoadRemote(ctx context.Context, imageConfigPath string, configHasher hash.Hash) error {
 	data, err := fetch.Fetch(imageConfigPath)
 	if err != nil {
 		return fmt.Errorf("unable to fetch remote include from git: %w", err)
 	}
 
-	return ic.parse(ctx, data)
+	return ic.parse(ctx, data, configHasher)
 }
 
-// Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string) error {
+// Load - loads an image configuration given a configuration file path.
+// Populates configHasher with the configuration data loaded from the imageConfigPath and the other referenced files.
+// You can pass any dummy hasher (like fnv.New32()), if you don't care about the hash of the configuration.
+func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string, configHasher hash.Hash) error {
 	log := clog.FromContext(ctx)
+
 	data, err := os.ReadFile(imageConfigPath)
+
 	if err != nil {
 		log.Warnf("loading config file failed: %v", err)
 		log.Warnf("attempting to load remote configuration")
 		log.Warnf("NOTE: remote configurations are an experimental feature and subject to change.")
 
-		if err := ic.maybeLoadRemote(ctx, imageConfigPath); err == nil {
+		if err := ic.maybeLoadRemote(ctx, imageConfigPath, configHasher); err == nil {
 			return nil
 		} else {
 			// At this point, we're doing a remote config file.
@@ -129,7 +135,7 @@ func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string) 
 		return err
 	}
 
-	return ic.parse(ctx, data)
+	return ic.parse(ctx, data, configHasher)
 }
 
 // Do preflight checks and mutations on an image configuration.
