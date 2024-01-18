@@ -65,7 +65,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 
 			archs := types.ParseArchitectures(archstrs)
 
-			return ResolveCmd(
+			return LockCmd(
 				cmd.Context(),
 				output,
 				archs,
@@ -86,7 +86,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	return cmd
 }
 
-func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, opts []build.Option) error {
+func LockCmd(ctx context.Context, output string, archs []types.Architecture, opts []build.Option) error {
 	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {

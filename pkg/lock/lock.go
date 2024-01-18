@@ -62,6 +62,8 @@ func (lock Lock) SaveToFile(lockFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshall json: %w", err)
 	}
-
+	// Github and pre-commit checks (like end-of-file-fixer) are expecting ASCII files
+	// to end with a newline that marshal is not providing.
+	jsonb = append(jsonb, '\n')
 	return os.WriteFile(lockFile, jsonb, os.ModePerm)
 }
