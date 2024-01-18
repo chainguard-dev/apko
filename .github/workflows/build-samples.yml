@@ -2,7 +2,9 @@ name: Build Images
 
 on:
   pull_request:
+    branches: [ "main" ]
   push:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -10,6 +12,10 @@ jobs:
   build-nginx-on-all-arches:
     name: build-nginx-all-arches
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +51,9 @@ jobs:
     name: build-nginx-multiarch
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
@@ -66,6 +75,10 @@ jobs:
 
   build-all-examples-one-arch:
     name: build-all-examples-amd64
+
+    permissions:
+      contents: read
+
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +100,9 @@ jobs:
   build-alpine-source-date-epoch:
     name: source-date-epoch
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -120,6 +136,9 @@ jobs:
     name: build-date-epoch
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
@@ -151,6 +170,10 @@ jobs:
   annotations:
     name: annotations
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.1.5
