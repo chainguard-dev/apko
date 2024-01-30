@@ -30,6 +30,8 @@ import (
 func showConfig() *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
+	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use:   "show-config",
@@ -46,12 +48,15 @@ The derived configuration is rendered in YAML.
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
+				build.WithCacheDir(cacheDir, offline),
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	return cmd
 }
