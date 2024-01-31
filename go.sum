@@ -30,8 +30,8 @@ github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chainguard-dev/clog v1.2.3-0.20240116182827-04bee692f7a8 h1:E2y3L/nM7vRzwyROQgmuB+Egm/d1rHOyip0Bq4AyVow=
 github.com/chainguard-dev/clog v1.2.3-0.20240116182827-04bee692f7a8/go.mod h1:cV516KZWqYc/phZsCNwF36u/KMGS+Gj5Uqeb8Hlp95Y=
-github.com/chainguard-dev/go-apk v0.0.0-20240130195846-91a06ffe6715 h1:riuOFg3Ay1Js10GQtCAsCL2Hp2DJweUlYjKaxXteYV8=
-github.com/chainguard-dev/go-apk v0.0.0-20240130195846-91a06ffe6715/go.mod h1:OdsmvVJb8RNVcTVQ7x07L319LLeiRaRnnsmj8qBBgb4=
+github.com/chainguard-dev/go-apk v0.0.0-20240131184508-79426d58f590 h1:JrEDEsQm7KqVApLL//o9JvSqESe7pn+L3oXCHQuvPl0=
+github.com/chainguard-dev/go-apk v0.0.0-20240131184508-79426d58f590/go.mod h1:OdsmvVJb8RNVcTVQ7x07L319LLeiRaRnnsmj8qBBgb4=
 github.com/cloudflare/circl v1.3.3/go.mod h1:5XYMA4rFBvNIrhs50XuiBJ15vF2pZn4nnUKZrLbUZFA=
 github.com/cloudflare/circl v1.3.7 h1:qlCDlTPz2n9fu58M0Nh1J/JzcFpfgkFHHX3O35r5vcU=
 github.com/cloudflare/circl v1.3.7/go.mod h1:sRTcRWXGLrKw6yIGJ+l7amYJFfAXbZG0kBSc8r4zxgA=
