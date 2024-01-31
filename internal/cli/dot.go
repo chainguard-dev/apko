@@ -16,6 +16,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -131,9 +132,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	}
 	log.Infof("using working directory %s", wd)
 
-	pkgs, _, err := bc.BuildPackageList(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get package list for image: %w", err)
+	pkgs, _, resolveErr := bc.BuildPackageList(ctx)
+	if resolveErr != nil {
+		log.Errorf("failed to get package list for image: %v", resolveErr)
 	}
 
 	dmap := map[string][]string{}
@@ -290,6 +291,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			renderProvs(pkg)
 		}
 
+		if resolveErr != nil {
+			errorNode := dot.NewNode("❌ error")
+
+			out.AddNode(errorNode)
+			walkErrors(out, resolveErr, errorNode)
+		}
+
 		return out
 	}
 
@@ -362,4 +370,72 @@ func link(args []string, pkg string) string {
 		ret += "&node=" + strings.Join(filtered, "&node=")
 	}
 	return ret
+}
+
+type unwrapper interface {
+	Unwrap() error
+}
+
+type unwrappers interface {
+	Unwrap() []error
+}
+
+func canUnwrap(err error) bool {
+	if _, ok := err.(unwrapper); ok { //nolint:errorlint
+		return true
+	}
+
+	if _, ok := err.(unwrappers); ok { //nolint:errorlint
+		return true
+	}
+
+	return false
+}
+
+func makeNode(out *dot.Graph, err error, parent *dot.Node) *dot.Node {
+	nodeName, label := errToNode(err)
+	if nodeName == "" {
+		if canUnwrap(err) {
+			return parent
+		}
+
+		nodeName = "❌ " + err.Error()
+	}
+
+	node := dot.NewNode(nodeName)
+	out.AddNode(node)
+	edge := dot.NewEdge(parent, node)
+	if label != "" {
+		if err := edge.Set("label", label); err != nil {
+			panic(err)
+		}
+	}
+	out.AddEdge(edge)
+
+	return node
+}
+
+func walkErrors(out *dot.Graph, err error, parent *dot.Node) {
+	node := makeNode(out, err, parent)
+
+	if wrapped := errors.Unwrap(err); wrapped != nil {
+		walkErrors(out, wrapped, node)
+	} else if mw, ok := err.(unwrappers); ok { //nolint:errorlint
+		for _, wrapped := range mw.Unwrap() {
+			walkErrors(out, wrapped, node)
+		}
+	}
+}
+
+func errToNode(err error) (string, string) {
+	switch v := err.(type) { //nolint:errorlint
+	case *apk.ConstraintError:
+		return v.Constraint, "solving constraint"
+	case *apk.DepError:
+		return pkgver(v.Package), "resolving deps"
+	case *apk.DisqualifiedError:
+		return pkgver(v.Package), ""
+	}
+
+	return "", ""
 }
