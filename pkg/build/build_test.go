@@ -114,7 +114,11 @@ func TestBuildImageWithLocalIncludeFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	err = bc.BuildImage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	installed, err := bc.InstalledPackages()
 	if err != nil {
