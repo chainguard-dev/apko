@@ -101,7 +101,7 @@ func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.
 		return name.Digest{}, err
 	}
 	log.Infof("saving OCI image locally: %s", localSrcTag.Name())
-	resp, err := daemon.Write(localSrcTag, image)
+	resp, err := daemon.Write(localSrcTag, image, daemon.WithContext(ctx))
 	if err != nil {
 		log.Errorf("docker daemon error: %s", strings.ReplaceAll(resp, "\n", "\\n"))
 		return name.Digest{}, fmt.Errorf("failed to save OCI image locally: %w", err)
@@ -116,7 +116,7 @@ func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.
 			log.Warnf("skipping local domain tagging %s as %s", localSrcTag.Name(), localDstTag.Name())
 		} else {
 			log.Infof("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
-			if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+			if err := daemon.Tag(localSrcTag, localDstTag, daemon.WithContext(ctx)); err != nil {
 				return name.Digest{}, err
 			}
 		}
