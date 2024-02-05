@@ -20,6 +20,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	charmlog "github.com/charmbracelet/log"
 )
 
 // writerFromTarget returns a writer given a target specification.
@@ -68,3 +70,17 @@ func Writer(targets []string) (io.Writer, error) {
 
 	return io.MultiWriter(writers...), nil
 }
+
+// TODO: remove this once charmbracelet/log or log/slog supports a log level flag.
+type CharmLogLevel charmlog.Level
+
+func (l *CharmLogLevel) Set(s string) error {
+	level, err := charmlog.ParseLevel(s)
+	if err != nil {
+		return err
+	}
+	*l = CharmLogLevel(level)
+	return nil
+}
+func (l *CharmLogLevel) String() string { return charmlog.Level(*l).String() }
+func (l *CharmLogLevel) Type() string   { return "string" }
