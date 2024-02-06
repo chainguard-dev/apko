@@ -15,17 +15,13 @@
 package log
 
 import (
-	"context"
-	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
-	"golang.org/x/term"
+	charmlog "github.com/charmbracelet/log"
 )
 
 // writerFromTarget returns a writer given a target specification.
@@ -56,7 +52,7 @@ func writerFromTarget(target string) (io.Writer, error) {
 }
 
 // writer returns a writer which writes to multiple target specifications.
-func writer(targets []string) (io.Writer, error) {
+func Writer(targets []string) (io.Writer, error) {
 	writers := []io.Writer{}
 
 	if len(targets) == 1 {
@@ -75,108 +71,16 @@ func writer(targets []string) (io.Writer, error) {
 	return io.MultiWriter(writers...), nil
 }
 
-const (
-	reset   = 0
-	yellow  = 33
-	magenta = 35
-	gray    = 37
-)
+// TODO: remove this once charmbracelet/log or log/slog supports a log level flag.
+type CharmLogLevel charmlog.Level
 
-func isTerminal(w io.Writer) bool {
-	switch v := w.(type) {
-	case *os.File:
-		return term.IsTerminal(int(v.Fd()))
-	default:
-		return false
-	}
-}
-
-func color(w io.Writer, color int) string {
-	if !isTerminal(w) {
-		return ""
-	}
-
-	return fmt.Sprintf("\x1b[%dm", color)
-}
-
-func levelToColor(r slog.Record) int {
-	switch r.Level {
-	case slog.LevelError:
-		return magenta
-	case slog.LevelWarn:
-		return yellow
-	default:
-		return gray
-	}
-}
-
-func levelEmoji(r slog.Record) string {
-	switch r.Level {
-	case slog.LevelError:
-		return "❌ "
-	case slog.LevelWarn:
-		return "⚠️ "
-	case slog.LevelInfo:
-		return "ℹ️ "
-	default:
-		return "❕"
-	}
-}
-
-func Handler(logPolicy []string, level slog.Level) slog.Handler {
-	out, err := writer(logPolicy)
+func (l *CharmLogLevel) Set(s string) error {
+	level, err := charmlog.ParseLevel(s)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
-	return &handler{out: out, level: level}
-}
-
-type handler struct {
-	level slog.Level
-	out   io.Writer
-	attrs []slog.Attr
-
-	mu sync.Mutex
-}
-
-func (h *handler) Enabled(_ context.Context, l slog.Level) bool { return l >= h.level }
-func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &handler{attrs: append(h.attrs, attrs...), out: h.out}
-}
-
-func (h *handler) Handle(ctx context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if !h.Enabled(ctx, r.Level) {
-		return nil
-	}
-
-	var arch string
-	for _, a := range h.attrs {
-		if a.Key == "arch" {
-			arch = a.Value.String()
-			break
-		}
-	}
-	if arch == "" {
-		r.Attrs(func(s slog.Attr) bool {
-			if s.Key == "arch" {
-				arch = s.Value.String()
-				return false
-			}
-			return true
-		})
-	}
-	if arch != "" {
-		fmt.Fprintf(h.out, "%s %s%-10s|%s %s%s%s\n", levelEmoji(r), color(h.out, levelToColor(r)), arch, color(h.out, reset), color(h.out, levelToColor(r)), r.Message, color(h.out, reset))
-	} else {
-		fmt.Fprintf(h.out, "%s %s%-10s|%s %s%s%s\n", levelEmoji(r), color(h.out, levelToColor(r)), "", color(h.out, reset), color(h.out, levelToColor(r)), r.Message, color(h.out, reset))
-	}
-
+	*l = CharmLogLevel(level)
 	return nil
 }
-
-// This handler doesn't support groups.
-// TODO(jason): Support groups.
-func (h *handler) WithGroup(string) slog.Handler { return h }
+func (l *CharmLogLevel) String() string { return charmlog.Level(*l).String() }
+func (l *CharmLogLevel) Type() string   { return "string" }

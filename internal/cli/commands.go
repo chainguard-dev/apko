@@ -22,6 +22,7 @@ import (
 
 	"chainguard.dev/apko/pkg/log"
 
+	charmlog "github.com/charmbracelet/log"
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/release-utils/version"
@@ -34,7 +35,7 @@ func New() *cobra.Command {
 		cwd = ""
 	}
 	var logPolicy []string
-	var logLevel string
+	var level log.CharmLogLevel
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
@@ -47,26 +48,16 @@ func New() *cobra.Command {
 				}
 			}
 
-			var level slog.Level
-			switch logLevel {
-			case "debug":
-				level = slog.LevelDebug
-			case "info":
-				level = slog.LevelInfo
-			case "warn":
-				level = slog.LevelWarn
-			case "error":
-				level = slog.LevelError
-			default:
-				return fmt.Errorf("invalid log level: %s", logLevel)
+			out, err := log.Writer(logPolicy)
+			if err != nil {
+				return fmt.Errorf("failed to create log writer: %w", err)
 			}
-
-			slog.SetDefault(slog.New(log.Handler(logPolicy, level)))
+			slog.SetDefault(slog.New(charmlog.NewWithOptions(out, charmlog.Options{ReportTimestamp: true, Level: charmlog.Level(level)})))
 			return nil
 		},
 	}
 	cmd.PersistentFlags().StringSliceVar(&logPolicy, "log-policy", []string{"builtin:stderr"}, "log policy (e.g. builtin:stderr, /tmp/log/foo)")
-	cmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
+	cmd.PersistentFlags().Var(&level, "log-level", "log level (e.g. debug, info, warn, error, fatal, panic)")
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
 	cmd.AddCommand(buildCmd())
