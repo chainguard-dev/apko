@@ -345,6 +345,12 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			return open.Run(fmt.Sprintf("http://localhost:%d", l.Addr().(*net.TCPAddr).Port))
 		})
 
+		g.Go(func() error {
+			<-ctx.Done()
+			server.Close()
+			return ctx.Err()
+		})
+
 		return g.Wait()
 	}
 
