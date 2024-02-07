@@ -26,8 +26,8 @@ github.com/buger/jsonparser v1.1.1/go.mod h1:6RYKKt7H4d4+iWqouImQ9R2FZql3VbhNgx2
 github.com/bwesterb/go-ristretto v1.2.3/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/chainguard-dev/clog v1.3.0 h1:L/ey0VNH958YpzQa5OO2e2q+iOENxtLAhqkmgzh03e0=
-github.com/chainguard-dev/clog v1.3.0/go.mod h1:cV516KZWqYc/phZsCNwF36u/KMGS+Gj5Uqeb8Hlp95Y=
+github.com/chainguard-dev/clog v1.3.1 h1:CDNCty5WKQhJzoOPubk0GdXt+bPQyargmfClqebrpaQ=
+github.com/chainguard-dev/clog v1.3.1/go.mod h1:cV516KZWqYc/phZsCNwF36u/KMGS+Gj5Uqeb8Hlp95Y=
 github.com/chainguard-dev/go-apk v0.0.0-20240207141231-4a3a18e598d6 h1:EV1GSw01XEbGAUElsHbVzG2N1+pGuewP2wmzcy+9MbM=
 github.com/chainguard-dev/go-apk v0.0.0-20240207141231-4a3a18e598d6/go.mod h1:OdsmvVJb8RNVcTVQ7x07L319LLeiRaRnnsmj8qBBgb4=
 github.com/charmbracelet/lipgloss v0.9.1 h1:PNyd3jvaJbg4jRHKWXnCj1akQm4rh8dbEzN1p/u1KWg=
