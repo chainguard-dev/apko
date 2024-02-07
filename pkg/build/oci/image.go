@@ -46,7 +46,7 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 		return nil, fmt.Errorf("accessing layer MediaType: %w", err)
 	}
 	imageType := humanReadableImageType(mediaType)
-	log.Infof("building image from layer")
+	log.Debug("building image from layer")
 
 	digest, err := layer.Digest()
 	if err != nil {

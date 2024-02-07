@@ -74,16 +74,15 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	ic := bc.ImageConfiguration()
 
 	if len(ic.Archs) != 0 {
-		log.Infof("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Arch())
+		log.Warnf("ignoring archs in config, only building for current arch (%s)", bc.Arch())
 	}
 
-	log.Infof("building minirootfs '%s'", bc.TarballPath())
-
+	log.Debugf("building minirootfs %s", bc.TarballPath())
 	layerTarGZ, _, err := bc.BuildLayer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to build layer image: %w", err)
 	}
-	log.Infof("wrote minirootfs to %s\n", layerTarGZ)
+	log.Debugf("wrote minirootfs to %s", layerTarGZ)
 
 	return nil
 }

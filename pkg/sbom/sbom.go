@@ -32,16 +32,11 @@ var (
 )
 
 var DefaultOptions = options.Options{
-	OS: options.OSInfo{
-		ID:      "unknown",
-		Name:    "Alpine Linux",
-		Version: "Unknown",
-	},
 	ImageInfo: options.ImageInfo{
 		Images: []options.ArchImageInfo{},
 	},
 	FileName: "sbom",
-	Formats:  []string{"spdx", "cyclonedx"},
+	Formats:  []string{"spdx"},
 }
 
 // readReleaseDataInternal reads the information from /etc/os-release

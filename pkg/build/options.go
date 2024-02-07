@@ -35,7 +35,7 @@ func WithConfig(configFile string) Option {
 	return func(bc *Context) error {
 		ctx := context.Background()
 		log := clog.FromContext(ctx)
-		log.Infof("loading config file: %s", configFile)
+		log.Debugf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
 		if err := ic.Load(ctx, configFile); err != nil {
@@ -43,7 +43,7 @@ func WithConfig(configFile string) Option {
 		}
 
 		bc.ic = ic
-		bc.imageConfigFile = configFile
+		bc.o.ImageConfigFile = configFile
 
 		return nil
 	}

@@ -150,7 +150,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	}
 
 	if err := generateOSRelease(ctx, bc.fs, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
-		log.Infof("did not generate /etc/os-release: %v", err)
+		log.Debugf("did not generate /etc/os-release: %v", err)
 	} else if err != nil {
 		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 	}
@@ -174,7 +174,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		return err
 	}
 
-	log.Infof("finished building filesystem")
+	log.Debug("finished building filesystem")
 
 	return nil
 }

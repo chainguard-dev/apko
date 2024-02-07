@@ -67,7 +67,7 @@ func (sc *Context) WriteSupervisionServiceSimple(ctx context.Context, name strin
 
 func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) error {
 	log := clog.FromContext(ctx)
-	log.Infof("generating supervision tree")
+	log.Debug("generating supervision tree")
 
 	// generate the leaves
 	for service, svccmd := range services {

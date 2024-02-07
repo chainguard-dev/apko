@@ -26,6 +26,7 @@ import (
 
 type Options struct {
 	WithVCS                 bool               `json:"withVCS,omitempty"`
+	ImageConfigFile         string             `json:"imageConfigFile,omitempty"`
 	TarballPath             string             `json:"tarballPath,omitempty"`
 	Tags                    []string           `json:"tags,omitempty"`
 	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`
