@@ -65,8 +65,7 @@ command, e.g.
 
   # docker load < output.tar
 
-Along the image, apko will generate CycloneDX and SPDX SBOMs (software
-bill of materials) describing the image contents.
+Along the image, apko will generate SBOMs (software bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar|oci-layout-dir/>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -142,13 +141,13 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 		if _, err := layout.Write(output, idx); err != nil {
 			return fmt.Errorf("writing image layout: %w", err)
 		}
-		log.Infof("Final image layout at: %s", output)
+		log.Debugf("Final image layout at: %s", output)
 	} else {
 		// bundle the parts of the image into a tarball
 		if _, err := oci.BuildIndex(output, idx, append([]string{imageRef}, tags...)); err != nil {
 			return fmt.Errorf("bundling image: %w", err)
 		}
-		log.Infof("Final index tgz at: %s", output)
+		log.Debugf("Final index tgz at: %s", output)
 	}
 
 	// copy sboms over to the sbomPath target directory
@@ -189,6 +188,11 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	archs = ic.Archs
 	log.Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
+	// Probe the VCS URL if it is not set and we are asked to do so.
+	if o.WithVCS && ic.VCSUrl == "" {
+		ic.ProbeVCSUrl(ctx, o.ImageConfigFile)
+	}
+
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
 
@@ -198,7 +202,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	//  image/ - the summary layer files and sboms for each architecture
 	// imageDir, created here, is where the final artifacts will be: layer tars, indexes, etc.
 
-	log.Infof("building tags %v", o.Tags)
+	log.Debugf("building tags %v", o.Tags)
 
 	var errg errgroup.Group
 	imageDir := filepath.Join(workDir, "image")

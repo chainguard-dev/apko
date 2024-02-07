@@ -96,7 +96,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	}
 
 	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
-	log.Infof("Generating image SBOM")
+	log.Debug("Generating image SBOM")
 
 	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
 
@@ -153,12 +153,12 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 	defer span.End()
 
 	if len(o.SBOMFormats) == 0 {
-		log.Warnf("skipping SBOM generation")
+		log.Warn("skipping SBOM generation")
 		return nil, nil
 	}
 
 	s := newSBOM(ctx, nil, o, ic, o.SourceDateEpoch)
-	log.Infof("Generating index SBOM")
+	log.Debug("Generating index SBOM")
 
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())

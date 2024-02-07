@@ -51,12 +51,10 @@ type Context struct {
 	ic types.ImageConfiguration
 	o  options.Options
 
-	// imageConfigFile path to the config file used, if any, to load the ImageConfiguration
-	imageConfigFile string
-	s6              *s6.Context
-	assertions      []Assertion
-	fs              apkfs.FullFS
-	apk             *apk.APK
+	s6         *s6.Context
+	assertions []Assertion
+	fs         apkfs.FullFS
+	apk        *apk.APK
 }
 
 func (bc *Context) Summarize(ctx context.Context) {
@@ -105,8 +103,6 @@ func (bc *Context) BuildImage(ctx context.Context) error {
 func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayer")
 	defer span.End()
-
-	bc.Summarize(ctx)
 
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
@@ -228,10 +224,6 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		bc.o.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
-	if bc.o.WithVCS && bc.ic.VCSUrl == "" {
-		bc.ic.ProbeVCSUrl(ctx, bc.imageConfigFile)
-	}
-
 	apkOpts := []apk.Option{
 		apk.WithFS(bc.fs),
 		apk.WithArch(bc.o.Arch.ToAPK()),
@@ -261,7 +253,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 
 	bc.apk = apkImpl
 
-	log.Infof("doing pre-flight checks")
+	log.Debugf("doing pre-flight checks")
 	if err := bc.ic.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
 	}
