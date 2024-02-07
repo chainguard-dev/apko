@@ -32,6 +32,12 @@ var (
 )
 
 var DefaultOptions = options.Options{
+	// TODO(jason): Remove this default.
+	OS: options.OSInfo{
+		ID:      "unknown",
+		Name:    "Alpine Linux",
+		Version: "Unknown",
+	},
 	ImageInfo: options.ImageInfo{
 		Images: []options.ArchImageInfo{},
 	},
