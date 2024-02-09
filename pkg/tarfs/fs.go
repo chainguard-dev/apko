@@ -25,6 +25,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -61,11 +62,12 @@ type memFS struct {
 func New() *memFS {
 	return &memFS{
 		tree: &node{
-			dir:      true,
-			children: map[string]*node{},
-			xattrs:   map[string][]byte{},
-			name:     "/",
-			mode:     fs.ModeDir | 0o755,
+			dir:       true,
+			children:  map[string]*node{},
+			xattrs:    map[string][]byte{},
+			hardlinks: map[string]*tar.Header{},
+			name:      "/",
+			mode:      fs.ModeDir | 0o755,
 		},
 	}
 }
@@ -173,7 +175,7 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			return false, fmt.Errorf("unable to install symlink from %s -> %s: %w", hdr.Name, hdr.Linkname, err)
 		}
 	case tar.TypeLink:
-		if err := m.Link(hdr.Linkname, hdr.Name); err != nil {
+		if err := m.link(hdr.Linkname, hdr.Name, &hdr); err != nil {
 			return false, err
 		}
 	default:
@@ -267,6 +269,7 @@ func (m *memFS) Mkdir(path string, perms fs.FileMode) error {
 		createTime: time.Now(),
 		children:   map[string]*node{},
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
 	}
 	return nil
 }
@@ -283,7 +286,7 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 		}
 		node = targetNode
 	}
-	return node.fileInfo(path), nil
+	return node.fileInfo("", path), nil
 }
 
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
@@ -291,7 +294,7 @@ func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return node.fileInfo(path), nil
+	return node.fileInfo("", path), nil
 }
 
 func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
@@ -317,6 +320,7 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 				createTime: time.Now(),
 				children:   map[string]*node{},
 				xattrs:     map[string][]byte{},
+				hardlinks:  map[string]*tar.Header{},
 			}
 			anode.children[part] = newnode
 		}
@@ -388,6 +392,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 				modTime:    time.Now(),
 				createTime: time.Now(),
 				xattrs:     map[string][]byte{},
+				hardlinks:  map[string]*tar.Header{},
 			}
 			parentAnode.children[base] = anode
 		}
@@ -462,6 +467,7 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 			modTime:    time.Now(),
 			createTime: time.Now(),
 			xattrs:     map[string][]byte{},
+			hardlinks:  map[string]*tar.Header{},
 			te:         &te,
 		}
 		parentAnode.children[base] = anode
@@ -525,6 +531,7 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 		modTime:    time.Now(),
 		createTime: time.Now(),
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
 		te:         &te,
 	}
 	parentAnode.children[base] = anode
@@ -558,8 +565,8 @@ func (m *memFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	return nil
 }
 
-func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	anode, err := m.getNode(name)
+func (m *memFS) ReadDir(parent string) ([]fs.DirEntry, error) {
+	anode, err := m.getNode(parent)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +575,7 @@ func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	var de = make([]fs.DirEntry, 0, len(anode.children))
 	for name, node := range anode.children {
-		de = append(de, fs.FileInfoToDirEntry(node.fileInfo(name)))
+		de = append(de, fs.FileInfoToDirEntry(node.fileInfo(parent, name)))
 	}
 	// we need them in a consistent order, so sort them by filename, which is what os.ReadDir() does
 	sort.Slice(de, func(i, j int) bool {
@@ -601,6 +608,7 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		major:      unix.Major(uint64(dev)),
 		minor:      unix.Minor(uint64(dev)),
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
 	}
 
 	return nil
@@ -666,11 +674,12 @@ func (m *memFS) Symlink(oldname, newname string) error {
 		modTime:    time.Now(),
 		linkTarget: oldname,
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
 	}
 	return nil
 }
 
-func (m *memFS) Link(oldname, newname string) error {
+func (m *memFS) link(oldname, newname string, hdr *tar.Header) error {
 	parent := filepath.Dir(newname)
 	base := filepath.Base(newname)
 	anode, err := m.getNode(parent)
@@ -688,7 +697,14 @@ func (m *memFS) Link(oldname, newname string) error {
 	}
 	anode.children[base] = target
 	target.linkCount++
+	if hdr != nil {
+		target.hardlinks[newname] = hdr
+	}
 	return nil
+}
+
+func (m *memFS) Link(oldname, newname string) error {
+	return m.link(oldname, newname, nil)
 }
 
 func (m *memFS) Readlink(name string) (target string, err error) {
@@ -925,20 +941,24 @@ type node struct {
 	mu           sync.Mutex
 	xattrs       map[string][]byte
 
+	hardlinks map[string]*tar.Header
+
 	// This stores metadata for a tarfs-backed file.
 	te *tarEntry
 }
 
-func (n *node) fileInfo(name string) fs.FileInfo {
+func (n *node) fileInfo(parent, name string) fs.FileInfo {
 	return &memFileInfo{
-		node: n,
-		name: name,
+		node:   n,
+		name:   name,
+		parent: parent,
 	}
 }
 
 type memFileInfo struct {
 	*node
-	name string
+	name   string
+	parent string
 }
 
 func (m *memFileInfo) Name() string {
@@ -965,9 +985,19 @@ func (m *memFileInfo) IsDir() bool {
 }
 
 func (m *memFileInfo) Sys() any {
-	return &tar.Header{
+	name := path.Join(m.parent, m.name)
+	th := &tar.Header{
+		Name: name,
 		Mode: int64(m.mode),
 		Uid:  m.uid,
 		Gid:  m.gid,
 	}
+
+	// Preserve hardlink info if we have it.
+	if hl, ok := m.hardlinks[name]; ok {
+		th.Typeflag = hl.Typeflag
+		th.Linkname = hl.Linkname
+	}
+
+	return th
 }
