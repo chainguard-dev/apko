@@ -169,7 +169,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		local           = opts.local
 		tags            = opts.tags
 		additionalTags  []string
-		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
 
@@ -230,19 +229,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 	if err := g.Wait(); err != nil {
 		return err
-	}
-
-	// publish each arch-specific sbom
-	// publish the index sbom
-	if wantSBOM {
-		// TODO: Why aren't these just attached to idx?
-
-		// all sboms will be in the same directory
-		if err := oci.PostAttachSBOMsFromIndex(
-			ctx, idx, sboms, tags, ropt...,
-		); err != nil {
-			return fmt.Errorf("attaching sboms to index: %w", err)
-		}
 	}
 
 	// copy sboms over to the sbomPath target directory

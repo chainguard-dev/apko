@@ -29,13 +29,13 @@ import (
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
 	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/chainguard-dev/go-apk/pkg/tarball"
-	"github.com/sigstore/cosign/v2/pkg/oci"
 )
 
 // pgzip's default is GOMAXPROCS(0)
@@ -180,7 +180,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func WriteIndex(ctx context.Context, o *options.Options, idx oci.SignedImageIndex) (string, error) {
+func WriteIndex(ctx context.Context, o *options.Options, idx v1.ImageIndex) (string, error) {
 	log := clog.FromContext(ctx)
 	outfile := filepath.Join(o.TempDir(), "index.json")
 
