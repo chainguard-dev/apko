@@ -196,3 +196,10 @@ func WithLockFile(lockFile string) Option {
 		return nil
 	}
 }
+
+func WithTempDir(tmp string) Option {
+	return func(bc *Context) error {
+		bc.o.TempDirPath = tmp
+		return nil
+	}
+}
