@@ -93,6 +93,12 @@ in a keychain.`,
 			}
 			remoteOpts = append(remoteOpts, remote.Reuse(puller))
 
+			tmp, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+			if err != nil {
+				return fmt.Errorf("creating tempdir: %w", err)
+			}
+			defer os.RemoveAll(tmp)
+
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
@@ -108,6 +114,7 @@ in a keychain.`,
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
+					build.WithTempDir(tmp),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd

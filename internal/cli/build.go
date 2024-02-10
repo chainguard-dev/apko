@@ -84,6 +84,13 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 			if !writeSBOM {
 				sbomFormats = []string{}
 			}
+
+			tmp, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+			if err != nil {
+				return fmt.Errorf("creating tempdir: %w", err)
+			}
+			defer os.RemoveAll(tmp)
+
 			return BuildCmd(cmd.Context(), args[1], args[2], archs,
 				[]string{args[1]},
 				writeSBOM,
@@ -101,6 +108,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithAnnotations(annotations),
 				build.WithCacheDir(cacheDir, offline),
 				build.WithLockFile(lockfile),
+				build.WithTempDir(tmp),
 			)
 		},
 	}
