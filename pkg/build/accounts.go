@@ -16,7 +16,6 @@ package build
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -28,8 +27,6 @@ import (
 )
 
 func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
-	log.Printf("creating group %d(%s)", group.GID, group.GroupName)
-
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
 		GID:       group.GID,
