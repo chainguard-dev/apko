@@ -25,8 +25,11 @@ import (
 )
 
 type Options struct {
-	WithVCS                 bool               `json:"withVCS,omitempty"`
-	ImageConfigFile         string             `json:"imageConfigFile,omitempty"`
+	WithVCS bool `json:"withVCS,omitempty"`
+	// ImageConfigFile might, but does not have to be a filename. It might be any abstract configuration identifier.
+	ImageConfigFile string `json:"imageConfigFile,omitempty"`
+	// ImageConfigChecksum (when set) allows to detect mismatch between configuration and the lockfile.
+	ImageConfigChecksum     string             `json:"configChecksum,omitempty"`
 	TarballPath             string             `json:"tarballPath,omitempty"`
 	Tags                    []string           `json:"tags,omitempty"`
 	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`

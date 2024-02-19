@@ -16,6 +16,8 @@ package build
 
 import (
 	"context"
+	sha2562 "crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -38,12 +40,14 @@ func WithConfig(configFile string) Option {
 		log.Debugf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
-		if err := ic.Load(ctx, configFile); err != nil {
+		hasher := sha2562.New()
+		if err := ic.Load(ctx, configFile, hasher); err != nil {
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
 		bc.ic = ic
 		bc.o.ImageConfigFile = configFile
+		bc.o.ImageConfigChecksum = "sha256-" + base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 		return nil
 	}

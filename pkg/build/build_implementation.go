@@ -127,6 +127,13 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to load lock-file: %w", err)
 		}
+		if lock.Config == nil {
+			log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
+		} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lock.Config.DeepChecksum {
+			return fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
+				"(maybe regenerate the lock file)",
+				bc.o.Lockfile, bc.o.ImageConfigFile)
+		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
 			return fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)

@@ -98,7 +98,6 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	if err != nil {
 		return err
 	}
-
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
@@ -121,6 +120,10 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 
 	lock := pkglock.Lock{
 		Version: "v1",
+		Config: &pkglock.Config{
+			Name:         o.ImageConfigFile,
+			DeepChecksum: o.ImageConfigChecksum,
+		},
 		Contents: pkglock.LockContents{
 			Packages:     []pkglock.LockPkg{},
 			Repositories: []pkglock.LockRepo{},
