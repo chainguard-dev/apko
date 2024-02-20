@@ -30,15 +30,13 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/shlex"
-	"github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sigstore/cosign/v2/pkg/oci/signed"
 	"golang.org/x/exp/maps"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
 	log := clog.FromContext(ctx)
 
 	mediaType, err := layer.MediaType()
@@ -176,8 +174,7 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 		return nil, fmt.Errorf("unable to update %s config file: %w", imageType, err)
 	}
 
-	si := signed.Image(v1Image)
-	return si, nil
+	return v1Image, nil
 }
 
 func BuildImageTarballFromLayer(ctx context.Context, imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, opts options.Options) error {
