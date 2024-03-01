@@ -134,7 +134,26 @@ func (bc *Context) buildImage(ctx context.Context) error {
 				"(maybe regenerate the lock file)",
 				bc.o.Lockfile, bc.o.ImageConfigFile)
 		}
-		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
+		packages, err := GetInstalledPackagesForArch("mhazy_test/out", bc.Arch().String())
+		if err != nil {
+			return fmt.Errorf("Error: %v", err)
+		}
+		fmt.Println(packages)
+		all, err := installablePackagesForArch(lock, bc.Arch())
+		var allPkgs []apk.InstallablePackage
+		for _, p := range all {
+			var should_add bool
+			should_add = true
+			for _, installed := range packages {
+				if p.PackageName() == installed.Name {
+					should_add = false
+				}
+			}
+			if should_add == true {
+				fmt.Println("ADDING %s", p.PackageName())
+				allPkgs = append(allPkgs, p)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
 		}
@@ -148,6 +167,7 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		}
 	}
 
+	// TODO: What about accounts ?
 	if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate accounts: %w", err)
 	}
@@ -180,6 +200,9 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	if err := installCharDevices(bc.fs); err != nil {
 		return err
 	}
+
+	// TODO handle files that we overwrite in second layer:
+	// etc/apk/world and friends, lib/apk/db/installed ...
 
 	log.Debug("finished building filesystem")
 

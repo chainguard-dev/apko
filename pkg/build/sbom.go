@@ -91,9 +91,10 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
-	if len(m.Layers) != 1 {
-		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
-	}
+	// TODO: Make this work with multiple layers.
+	//	if len(m.Layers) != 1 {
+	//		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
+	//	}
 
 	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
 	log.Debug("Generating image SBOM")

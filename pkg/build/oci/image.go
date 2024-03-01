@@ -25,7 +25,6 @@ import (
 	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
@@ -34,6 +33,7 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci/signed"
 	"golang.org/x/exp/maps"
 
+	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -71,8 +71,11 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 			Created:   v1.Time{Time: created},
 		},
 	})
-
-	emptyImage := empty.Image
+	baseImage, err := build.GetImageForArch("/Users/mhazy/chainguard/apko/mhazy_test/out", arch.String())
+	if err != nil {
+		return nil, err
+	}
+	emptyImage := baseImage
 	if mediaType == ggcrtypes.OCILayer {
 		// If building an OCI layer, then we should assume OCI manifest and config too
 		emptyImage = mutate.MediaType(emptyImage, ggcrtypes.OCIManifestSchema1)
