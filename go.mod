@@ -20,7 +20,7 @@ require (
 	github.com/sigstore/cosign/v2 v2.2.3
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.8.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
 	go.opentelemetry.io/otel v1.24.0
 	golang.org/x/exp v0.0.0-20231108232855-2478ac86f678
