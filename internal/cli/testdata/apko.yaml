@@ -1,4 +1,5 @@
 contents:
+  base-image: ./testdata/baseimages/base_image/
   keyring:
     - ./testdata/melange.rsa.pub
   repositories:

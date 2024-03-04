@@ -49,6 +49,16 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
+		if bc.baseimg != nil {
+			fmt.Println("HEELLLO")
+			basepackages, err := bc.baseimg.Packages()
+			if err != nil {
+				return err
+			}
+			fmt.Println("HELLLO", basepackages)
+			packages = append(packages, basepackages...)
+		}
+		fmt.Println("HELLLLO ", packages)
 		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}

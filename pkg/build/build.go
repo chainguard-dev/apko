@@ -15,12 +15,15 @@
 package build
 
 import (
+	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -31,6 +34,8 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -40,6 +45,62 @@ import (
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
+
+func extractFile(image v1.Image, filename string) ([]byte, error) {
+	fs := mutate.Extract(image)
+	defer fs.Close()
+	reader := tar.NewReader(fs)
+	for header, err := reader.Next(); err == nil; header, err = reader.Next() {
+		if header.Name == filename {
+			b, err := io.ReadAll(reader)
+			return b, err
+		}
+	}
+	return nil, fmt.Errorf("failed to get File")
+}
+
+type BaseImage struct {
+	img v1.Image
+}
+
+func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
+	index, err := layout.ImageIndexFromPath(imgPath)
+	if err != nil {
+		return nil, err
+	}
+	indexManifest, err := index.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, m := range indexManifest.Manifests {
+		if m.Platform.Architecture == arch.ToOCIPlatform().Architecture {
+			img, err := index.Image(m.Digest)
+			if err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+			return &BaseImage{img: img}, nil
+		}
+	}
+	return nil, fmt.Errorf("image for arch not found")
+}
+
+func (baseImg *BaseImage) Packages() ([]string, error) {
+	contents, err := extractFile(baseImg.img, "lib/apk/db/installed")
+	if err != nil {
+		return nil, err
+	}
+	reader := bytes.NewReader(contents)
+	apkPkgs, err := apk.ParsePackageIndex(reader)
+	if err != nil {
+		return nil, err
+	}
+	var packages []string
+	for _, pkg := range apkPkgs {
+		packages = append(packages, fmt.Sprintf("%s=%s", pkg.Name, pkg.Version))
+	}
+	return packages, nil
+}
 
 // Context contains all of the information necessary to build an
 // OCI image. Includes the configurationfor the build,
@@ -55,6 +116,7 @@ type Context struct {
 	assertions []Assertion
 	fs         apkfs.FullFS
 	apk        *apk.APK
+	baseimg    *BaseImage
 }
 
 func (bc *Context) Summarize(ctx context.Context) {
@@ -256,6 +318,14 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	log.Debugf("doing pre-flight checks")
 	if err := bc.ic.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	if bc.ic.Contents.BaseImage != "" {
+		baseImg, err := NewBaseImage(bc.ic.Contents.BaseImage, bc.Arch())
+		if err != nil {
+			return nil, err
+		}
+		bc.baseimg = baseImg
 	}
 
 	if err := bc.initializeApk(ctx); err != nil {

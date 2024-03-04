@@ -81,6 +81,8 @@ type ImageContents struct {
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
+	// Optional: Base image to build apko on top of.
+	BaseImage string `json:"base-image,omitempty" yaml:"base-image,omitempty"`
 }
 
 type ImageEntrypoint struct {
