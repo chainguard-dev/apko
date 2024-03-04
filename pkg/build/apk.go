@@ -15,8 +15,10 @@
 package build
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 
 	"golang.org/x/sync/errgroup"
@@ -41,6 +43,30 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+		// TODO cleanup or store outside workdir?
+		if bc.baseimg != nil {
+			if err := bc.fs.Mkdir("test_dir", 0777); err != nil {
+				return err
+			}
+			if err := bc.fs.Mkdir("test_dir/"+bc.Arch().ToAPK(), 0777); err != nil {
+				return err
+			}
+			TarFile, err := bc.fs.OpenFile("test_dir/"+bc.Arch().ToAPK()+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+			if err != nil {
+				return err
+			}
+			defer TarFile.Close()
+			tarWriter := tar.NewWriter(TarFile)
+			defer tarWriter.Close()
+			header := tar.Header{Name: "APKINDEX", Size: int64(len(bc.baseimg.apkIndex)), Mode: 0777}
+			if err := tarWriter.WriteHeader(&header); err != nil {
+				return err
+			}
+			if _, err := tarWriter.Write(bc.baseimg.apkIndex); err != nil {
+				return err
+			}
+			repos = append(repos, "./test_dir")
+		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
@@ -50,15 +76,12 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
 		if bc.baseimg != nil {
-			fmt.Println("HEELLLO")
 			basepackages, err := bc.baseimg.Packages()
 			if err != nil {
 				return err
 			}
-			fmt.Println("HELLLO", basepackages)
 			packages = append(packages, basepackages...)
 		}
-		fmt.Println("HELLLLO ", packages)
 		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}

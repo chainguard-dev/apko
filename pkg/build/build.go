@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -60,7 +59,8 @@ func extractFile(image v1.Image, filename string) ([]byte, error) {
 }
 
 type BaseImage struct {
-	img v1.Image
+	img      v1.Image
+	apkIndex []byte
 }
 
 func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
@@ -77,20 +77,20 @@ func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
 		if m.Platform.Architecture == arch.ToOCIPlatform().Architecture {
 			img, err := index.Image(m.Digest)
 			if err != nil {
-				log.Fatalf("Error: %v", err)
+				return nil, err
 			}
-			return &BaseImage{img: img}, nil
+			contents, err := extractFile(img, "lib/apk/db/installed")
+			if err != nil {
+				return nil, err
+			}
+			return &BaseImage{img: img, apkIndex: contents}, nil
 		}
 	}
 	return nil, fmt.Errorf("image for arch not found")
 }
 
 func (baseImg *BaseImage) Packages() ([]string, error) {
-	contents, err := extractFile(baseImg.img, "lib/apk/db/installed")
-	if err != nil {
-		return nil, err
-	}
-	reader := bytes.NewReader(contents)
+	reader := bytes.NewReader(baseImg.apkIndex)
 	apkPkgs, err := apk.ParsePackageIndex(reader)
 	if err != nil {
 		return nil, err
