@@ -65,7 +65,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 			if _, err := tarWriter.Write(bc.baseimg.apkIndex); err != nil {
 				return err
 			}
-			repos = append(repos, "./test_dir")
+			repos = append(repos, "/var/folders/g7/5_99nys14gx9wjb6x_v76x040000gn/T/apko-2979019786/x86_64/test_dir/x86_64/APKINDEX.tar.gz")
 		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
