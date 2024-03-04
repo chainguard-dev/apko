@@ -16,6 +16,7 @@ package build
 
 import (
 	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"os"
@@ -45,18 +46,23 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
 		// TODO cleanup or store outside workdir?
 		if bc.baseimg != nil {
-			if err := bc.fs.Mkdir("test_dir", 0777); err != nil {
+			// TODO nie os
+			if err := os.Mkdir("test_dir", 0777); err != nil {
 				return err
 			}
-			if err := bc.fs.Mkdir("test_dir/"+bc.Arch().ToAPK(), 0777); err != nil {
+			// TODO nie os
+			if err := os.Mkdir("test_dir/"+bc.Arch().ToAPK(), 0777); err != nil {
 				return err
 			}
-			TarFile, err := bc.fs.OpenFile("test_dir/"+bc.Arch().ToAPK()+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+			// TODO nie os
+			TarFile, err := os.OpenFile("test_dir/"+bc.Arch().ToAPK()+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
 			if err != nil {
 				return err
 			}
 			defer TarFile.Close()
-			tarWriter := tar.NewWriter(TarFile)
+			gzipwriter := gzip.NewWriter(TarFile)
+			defer gzipwriter.Close()
+			tarWriter := tar.NewWriter(gzipwriter)
 			defer tarWriter.Close()
 			header := tar.Header{Name: "APKINDEX", Size: int64(len(bc.baseimg.apkIndex)), Mode: 0777}
 			if err := tarWriter.WriteHeader(&header); err != nil {
@@ -65,7 +71,8 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 			if _, err := tarWriter.Write(bc.baseimg.apkIndex); err != nil {
 				return err
 			}
-			repos = append(repos, "/var/folders/g7/5_99nys14gx9wjb6x_v76x040000gn/T/apko-2979019786/x86_64/test_dir/x86_64/APKINDEX.tar.gz")
+
+			repos = append(repos, "./test_dir")
 		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)

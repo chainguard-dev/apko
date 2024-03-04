@@ -102,6 +102,11 @@ func (baseImg *BaseImage) Packages() ([]string, error) {
 	return packages, nil
 }
 
+func (baseImg *BaseImage) APKPackages() ([]*apk.Package, error) {
+	reader := bytes.NewReader(baseImg.apkIndex)
+	return apk.ParsePackageIndex(reader)
+}
+
 // Context contains all of the information necessary to build an
 // OCI image. Includes the configurationfor the build,
 // the path to the config file, the executor for root jails and
