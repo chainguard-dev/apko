@@ -1,0 +1,28 @@
+{
+  "Signature": null,
+  "Description": "",
+  "Packages": [
+    {
+      "Name": "base-package",
+      "Version": "1.0.0-r0",
+      "Arch": "x86_64",
+      "Description": "",
+      "License": "MIT",
+      "Origin": "base-package",
+      "Maintainer": "",
+      "URL": "",
+      "Checksum": "9I0UKwk/HEaKC13UrjV/mEilyHQ=",
+      "Dependencies": null,
+      "Provides": null,
+      "InstallIf": null,
+      "Size": 2240,
+      "InstalledSize": 2775,
+      "ProviderPriority": 0,
+      "BuildTime": "1970-01-01T00:00:00Z",
+      "BuildDate": 0,
+      "RepoCommit": "",
+      "Replaces": null,
+      "DataHash": "3b40986e92c7a2cef2da99a3dfe3728e490b7519d63258622fa6273f573dcfca"
+    }
+  ]
+}

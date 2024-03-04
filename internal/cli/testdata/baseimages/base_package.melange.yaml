@@ -1,0 +1,26 @@
+package:
+  name: base-package
+  version: 1.0.0
+  epoch: 0
+  description: ""
+  copyright:
+    - license: MIT
+  target-architecture:
+    - aarch64
+    - x86_64
+
+
+environment:
+  contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    packages:
+      - busybox
+
+pipeline:
+  - name: Generate /base/hello.txt
+    runs: |
+      mkdir -p ${{targets.destdir}}/base
+      cat >${{targets.destdir}}/base/hello.txt <<EOF
+      HELLO
+      EOF

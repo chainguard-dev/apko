@@ -1,0 +1,14 @@
+contents:
+  keyring:
+    - ./melange.rsa.pub
+  repositories:
+    - ./packages
+  packages:
+    - base-package
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64
