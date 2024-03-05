@@ -96,7 +96,7 @@ type ImageEntrypoint struct {
 
 type ImageAccounts struct {
 	// Required: The user to run the container as. This can be a username or UID.
-	RunAs string `json:"run-as,omitempty" yaml:"run-as"`
+	RunAs string `json:"run-as,omitempty" yaml:"run-as" jsonschema:"oneof_type=string;int"`
 	// Required: List of users to populate the image with
 	Users []User `json:"users,omitempty"`
 	// Required: List of groups to populate the image with
