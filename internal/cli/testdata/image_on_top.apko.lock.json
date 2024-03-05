@@ -1,0 +1,67 @@
+{
+  "version": "v1",
+  "config": {
+    "name": "testdata/image_on_top.apko.yaml",
+    "checksum": "sha256-e8+5HSL1aijCo2FK+rFiEs4FiWKmOvF+XZaUhb2hgs4="
+  },
+  "contents": {
+    "keyring": [
+      {
+        "name": "./testdata/melange.rsa.pub",
+        "url": "./testdata/melange.rsa.pub"
+      }
+    ],
+    "repositories": [
+      {
+        "name": "./testdata/packages/x86_64",
+        "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "./testdata/packages/aarch64",
+        "url": "./testdata/packages/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      }
+    ],
+    "packages": [
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/x86_64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-683",
+          "checksum": "sha1-oXacc62O+kkgv9dOBzVT8l9KS5M="
+        },
+        "control": {
+          "range": "bytes=684-977",
+          "checksum": "sha1-rX5jgy01ywltDaWd8dl8gsWqXME="
+        },
+        "data": {
+          "range": "bytes=978-2853",
+          "checksum": "sha256-O9V5KNN9gPvdCFVIwshsmTsnxOJ4ZuqzeXFlNCIuGHE="
+        },
+        "checksum": "Q1rX5jgy01ywltDaWd8dl8gsWqXME="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/aarch64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-685",
+          "checksum": "sha1-kbowI3e7UvplL3ZHoHpbv7i+47g="
+        },
+        "control": {
+          "range": "bytes=686-976",
+          "checksum": "sha1-uIjhMe2B+wUAK++IOJ7p4LWgVuc="
+        },
+        "data": {
+          "range": "bytes=977-2854",
+          "checksum": "sha256-lwoxHbyl5alwpSMkqnn4hn2LnwNDemZqI9O4fBya8fI="
+        },
+        "checksum": "Q1uIjhMe2B+wUAK++IOJ7p4LWgVuc="
+      }
+    ]
+  }
+}
