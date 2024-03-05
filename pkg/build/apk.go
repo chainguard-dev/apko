@@ -44,18 +44,16 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
-		// TODO cleanup or store outside workdir?
 		if bc.baseimg != nil {
-			// TODO nie os
-			if err := os.Mkdir("test_dir", 0777); err != nil {
+			baseDir := bc.o.TempDir() + "/test_dir"
+			archDir := baseDir + "/" + bc.Arch().ToAPK()
+			if err := os.Mkdir(baseDir, 0777); err != nil {
 				return err
 			}
-			// TODO nie os
-			if err := os.Mkdir("test_dir/"+bc.Arch().ToAPK(), 0777); err != nil {
+			if err := os.Mkdir(archDir, 0777); err != nil {
 				return err
 			}
-			// TODO nie os
-			TarFile, err := os.OpenFile("test_dir/"+bc.Arch().ToAPK()+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+			TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
 			if err != nil {
 				return err
 			}
@@ -72,7 +70,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 				return err
 			}
 
-			repos = append(repos, "./test_dir")
+			repos = append(repos, baseDir)
 		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
