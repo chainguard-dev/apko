@@ -17,7 +17,6 @@ package cli_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +35,7 @@ func TestLock(t *testing.T) {
 
 	golden := filepath.Join("testdata", "apko.lock.json")
 
-	config := filepath.Join("testdata", "image_on_top.apko.yaml")
+	config := filepath.Join("testdata", "apko.yaml")
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	opts := []build.Option{build.WithConfig(config)}
 	outputPath := filepath.Join(tmp, "apko.lock.json")
@@ -48,7 +47,6 @@ func TestLock(t *testing.T) {
 	require.NoError(t, err)
 	got, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
-	fmt.Print(string(got[:]))
 
 	if !bytes.Equal(want, got) {
 		if diff := cmp.Diff(want, got); diff != "" {

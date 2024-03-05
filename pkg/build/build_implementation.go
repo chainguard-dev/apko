@@ -218,11 +218,6 @@ func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
 }
 
 func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.Package, []*apk.APKResolved, error) {
-	world, err := bc.apk.GetWorld()
-	if err != nil {
-		return nil, nil, err
-	}
-	fmt.Println("WORLD: ", world)
 	allPkgs, _, err := bc.apk.ResolveWorld(ctx)
 	if err != nil {
 		return nil, nil, err
