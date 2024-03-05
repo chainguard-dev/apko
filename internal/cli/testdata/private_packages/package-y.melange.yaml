@@ -1,0 +1,28 @@
+package:
+  name: package-y
+  version: 1.0.0
+  epoch: 0
+  description: "package y"
+  copyright:
+    - license: MIT
+  dependencies:
+    runtime:
+      - package-x
+  target-architecture:
+    - aarch64
+    - x86_64
+
+environment:
+  contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    packages:
+      - busybox
+
+pipeline:
+  - name: Generate file
+    runs: |
+      mkdir -p ${{targets.destdir}}/y
+      cat >${{targets.destdir}}/y/hello.txt <<EOF
+      HELLO
+      EOF

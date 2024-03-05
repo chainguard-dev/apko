@@ -1,0 +1,16 @@
+contents:
+  keyring:
+    - ./melange.rsa.pub
+    - ./private_packages/private_pkg_key.rsa.pub
+  repositories:
+    - ./packages
+    - ./private_packages/packages
+  packages:
+    - package-y
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64
