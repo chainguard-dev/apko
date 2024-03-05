@@ -15,11 +15,8 @@
 package build
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 
 	"golang.org/x/sync/errgroup"
@@ -45,32 +42,11 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	eg.Go(func() error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
 		if bc.baseimg != nil {
-			baseDir := bc.o.TempDir() + "/test_dir"
-			archDir := baseDir + "/" + bc.Arch().ToAPK()
-			if err := os.Mkdir(baseDir, 0777); err != nil {
-				return err
-			}
-			if err := os.Mkdir(archDir, 0777); err != nil {
-				return err
-			}
-			TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+			err := bc.baseimg.CreateAPKIndexArchive()
 			if err != nil {
 				return err
 			}
-			defer TarFile.Close()
-			gzipwriter := gzip.NewWriter(TarFile)
-			defer gzipwriter.Close()
-			tarWriter := tar.NewWriter(gzipwriter)
-			defer tarWriter.Close()
-			header := tar.Header{Name: "APKINDEX", Size: int64(len(bc.baseimg.apkIndex)), Mode: 0777}
-			if err := tarWriter.WriteHeader(&header); err != nil {
-				return err
-			}
-			if _, err := tarWriter.Write(bc.baseimg.apkIndex); err != nil {
-				return err
-			}
-
-			repos = append(repos, baseDir)
+			repos = append(repos, bc.baseimg.APKIndexPath())
 		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)

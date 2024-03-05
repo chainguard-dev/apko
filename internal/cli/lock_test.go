@@ -17,6 +17,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +48,7 @@ func TestLock(t *testing.T) {
 	require.NoError(t, err)
 	got, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
+	fmt.Print(string(got[:]))
 
 	if !bytes.Equal(want, got) {
 		if diff := cmp.Diff(want, got); diff != "" {

@@ -45,6 +45,13 @@ import (
 	"chainguard.dev/apko/pkg/s6"
 )
 
+type BaseImage struct {
+	img      v1.Image
+	apkIndex []byte
+	tmpDir   string
+	arch     types.Architecture
+}
+
 func extractFile(image v1.Image, filename string) ([]byte, error) {
 	fs := mutate.Extract(image)
 	defer fs.Close()
@@ -58,12 +65,7 @@ func extractFile(image v1.Image, filename string) ([]byte, error) {
 	return nil, fmt.Errorf("failed to get File")
 }
 
-type BaseImage struct {
-	img      v1.Image
-	apkIndex []byte
-}
-
-func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
+func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) {
 	index, err := layout.ImageIndexFromPath(imgPath)
 	if err != nil {
 		return nil, err
@@ -79,15 +81,28 @@ func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
 			if err != nil {
 				return nil, err
 			}
-			contents, err := extractFile(img, "lib/apk/db/installed")
-			if err != nil {
-				return nil, err
-			}
-			fmt.Print(string(contents[:]))
-			return &BaseImage{img: img, apkIndex: contents}, nil
+			return img, nil
 		}
 	}
 	return nil, fmt.Errorf("image for arch not found")
+}
+
+func NewBaseImage(imgPath string, arch types.Architecture, tmpDir string) (*BaseImage, error) {
+	img, err := getImageForArch(imgPath, arch)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := extractFile(img, "lib/apk/db/installed")
+	if err != nil {
+		return nil, err
+	}
+	return &BaseImage{
+			img:      img,
+			apkIndex: contents,
+			tmpDir:   tmpDir,
+			arch:     arch,
+		},
+		nil
 }
 
 func (baseImg *BaseImage) Packages() ([]string, error) {
@@ -106,6 +121,38 @@ func (baseImg *BaseImage) Packages() ([]string, error) {
 func (baseImg *BaseImage) APKPackages() ([]*apk.Package, error) {
 	reader := bytes.NewReader(baseImg.apkIndex)
 	return apk.ParsePackageIndex(reader)
+}
+
+func (baseImg *BaseImage) APKIndexPath() string {
+	return baseImg.tmpDir + "/base_image_apkindex"
+}
+
+func (baseImg *BaseImage) CreateAPKIndexArchive() error {
+	baseDir := baseImg.APKIndexPath()
+	archDir := baseDir + "/" + baseImg.arch.ToAPK()
+	if err := os.Mkdir(baseDir, 0777); err != nil {
+		return err
+	}
+	if err := os.Mkdir(archDir, 0777); err != nil {
+		return err
+	}
+	TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+	if err != nil {
+		return err
+	}
+	defer TarFile.Close()
+	gzipwriter := gzip.NewWriter(TarFile)
+	defer gzipwriter.Close()
+	tarWriter := tar.NewWriter(gzipwriter)
+	defer tarWriter.Close()
+	header := tar.Header{Name: "APKINDEX", Size: int64(len(baseImg.apkIndex)), Mode: 0777}
+	if err := tarWriter.WriteHeader(&header); err != nil {
+		return err
+	}
+	if _, err := tarWriter.Write(baseImg.apkIndex); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Context contains all of the information necessary to build an
@@ -297,6 +344,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
 	}
+
 	// only try to pass the cache dir if one of the following is true:
 	// - the user has explicitly set a cache dir
 	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
@@ -314,6 +362,15 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}
 
+	if bc.ic.Contents.BaseImage != "" {
+		baseImg, err := NewBaseImage(bc.ic.Contents.BaseImage, bc.Arch(), bc.o.TempDir())
+		if err != nil {
+			return nil, err
+		}
+		bc.baseimg = baseImg
+		apkOpts = append(apkOpts, apk.WithNoSignatureIndexes(bc.baseimg.APKIndexPath()))
+	}
+
 	apkImpl, err := apk.New(apkOpts...)
 	if err != nil {
 		return nil, err
@@ -324,14 +381,6 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	log.Debugf("doing pre-flight checks")
 	if err := bc.ic.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
-	}
-
-	if bc.ic.Contents.BaseImage != "" {
-		baseImg, err := NewBaseImage(bc.ic.Contents.BaseImage, bc.Arch())
-		if err != nil {
-			return nil, err
-		}
-		bc.baseimg = baseImg
 	}
 
 	if err := bc.initializeApk(ctx); err != nil {
