@@ -217,6 +217,34 @@ func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
 	return bc.apk.ResolveAndCalculateWorld(ctx)
 }
 
+func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.Package, []*apk.APKResolved, error) {
+	allPkgs, _, err := bc.apk.ResolveWorld(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	existingPkgs, err := bc.baseimg.APKPackages()
+	if err != nil {
+		return nil, nil, err
+	}
+	var toInstall []*apk.RepositoryPackage
+	for _, pkg := range allPkgs {
+		inBase := false
+		for _, existingPkg := range existingPkgs {
+			if pkg.Name == existingPkg.Name {
+				inBase = true
+			}
+		}
+		if !inBase {
+			toInstall = append(toInstall, pkg)
+		}
+	}
+	resolvedPkgs, err := bc.apk.CalculateWorld(ctx, toInstall)
+	if err != nil {
+		return nil, nil, err
+	}
+	return existingPkgs, resolvedPkgs, nil
+}
+
 func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {
 	return bc.apk.GetInstalled()
 }

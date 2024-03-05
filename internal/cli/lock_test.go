@@ -35,7 +35,7 @@ func TestLock(t *testing.T) {
 
 	golden := filepath.Join("testdata", "apko.lock.json")
 
-	config := filepath.Join("testdata", "apko.yaml")
+	config := filepath.Join("testdata", "image_on_top.apko.yaml")
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	opts := []build.Option{build.WithConfig(config)}
 	outputPath := filepath.Join(tmp, "apko.lock.json")

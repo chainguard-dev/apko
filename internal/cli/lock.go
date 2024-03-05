@@ -153,7 +153,13 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			return err
 		}
 
-		resolvedPkgs, err := bc.Resolve(ctx)
+		basePkgs, resolvedPkgs, err := bc.ResolveWithBase(ctx)
+		fmt.Println("HELLO", basePkgs)
+		var resolvedNames []string
+		for _, x := range resolvedPkgs {
+			resolvedNames = append(resolvedNames, x.Package.Name)
+		}
+		fmt.Println("HELLO", resolvedNames)
 
 		if err != nil {
 			return fmt.Errorf("failed to get package list for image: %w", err)
