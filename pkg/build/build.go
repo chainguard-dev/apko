@@ -83,6 +83,7 @@ func NewBaseImage(imgPath string, arch types.Architecture) (*BaseImage, error) {
 			if err != nil {
 				return nil, err
 			}
+			fmt.Print(string(contents[:]))
 			return &BaseImage{img: img, apkIndex: contents}, nil
 		}
 	}

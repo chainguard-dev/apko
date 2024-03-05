@@ -2,9 +2,14 @@ contents:
   base-image: ./testdata/base_image/
   keyring:
     - ./testdata/melange.rsa.pub
+  #  - ./testdata/private_packages/private_pkg_key.rsa.pub
   repositories:
     - ./testdata/packages
+   # - ./testdata/private_packages/packages
   packages:
+  #  - package-x=1.0.0-r0 
+  #  - package-y=1.0.0-r0 
+  #  - pretend-baselayout=1.0.0-r0 
     - replayout
 
 entrypoint:
