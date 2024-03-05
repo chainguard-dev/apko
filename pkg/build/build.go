@@ -15,8 +15,6 @@
 package build
 
 import (
-	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/hex"
@@ -33,8 +31,6 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -44,116 +40,6 @@ import (
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
 )
-
-type BaseImage struct {
-	img      v1.Image
-	apkIndex []byte
-	tmpDir   string
-	arch     types.Architecture
-}
-
-func extractFile(image v1.Image, filename string) ([]byte, error) {
-	fs := mutate.Extract(image)
-	defer fs.Close()
-	reader := tar.NewReader(fs)
-	for header, err := reader.Next(); err == nil; header, err = reader.Next() {
-		if header.Name == filename {
-			b, err := io.ReadAll(reader)
-			return b, err
-		}
-	}
-	return nil, fmt.Errorf("failed to get File")
-}
-
-func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) {
-	index, err := layout.ImageIndexFromPath(imgPath)
-	if err != nil {
-		return nil, err
-	}
-	indexManifest, err := index.IndexManifest()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, m := range indexManifest.Manifests {
-		if m.Platform.Architecture == arch.ToOCIPlatform().Architecture {
-			img, err := index.Image(m.Digest)
-			if err != nil {
-				return nil, err
-			}
-			return img, nil
-		}
-	}
-	return nil, fmt.Errorf("image for arch not found")
-}
-
-func NewBaseImage(imgPath string, arch types.Architecture, tmpDir string) (*BaseImage, error) {
-	img, err := getImageForArch(imgPath, arch)
-	if err != nil {
-		return nil, err
-	}
-	contents, err := extractFile(img, "lib/apk/db/installed")
-	if err != nil {
-		return nil, err
-	}
-	return &BaseImage{
-			img:      img,
-			apkIndex: contents,
-			tmpDir:   tmpDir,
-			arch:     arch,
-		},
-		nil
-}
-
-func (baseImg *BaseImage) Packages() ([]string, error) {
-	reader := bytes.NewReader(baseImg.apkIndex)
-	apkPkgs, err := apk.ParsePackageIndex(reader)
-	if err != nil {
-		return nil, err
-	}
-	var packages []string
-	for _, pkg := range apkPkgs {
-		packages = append(packages, fmt.Sprintf("%s=%s", pkg.Name, pkg.Version))
-	}
-	return packages, nil
-}
-
-func (baseImg *BaseImage) APKPackages() ([]*apk.Package, error) {
-	reader := bytes.NewReader(baseImg.apkIndex)
-	return apk.ParsePackageIndex(reader)
-}
-
-func (baseImg *BaseImage) APKIndexPath() string {
-	return baseImg.tmpDir + "/base_image_apkindex"
-}
-
-func (baseImg *BaseImage) CreateAPKIndexArchive() error {
-	baseDir := baseImg.APKIndexPath()
-	archDir := baseDir + "/" + baseImg.arch.ToAPK()
-	if err := os.Mkdir(baseDir, 0777); err != nil {
-		return err
-	}
-	if err := os.Mkdir(archDir, 0777); err != nil {
-		return err
-	}
-	TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
-	if err != nil {
-		return err
-	}
-	defer TarFile.Close()
-	gzipwriter := gzip.NewWriter(TarFile)
-	defer gzipwriter.Close()
-	tarWriter := tar.NewWriter(gzipwriter)
-	defer tarWriter.Close()
-	header := tar.Header{Name: "APKINDEX", Size: int64(len(baseImg.apkIndex)), Mode: 0777}
-	if err := tarWriter.WriteHeader(&header); err != nil {
-		return err
-	}
-	if _, err := tarWriter.Write(baseImg.apkIndex); err != nil {
-		return err
-	}
-	return nil
-}
 
 // Context contains all of the information necessary to build an
 // OCI image. Includes the configurationfor the build,
