@@ -17,6 +17,7 @@ package generator
 import (
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
 	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
@@ -30,10 +31,10 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
-func Generators(fsys apkfs.FullFS) map[string]Generator {
+func Generators(fsys apkfs.FullFS, baseImage *baseimg.BaseImage) map[string]Generator {
 	generators := map[string]Generator{}
 
-	sx := spdx.New(fsys)
+	sx := spdx.New(fsys, baseImage)
 	generators[sx.Key()] = &sx
 
 	cdx := cyclonedx.New(fsys)

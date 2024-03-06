@@ -126,7 +126,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.ImageInfo.Arch = arch
 
 	var sboms = make([]types.SBOM, 0)
-	generators := generator.Generators(bc.fs)
+	generators := generator.Generators(bc.fs, bc.baseimg)
 	for _, format := range s.Formats {
 		gen, ok := generators[format]
 		if !ok {
@@ -178,7 +178,7 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 		return archs[i].String() < archs[j].String()
 	})
 
-	generators := generator.Generators(nil)
+	generators := generator.Generators(nil, nil)
 	var sboms = make([]types.SBOM, 0, len(generators))
 	for _, format := range s.Formats {
 		gen, ok := generators[format]

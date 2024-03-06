@@ -15,6 +15,7 @@
 package spdx
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -39,15 +41,16 @@ const (
 	NOASSERTION          = "NOASSERTION"
 	ExtRefPackageManager = "PACKAGE-MANAGER"
 	ExtRefTypePurl       = "purl"
-	apkSBOMdir           = "/var/lib/db/sbom"
+	apkSBOMdir           = "var/lib/db/sbom"
 )
 
 type SPDX struct {
-	fs apkfs.FullFS
+	fs        apkfs.FullFS
+	baseImage *baseimg.BaseImage
 }
 
-func New(fs apkfs.FullFS) SPDX {
-	return SPDX{fs}
+func New(fs apkfs.FullFS, baseImage *baseimg.BaseImage) SPDX {
+	return SPDX{fs, baseImage}
 }
 
 func (sx *SPDX) Key() string {
@@ -121,6 +124,33 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	doc.Packages = append(doc.Packages, *layerPackage)
 
+	if sx.baseImage != nil {
+		basePkgs, err := apk.ParseInstalled(bytes.NewReader(sx.baseImage.ApkIndex()))
+		if err != nil {
+			return err
+		}
+		for _, pkg := range basePkgs {
+			p := sx.apkPackage(opts, pkg)
+			// TODO : this id is unfortunate, package comes from different layer
+			p.ID = stringToIdentifier(fmt.Sprintf(
+				"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
+			))
+			doc.Packages = append(doc.Packages, p)
+
+			// Add to the relationships list
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: layerPackage.ID,
+				Type:    "CONTAINS",
+				Related: p.ID,
+			})
+
+			// Check to see if the apk contains an sbom describing itself
+			if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, true); err != nil {
+				return fmt.Errorf("parsing internal apk SBOM: %w", err)
+			}
+		}
+	}
+
 	for _, pkg := range opts.Packages {
 		// add the package
 		p := sx.apkPackage(opts, pkg)
@@ -139,7 +169,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		})
 
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
+		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, false); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -189,9 +219,9 @@ func replacePackage(doc *Document, originalID, newID string) {
 func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		fmt.Sprintf("/%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
+		fmt.Sprintf("/%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
+		fmt.Sprintf("/%s/%s.spdx.json", apkSBOMdir, p.Name),
 	} {
 		info, err := fsys.Stat(s)
 		if err != nil {
@@ -209,23 +239,48 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
+func (sx *SPDX) GetInternalSBOM(isBasePackage bool, opts *options.Options, p *Package) (*Document, error) {
+	if !isBasePackage {
+		path, err := locateApkSBOM(sx.fs, p)
+		if err != nil {
+			return nil, fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+		}
+		if path == "" {
+			return nil, nil
+		}
+
+		internalDoc, err := sx.ParseInternalSBOM(opts, path)
+		if err != nil {
+			// TODO: Log error parsing apk SBOM
+			return nil, nil
+		}
+		return internalDoc, nil
+	} else {
+		// TODO(mhazy) ExtractFile should indicate not found vs other errors
+		sbomPath := fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version)
+		data, err := sx.baseImage.ExtractFile(sbomPath)
+		if err != nil {
+			return nil, err
+		}
+		internalSBOM := &Document{}
+		if err := json.Unmarshal(data, internalSBOM); err != nil {
+			return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+		}
+		return internalSBOM, nil
+	}
+}
+
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage, isBasePackage bool) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, p)
+	internalDoc, err := sx.GetInternalSBOM(isBasePackage, opts, p)
 	if err != nil {
-		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+		return err
 	}
-	if path == "" {
+	if internalDoc == nil {
 		return nil
 	}
-
-	internalDoc, err := sx.ParseInternalSBOM(opts, path)
-	if err != nil {
-		// TODO: Log error parsing apk SBOM
-		return nil
-	}
-
 	// Cycle the top level elements...
+
 	elementIDs := map[string]struct{}{}
 	for _, elementID := range internalDoc.DocumentDescribes {
 		elementIDs[elementID] = struct{}{}

@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
@@ -56,7 +57,7 @@ type Context struct {
 	assertions []Assertion
 	fs         apkfs.FullFS
 	apk        *apk.APK
-	baseimg    *BaseImage
+	baseimg    *baseimg.BaseImage
 }
 
 func (bc *Context) Summarize(ctx context.Context) {
@@ -257,7 +258,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	}
 
 	if bc.ic.Contents.BaseImage != "" {
-		baseImg, err := NewBaseImage(bc.ic.Contents.BaseImage, bc.Arch(), bc.o.TempDir())
+		baseImg, err := baseimg.New(bc.ic.Contents.BaseImage, bc.Arch(), bc.o.TempDir())
 		if err != nil {
 			return nil, err
 		}
