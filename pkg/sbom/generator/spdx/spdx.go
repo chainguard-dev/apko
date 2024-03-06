@@ -131,6 +131,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			return err
 		}
 	}
+	// TODO(mhazy) Make this cleaner
 	addedFiles := map[string]struct{}{}
 	for _, pkg := range opts.Packages {
 		shouldSkip := false

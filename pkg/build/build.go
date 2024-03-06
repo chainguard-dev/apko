@@ -266,6 +266,9 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			return nil, err
 		}
 		bc.baseimg = baseImg
+		// Apko checks signatures of all indexes by default. For the base image apk index we don't
+		// have the signature. On the other hand we still want to check signatures of the remaining
+		// indexes. This way we disable signature checks only for the base image apk index.
 		apkOpts = append(apkOpts, apk.WithNoSignatureIndexes(bc.baseimg.APKIndexPath()))
 	}
 

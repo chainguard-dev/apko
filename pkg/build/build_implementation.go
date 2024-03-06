@@ -122,6 +122,9 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
+	// When using base image for the build, apko adds new layer on top of the base. This means
+	// it will override files from lower layers. We add all installed packages from base to current
+	// installed file so that the final installed file contains all image's packages.
 	if bc.baseimg != nil {
 		basePkgs, err := bc.baseimg.InstalledPackages()
 		if err != nil {
@@ -228,6 +231,9 @@ func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
 }
 
 func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, error) {
+	// Firstly, resolve the world with all packages. When using base image, the world file contains
+	// all packages from base as well. It's important that ResolveWorld operates on APKINDEX files only
+	// and doesn't fetch actual packages.
 	allPkgs, _, err := bc.apk.ResolveWorld(ctx)
 	if err != nil {
 		return nil, err
@@ -252,6 +258,7 @@ func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, err
 			toInstall = append(toInstall, pkg)
 		}
 	}
+	// Note: CalculateWorld fetches the packages - they have to be available in the repository.
 	resolvedPkgs, err := bc.apk.CalculateWorld(ctx, toInstall)
 	if err != nil {
 		return nil, err

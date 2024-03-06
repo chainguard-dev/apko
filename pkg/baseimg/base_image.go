@@ -81,13 +81,17 @@ func New(imgPath string, arch types.Architecture, tmpDir string) (*BaseImage, er
 	if err != nil {
 		return nil, err
 	}
-	return &BaseImage{
-			img:      img,
-			apkIndex: contents,
-			tmpDir:   tmpDir,
-			arch:     arch,
-		},
-		nil
+	baseImg := BaseImage{
+		img:      img,
+		apkIndex: contents,
+		tmpDir:   tmpDir,
+		arch:     arch,
+	}
+	err = baseImg.createAPKIndexArchive()
+	if err != nil {
+		return nil, err
+	}
+	return &baseImg, nil
 }
 
 func (baseImg *BaseImage) Image() v1.Image {
@@ -103,7 +107,7 @@ func (baseImg *BaseImage) APKIndexPath() string {
 	return baseImg.tmpDir + "/base_image_apkindex"
 }
 
-func (baseImg *BaseImage) CreateAPKIndexArchive() error {
+func (baseImg *BaseImage) createAPKIndexArchive() error {
 	archDir := baseImg.APKIndexPath() + "/" + baseImg.arch.ToAPK()
 	if err := os.MkdirAll(archDir, 0777); err != nil {
 		return err

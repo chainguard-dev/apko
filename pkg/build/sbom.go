@@ -98,6 +98,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
 	log.Debug("Generating image SBOM")
 
+	// TODO(mhazy) len(m.Layers)-1 or what? Does it really matter?
 	s.ImageInfo.LayerDigest = m.Layers[len(m.Layers)-1].Digest.String()
 
 	info, err := sbom.ReadReleaseData(bc.fs)
