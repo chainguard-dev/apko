@@ -108,14 +108,14 @@ func (baseImg *BaseImage) CreateAPKIndexArchive() error {
 	if err := os.MkdirAll(archDir, 0777); err != nil {
 		return err
 	}
-	TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+	tarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
 	if err != nil {
 		return err
 	}
-	defer TarFile.Close()
-	gzipwriter := gzip.NewWriter(TarFile)
-	defer gzipwriter.Close()
-	tarWriter := tar.NewWriter(gzipwriter)
+	defer tarFile.Close()
+	gzipWriter := gzip.NewWriter(tarFile)
+	defer gzipWriter.Close()
+	tarWriter := tar.NewWriter(gzipWriter)
 	defer tarWriter.Close()
 	header := tar.Header{Name: "APKINDEX", Size: int64(len(baseImg.apkIndex)), Mode: 0777}
 	if err := tarWriter.WriteHeader(&header); err != nil {
