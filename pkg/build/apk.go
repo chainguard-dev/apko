@@ -23,6 +23,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+func (bc *Context) postBuildSetApk(ctx context.Context) error {
+	repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+	if err := bc.apk.SetRepositories(ctx, repos); err != nil {
+		return fmt.Errorf("failed to initialize apk repositories: %w", err)
+	}
+	return nil
+}
+
 func (bc *Context) initializeApk(ctx context.Context) error {
 	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.Repositories)
 	if err := bc.apk.InitDB(ctx, alpineVersions...); err != nil {

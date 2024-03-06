@@ -118,6 +118,9 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	if err := bc.BuildImage(ctx); err != nil {
 		return "", nil, err
 	}
+	if err := bc.postBuildSetApk(ctx); err != nil {
+		return "", nil, err
+	}
 
 	return bc.ImageLayoutToLayer(ctx)
 }
