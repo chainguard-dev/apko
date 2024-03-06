@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
@@ -149,7 +150,8 @@ func TestBuildImageFromLayer(t *testing.T) {
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
 			ctx := context.Background()
-			got, err := BuildImageFromLayer(ctx, layer, c.cfg, now, types.ParseArchitecture(""))
+			emptyImg := empty.Image
+			got, err := BuildImageFromLayer(ctx, emptyImg, layer, c.cfg, now, types.ParseArchitecture(""))
 			require.NoError(t, err)
 			gotcfg, err := got.ConfigFile()
 			require.NoError(t, err)
