@@ -232,9 +232,9 @@ func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, err
 	if err != nil {
 		return nil, err
 	}
-	var existingPkgs []*apk.Package
+	var existingPkgs []*apk.InstalledPackage
 	if bc.baseimg != nil {
-		existingPkgs, err = bc.baseimg.APKPackages()
+		existingPkgs, err = bc.baseimg.InstalledPackages()
 		if err != nil {
 			return nil, err
 		}

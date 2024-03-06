@@ -57,11 +57,15 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
 		if bc.baseimg != nil {
-			basepackages, err := bc.baseimg.Packages()
+			basePkgs, err := bc.baseimg.InstalledPackages()
+			var basePkgsNames []string
+			for _, basePkg := range basePkgs {
+				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Package.Name, basePkg.Package.Version))
+			}
 			if err != nil {
 				return err
 			}
-			packages = append(packages, basepackages...)
+			packages = append(packages, basePkgsNames...)
 		}
 		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)

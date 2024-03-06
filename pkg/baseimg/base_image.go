@@ -94,28 +94,6 @@ func (baseImg *BaseImage) Image() v1.Image {
 	return baseImg.img
 }
 
-func (baseImg *BaseImage) ApkIndex() []byte {
-	return baseImg.apkIndex
-}
-
-func (baseImg *BaseImage) Packages() ([]string, error) {
-	reader := bytes.NewReader(baseImg.apkIndex)
-	apkPkgs, err := apk.ParsePackageIndex(reader)
-	if err != nil {
-		return nil, err
-	}
-	var packages []string
-	for _, pkg := range apkPkgs {
-		packages = append(packages, fmt.Sprintf("%s=%s", pkg.Name, pkg.Version))
-	}
-	return packages, nil
-}
-
-func (baseImg *BaseImage) APKPackages() ([]*apk.Package, error) {
-	reader := bytes.NewReader(baseImg.apkIndex)
-	return apk.ParsePackageIndex(reader)
-}
-
 func (baseImg *BaseImage) InstalledPackages() ([]*apk.InstalledPackage, error) {
 	reader := bytes.NewReader(baseImg.apkIndex)
 	return apk.ParseInstalled(reader)
