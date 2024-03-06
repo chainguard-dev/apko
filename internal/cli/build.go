@@ -239,11 +239,11 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		)
 
 		bc, err := build.New(ctx, tarfs.New(), bopts...)
-		if bc.ImageConfiguration().Contents.BaseImage != "" && o.Lockfile == "" {
-			return nil, nil, fmt.Errorf("building with base image is supported only with lockfile")
-		}
 		if err != nil {
 			return nil, nil, err
+		}
+		if bc.ImageConfiguration().Contents.BaseImage != "" && o.Lockfile == "" {
+			return nil, nil, fmt.Errorf("building with base image is supported only with lockfile")
 		}
 
 		// save the build context for later

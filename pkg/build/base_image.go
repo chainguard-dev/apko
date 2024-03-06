@@ -117,12 +117,8 @@ func (baseImg *BaseImage) APKIndexPath() string {
 }
 
 func (baseImg *BaseImage) CreateAPKIndexArchive() error {
-	baseDir := baseImg.APKIndexPath()
-	archDir := baseDir + "/" + baseImg.arch.ToAPK()
-	if err := os.Mkdir(baseDir, 0777); err != nil {
-		return err
-	}
-	if err := os.Mkdir(archDir, 0777); err != nil {
+	archDir := baseImg.APKIndexPath() + "/" + baseImg.arch.ToAPK()
+	if err := os.MkdirAll(archDir, 0777); err != nil {
 		return err
 	}
 	TarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
