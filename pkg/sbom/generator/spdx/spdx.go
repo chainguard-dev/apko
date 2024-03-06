@@ -15,7 +15,6 @@
 package spdx
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -124,8 +123,25 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	doc.Packages = append(doc.Packages, *layerPackage)
 
+	var basePkgs []*apk.InstalledPackage
+	var err error
+	if sx.baseImage != nil {
+		basePkgs, err = sx.baseImage.InstalledPackages()
+		if err != nil {
+			return err
+		}
+	}
 	addedFiles := map[string]struct{}{}
 	for _, pkg := range opts.Packages {
+		shouldSkip := false
+		for _, basePkg := range basePkgs {
+			if pkg.Name == basePkg.Name {
+				shouldSkip = true
+			}
+		}
+		if shouldSkip {
+			continue
+		}
 		// add the package
 		p := sx.apkPackage(opts, pkg)
 		// Add the layer to the ID to avoid clashes
@@ -152,34 +168,25 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 	}
 
-	for k, _ := range addedFiles {
-		fmt.Println(k)
-	}
-	if sx.baseImage != nil {
-		basePkgs, err := apk.ParseInstalled(bytes.NewReader(sx.baseImage.ApkIndex()))
+	for _, pkg := range basePkgs {
+		p := sx.apkPackage(opts, pkg)
+		// TODO : this id is unfortunate, package comes from different layer
+		p.ID = stringToIdentifier(fmt.Sprintf(
+			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
+		))
+		doc.Packages = append(doc.Packages, p)
+
+		// Add to the relationships list
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: layerPackage.ID,
+			Type:    "CONTAINS",
+			Related: p.ID,
+		})
+
+		// Check to see if the apk contains an sbom describing itself
+		_, err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, true, addedFiles)
 		if err != nil {
-			return err
-		}
-		for _, pkg := range basePkgs {
-			p := sx.apkPackage(opts, pkg)
-			// TODO : this id is unfortunate, package comes from different layer
-			p.ID = stringToIdentifier(fmt.Sprintf(
-				"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
-			))
-			doc.Packages = append(doc.Packages, p)
-
-			// Add to the relationships list
-			doc.Relationships = append(doc.Relationships, Relationship{
-				Element: layerPackage.ID,
-				Type:    "CONTAINS",
-				Related: p.ID,
-			})
-
-			// Check to see if the apk contains an sbom describing itself
-			_, err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, true, addedFiles)
-			if err != nil {
-				return fmt.Errorf("parsing internal apk SBOM: %w", err)
-			}
+			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
 
