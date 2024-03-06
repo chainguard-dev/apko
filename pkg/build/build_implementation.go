@@ -122,6 +122,16 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
 	defer span.End()
 
+	if bc.baseimg != nil {
+		basePkgs, err := bc.baseimg.InstalledPackages()
+		if err != nil {
+			return err
+		}
+		for _, basePkg := range basePkgs {
+			bc.apk.AddInstalledPackage(&basePkg.Package, basePkg.Files)
+		}
+	}
+
 	if bc.o.Lockfile != "" {
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {

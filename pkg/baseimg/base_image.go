@@ -116,6 +116,11 @@ func (baseImg *BaseImage) APKPackages() ([]*apk.Package, error) {
 	return apk.ParsePackageIndex(reader)
 }
 
+func (baseImg *BaseImage) InstalledPackages() ([]*apk.InstalledPackage, error) {
+	reader := bytes.NewReader(baseImg.apkIndex)
+	return apk.ParseInstalled(reader)
+}
+
 func (baseImg *BaseImage) APKIndexPath() string {
 	return baseImg.tmpDir + "/base_image_apkindex"
 }
