@@ -38,7 +38,7 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
 	log := clog.FromContext(ctx)
 
 	mediaType, err := layer.MediaType()
@@ -72,15 +72,14 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 		},
 	})
 
-	emptyImage := empty.Image
 	if mediaType == ggcrtypes.OCILayer {
 		// If building an OCI layer, then we should assume OCI manifest and config too
-		emptyImage = mutate.MediaType(emptyImage, ggcrtypes.OCIManifestSchema1)
-		emptyImage = mutate.ConfigMediaType(emptyImage, ggcrtypes.OCIConfigJSON)
+		baseImage = mutate.MediaType(baseImage, ggcrtypes.OCIManifestSchema1)
+		baseImage = mutate.ConfigMediaType(baseImage, ggcrtypes.OCIConfigJSON)
 	}
-	v1Image, err := mutate.Append(emptyImage, adds...)
+	v1Image, err := mutate.Append(baseImage, adds...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
+		return nil, fmt.Errorf("unable to append %s layer to image: %w", imageType, err)
 	}
 
 	annotations := ic.Annotations
@@ -182,7 +181,8 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 
 func BuildImageTarballFromLayer(ctx context.Context, imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, opts options.Options) error {
 	log := clog.FromContext(ctx)
-	v1Image, err := BuildImageFromLayer(ctx, layer, ic, opts.SourceDateEpoch, opts.Arch)
+	emptyImage := empty.Image
+	v1Image, err := BuildImageFromLayer(ctx, emptyImage, layer, ic, opts.SourceDateEpoch, opts.Arch)
 	if err != nil {
 		return err
 	}

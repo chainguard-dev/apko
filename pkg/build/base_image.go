@@ -90,6 +90,10 @@ func NewBaseImage(imgPath string, arch types.Architecture, tmpDir string) (*Base
 		nil
 }
 
+func (baseImg *BaseImage) Image() v1.Image {
+	return baseImg.img
+}
+
 func (baseImg *BaseImage) Packages() ([]string, error) {
 	reader := bytes.NewReader(baseImg.apkIndex)
 	apkPkgs, err := apk.ParsePackageIndex(reader)

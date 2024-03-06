@@ -239,6 +239,9 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		)
 
 		bc, err := build.New(ctx, tarfs.New(), bopts...)
+		if bc.ImageConfiguration().Contents.BaseImage != "" && o.Lockfile == "" {
+			return nil, nil, fmt.Errorf("building with base image is supported only with lockfile")
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -267,7 +270,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
 
-			img, err := oci.BuildImageFromLayer(ctx, layer, bc.ImageConfiguration(), bde, bc.Arch())
+			img, err := oci.BuildImageFromLayer(ctx, bc.BaseImage(), layer, bc.ImageConfiguration(), bde, bc.Arch())
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}

@@ -31,6 +31,7 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -60,6 +61,13 @@ type Context struct {
 
 func (bc *Context) Summarize(ctx context.Context) {
 	bc.ic.Summarize(ctx)
+}
+
+func (bc *Context) BaseImage() v1.Image {
+	if bc.baseimg != nil {
+		return bc.baseimg.Image()
+	}
+	return empty.Image
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {

@@ -101,6 +101,8 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 	}
 	ic.Contents.Repositories = repos
 
+	// The top level components restriction is on the conservative side. Some of them would probably work out of the box.
+	// If someone needs any of them, it should be a matter of testing and hopefully doing minor changes.
 	if ic.Contents.BaseImage != "" {
 		if !cmp.Equal((ImageEntrypoint{}), ic.Entrypoint) ||
 			ic.Cmd != "" ||
