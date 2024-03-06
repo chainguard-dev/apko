@@ -29,7 +29,7 @@ type LockContents struct {
 }
 
 type LockBaseImg struct {
-	Packages []LockPkg `json:"packages,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type LockPkg struct {

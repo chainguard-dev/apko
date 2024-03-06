@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/chainguard-dev/clog"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
 
@@ -99,6 +100,19 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 		repos = append(repos, repo)
 	}
 	ic.Contents.Repositories = repos
+
+	if ic.Contents.BaseImage != "" {
+		if !cmp.Equal((ImageEntrypoint{}), ic.Entrypoint) ||
+			ic.Cmd != "" ||
+			ic.StopSignal != "" ||
+			ic.WorkDir != "" ||
+			!cmp.Equal((ImageAccounts{}), ic.Accounts) ||
+			len(ic.Environment) != 0 ||
+			len(ic.Paths) != 0 ||
+			len(ic.Annotations) != 0 {
+			return fmt.Errorf("when using base image only allowed top level components are contents, archs and includes")
+		}
+	}
 
 	return nil
 }

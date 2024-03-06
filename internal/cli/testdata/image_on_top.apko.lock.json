@@ -2,7 +2,7 @@
   "version": "v1",
   "config": {
     "name": "testdata/image_on_top.apko.yaml",
-    "checksum": "sha256-e8+5HSL1aijCo2FK+rFiEs4FiWKmOvF+XZaUhb2hgs4="
+    "checksum": "sha256-g7NGDrxghf+Rl6iTHwViznLKW/5WDaW6Ma+z5TTNX8c="
   },
   "contents": {
     "keyring": [
