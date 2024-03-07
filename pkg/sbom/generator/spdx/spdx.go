@@ -43,6 +43,15 @@ const (
 	apkSBOMdir           = "var/lib/db/sbom"
 )
 
+func isBasePackage(pkg *apk.InstalledPackage, basePkgs []*apk.InstalledPackage) bool {
+	for _, basePkg := range basePkgs {
+		if basePkg.Name == pkg.Name {
+			return true
+		}
+	}
+	return false
+}
+
 type SPDX struct {
 	fs        apkfs.FullFS
 	baseImage *baseimg.BaseImage
@@ -131,18 +140,14 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			return err
 		}
 	}
-	// TODO(mhazy) Make this cleaner
-	addedFiles := map[string]struct{}{}
+	var topPkgs []*apk.InstalledPackage
 	for _, pkg := range opts.Packages {
-		shouldSkip := false
-		for _, basePkg := range basePkgs {
-			if pkg.Name == basePkg.Name {
-				shouldSkip = true
-			}
+		if !isBasePackage(pkg, basePkgs) {
+			topPkgs = append(topPkgs, pkg)
 		}
-		if shouldSkip {
-			continue
-		}
+	}
+	topFiles := map[string]struct{}{}
+	for _, pkg := range topPkgs {
 		// add the package
 		p := sx.apkPackage(opts, pkg)
 		// Add the layer to the ID to avoid clashes
@@ -159,33 +164,32 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			Related: p.ID,
 		})
 
-		newFiles, err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, false, map[string]struct{}{})
+		internalSbom, err := sx.GetInternalSBOM(opts, &p)
+		if err != nil {
+			return err
+		}
+		newFiles, err := sx.ProcessInternalApkSBOM(internalSbom, doc, &p, pkg, map[string]struct{}{})
 		// Check to see if the apk contains an sbom describing itself
 		if err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 		for newFile, emptyStruct := range newFiles {
-			addedFiles[newFile] = emptyStruct
+			topFiles[newFile] = emptyStruct
 		}
 	}
 
 	for _, pkg := range basePkgs {
 		p := sx.apkPackage(opts, pkg)
-		// TODO : this id is unfortunate, package comes from different layer
 		p.ID = stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
 		))
 		doc.Packages = append(doc.Packages, p)
 
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: layerPackage.ID,
-			Type:    "CONTAINS",
-			Related: p.ID,
-		})
-
-		// Check to see if the apk contains an sbom describing itself
-		_, err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg, true, addedFiles)
+		internalSbom, err := sx.GetSBOMFromBaseImage(&p)
+		if err != nil {
+			return err
+		}
+		_, err = sx.ProcessInternalApkSBOM(internalSbom, doc, &p, pkg, topFiles)
 		if err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
@@ -256,43 +260,37 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) GetInternalSBOM(isBasePackage bool, opts *options.Options, p *Package) (*Document, error) {
-	if !isBasePackage {
-		path, err := locateApkSBOM(sx.fs, p)
-		if err != nil {
-			return nil, fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
-		}
-		if path == "" {
-			return nil, nil
-		}
-
-		internalDoc, err := sx.ParseInternalSBOM(opts, path)
-		if err != nil {
-			// TODO: Log error parsing apk SBOM
-			return nil, nil
-		}
-		return internalDoc, nil
-	} else {
-		// TODO(mhazy) ExtractFile should indicate not found vs other errors
-		sbomPath := fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version)
-		data, err := sx.baseImage.ExtractFile(sbomPath)
-		if err != nil {
-			return nil, err
-		}
-		internalSBOM := &Document{}
-		if err := json.Unmarshal(data, internalSBOM); err != nil {
-			return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
-		}
-		return internalSBOM, nil
-	}
-}
-
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage, isBasePackage bool, existingFiles map[string]struct{}) (map[string]struct{}, error) {
-	// Check if apk installed an SBOM
-	internalDoc, err := sx.GetInternalSBOM(isBasePackage, opts, p)
+func (sx *SPDX) GetSBOMFromBaseImage(p *Package) (*Document, error) {
+	sbomPath := fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version)
+	data, err := sx.baseImage.ExtractFile(sbomPath)
 	if err != nil {
 		return nil, err
 	}
+	internalSBOM := &Document{}
+	if err := json.Unmarshal(data, internalSBOM); err != nil {
+		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+	}
+	return internalSBOM, nil
+}
+
+func (sx *SPDX) GetInternalSBOM(opts *options.Options, p *Package) (*Document, error) {
+	path, err := locateApkSBOM(sx.fs, p)
+	if err != nil {
+		return nil, fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+	}
+	if path == "" {
+		return nil, nil
+	}
+
+	internalDoc, err := sx.ParseInternalSBOM(opts, path)
+	if err != nil {
+		// TODO: Log error parsing apk SBOM
+		return nil, nil
+	}
+	return internalDoc, nil
+}
+
+func (sx *SPDX) ProcessInternalApkSBOM(internalDoc *Document, doc *Document, p *Package, ipkg *apk.InstalledPackage, existingFiles map[string]struct{}) (map[string]struct{}, error) {
 	if internalDoc == nil {
 		return nil, nil
 	}
