@@ -119,7 +119,7 @@ require (
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/tools v0.15.0 // indirect
-	gopkg.in/go-jose/go-jose.v2 v2.6.1 // indirect
+	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
