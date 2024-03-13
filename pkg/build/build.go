@@ -80,6 +80,10 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 
 func (bc *Context) BuildImage(ctx context.Context) error {
 	log := clog.FromContext(ctx)
+
+	ctx, span := otel.Tracer("apko").Start(ctx, "BuildImage")
+	defer span.End()
+
 	if err := bc.buildImage(ctx); err != nil {
 		log.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ic)
@@ -192,6 +196,10 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 // overwrite the provided timestamp if present.
 func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error) {
 	log := clog.FromContext(ctx)
+
+	ctx, span := otel.Tracer("apko").Start(ctx, "New")
+	defer span.End()
+
 	bc := Context{
 		o:  options.Default,
 		fs: fs,
