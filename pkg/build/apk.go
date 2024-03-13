@@ -19,11 +19,15 @@ import (
 	"fmt"
 	"regexp"
 
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func (bc *Context) initializeApk(ctx context.Context) error {
+	ctx, span := otel.Tracer("apko").Start(ctx, "iniializeApk")
+	defer span.End()
+
 	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.Repositories)
 	if err := bc.apk.InitDB(ctx, alpineVersions...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
