@@ -119,9 +119,6 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 func (bc *Context) buildImage(ctx context.Context) error {
 	log := clog.FromContext(ctx)
 
-	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
-	defer span.End()
-
 	if bc.o.Lockfile != "" {
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
