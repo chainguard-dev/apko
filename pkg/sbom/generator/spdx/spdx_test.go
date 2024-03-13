@@ -63,7 +63,7 @@ var testOpts = &options.Options{
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
+	sx := New(fsys, nil)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
 	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestReproducible(t *testing.T) {
 	// they are identical
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
+	sx := New(fsys, nil)
 	d := [][]byte{}
 	for i := 0; i < 2; i++ {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
@@ -100,7 +100,7 @@ func TestValidateSPDX(t *testing.T) {
 	}
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
+	sx := New(fsys, nil)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
 	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)

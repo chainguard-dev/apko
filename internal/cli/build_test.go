@@ -103,3 +103,77 @@ func TestBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildWithBase(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	apko_temp_dir := t.TempDir()
+
+	golden := filepath.Join("testdata", "top_image")
+	goldenSboms := filepath.Join(golden, "sboms")
+	config := filepath.Join("testdata", "image_on_top.apko.yaml")
+	lockfile := filepath.Join("testdata", "image_on_top.apko.lock.json")
+
+	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+	opts := []build.Option{build.WithConfig(config), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden:latest"), build.WithLockFile(lockfile), build.WithTempDir(apko_temp_dir)}
+
+	sbomPath := filepath.Join(tmp, "sboms")
+	err := os.MkdirAll(sbomPath, 0o750)
+	require.NoError(t, err)
+
+	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, opts...)
+	require.NoError(t, err)
+
+	root, err := layout.ImageIndexFromPath(tmp)
+	require.NoError(t, err)
+
+	gold, err := layout.ImageIndexFromPath(golden)
+	require.NoError(t, err)
+
+	// Not strictly necessary, but this will validate that the index is well-formed.
+	require.NoError(t, validate.Index(root))
+	require.NoError(t, validate.Index(gold))
+
+	// TODO: We should diff manifests and layer contents.
+	got, err := root.Digest()
+	require.NoError(t, err)
+
+	want, err := gold.Digest()
+	require.NoError(t, err)
+
+	require.Equal(t, want, got)
+
+	// Check that the sbomPath is not empty.
+	sboms, err := os.ReadDir(goldenSboms)
+	require.NoError(t, err)
+	require.NotEmpty(t, sboms)
+
+	for _, s := range sboms {
+		goldSbom := filepath.Join(goldenSboms, s.Name())
+		sbom := filepath.Join(sbomPath, s.Name())
+
+		want, err := os.ReadFile(goldSbom)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(sbom)
+		require.NoError(t, err)
+
+		if bytes.Equal(want, got) {
+			continue
+		}
+
+		// https://github.com/google/go-cmp/issues/224#issuecomment-650429859
+		transformJSON := cmp.FilterValues(func(x, y []byte) bool {
+			return json.Valid(x) && json.Valid(y)
+		}, cmp.Transformer("ParseJSON", func(in []byte) (out interface{}) {
+			if err := json.Unmarshal(in, &out); err != nil {
+				panic(err) // should never occur given previous filter to ensure valid JSON
+			}
+			return out
+		}))
+
+		if diff := cmp.Diff(want, got, transformJSON); diff != "" {
+			t.Errorf("Mismatched SBOMs (-%q +%q):\n%s", goldSbom, sbom, diff)
+		}
+	}
+}

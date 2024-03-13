@@ -29,6 +29,7 @@ import (
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -39,15 +40,25 @@ const (
 	NOASSERTION          = "NOASSERTION"
 	ExtRefPackageManager = "PACKAGE-MANAGER"
 	ExtRefTypePurl       = "purl"
-	apkSBOMdir           = "/var/lib/db/sbom"
+	apkSBOMdir           = "var/lib/db/sbom"
 )
 
-type SPDX struct {
-	fs apkfs.FullFS
+func isBasePackage(pkg *apk.InstalledPackage, basePkgs []*apk.InstalledPackage) bool {
+	for _, basePkg := range basePkgs {
+		if basePkg.Name == pkg.Name {
+			return true
+		}
+	}
+	return false
 }
 
-func New(fs apkfs.FullFS) SPDX {
-	return SPDX{fs}
+type SPDX struct {
+	fs        apkfs.FullFS
+	baseImage *baseimg.BaseImage
+}
+
+func New(fs apkfs.FullFS, baseImage *baseimg.BaseImage) SPDX {
+	return SPDX{fs, baseImage}
 }
 
 func (sx *SPDX) Key() string {
@@ -121,7 +132,22 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 	doc.Packages = append(doc.Packages, *layerPackage)
 
+	var basePkgs []*apk.InstalledPackage
+	var err error
+	if sx.baseImage != nil {
+		basePkgs, err = sx.baseImage.InstalledPackages()
+		if err != nil {
+			return err
+		}
+	}
+	var topPkgs []*apk.InstalledPackage
 	for _, pkg := range opts.Packages {
+		if !isBasePackage(pkg, basePkgs) {
+			topPkgs = append(topPkgs, pkg)
+		}
+	}
+	topFiles := map[string]struct{}{}
+	for _, pkg := range topPkgs {
 		// add the package
 		p := sx.apkPackage(opts, pkg)
 		// Add the layer to the ID to avoid clashes
@@ -138,8 +164,33 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			Related: p.ID,
 		})
 
+		internalSbom, err := sx.GetInternalSBOM(opts, &p)
+		if err != nil {
+			return err
+		}
+		newFiles, err := sx.ProcessInternalApkSBOM(internalSbom, doc, &p, pkg, map[string]struct{}{})
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
+		if err != nil {
+			return fmt.Errorf("parsing internal apk SBOM: %w", err)
+		}
+		for newFile, emptyStruct := range newFiles {
+			topFiles[newFile] = emptyStruct
+		}
+	}
+
+	for _, pkg := range basePkgs {
+		p := sx.apkPackage(opts, pkg)
+		p.ID = stringToIdentifier(fmt.Sprintf(
+			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
+		))
+		doc.Packages = append(doc.Packages, p)
+
+		internalSbom, err := sx.GetSBOMFromBaseImage(&p)
+		if err != nil {
+			return err
+		}
+		_, err = sx.ProcessInternalApkSBOM(internalSbom, doc, &p, pkg, topFiles)
+		if err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -189,9 +240,9 @@ func replacePackage(doc *Document, originalID, newID string) {
 func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		fmt.Sprintf("/%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
+		fmt.Sprintf("/%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
+		fmt.Sprintf("/%s/%s.spdx.json", apkSBOMdir, p.Name),
 	} {
 		info, err := fsys.Stat(s)
 		if err != nil {
@@ -209,23 +260,42 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
-	// Check if apk installed an SBOM
+func (sx *SPDX) GetSBOMFromBaseImage(p *Package) (*Document, error) {
+	sbomPath := fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version)
+	data, err := sx.baseImage.ExtractFile(sbomPath)
+	if err != nil {
+		return nil, err
+	}
+	internalSBOM := &Document{}
+	if err := json.Unmarshal(data, internalSBOM); err != nil {
+		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+	}
+	return internalSBOM, nil
+}
+
+func (sx *SPDX) GetInternalSBOM(opts *options.Options, p *Package) (*Document, error) {
 	path, err := locateApkSBOM(sx.fs, p)
 	if err != nil {
-		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
+		return nil, fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
 	if path == "" {
-		return nil
+		return nil, nil
 	}
 
 	internalDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
 		// TODO: Log error parsing apk SBOM
-		return nil
+		return nil, nil
 	}
+	return internalDoc, nil
+}
 
+func (sx *SPDX) ProcessInternalApkSBOM(internalDoc *Document, doc *Document, p *Package, ipkg *apk.InstalledPackage, existingFiles map[string]struct{}) (map[string]struct{}, error) {
+	if internalDoc == nil {
+		return nil, nil
+	}
 	// Cycle the top level elements...
+
 	elementIDs := map[string]struct{}{}
 	for _, elementID := range internalDoc.DocumentDescribes {
 		elementIDs[elementID] = struct{}{}
@@ -256,8 +326,9 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo, ipkg); err != nil {
-		return fmt.Errorf("copying element: %w", err)
+	addedFiles, err := copySBOMElements(internalDoc, doc, todo, ipkg, existingFiles)
+	if err != nil {
+		return nil, fmt.Errorf("copying element: %w", err)
 	}
 
 	// TODO: This loop seems very wrong.
@@ -272,10 +343,10 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		}
 	}
 
-	return nil
+	return addedFiles, nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage) error {
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage, upperLayerFiles map[string]struct{}) (map[string]struct{}, error) {
 	// Walk the graph looking for things to copy.
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
@@ -302,7 +373,9 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 	// those when copying from sourceDoc.Files.
 	ownedFiles := map[string]struct{}{}
 	for _, hdr := range ipkg.Files {
-		ownedFiles[hdr.Name] = struct{}{}
+		if _, ok := upperLayerFiles[hdr.Name]; !ok {
+			ownedFiles[hdr.Name] = struct{}{}
+		}
 	}
 
 	// Now copy everything over.
@@ -346,10 +419,10 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 			}
 		}
 
-		return fmt.Errorf("unable to find %d elements in source document: %v", missed, missing)
+		return nil, fmt.Errorf("unable to find %d elements in source document: %v", missed, missing)
 	}
 
-	return nil
+	return ownedFiles, nil
 }
 
 // ParseInternalSBOM opens an SBOM inside apks and

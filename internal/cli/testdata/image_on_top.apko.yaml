@@ -1,0 +1,12 @@
+contents:
+  base-image: ./testdata/base_image/
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - replayout
+
+archs:
+- x86_64
+- aarch64

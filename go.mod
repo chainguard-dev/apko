@@ -4,6 +4,8 @@ go 1.21.2
 
 toolchain go1.21.5
 
+replace github.com/chainguard-dev/go-apk => /Users/mhazy/chainguard/go-apk
+
 require (
 	github.com/chainguard-dev/clog v1.3.1
 	github.com/chainguard-dev/go-apk v0.0.0-20240308000330-c3465ca40e90

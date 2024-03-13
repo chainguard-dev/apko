@@ -91,14 +91,15 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
-	if len(m.Layers) != 1 {
+	if len(m.Layers) < 1 {
 		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
 	}
 
 	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
 	log.Debug("Generating image SBOM")
 
-	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
+	// TODO(mhazy) len(m.Layers)-1 or what? Does it really matter?
+	s.ImageInfo.LayerDigest = m.Layers[len(m.Layers)-1].Digest.String()
 
 	info, err := sbom.ReadReleaseData(bc.fs)
 	if err != nil {
@@ -126,7 +127,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.ImageInfo.Arch = arch
 
 	var sboms = make([]types.SBOM, 0)
-	generators := generator.Generators(bc.fs)
+	generators := generator.Generators(bc.fs, bc.baseimg)
 	for _, format := range s.Formats {
 		gen, ok := generators[format]
 		if !ok {
@@ -178,7 +179,7 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 		return archs[i].String() < archs[j].String()
 	})
 
-	generators := generator.Generators(nil)
+	generators := generator.Generators(nil, nil)
 	var sboms = make([]types.SBOM, 0, len(generators))
 	for _, format := range s.Formats {
 		gen, ok := generators[format]

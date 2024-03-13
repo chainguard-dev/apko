@@ -31,11 +31,13 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/s6"
@@ -55,10 +57,18 @@ type Context struct {
 	assertions []Assertion
 	fs         apkfs.FullFS
 	apk        *apk.APK
+	baseimg    *baseimg.BaseImage
 }
 
 func (bc *Context) Summarize(ctx context.Context) {
 	bc.ic.Summarize(ctx)
+}
+
+func (bc *Context) BaseImage() v1.Image {
+	if bc.baseimg != nil {
+		return bc.baseimg.Image()
+	}
+	return empty.Image
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
@@ -106,6 +116,9 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
+		return "", nil, err
+	}
+	if err := bc.postBuildSetApk(ctx); err != nil {
 		return "", nil, err
 	}
 
@@ -229,6 +242,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
 	}
+
 	// only try to pass the cache dir if one of the following is true:
 	// - the user has explicitly set a cache dir
 	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
@@ -244,6 +258,18 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
 	} else {
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	}
+
+	if bc.ic.Contents.BaseImage != "" {
+		baseImg, err := baseimg.New(bc.ic.Contents.BaseImage, bc.Arch(), bc.o.TempDir())
+		if err != nil {
+			return nil, err
+		}
+		bc.baseimg = baseImg
+		// Apko checks signatures of all indexes by default. For the base image apk index we don't
+		// have the signature. On the other hand we still want to check signatures of the remaining
+		// indexes. This way we disable signature checks only for the base image apk index.
+		apkOpts = append(apkOpts, apk.WithNoSignatureIndexes(bc.baseimg.APKIndexPath()))
 	}
 
 	apkImpl, err := apk.New(apkOpts...)
