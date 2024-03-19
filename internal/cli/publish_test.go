@@ -86,7 +86,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168"
+	want := "sha256:1ca4904130865f45b43e38cb0881a893882858722c939a135eba1368b6ef128e"
 	require.Equal(t, want, digest.String())
 
 	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
@@ -104,7 +104,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:89c0c452eab526bebac6d4e4ed8c14a3f9bfdf1e828438add5276a73fb657ae1"
+	swant := "sha256:7ff0ebaa2004c434d5c0f0a344c4a6196d325f10c68e3fc83f5b754496b350c7"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
@@ -113,8 +113,8 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:1659428b4c619a57536ad62e473d46adbf9ca51eb8c765a9e835e6d1bddf8bcb",
-		"sha256:7126743a21e6bc7d81a72bb7570b0b951190eec361c50980592eacd177fd46d5",
+		"sha256:08217ce210dd97f4bc12f127b6180ea35e43b10618a13a05f38d7e02db09e169",
+		"sha256:57ae2c343855bd1c85ae519d6c919e1fc39bc43afb1d126fad55d1c92bf45452",
 	}
 
 	for i, m := range im.Manifests {

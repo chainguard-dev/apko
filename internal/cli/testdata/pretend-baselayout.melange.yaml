@@ -5,9 +5,14 @@ package:
   description: "replacement baselayout"
   copyright:
     - license: MIT
+  target-architecture:
+    - aarch64
+    - x86_64
 
 environment:
   contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/edge/main
     packages:
       - busybox
 
