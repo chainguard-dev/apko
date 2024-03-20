@@ -295,6 +295,14 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 		}
 	}
 
+	for _, f := range sourceDoc.Files {
+		if _, ok := todo[f.ID]; !ok {
+			continue
+		}
+
+		done[f.ID] = struct{}{}
+	}
+
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
@@ -450,6 +458,7 @@ type Document struct {
 	DataLicense          string                `json:"dataLicense"`
 	Namespace            string                `json:"documentNamespace"`
 	DocumentDescribes    []string              `json:"documentDescribes"`
+	Files                []File                `json:"files,omitempty"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
