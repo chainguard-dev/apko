@@ -114,7 +114,7 @@ func TestPublish(t *testing.T) {
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
 		"sha256:ef788d8d654e6ad1815228eca59ac9513307dae18cad929290c63d2b0296548d",
-		"sha256:7126743a21e6bc7d81a72bb7570b0b951190eec361c50980592eacd177fd46d5",
+		"sha256:1329a56b0d402007ea2fe540d70a067ec0534ece42a406225a2ed78a6f5f8c2d",
 	}
 
 	for i, m := range im.Manifests {
