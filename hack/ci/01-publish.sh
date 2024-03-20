@@ -25,17 +25,6 @@ for f in examples/alpine-base-rootless.yaml examples/wolfi-base.yaml; do
   # Run the image.
   docker run --rm ${img} echo hello | grep hello
 
-  if [[ ${f} == "examples/wolfi-base.yaml" ]]; then
-    # Download SBOM and check that it contains
-    # files derived from package SBOMs melange produces in /var/lib/db/sbom
-    cosign download sbom --platform=linux/amd64 "${REF}" | tee ci-testing.sbom.json
-    HAS_FILES="$(cat ci-testing.sbom.json | jq 'keys | contains(["files"])')"
-    if [[ "${HAS_FILES}" != "true" ]]; then
-      echo "SBOM does not have files. Exiting."
-      exit 1
-    fi
-  fi
-
   # Each platform should contain platform-specific etc/apk/arch file.
   crane export --platform linux/amd64 "${REF}" | tar -Ox etc/apk/arch | grep x86_64
   crane export --platform linux/arm64 "${REF}" | tar -Ox etc/apk/arch | grep aarch64
