@@ -15,27 +15,6 @@
   "documentDescribes": [
     "SPDXRef-Package-sha256-4cf68ee87832e43afa6c97fb66321726617378af2881232478aa19b0b5789477"
   ],
-  "files": [
-    {
-      "SPDXID": "SPDXRef-File--etc-os-release",
-      "fileName": "etc/os-release",
-      "licenseConcluded": "NOASSERTION",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "ca5e527bbb8a5cc9c4c2d2b4e29618d8ca3be5f8"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "53db9a78bf280b687690cdda8e275157713d725aaa54fe662f3bcf2f51eea457"
-        },
-        {
-          "algorithm": "SHA512",
-          "checksumValue": "ab0cf3e8797ea0e989960f40808333150b4c1ee2fa056b1cc271a98da0e1e8638bbaf5e89aad91436fb3b994a74b1886714df6b153125e712b08d3eaacd24dd5"
-        }
-      ]
-    }
-  ],
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-sha256-4cf68ee87832e43afa6c97fb66321726617378af2881232478aa19b0b5789477",
@@ -81,9 +60,6 @@
       "name": "pretend-baselayout",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": true,
-      "hasFiles": [
-        "SPDXRef-File--etc-os-release"
-      ],
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
@@ -105,9 +81,6 @@
       "name": "replayout",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": true,
-      "hasFiles": [
-        "SPDXRef-File--etc-os-release"
-      ],
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
