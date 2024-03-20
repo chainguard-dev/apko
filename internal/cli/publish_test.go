@@ -113,7 +113,7 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:1659428b4c619a57536ad62e473d46adbf9ca51eb8c765a9e835e6d1bddf8bcb",
+		"sha256:ef788d8d654e6ad1815228eca59ac9513307dae18cad929290c63d2b0296548d",
 		"sha256:7126743a21e6bc7d81a72bb7570b0b951190eec361c50980592eacd177fd46d5",
 	}
 
