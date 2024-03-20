@@ -93,7 +93,6 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
 		Packages:      []Package{},
-		Files:         []File{},
 		Relationships: []Relationship{},
 	}
 	var imagePackage *Package
@@ -256,7 +255,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo, ipkg); err != nil {
+	if err := copySBOMElements(internalDoc, doc, todo); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
@@ -275,7 +274,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	return nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage) error {
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
 	// Walk the graph looking for things to copy.
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
@@ -284,25 +283,6 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 				todo[r.Related] = struct{}{}
 			}
 		}
-	}
-
-	// The APK SBOMs we are copying Files from may have duplicate file entries.
-	//
-	// A file can be overwritten if:
-	//  1. one package replaces another package
-	//  2. the packages are in the same origin
-	//
-	// Files with the same checksum are also skipped on install since they don't conflict.
-	//
-	// We need to reconcile these files that were overwritten or omitted to avoid having
-	// conflicting entries (different checksums) for the same file in our image SBOM.
-	// To do this, we consult /lib/apk/db/installed to know which package's file "won".
-	// Here, we create a set of the files that are owned by this package and only include
-	//
-	// those when copying from sourceDoc.Files.
-	ownedFiles := map[string]struct{}{}
-	for _, hdr := range ipkg.Files {
-		ownedFiles[hdr.Name] = struct{}{}
 	}
 
 	// Now copy everything over.
@@ -321,14 +301,6 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 		}
 
 		done[f.ID] = struct{}{}
-
-		f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
-
-		if _, ok := ownedFiles[f.Name]; !ok {
-			continue
-		}
-
-		targetDoc.Files = append(targetDoc.Files, f)
 	}
 
 	for _, r := range sourceDoc.Relationships {
@@ -517,29 +489,26 @@ type File struct {
 }
 
 type Package struct {
-	ID                   string                   `json:"SPDXID"`
-	Name                 string                   `json:"name"`
-	Version              string                   `json:"versionInfo,omitempty"`
-	FilesAnalyzed        bool                     `json:"filesAnalyzed"`
-	HasFiles             []string                 `json:"hasFiles,omitempty"`
-	LicenseInfoFromFiles []string                 `json:"licenseInfoFromFiles,omitempty"`
-	LicenseConcluded     string                   `json:"licenseConcluded,omitempty"`
-	LicenseDeclared      string                   `json:"licenseDeclared,omitempty"`
-	Description          string                   `json:"description,omitempty"`
-	DownloadLocation     string                   `json:"downloadLocation,omitempty"`
-	Originator           string                   `json:"originator,omitempty"`
-	Supplier             string                   `json:"supplier,omitempty"`
-	SourceInfo           string                   `json:"sourceInfo,omitempty"`
-	CopyrightText        string                   `json:"copyrightText,omitempty"`
-	PrimaryPurpose       string                   `json:"primaryPackagePurpose,omitempty"`
-	Checksums            []Checksum               `json:"checksums,omitempty"`
-	ExternalRefs         []ExternalRef            `json:"externalRefs,omitempty"`
-	VerificationCode     *PackageVerificationCode `json:"packageVerificationCode,omitempty"`
+	ID               string                   `json:"SPDXID"`
+	Name             string                   `json:"name"`
+	Version          string                   `json:"versionInfo,omitempty"`
+	FilesAnalyzed    bool                     `json:"filesAnalyzed"`
+	LicenseConcluded string                   `json:"licenseConcluded,omitempty"`
+	LicenseDeclared  string                   `json:"licenseDeclared,omitempty"`
+	Description      string                   `json:"description,omitempty"`
+	DownloadLocation string                   `json:"downloadLocation,omitempty"`
+	Originator       string                   `json:"originator,omitempty"`
+	Supplier         string                   `json:"supplier,omitempty"`
+	SourceInfo       string                   `json:"sourceInfo,omitempty"`
+	CopyrightText    string                   `json:"copyrightText,omitempty"`
+	PrimaryPurpose   string                   `json:"primaryPackagePurpose,omitempty"`
+	Checksums        []Checksum               `json:"checksums,omitempty"`
+	ExternalRefs     []ExternalRef            `json:"externalRefs,omitempty"`
+	VerificationCode *PackageVerificationCode `json:"packageVerificationCode,omitempty"`
 }
 
 type PackageVerificationCode struct {
-	Value         string   `json:"packageVerificationCodeValue,omitempty"`
-	ExcludedFiles []string `json:"packageVerificationCodeExcludedFiles,omitempty"`
+	Value string `json:"packageVerificationCodeValue,omitempty"`
 }
 
 type Checksum struct {
@@ -689,18 +658,16 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 	}
 
 	sourcePackage := Package{
-		ID:                   fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
-		Name:                 packageName,
-		Version:              version,
-		Supplier:             "Organization: " + opts.OS.Name,
-		FilesAnalyzed:        false,
-		HasFiles:             []string{},
-		LicenseInfoFromFiles: []string{},
-		PrimaryPurpose:       "SOURCE",
-		Description:          "Image configuration source",
-		DownloadLocation:     downloadLocation,
-		Checksums:            checksums,
-		ExternalRefs:         []ExternalRef{},
+		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
+		Name:             packageName,
+		Version:          version,
+		Supplier:         "Organization: " + opts.OS.Name,
+		FilesAnalyzed:    false,
+		PrimaryPurpose:   "SOURCE",
+		Description:      "Image configuration source",
+		DownloadLocation: downloadLocation,
+		Checksums:        checksums,
+		ExternalRefs:     []ExternalRef{},
 	}
 
 	// If this is a github package, add a purl to it:
