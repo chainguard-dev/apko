@@ -255,7 +255,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo, ipkg); err != nil {
+	if err := copySBOMElements(internalDoc, doc, todo); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
@@ -274,7 +274,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	return nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage) error {
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
 	// Walk the graph looking for things to copy.
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
