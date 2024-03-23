@@ -109,7 +109,7 @@ func BuildImageFromLayer(ctx context.Context, layer v1.Layer, ic types.ImageConf
 	cfg.Architecture = platform.Architecture
 	cfg.Variant = platform.Variant
 	cfg.Created = v1.Time{Time: created}
-	cfg.Config.Labels = make(map[string]string)
+	cfg.Config.Labels = annotations
 	cfg.OS = "linux"
 
 	// NOTE: Need to allow empty Entrypoints. The runtime will override to `/bin/sh -c` and handle quoting
