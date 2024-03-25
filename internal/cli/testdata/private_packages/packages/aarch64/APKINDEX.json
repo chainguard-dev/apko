@@ -1,0 +1,54 @@
+{
+  "Signature": null,
+  "Description": "",
+  "Packages": [
+    {
+      "Name": "package-y",
+      "Version": "1.0.0-r0",
+      "Arch": "aarch64",
+      "Description": "package y",
+      "License": "MIT",
+      "Origin": "package-y",
+      "Maintainer": "",
+      "URL": "",
+      "Checksum": "0Kit8VfVk/eXBIzHVl3QAg2k/Jg=",
+      "Dependencies": [
+        "package-x"
+      ],
+      "Provides": null,
+      "InstallIf": null,
+      "Size": 2266,
+      "InstalledSize": 2746,
+      "ProviderPriority": 0,
+      "BuildTime": "1970-01-01T00:00:00Z",
+      "BuildDate": 0,
+      "RepoCommit": "",
+      "Replaces": null,
+      "DataHash": ""
+    },
+    {
+      "Name": "package-x",
+      "Version": "1.0.0-r0",
+      "Arch": "aarch64",
+      "Description": "package x",
+      "License": "MIT",
+      "Origin": "package-x",
+      "Maintainer": "",
+      "URL": "",
+      "Checksum": "9EfeYO8EvkWtw2p6+d3RYHK8DMU=",
+      "Dependencies": [
+        "pretend-baselayout"
+      ],
+      "Provides": null,
+      "InstallIf": null,
+      "Size": 2261,
+      "InstalledSize": 2746,
+      "ProviderPriority": 0,
+      "BuildTime": "1970-01-01T00:00:00Z",
+      "BuildDate": 0,
+      "RepoCommit": "",
+      "Replaces": null,
+      "DataHash": "e16cd8e363d4f0a26ea669ae8bc70a241ed726f1bec6cba4bc1579d4e77d1945"
+    }
+  ]
+}
