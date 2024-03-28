@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -40,7 +41,7 @@ import (
 	sign "chainguard.dev/apko/pkg/apk/signature"
 )
 
-var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.RSA\.(.*\.rsa\.pub)$`)
+var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
 
 // This is terrible but simpler than plumbing around a cache for now.
 // We just hold the parsed index in memory rather than re-parsing it every time,
@@ -282,22 +283,47 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 
 		tarReader := tar.NewReader(gzipReader)
 
-		// read the signature
-		signatureFile, err := tarReader.Next()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
-		}
-		matches := signatureFileRegex.FindStringSubmatch(signatureFile.Name)
-		if len(matches) != 2 {
-			return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
-		}
-		signature, err := io.ReadAll(tarReader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
-		}
-		// with multistream false, we should read the next one
-		if _, err := tarReader.Next(); err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("unexpected error reading from tgz: %w", err)
+		var keyfile string
+		var signature []byte
+		var indexDigestType crypto.Hash
+		for {
+			// read the signature(s)
+			signatureFile, err := tarReader.Next()
+			// found everything, end of stream
+			if len(keyfile) > 0 && errors.Is(err, io.EOF) {
+				break
+			}
+			// oops something went wrong
+			if err != nil {
+				return nil, fmt.Errorf("unexpected error reading from tgz: %w", err)
+			}
+			matches := signatureFileRegex.FindStringSubmatch(signatureFile.Name)
+			if len(matches) != 3 {
+				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
+			}
+			// It is lucky that golang only iterates over sorted file names, and that
+			// lexically latest is the strongest hash
+			switch signatureType := matches[1]; signatureType {
+			case "DSA":
+				// Obsolete
+				continue
+			case "RSA":
+				// Current legacy compat
+				indexDigestType = crypto.SHA1
+			case "RSA256":
+				// Current best practice
+				indexDigestType = crypto.SHA256
+			case "RSA512":
+				// Too big, too slow, not compiled in
+				continue
+			default:
+				return nil, fmt.Errorf("unknown signature format: %s", signatureType)
+			}
+			keyfile = matches[2]
+			signature, err = io.ReadAll(tarReader)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
+			}
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
@@ -305,8 +331,7 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 		unreadBytes := buf.Len()
 		readBytes := allBytes - unreadBytes
 		indexData := b[readBytes:]
-
-		indexDigest, err := sign.HashData(indexData)
+		indexDigest, err := sign.HashData(indexData, indexDigestType)
 		if err != nil {
 			return nil, err
 		}
@@ -315,22 +340,22 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 			return nil, fmt.Errorf("no keys provided to verify signature")
 		}
 		var verified bool
-		keyData, ok := keys[matches[1]]
+		keyData, ok := keys[keyfile]
 		if ok {
-			if err := sign.RSAVerifySHA1Digest(indexDigest, signature, keyData); err != nil {
+			if err := sign.RSAVerifyDigest(indexDigest, indexDigestType, signature, keyData); err != nil {
 				verified = false
 			}
 		}
 		if !verified {
 			for _, keyData := range keys {
-				if err := sign.RSAVerifySHA1Digest(indexDigest, signature, keyData); err == nil {
+				if err := sign.RSAVerifyDigest(indexDigest, indexDigestType, signature, keyData); err == nil {
 					verified = true
 					break
 				}
 			}
 		}
 		if !verified {
-			return nil, fmt.Errorf("no key found to verify signature for keyfile %s; tried all other keys as well", matches[1])
+			return nil, fmt.Errorf("no key found to verify signature for keyfile %s; tried all other keys as well", keyfile)
 		}
 	}
 	// with a valid signature, convert it to an ApkIndex

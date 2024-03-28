@@ -18,7 +18,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/sha1" //nolint:gosec
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -46,21 +46,57 @@ func SignIndex(ctx context.Context, signingKey string, indexFile string) error {
 
 	log.Infof("signing index %s with key %s", indexFile, signingKey)
 
-	indexData, indexDigest, err := ReadAndHashIndexFile(indexFile)
-	if err != nil {
-		return err
+	// Unfortunately apk-tools checks signatures until the first one passes, and skips the rest.
+	// And golang sorts its reads & writes in lexical order only. Thus indexes will be
+	// validated with SHA1 only by apk-tools whilst RSA (SHA1) signature is present.
+	//
+	// An incremental WriteTargz would allow to write out strongest hash first. Or a MergeFS
+	// implementation the maintains relative order.
+	//
+	// Done:
+	// Step 0) apk-tools supports RSA256 since 2017
+	// This PR:
+	// Step 1) Upgrade all deployments of melange/go-apk with verification support for RSA256
+	// Follow-up:
+	// Step 2) Turn off RSA signatures & turn on RSA256 signatures
+	//
+	// Enable both (incorrectly ordered dual-signed) only for local testing
+	sigs := []struct {
+		filename   string
+		digestType crypto.Hash
+	}{
+		{
+			"RSA",
+			crypto.SHA1,
+		},
+		// {
+		// 	"RSA256",
+		// 	crypto.SHA256,
+		// },
 	}
 
-	sigData, err := RSASignSHA1Digest(indexDigest, signingKey, "")
+	indexData, err := os.ReadFile(indexFile)
 	if err != nil {
-		return fmt.Errorf("unable to sign index: %w", err)
+		return fmt.Errorf("unable to read index for signing: %w", err)
 	}
-
-	log.Infof("appending signature to index %s", indexFile)
 
 	sigFS := memfs.New()
-	if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.RSA.%s.pub", filepath.Base(signingKey)), sigData, 0644); err != nil {
-		return fmt.Errorf("unable to append signature: %w", err)
+	for _, sig := range sigs {
+		indexDigest, err := HashData(indexData, sig.digestType)
+		if err != nil {
+			return err
+		}
+
+		sigData, err := RSASignDigest(indexDigest, sig.digestType, signingKey, "")
+		if err != nil {
+			return fmt.Errorf("unable to sign index: %w", err)
+		}
+
+		log.Infof("appending signature %s to index %s", sig.filename, indexFile)
+
+		if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.%s.%s.pub", sig.filename, filepath.Base(signingKey)), sigData, 0644); err != nil {
+			return fmt.Errorf("unable to append signature: %w", err)
+		}
 	}
 
 	// prepare control.tar.gz
@@ -131,19 +167,8 @@ func indexIsAlreadySigned(indexFile string) (bool, error) {
 	return false, nil
 }
 
-func ReadAndHashIndexFile(indexFile string) ([]byte, []byte, error) {
-	indexBuf, err := os.ReadFile(indexFile)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to read index for signing: %w", err)
-	}
-
-	indexDigest, err := HashData(indexBuf)
-
-	return indexBuf, indexDigest, err
-}
-
-func HashData(data []byte) ([]byte, error) {
-	digest := sha1.New() //nolint:gosec
+func HashData(data []byte, digestType crypto.Hash) ([]byte, error) {
+	digest := digestType.New()
 	if n, err := digest.Write(data); err != nil || n != len(data) {
 		return nil, fmt.Errorf("unable to hash data: %w", err)
 	}
