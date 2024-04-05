@@ -89,7 +89,7 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 	digest := sha256.New()
 
 	buf := bufio.NewWriterSize(outfile, 1<<22)
-	gzw := gzip.NewWriter(io.MultiWriter(digest, buf))
+	gzw := gzip.NewWriterLevel(io.MultiWriter(digest, buf), gzip.BestCompression)
 	if err := gzw.SetConcurrency(1<<20, pgzipThreads); err != nil {
 		return "", nil, nil, 0, fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err)
 	}
