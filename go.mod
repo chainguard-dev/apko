@@ -24,7 +24,7 @@ require (
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
 	go.opentelemetry.io/otel v1.25.0
 	golang.org/x/exp v0.0.0-20231108232855-2478ac86f678
-	golang.org/x/sync v0.6.0
+	golang.org/x/sync v0.7.0
 	golang.org/x/sys v0.18.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.29.2
