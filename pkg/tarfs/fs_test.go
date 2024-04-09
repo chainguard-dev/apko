@@ -73,7 +73,7 @@ func TestTarFS(t *testing.T) {
 	var file *tar.Header
 	for _, hdr := range pkg.Files {
 		if hdr.Name == want {
-			file = hdr
+			file = &hdr
 			break
 		}
 	}

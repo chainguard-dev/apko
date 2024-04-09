@@ -1,5 +1,7 @@
 contents:
-  base-image: ./testdata/base_image/
+  baseimage: 
+    image: ./testdata/base_image/
+    apkindex: ./testdata/base_image/metadata/
   keyring:
     - ./testdata/melange.rsa.pub
   repositories:

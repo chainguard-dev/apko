@@ -76,9 +76,9 @@ type OSRelease struct {
 
 type BaseImageDescriptor struct {
 	// Required: Path to the base image OCI layout. Right now only local files are supported.
-	Image string `json:"image,omitempty" yaml:"base-image,omitempty"`
+	Image string `json:"image,omitempty" yaml:"image,omitempty"`
 	// Required: Path to file representing installed packages in the base image in APKINDEX format.
-	APKIndex string `json:"apk-index,omitempty" yaml:"base-image,omitempty"`
+	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
 }
 
 type ImageContents struct {
@@ -89,7 +89,7 @@ type ImageContents struct {
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of.
-	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty"`
+	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty"`
 }
 
 type ImageEntrypoint struct {

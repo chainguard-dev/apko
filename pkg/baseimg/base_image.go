@@ -20,6 +20,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -62,7 +63,7 @@ func New(imgPath string, apkIndexPath string, arch types.Architecture, tmpDir st
 	if err != nil {
 		return nil, err
 	}
-	contents, err := os.ReadFile(apkIndexPath)
+	contents, err := os.ReadFile(path.Join(apkIndexPath, arch.ToAPK(), "APKINDEX"))
 	if err != nil {
 		return nil, err
 	}
