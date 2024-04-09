@@ -6,7 +6,7 @@ toolchain go1.21.5
 
 require (
 	github.com/chainguard-dev/clog v1.3.1
-	github.com/chainguard-dev/go-apk v0.0.0-20240308000330-c3465ca40e90
+	github.com/chainguard-dev/go-apk v0.0.0-20240326195410-fa672ad75774
 	github.com/charmbracelet/log v0.4.0
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.12.0

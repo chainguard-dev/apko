@@ -119,6 +119,19 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 func (bc *Context) buildImage(ctx context.Context) error {
 	log := clog.FromContext(ctx)
 
+	// When using base image for the build, apko adds new layer on top of the base. This means
+	// it will override files from lower layers. We add all installed packages from base to current
+	// installed file so that the final installed file contains all image's packages.
+	if bc.baseimg != nil {
+		basePkgs, err := bc.baseimg.InstalledPackages()
+		if err != nil {
+			return err
+		}
+		for _, basePkg := range basePkgs {
+			bc.apk.AddInstalledPackage(&basePkg.Package, basePkg.Files)
+		}
+	}
+
 	if bc.o.Lockfile != "" {
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
@@ -212,6 +225,42 @@ func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.Repos
 
 func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
 	return bc.apk.ResolveAndCalculateWorld(ctx)
+}
+
+func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, error) {
+	// Firstly, resolve the world with all packages. When using base image, the world file contains
+	// all packages from base as well. It's important that ResolveWorld operates on APKINDEX files only
+	// and doesn't fetch actual packages.
+	allPkgs, _, err := bc.apk.ResolveWorld(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var existingPkgs []*apk.InstalledPackage
+	if bc.baseimg != nil {
+		existingPkgs, err = bc.baseimg.InstalledPackages()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var toInstall []*apk.RepositoryPackage
+	for _, pkg := range allPkgs {
+		inBase := false
+		for _, existingPkg := range existingPkgs {
+			if pkg.Name == existingPkg.Name {
+				inBase = true
+			}
+		}
+		if !inBase {
+			toInstall = append(toInstall, pkg)
+		}
+	}
+	// Note: CalculateWorld fetches the packages - they have to be available in the repository.
+	resolvedPkgs, err := bc.apk.CalculateWorld(ctx, toInstall)
+	if err != nil {
+		return nil, err
+	}
+	return resolvedPkgs, nil
 }
 
 func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {

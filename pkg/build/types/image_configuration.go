@@ -21,12 +21,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
-	"github.com/jinzhu/copier"
-	"gopkg.in/yaml.v3"
-
 	"chainguard.dev/apko/pkg/fetch"
 	"chainguard.dev/apko/pkg/vcs"
+	"github.com/chainguard-dev/clog"
+	"github.com/google/go-cmp/cmp"
+	"github.com/jinzhu/copier"
+	"gopkg.in/yaml.v3"
 )
 
 // Attempt to probe an upstream VCS URL if known.
@@ -99,6 +99,21 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 		repos = append(repos, repo)
 	}
 	ic.Contents.Repositories = repos
+
+	// The top level components restriction is on the conservative side. Some of them would probably work out of the box.
+	// If someone needs any of them, it should be a matter of testing and hopefully doing minor changes.
+	if ic.Contents.BaseImage != nil {
+		if !cmp.Equal((ImageEntrypoint{}), ic.Entrypoint) ||
+			ic.Cmd != "" ||
+			ic.StopSignal != "" ||
+			ic.WorkDir != "" ||
+			!cmp.Equal((ImageAccounts{}), ic.Accounts) ||
+			len(ic.Environment) != 0 ||
+			len(ic.Paths) != 0 ||
+			len(ic.Annotations) != 0 {
+			return fmt.Errorf("when using base image only allowed top level components are contents, archs and includes")
+		}
+	}
 
 	return nil
 }

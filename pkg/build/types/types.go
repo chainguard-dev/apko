@@ -74,6 +74,13 @@ type OSRelease struct {
 	BugReportURL string `json:"bug-report-url,omitempty" yaml:"bug-report-url"`
 }
 
+type BaseImageDescriptor struct {
+	// Required: Path to the base image OCI layout. Right now only local files are supported.
+	Image string `json:"image,omitempty" yaml:"base-image,omitempty"`
+	// Required: Path to file representing installed packages in the base image in APKINDEX format.
+	APKIndex string `json:"apk-index,omitempty" yaml:"base-image,omitempty"`
+}
+
 type ImageContents struct {
 	// A list of apk repositories to use for pulling packages
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
@@ -81,6 +88,8 @@ type ImageContents struct {
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
+	// Optional: Base image to build on top of.
+	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty"`
 }
 
 type ImageEntrypoint struct {
