@@ -25,6 +25,7 @@ import (
 	"github.com/chainguard-dev/go-apk/pkg/apk"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	ocitypes "github.com/google/go-containerregistry/pkg/v1/types"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -36,8 +37,27 @@ type BaseImage struct {
 	arch     types.Architecture
 }
 
-func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) {
+// See https://github.com/opencontainers/image-spec/blob/main/image-index.md#image-index-property-descriptions
+// Briefly: index.json can either list manifest of per arch images, or redirect to actual image index (nested case)
+func getUnnestedImageIndex(imgPath string) (v1.ImageIndex, error) {
 	index, err := layout.ImageIndexFromPath(imgPath)
+	if err != nil {
+		return nil, err
+	}
+	indexManifest, err := index.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range indexManifest.Manifests {
+		if m.MediaType == ocitypes.OCIImageIndex {
+			return index.ImageIndex(m.Digest)
+		}
+	}
+	return index, nil
+}
+
+func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) {
+	index, err := getUnnestedImageIndex(imgPath)
 	if err != nil {
 		return nil, err
 	}
@@ -47,11 +67,18 @@ func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) 
 	}
 
 	for _, m := range indexManifest.Manifests {
-		if m.Platform.Architecture == arch.ToOCIPlatform().Architecture {
-			img, err := index.Image(m.Digest)
-			if err != nil {
-				return nil, err
-			}
+		img, err := index.Image(m.Digest)
+		if err != nil {
+			return nil, err
+		}
+		config, err := img.ConfigFile()
+		if err != nil {
+			return nil, err
+		}
+		if config == nil {
+			return nil, fmt.Errorf("got image without config")
+		}
+		if config.Architecture == arch.ToOCIPlatform().Architecture {
 			return img, nil
 		}
 	}
