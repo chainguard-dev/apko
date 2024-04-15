@@ -78,6 +78,7 @@ type BaseImageDescriptor struct {
 	// Required: Path to the base image OCI layout. Right now only local files are supported.
 	Image string `json:"image,omitempty" yaml:"image,omitempty"`
 	// Required: Path to file representing installed packages in the base image in APKINDEX format.
+	// (Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX
 	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
 }
 

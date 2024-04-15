@@ -31,10 +31,10 @@ import (
 )
 
 type BaseImage struct {
-	img      v1.Image
-	apkIndex []byte
-	tmpDir   string
-	arch     types.Architecture
+	img                       v1.Image
+	apkIndex                  []byte
+	materizalizedApkIndexPath string
+	arch                      types.Architecture
 }
 
 // See https://github.com/opencontainers/image-spec/blob/main/image-index.md#image-index-property-descriptions
@@ -85,7 +85,14 @@ func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) 
 	return nil, fmt.Errorf("image for arch not found")
 }
 
-func New(imgPath string, apkIndexPath string, arch types.Architecture, tmpDir string) (*BaseImage, error) {
+// Creates an instance of BaseImage base on provided parameters:
+//   - imgPath: path to the directory containing OCI layout of the image.
+//   - apkIndexPath: path to the directory containing per arch APKINDEX files representing
+//     installed file of the base image.
+//   - arch: architecture of the base image.
+//   - materializedApkIndexPath: path where the auxiliary APKINDEX of the base image will be written to in order to
+//     resolve packages.
+func New(imgPath string, apkIndexPath string, arch types.Architecture, materizalizedApkIndexPath string) (*BaseImage, error) {
 	img, err := getImageForArch(imgPath, arch)
 	if err != nil {
 		return nil, err
@@ -95,12 +102,12 @@ func New(imgPath string, apkIndexPath string, arch types.Architecture, tmpDir st
 		return nil, err
 	}
 	baseImg := BaseImage{
-		img:      img,
-		apkIndex: contents,
-		tmpDir:   tmpDir,
-		arch:     arch,
+		img:                       img,
+		apkIndex:                  contents,
+		materizalizedApkIndexPath: materizalizedApkIndexPath,
+		arch:                      arch,
 	}
-	err = baseImg.createAPKIndexArchive()
+	err = baseImg.createAPKIndexArchive(baseImg.APKIndexPath())
 	if err != nil {
 		return nil, err
 	}
@@ -117,15 +124,15 @@ func (baseImg *BaseImage) InstalledPackages() ([]*apk.InstalledPackage, error) {
 }
 
 func (baseImg *BaseImage) APKIndexPath() string {
-	return baseImg.tmpDir + "/base_image_apkindex"
+	return path.Join(baseImg.materizalizedApkIndexPath, "base_image_apkindex")
 }
 
-func (baseImg *BaseImage) createAPKIndexArchive() error {
-	archDir := baseImg.APKIndexPath() + "/" + baseImg.arch.ToAPK()
+func (baseImg *BaseImage) createAPKIndexArchive(apkIndexTargetPath string) error {
+	archDir := path.Join(apkIndexTargetPath, baseImg.arch.ToAPK())
 	if err := os.MkdirAll(archDir, 0777); err != nil {
 		return err
 	}
-	tarFile, err := os.OpenFile(archDir+"/APKINDEX.tar.gz", os.O_CREATE|os.O_WRONLY, 0777)
+	tarFile, err := os.OpenFile(path.Join(archDir, "APKINDEX.tar.gz"), os.O_CREATE|os.O_WRONLY, 0777)
 	if err != nil {
 		return err
 	}
