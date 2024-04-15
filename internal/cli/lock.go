@@ -206,7 +206,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
 			}
-			name, err := removeLabel(repo.URI)
+			name, err := removeLabel(stripURLScheme(repo.URI))
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository URI: %w", err)
 			}
