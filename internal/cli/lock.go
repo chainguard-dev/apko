@@ -45,6 +45,22 @@ func resolve() *cobra.Command {
 		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
 }
 
+func removeLabel(s string) (string, error) {
+	if s == "" {
+		return "", fmt.Errorf("input is empty")
+	}
+	if strings.HasPrefix(s, "@") {
+		// determine if the string is '@label' (invalid) or '@label url' (valid)
+		// otherwise, return the string as-is
+		parts := strings.SplitN(s, " ", 2)
+		if len(parts) < 2 {
+			return "", fmt.Errorf("input does not follow the format '@label url'")
+		}
+		return parts[1], nil
+	}
+	return s, nil
+}
+
 func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
 	var extraKeys []string
 	var extraRepos []string
@@ -154,7 +170,6 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 
 		resolvedPkgs, err := bc.Resolve(ctx)
-
 		if err != nil {
 			return fmt.Errorf("failed to get package list for image: %w", err)
 		}
@@ -187,9 +202,17 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 		for _, repositoryURI := range ic.Contents.Repositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+			url, err := removeLabel(repo.IndexURI())
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
+			}
+			name, err := removeLabel(repo.URI)
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+			}
 			lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
-				Name:         stripURLScheme(repo.URI),
-				URL:          repo.IndexURI(),
+				Name:         name,
+				URL:          url,
 				Architecture: arch.ToAPK(),
 			})
 		}
