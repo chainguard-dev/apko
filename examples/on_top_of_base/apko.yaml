@@ -1,0 +1,16 @@
+contents:
+  baseimage: 
+    image: ./base_image
+    apkindex: ./apkindexes
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    # Already in base, should not be added again.
+    - glibc
+    # Should be added with all dependencies
+    - clang
+
+archs:
+- x86_64
