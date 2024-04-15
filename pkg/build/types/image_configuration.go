@@ -111,7 +111,7 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 			len(ic.Environment) != 0 ||
 			len(ic.Paths) != 0 ||
 			len(ic.Annotations) != 0 {
-			return fmt.Errorf("when using base image only allowed top level components are contents, archs and includes")
+			return fmt.Errorf("when using base image, the only supported image specification are: contents, archs and includes")
 		}
 	}
 
