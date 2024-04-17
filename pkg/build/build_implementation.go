@@ -127,8 +127,13 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for _, basePkg := range basePkgs {
-			bc.apk.AddInstalledPackage(&basePkg.Package, basePkg.Files)
+		// Index for loop to make golang-ci happy.
+		// See https://stackoverflow.com/questions/62446118/implicit-memory-aliasing-in-for-loop
+		for index := range basePkgs {
+			err = bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

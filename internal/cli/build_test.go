@@ -109,14 +109,14 @@ func TestBuildWithBase(t *testing.T) {
 
 	ctx := context.Background()
 	tmp := t.TempDir()
-	apko_temp_dir := t.TempDir()
+	apkoTempDir := t.TempDir()
 
 	golden := filepath.Join("testdata", "top_image")
 	config := filepath.Join("testdata", "image_on_top.apko.yaml")
 	lockfile := filepath.Join("testdata", "image_on_top.apko.lock.json")
 
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apko_temp_dir)}
+	opts := []build.Option{build.WithConfig(config), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
 
 	sbomPath := filepath.Join(tmp, "sboms")
 	err := os.MkdirAll(sbomPath, 0o750)

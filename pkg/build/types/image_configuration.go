@@ -21,12 +21,13 @@ import (
 	"os"
 	"strings"
 
-	"chainguard.dev/apko/pkg/fetch"
-	"chainguard.dev/apko/pkg/vcs"
 	"github.com/chainguard-dev/clog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
+
+	"chainguard.dev/apko/pkg/fetch"
+	"chainguard.dev/apko/pkg/vcs"
 )
 
 // Attempt to probe an upstream VCS URL if known.
