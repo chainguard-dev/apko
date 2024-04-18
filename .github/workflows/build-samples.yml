@@ -99,12 +99,17 @@ jobs:
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v2.1.5
         with:
           go-version-file: 'go.mod'
-      - uses: imjasonh/setup-crane@v0.1
+      - uses: imjasonh/setup-crane@00c9e93efa4e1138c9a7a5c594acd6c75a2fbf0c # v0.3
       - run: |
           make apko
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
-            ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+            build_script=$(dirname ${cfg})/build.sh
+            if [ -f ${build_script} ]; then
+              ${build_script} ./apko
+            else
+              ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+            fi
           done
 
   build-alpine-source-date-epoch:
