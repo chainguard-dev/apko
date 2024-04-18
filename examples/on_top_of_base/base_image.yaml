@@ -1,7 +1,7 @@
 contents:
   baseimage: 
-    image: ./base_image
-    apkindex: ./apkindexes
+    image: ./examples/on_top_of_base/base_image
+    apkindex: ./examples/on_top_of_base/apkindexes
   repositories:
     - https://packages.wolfi.dev/os
   keyring:

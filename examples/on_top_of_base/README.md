@@ -17,27 +17,11 @@ Currently the functionality requires the base image and it's metadata to be pres
 
 For the `apko.yaml` example, do the following steps:
 
-1. Go the `apko.yaml's` directory
-2. Download base image and prepare metadata
+1. Go the apko repository root directory
+2. Run 
 
 ```
-./prepare_base.sh
+./examples/on_top_of_base/build.sh
 ```
 
-3. Create lock
-
-```
-apko lock apko.yaml  
-```
-
-4. Create output directory
-
-```
-mkdir top_image
-```
-
-4. Build the image
-
-```
-apko build apko.yaml dev:latest top_image/ --lockfile=apko.lock.json --sbom=False
-```
+It optionally accepts the apko binary as first argument. By default it will use apko from PATH.
