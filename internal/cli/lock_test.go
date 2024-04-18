@@ -54,3 +54,35 @@ func TestLock(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoveLabel(t *testing.T) {
+	tests := []struct {
+		value string
+		want  string
+	}{
+		{
+			value: "docker.io/library/alpine:latest",
+			want:  "docker.io/library/alpine:latest",
+		}, {
+			value: "@alpine docker.io/library/alpine:latest",
+			want:  "docker.io/library/alpine:latest",
+		}, {
+			value: "@string",
+			want:  "",
+		}, {
+			value: "@label @label2 docker.io/library/alpine:latest",
+			want:  "docker.io/library/alpine:latest",
+		}, {
+			value: "@label @label2 @label3 any_string",
+			want:  "any_string",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.value, func(t *testing.T) {
+			if got, _ := cli.RemoveLabel(tt.value); got != tt.want {
+				t.Errorf("RemoveLabel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

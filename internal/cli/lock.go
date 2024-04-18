@@ -45,19 +45,19 @@ func resolve() *cobra.Command {
 		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
 }
 
-func removeLabel(s string) (string, error) {
+func RemoveLabel(s string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("input is empty")
 	}
-	if strings.HasPrefix(s, "@") {
-		// determine if the string is '@label' (invalid) or '@label url' (valid)
-		// otherwise, return the string as-is
+
+	for strings.HasPrefix(s, "@") {
 		parts := strings.SplitN(s, " ", 2)
 		if len(parts) < 2 {
 			return "", fmt.Errorf("input does not follow the format '@label url'")
 		}
-		return parts[1], nil
+		s = parts[1]
 	}
+
 	return s, nil
 }
 
@@ -202,11 +202,11 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 		for _, repositoryURI := range ic.Contents.Repositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			url, err := removeLabel(repo.IndexURI())
+			url, err := RemoveLabel(repo.IndexURI())
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
 			}
-			name, err := removeLabel(stripURLScheme(repo.URI))
+			name, err := RemoveLabel(stripURLScheme(repo.URI))
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository URI: %w", err)
 			}
