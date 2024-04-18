@@ -78,7 +78,6 @@ func TestRemoveLabel(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.value, func(t *testing.T) {
 			if got, _ := cli.RemoveLabel(tt.value); got != tt.want {
 				t.Errorf("RemoveLabel() = %v, want %v", got, tt.want)
