@@ -15,65 +15,7 @@
   "documentDescribes": [
     "SPDXRef-Package-sha256-2ef91a9967f2e1759ea49a8c01cf6a45dd9f9af71fe09bcf2b86175bc4a71314"
   ],
-  "files": [
-    {
-      "SPDXID": "SPDXRef-File--etc-os-release",
-      "fileName": "etc/os-release",
-      "licenseConcluded": "NOASSERTION",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "2a1171b49b2e3d59abad728c7b0480736ff792eb"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "1877864cb20a2a48b27fbae1dd33d90918a56c7e24e503976d0ceb3ab5c9eecd"
-        },
-        {
-          "algorithm": "SHA512",
-          "checksumValue": "2b2935e9103b1755bf0e4028528accd9f082548180e9e70d9a15383005603ce314ca89c8280a98dc9cc429c6bfe3596c0c6faaa7f6dc9a4d195ce3f560014876"
-        }
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File--x-hello.txt",
-      "fileName": "x/hello.txt",
-      "licenseConcluded": "NOASSERTION",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "a8eec30a5b2d71bc890175f5b361ebb28d7c54a8"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "3b09aeb6f5f5336beb205d7f720371bc927cd46c21922e334d47ba264acb5ba4"
-        },
-        {
-          "algorithm": "SHA512",
-          "checksumValue": "dec5b5e130d1694e65b1bf3f915024d51e87817248ab625e8732e183c321a9aaa09f92c04ed3d1d3a5b173838bd40ff5b1c8bb6318bcea70f4f72a8bff0ec2a1"
-        }
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File--y-hello.txt",
-      "fileName": "y/hello.txt",
-      "licenseConcluded": "NOASSERTION",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "a8eec30a5b2d71bc890175f5b361ebb28d7c54a8"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "3b09aeb6f5f5336beb205d7f720371bc927cd46c21922e334d47ba264acb5ba4"
-        },
-        {
-          "algorithm": "SHA512",
-          "checksumValue": "dec5b5e130d1694e65b1bf3f915024d51e87817248ab625e8732e183c321a9aaa09f92c04ed3d1d3a5b173838bd40ff5b1c8bb6318bcea70f4f72a8bff0ec2a1"
-        }
-      ]
-    }
-  ],
+  "files": [],
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-sha256-2ef91a9967f2e1759ea49a8c01cf6a45dd9f9af71fe09bcf2b86175bc4a71314",
@@ -119,9 +61,7 @@
       "name": "pretend-baselayout",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": true,
-      "hasFiles": [
-        "SPDXRef-File--etc-os-release"
-      ],
+      "hasFiles": [],
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
@@ -143,9 +83,7 @@
       "name": "package-x",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": true,
-      "hasFiles": [
-        "SPDXRef-File--x-hello.txt"
-      ],
+      "hasFiles": [],
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
@@ -167,9 +105,7 @@
       "name": "package-y",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": true,
-      "hasFiles": [
-        "SPDXRef-File--y-hello.txt"
-      ],
+      "hasFiles": [],
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
@@ -199,29 +135,14 @@
       "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
     },
     {
-      "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
-    },
-    {
       "spdxElementId": "SPDXRef-Package-sha256-bf74ddaf55d32ec9672a0a40efc6cb1bf0a167763c18fc22586c8a301167822f",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-package-x-1.0.0-r0"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-package-x-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--x-hello.txt"
     },
     {
       "spdxElementId": "SPDXRef-Package-sha256-bf74ddaf55d32ec9672a0a40efc6cb1bf0a167763c18fc22586c8a301167822f",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-package-y-1.0.0-r0"
     },
-    {
-      "spdxElementId": "SPDXRef-Package-package-y-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--y-hello.txt"
-    }
   ]
 }

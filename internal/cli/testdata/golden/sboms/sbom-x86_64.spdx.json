@@ -103,26 +103,6 @@
       "spdxElementId": "SPDXRef-Package-sha256-e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-sha256-16e741f38ee9768330001d0b12b34006d5bdf90bc2dd72716bca4446e66b6ac6"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-sha256-16e741f38ee9768330001d0b12b34006d5bdf90bc2dd72716bca4446e66b6ac6",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-sha256-16e741f38ee9768330001d0b12b34006d5bdf90bc2dd72716bca4446e66b6ac6",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
     }
   ]
 }
