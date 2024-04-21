@@ -33,6 +33,7 @@ var pathMutators = map[string]PathMutator{
 	"hardlink":    mutateHardLink,
 	"symlink":     mutateSymLink,
 	"permissions": mutatePermissions,
+	"new-file":    mutateNewFile,
 }
 
 func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
@@ -145,6 +146,35 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 			}
 		}
 	}
+
+	return nil
+}
+
+func mutateNewFile(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
+	target := mut.Path
+
+	if err := ensureParentDirectory(fsys, target); err != nil {
+		return fmt.Errorf("ensuring parent directory for %q: %w", target, err)
+	}
+
+	if _, err := fsys.Stat(target); err == nil {
+		return fmt.Errorf("file %q already exists", target)
+	}
+
+	file, err := fsys.Create(target)
+	if err != nil {
+		return fmt.Errorf("creating file %q: %w", target, err)
+	}
+
+	if _, err := file.Write([]byte(mut.Content)); err != nil {
+		return fmt.Errorf("writing contents to file %q: %w", target, err)
+	}
+
+	if err := mutatePermissionsDirect(fsys, target, mut.Permissions, mut.UID, mut.GID); err != nil {
+		return fmt.Errorf("mutating permissions for path %q: %w", target, err)
+	}
+
+	defer file.Close()
 
 	return nil
 }

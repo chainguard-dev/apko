@@ -45,7 +45,7 @@ type PathMutation struct {
 	Path string `json:"path,omitempty"`
 	// The type of mutation to perform
 	//
-	// This can be one of: directory, empty-file, hardlink, symlink, permissions
+	// This can be one of: directory, empty-file, hardlink, symlink, permissions, new-file
 	Type string `json:"type,omitempty"`
 	// The mutation's desired user ID
 	UID uint32 `json:"uid,omitempty"`
@@ -57,6 +57,8 @@ type PathMutation struct {
 	Source string `json:"source,omitempty"`
 	// Toggle whether to mutate recursively
 	Recursive bool `json:"recursive,omitempty"`
+	// The content to write to the path
+	Content string `json:"content,omitempty"`
 }
 
 type OSRelease struct {
