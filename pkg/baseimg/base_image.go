@@ -85,7 +85,7 @@ func getImageForArch(imgPath string, arch types.Architecture) (v1.Image, error) 
 	return nil, fmt.Errorf("image for arch not found")
 }
 
-// Creates an instance of BaseImage base on provided parameters:
+// New creates an instance of BaseImage base on provided parameters:
 //   - imgPath: path to the directory containing OCI layout of the image.
 //   - apkIndexPath: path to the directory containing per arch APKINDEX files representing
 //     installed file of the base image.
