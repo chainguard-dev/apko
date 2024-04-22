@@ -41,6 +41,9 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	if user.GID == 0 {
 		user.GID = user.UID
 	}
+	if user.Shell == "" {
+		user.Shell = "/bin/sh"
+	}
 	return passwd.UserEntry{
 		UserName: user.UserName,
 		UID:      user.UID,
@@ -48,7 +51,7 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 		HomeDir:  "/home/" + user.UserName,
 		Password: "x",
 		Info:     "Account created by apko",
-		Shell:    "/bin/sh",
+		Shell:    user.Shell,
 	}
 }
 

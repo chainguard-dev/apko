@@ -253,6 +253,10 @@
         "gid": {
           "type": "integer",
           "description": "Required: The user's group ID"
+        },
+        "shell": {
+          "type": "string",
+          "description": "Required: The user's shell"
         }
       },
       "additionalProperties": false,

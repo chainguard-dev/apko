@@ -29,6 +29,8 @@ type User struct {
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
 	GID uint32 `json:"gid,omitempty"`
+	// Required: The user's shell
+	Shell string `json:"shell,omitempty"`
 }
 
 type Group struct {
