@@ -33,6 +33,7 @@ import (
 type BaseImage struct {
 	img                       v1.Image
 	apkIndex                  []byte
+	installedPackages         []*apk.InstalledPackage
 	materizalizedApkIndexPath string
 	arch                      types.Architecture
 }
@@ -101,9 +102,15 @@ func New(imgPath string, apkIndexPath string, arch types.Architecture, materizal
 	if err != nil {
 		return nil, err
 	}
+	reader := bytes.NewReader(contents)
+	installedPackages, err := apk.ParseInstalled(reader)
+	if err != nil {
+		return nil, err
+	}
 	baseImg := BaseImage{
 		img:                       img,
 		apkIndex:                  contents,
+		installedPackages:         installedPackages,
 		materizalizedApkIndexPath: materizalizedApkIndexPath,
 		arch:                      arch,
 	}
@@ -118,9 +125,8 @@ func (baseImg *BaseImage) Image() v1.Image {
 	return baseImg.img
 }
 
-func (baseImg *BaseImage) InstalledPackages() ([]*apk.InstalledPackage, error) {
-	reader := bytes.NewReader(baseImg.apkIndex)
-	return apk.ParseInstalled(reader)
+func (baseImg *BaseImage) InstalledPackages() []*apk.InstalledPackage {
+	return baseImg.installedPackages
 }
 
 func (baseImg *BaseImage) APKIndexPath() string {

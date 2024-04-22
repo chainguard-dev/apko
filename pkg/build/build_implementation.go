@@ -123,14 +123,11 @@ func (bc *Context) buildImage(ctx context.Context) error {
 	// it will override files from lower layers. We add all installed packages from base to current
 	// installed file so that the final installed file contains all image's packages.
 	if bc.baseimg != nil {
-		basePkgs, err := bc.baseimg.InstalledPackages()
-		if err != nil {
-			return err
-		}
+		basePkgs := bc.baseimg.InstalledPackages()
 		// Index for loop to make golang-ci happy.
 		// See https://stackoverflow.com/questions/62446118/implicit-memory-aliasing-in-for-loop
 		for index := range basePkgs {
-			err = bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
+			err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
 			if err != nil {
 				return err
 			}
@@ -242,10 +239,7 @@ func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, err
 	}
 	var existingPkgs []*apk.InstalledPackage
 	if bc.baseimg != nil {
-		existingPkgs, err = bc.baseimg.InstalledPackages()
-		if err != nil {
-			return nil, err
-		}
+		existingPkgs = bc.baseimg.InstalledPackages()
 	}
 
 	var toInstall []*apk.RepositoryPackage
