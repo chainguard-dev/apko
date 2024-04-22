@@ -89,7 +89,7 @@ type ImageContents struct {
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
-	// Optional: Base image to build on top of.
+	// Optional: Base image to build on top of. Warning: Experimental.
 	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty"`
 }
 
