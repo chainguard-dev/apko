@@ -91,7 +91,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
-	if len(m.Layers) != 1 {
+	if bc.baseimg == nil && len(m.Layers) != 1 {
 		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
 	}
 

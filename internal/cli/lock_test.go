@@ -83,5 +83,29 @@ func TestRemoveLabel(t *testing.T) {
 				t.Errorf("RemoveLabel() = %v, want %v", got, tt.want)
 			}
 		})
+
+func TestLockWithBaseImage(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+
+	golden := filepath.Join("testdata", "image_on_top.apko.lock.json")
+
+	config := filepath.Join("testdata", "image_on_top.apko.yaml")
+	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+	opts := []build.Option{build.WithConfig(config)}
+	outputPath := filepath.Join(tmp, "apko.lock.json")
+
+	err := cli.LockCmd(ctx, outputPath, archs, opts)
+	require.NoError(t, err)
+
+	want, err := os.ReadFile(golden)
+	require.NoError(t, err)
+	got, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+
+	if !bytes.Equal(want, got) {
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("Mismatched lock files: (-%q +%q):\n%s", golden, outputPath, diff)
+		}
 	}
 }

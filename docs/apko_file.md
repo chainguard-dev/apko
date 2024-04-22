@@ -63,6 +63,7 @@ accounts:
   users:
     - username: nginx
       uid: 10000
+      shell: /bin/sh
   run-as: nginx
 
 # optional environment configuration
@@ -160,6 +161,7 @@ There are several child elements:
   users:
     - username: nginx
       uid: 10000
+      shell: /bin/sh
 ```
  - `run-as`: name of the user to run the main process under (should match a username or uid specified in
    users)

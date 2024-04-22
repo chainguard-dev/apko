@@ -24,6 +24,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+func (bc *Context) postBuildSetApk(ctx context.Context) error {
+	if bc.baseimg == nil {
+		return nil
+	}
+	// When building on top of base image, we add "artificial" apkindex to repositories that is
+	// stored in some temp path. After build is done we need to bring the repositories file to
+	// clean state so that image builds are byte identical.
+	repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+	if err := bc.apk.SetRepositories(ctx, repos); err != nil {
+		return fmt.Errorf("failed to set apk repositories: %w", err)
+	}
+	// TODO(sfc-gh-mhazy) Handle the rest of apk files (scripts, triggers)
+	return nil
+}
+
 func (bc *Context) initializeApk(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "iniializeApk")
 	defer span.End()
@@ -45,6 +60,10 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+		// We add auxiliary repository to resolve packages from the base image.
+		if bc.baseimg != nil {
+			repos = append(repos, bc.baseimg.APKIndexPath())
+		}
 		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
@@ -53,6 +72,15 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
+		// Get all packages from base image and merge them into the desired world.
+		if bc.baseimg != nil {
+			basePkgs := bc.baseimg.InstalledPackages()
+			var basePkgsNames []string
+			for _, basePkg := range basePkgs {
+				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Package.Name, basePkg.Package.Version))
+			}
+			packages = append(packages, basePkgsNames...)
+		}
 		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
