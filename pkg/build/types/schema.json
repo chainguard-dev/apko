@@ -3,6 +3,20 @@
   "$id": "https://chainguard.dev/apko/pkg/build/types/image-configuration",
   "$ref": "#/$defs/ImageConfiguration",
   "$defs": {
+    "BaseImageDescriptor": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Required: Path to the base image OCI layout. Right now only local files are supported."
+        },
+        "apkindex": {
+          "type": "string",
+          "description": "Required: Path to file representing installed packages in the base image in APKINDEX format.\n(Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Group": {
       "properties": {
         "groupname": {
@@ -147,6 +161,10 @@
           },
           "type": "array",
           "description": "A list of packages to include in the image"
+        },
+        "baseimage": {
+          "$ref": "#/$defs/BaseImageDescriptor",
+          "description": "Optional: Base image to build on top of. Warning: Experimental."
         }
       },
       "additionalProperties": false,

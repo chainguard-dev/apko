@@ -76,6 +76,14 @@ type OSRelease struct {
 	BugReportURL string `json:"bug-report-url,omitempty" yaml:"bug-report-url"`
 }
 
+type BaseImageDescriptor struct {
+	// Required: Path to the base image OCI layout. Right now only local files are supported.
+	Image string `json:"image,omitempty" yaml:"image,omitempty"`
+	// Required: Path to file representing installed packages in the base image in APKINDEX format.
+	// (Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX
+	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
+}
+
 type ImageContents struct {
 	// A list of apk repositories to use for pulling packages
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
@@ -83,6 +91,8 @@ type ImageContents struct {
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
+	// Optional: Base image to build on top of. Warning: Experimental.
+	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty"`
 }
 
 type ImageEntrypoint struct {

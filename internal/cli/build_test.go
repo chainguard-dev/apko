@@ -103,3 +103,44 @@ func TestBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildWithBase(t *testing.T) {
+	// TODO(sfc-gh-mhazy) Check sboms after base image support is reflected in them.
+
+	ctx := context.Background()
+	tmp := t.TempDir()
+	apkoTempDir := t.TempDir()
+
+	golden := filepath.Join("testdata", "top_image")
+	config := filepath.Join("testdata", "image_on_top.apko.yaml")
+	lockfile := filepath.Join("testdata", "image_on_top.apko.lock.json")
+
+	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+	opts := []build.Option{build.WithConfig(config), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
+
+	sbomPath := filepath.Join(tmp, "sboms")
+	err := os.MkdirAll(sbomPath, 0o750)
+	require.NoError(t, err)
+
+	err = cli.BuildCmd(ctx, "golden_top:latest", tmp, archs, []string{}, true, sbomPath, opts...)
+	require.NoError(t, err)
+
+	root, err := layout.ImageIndexFromPath(tmp)
+	require.NoError(t, err)
+
+	gold, err := layout.ImageIndexFromPath(golden)
+	require.NoError(t, err)
+
+	// Not strictly necessary, but this will validate that the index is well-formed.
+	require.NoError(t, validate.Index(root))
+	require.NoError(t, validate.Index(gold))
+
+	// TODO: We should diff manifests and layer contents.
+	got, err := root.Digest()
+	require.NoError(t, err)
+
+	want, err := gold.Digest()
+	require.NoError(t, err)
+
+	require.Equal(t, want, got)
+}
