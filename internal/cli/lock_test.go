@@ -83,6 +83,8 @@ func TestRemoveLabel(t *testing.T) {
 				t.Errorf("RemoveLabel() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
 
 func TestLockWithBaseImage(t *testing.T) {
 	ctx := context.Background()
