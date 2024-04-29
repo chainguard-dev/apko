@@ -130,13 +130,6 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 
 		doc.Packages = append(doc.Packages, p)
 
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: layerPackage.ID,
-			Type:    "CONTAINS",
-			Related: p.ID,
-		})
-
 		// Check to see if the apk contains an sbom describing itself
 		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
@@ -279,6 +272,9 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
 		for _, r := range sourceDoc.Relationships {
+			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+				continue
+			}
 			if _, ok := todo[r.Element]; ok {
 				todo[r.Related] = struct{}{}
 			}
@@ -295,16 +291,11 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 		}
 	}
 
-	for _, f := range sourceDoc.Files {
-		if _, ok := todo[f.ID]; !ok {
-			continue
-		}
-
-		done[f.ID] = struct{}{}
-	}
-
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
+			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+				continue
+			}
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
 		}
 	}
@@ -458,7 +449,6 @@ type Document struct {
 	DataLicense          string                `json:"dataLicense"`
 	Namespace            string                `json:"documentNamespace"`
 	DocumentDescribes    []string              `json:"documentDescribes"`
-	Files                []File                `json:"files,omitempty"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`

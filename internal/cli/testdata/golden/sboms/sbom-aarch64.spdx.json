@@ -103,26 +103,6 @@
       "spdxElementId": "SPDXRef-Package-sha256-7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-sha256-6e6ffbcf153baa74794a66c87760f8d393ad82b51770b2c3b6ae5211ee5d7b6d",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
-    },
-    {
-      "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-File--etc-os-release"
     }
   ]
 }
