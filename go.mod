@@ -25,7 +25,7 @@ require (
 	go.opentelemetry.io/otel v1.26.0
 	golang.org/x/exp v0.0.0-20231108232855-2478ac86f678
 	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.19.0
+	golang.org/x/sys v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.29.2
 	sigs.k8s.io/release-utils v0.8.1
