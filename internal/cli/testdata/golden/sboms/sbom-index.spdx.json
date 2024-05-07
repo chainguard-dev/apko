@@ -23,7 +23,7 @@
       "filesAnalyzed": false,
       "description": "Multi-arch image index",
       "downloadLocation": "NOASSERTION",
-      "supplier": "Organization: Alpine Linux",
+      "supplier": "Organization: Chainguard, Inc.",
       "sourceInfo": "Generated at image build time by apko",
       "primaryPackagePurpose": "CONTAINER",
       "checksums": [
@@ -46,7 +46,7 @@
       "versionInfo": "sha256:e42af50bd66e8060653eb032153bc77d039807418ee4d80e0fbca5e3e5028926",
       "filesAnalyzed": false,
       "downloadLocation": "NOASSERTION",
-      "supplier": "Organization: Alpine Linux",
+      "supplier": "Organization: Chainguard, Inc.",
       "primaryPackagePurpose": "CONTAINER",
       "checksums": [
         {
@@ -68,7 +68,7 @@
       "versionInfo": "sha256:7e3a7384fe0243cc4b498cd54be2455fdcbb7aebd5eb94566926a5088868eef4",
       "filesAnalyzed": false,
       "downloadLocation": "NOASSERTION",
-      "supplier": "Organization: Alpine Linux",
+      "supplier": "Organization: Chainguard, Inc.",
       "primaryPackagePurpose": "CONTAINER",
       "checksums": [
         {

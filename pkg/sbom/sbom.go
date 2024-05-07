@@ -32,11 +32,8 @@ var (
 )
 
 var DefaultOptions = options.Options{
-	// TODO(jason): Remove this default.
 	OS: options.OSInfo{
-		ID:      "unknown",
-		Name:    "Alpine Linux",
-		Version: "Unknown",
+		Name: "Chainguard, Inc.", // This populates the supplier for index SBOMs.
 	},
 	ImageInfo: options.ImageInfo{
 		Images: []options.ArchImageInfo{},
