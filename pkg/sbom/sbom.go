@@ -32,7 +32,9 @@ var (
 )
 
 var DefaultOptions = options.Options{
-	OS: options.OSInfo{},
+	OS: options.OSInfo{
+		Name: "Chainguard, Inc.", // This populates the supplier for index SBOMs.
+	},
 	ImageInfo: options.ImageInfo{
 		Images: []options.ArchImageInfo{},
 	},
