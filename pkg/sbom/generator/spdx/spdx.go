@@ -347,6 +347,13 @@ func renderDoc(doc *Document, path string) error {
 	return nil
 }
 
+func supplier(opts *options.Options) string {
+	if opts.OS.Name == "" {
+		return NOASSERTION
+	}
+	return "Organization: " + opts.OS.Name
+}
+
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
@@ -354,7 +361,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		DownloadLocation: NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
@@ -386,7 +393,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Pac
 		)),
 		Name:             pkg.Name,
 		Version:          pkg.Version,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		LicenseConcluded: pkg.License,
 		Description:      pkg.Description,
@@ -426,7 +433,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
 		Originator:       "",
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
@@ -549,7 +556,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
 		Version:          opts.ImageInfo.IndexDigest.DeepCopy().String(),
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
@@ -583,7 +590,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
 			Version:          fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
-			Supplier:         "Organization: " + opts.OS.Name,
+			Supplier:         supplier(opts),
 			FilesAnalyzed:    false,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
@@ -651,7 +658,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
 		Name:             packageName,
 		Version:          version,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		PrimaryPurpose:   "SOURCE",
 		Description:      "Image configuration source",
