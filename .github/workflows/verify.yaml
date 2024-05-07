@@ -21,7 +21,7 @@ jobs:
           go-version: "1.21"
           check-latest: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@9d1e0624a798bb64f6c3cea93db47765312263dc # v5.1.0
+        uses: golangci/golangci-lint-action@23faadfdeb23a6f9e511beaba149bb123b5b145a # v6.0.0
         timeout-minutes: 5
         with:
           version: v1.54
