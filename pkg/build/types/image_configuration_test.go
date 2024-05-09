@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"chainguard.dev/apko/pkg/build/types"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 func TestOverlayWithEmptyContents(t *testing.T) {
