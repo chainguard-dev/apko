@@ -1,8 +1,7 @@
 module chainguard.dev/apko
 
 go 1.21.2
-
-toolchain go1.21.5
+toolchain go1.22.2
 
 require (
 	github.com/chainguard-dev/clog v1.3.1
@@ -27,7 +26,7 @@ require (
 	golang.org/x/sync v0.7.0
 	golang.org/x/sys v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.29.2
+	k8s.io/apimachinery v0.30.0
 	sigs.k8s.io/release-utils v0.8.2
 )
 
