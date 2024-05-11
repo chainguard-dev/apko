@@ -71,6 +71,22 @@ k9aaIPTm/xsi8v3u+0qaq7KzIBc9s59JOoA8TlpOaYdVgSQhHHLBaahOuAigH+VI
 isbC9vmqsThF2QdDtQt37keuqoda2E6sL7PUvIyVXDRfwX7uMDjlzTxHTymvq2Ck
 htBqojBnThmjJQFgZXocHG8CAwEAAQ==
 -----END PUBLIC KEY-----`,
+		"test-rsa256.rsa.pub": `
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEArPL3OE2edJeOFFvd3iXS
+n8+VP4LDydDaqIVJYsMZvbeASmxxgmo7PTCnr0N8hzDrUEn9D4Tb2vK6HGkMh89v
+RkC8EXCKKltAAHOYG40yUDhnrkIzbnUl1Y27I69I9xIojFBXhB+nUckDCmqEhM7h
+dGuCKZVr+ABXEgpPy4jua0OXXKmgGGFNnMGXg5BJ8xQS6NjAje1clpqgTcW4vMDi
+VCfosZtPEL1uh7MqoKa1f63PuegQhlXI5q++LQL4O7aQKdZvk9RFV2PyIIgLE2Dr
+WVLqCI2k2veoYJiz83oiixcxiHVqVqyrnLIFPT+F4dbH6lC4JhcIVK4Vvg+uY2/z
+gp090qRbje3H/VV9SsKpwj7ZbzSz4H5zyafs0ONDVvTIzmz3M1vLS+Au8NqRkGNj
+dxV4ZyYalq7BWrI51SKt1EyWQxWwTQcwIaaAMUIqOsc3I6qIvDRoNTY+ORTNwrud
++6Ve5h3bP9UyEHnSHQBHOEzQzlLDawCUo4RcyPsFfMqhCrCBM1IAKCFm4aeaIr7Q
+0x+r1NFiZkOsW2JrbKFaA4swQdPGtirtxvcyq4HBP1XW1mlujKKFV64nByfMEaRs
+UUcx14yovgv54uwNX4c8BRSYAuU/enW7jrdPKpLWOzKuKcRg8f+sIpblF2m5Fbqp
+guyM+Ks3c29KlRf3iX35Gt0CAwEAAQ==
+-----END PUBLIC KEY-----
+`,
 	}
 	testArch = "aarch64"
 )
@@ -118,6 +134,15 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a := prepLayout(t, "", nil)
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
+		})
+		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		require.NoErrorf(t, err, "unable to get indexes")
+		require.Greater(t, len(indexes), 0, "no indexes found")
+	})
+	t.Run("RSA256 signed", func(t *testing.T) {
+		a := prepLayout(t, "", nil)
+		a.SetClient(&http.Client{
+			Transport: &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true},
 		})
 		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
