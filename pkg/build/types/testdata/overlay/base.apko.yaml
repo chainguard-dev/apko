@@ -1,0 +1,7 @@
+contents:
+  repositories:
+    - "repository"
+  keyring:
+    - "key"
+  packages:
+    - "package"
