@@ -522,6 +522,7 @@ type Checksum struct {
 
 type ExternalRef struct {
 	Category string `json:"referenceCategory"`
+	Comment  string `json:"comment,omitempty"`
 	Locator  string `json:"referenceLocator"`
 	Type     string `json:"referenceType"`
 }
