@@ -1,4 +1,4 @@
-// Copyright 2022, 2023 Chainguard, Inc.
+// Copyright 2022-2024 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -459,12 +459,19 @@ type Document struct {
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
+	LicensingInfos       []LicensingInfo       `json:"hasExtractedLicensingInfos,omitempty"`
 }
 
 type ExternalDocumentRef struct {
 	Checksum           Checksum `json:"checksum"`
 	ExternalDocumentID string   `json:"externalDocumentId"`
 	SPDXDocument       string   `json:"spdxDocument"`
+}
+
+// Can also contain name, comment, seeAlso
+type LicensingInfo struct {
+	LicenseID     string `json:"licenseId"`
+	ExtractedText string `json:"extractedText"`
 }
 
 type CreationInfo struct {
