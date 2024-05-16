@@ -470,8 +470,8 @@ type ExternalDocumentRef struct {
 
 // Can also contain name, comment, seeAlso
 type LicensingInfo struct {
-	LicenseID          string    `json:"licenseId"`
-	ExtractedText      string    `json:"extractedText"`
+	LicenseID     string `json:"licenseId"`
+	ExtractedText string `json:"extractedText"`
 }
 
 type CreationInfo struct {
