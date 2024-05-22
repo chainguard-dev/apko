@@ -60,6 +60,31 @@ var testOpts = &options.Options{
 	},
 }
 
+var testCustomLicenseOpts = &options.Options{
+	OS: struct {
+		Name    string
+		ID      string
+		Version string
+	}{
+		Name:    "unknown",
+		ID:      "unknown",
+		Version: "3.0",
+	},
+	FileName: "sbom",
+	Packages: []*apk.InstalledPackage{
+		{
+			Package: apk.Package{
+				Name:        "font-ubuntu",
+				Version:     "0.869-r1",
+				Arch:        "x86_64",
+				Description: "Ubuntu font family",
+				License:     "LicenseRef-ubuntu-font",
+				Origin:      "font-ubuntu",
+			},
+		},
+	},
+}
+
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
@@ -68,6 +93,28 @@ func TestGenerate(t *testing.T) {
 	err := sx.Generate(testOpts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
+}
+
+func TestGenerateCustomLicense(t *testing.T) {
+	spdx, err := os.ReadFile("testdata/font-ubuntu.spdx.json")
+	require.NoError(t, err)
+
+	fsys := apkfs.NewMemFS()
+	fsys.MkdirAll("/var/lib/db/sbom", 0750)
+
+	err = fsys.WriteFile("/var/lib/db/sbom/font-ubuntu.spdx.json", spdx, 0644)
+	require.NoError(t, err)
+
+	sx := New(fsys)
+	path := filepath.Join(t.TempDir(), testCustomLicenseOpts.FileName+"."+sx.Ext())
+	err = sx.Generate(testCustomLicenseOpts, path)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	expected, err := os.ReadFile("testdata/expected.spdx.json")
+	require.NoError(t, err)
+	require.Equal(t, expected, got, "CustomLicense SPDX")
 }
 
 func TestReproducible(t *testing.T) {
