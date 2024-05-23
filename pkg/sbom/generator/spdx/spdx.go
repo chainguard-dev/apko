@@ -90,10 +90,11 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			},
 			LicenseListVersion: "3.16",
 		},
-		DataLicense:   "CC0-1.0",
-		Namespace:     "https://spdx.org/spdxdocs/apko/",
-		Packages:      []Package{},
-		Relationships: []Relationship{},
+		DataLicense:    "CC0-1.0",
+		Namespace:      "https://spdx.org/spdxdocs/apko/",
+		Packages:       []Package{},
+		Relationships:  []Relationship{},
+		LicensingInfos: []LicensingInfo{},
 	}
 	var imagePackage *Package
 	layerPackage := sx.layerPackage(opts)
@@ -252,6 +253,10 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return fmt.Errorf("copying element: %w", err)
 	}
 
+	if err := mergeLicensingInfos(internalDoc, doc); err != nil {
+		return fmt.Errorf("merging LicensingInfos: %w", err)
+	}
+
 	// TODO: This loop seems very wrong.
 	for id := range targetElementIDs {
 		// Search for a package in the new SBOM describing the same thing
@@ -312,6 +317,26 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 		return fmt.Errorf("unable to find %d elements in source document: %v", missed, missing)
 	}
 
+	return nil
+}
+
+func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
+	var found bool
+	for _, sourceinfo := range sourceDoc.LicensingInfos {
+		found = false
+		for _, targetinfo := range targetDoc.LicensingInfos {
+			if targetinfo.LicenseID == sourceinfo.LicenseID {
+				if targetinfo.ExtractedText != sourceinfo.ExtractedText {
+					return fmt.Errorf("source & target LicenseID %s differ in Text", targetinfo.LicenseID)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			targetDoc.LicensingInfos = append(targetDoc.LicensingInfos, sourceinfo)
+		}
+	}
 	return nil
 }
 
