@@ -59,11 +59,12 @@
       "SPDXID": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
       "name": "pretend-baselayout",
       "versionInfo": "1.0.0-r0",
-      "filesAnalyzed": true,
+      "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
       "originator": "Organization: Unknown",
+      "supplier": "Organization: Unknown",
       "copyrightText": "\n",
       "externalRefs": [
         {
@@ -71,20 +72,18 @@
           "referenceLocator": "pkg:apk/unknown/pretend-baselayout@1.0.0-r0?arch=x86_64",
           "referenceType": "purl"
         }
-      ],
-      "packageVerificationCode": {
-        "packageVerificationCodeValue": "8058dd7b970804f7b4a4f6e10374b4d02a5a01f3"
-      }
+      ]
     },
     {
       "SPDXID": "SPDXRef-Package-replayout-1.0.0-r0",
       "name": "replayout",
       "versionInfo": "1.0.0-r0",
-      "filesAnalyzed": true,
+      "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "downloadLocation": "NOASSERTION",
       "originator": "Organization: Unknown",
+      "supplier": "Organization: Unknown",
       "copyrightText": "\n",
       "externalRefs": [
         {
@@ -92,10 +91,7 @@
           "referenceLocator": "pkg:apk/unknown/replayout@1.0.0-r0?arch=x86_64",
           "referenceType": "purl"
         }
-      ],
-      "packageVerificationCode": {
-        "packageVerificationCodeValue": "d70ccb53a479f44c7ac6f023492b3520f23c21b3"
-      }
+      ]
     }
   ],
   "relationships": [
