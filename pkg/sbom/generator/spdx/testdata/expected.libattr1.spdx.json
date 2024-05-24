@@ -36,7 +36,7 @@
       "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",
       "name": "libattr1",
       "versionInfo": "2.5.1-r2",
-      "filesAnalyzed": true,
+      "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "GPL-2.0-or-later",
       "downloadLocation": "NOASSERTION",

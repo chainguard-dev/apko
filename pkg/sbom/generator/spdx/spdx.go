@@ -354,13 +354,17 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 
 	// Fix up missing data, checkers require Originator &
 	// Supplier, but older apks do not have it set, copy image
-	// Supplier.
+	// Supplier. Also files are stripped from sbom, thus set
+	// filesAnalyzed to false.
 	for i := range internalSBOM.Packages {
 		if internalSBOM.Packages[i].Originator == "" {
 			internalSBOM.Packages[i].Originator = supplier(opts)
 		}
 		if internalSBOM.Packages[i].Supplier == "" {
 			internalSBOM.Packages[i].Supplier = internalSBOM.Packages[i].Originator
+		}
+		if internalSBOM.Packages[i].FilesAnalyzed {
+			internalSBOM.Packages[i].FilesAnalyzed = false
 		}
 	}
 
