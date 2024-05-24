@@ -351,6 +351,19 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
 		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
+
+	// Fix up missing data, checkers require Originator &
+	// Supplier, but older apks do not have it set, copy image
+	// Supplier.
+	for i := range internalSBOM.Packages {
+		if internalSBOM.Packages[i].Originator == "" {
+			internalSBOM.Packages[i].Originator = supplier(opts)
+		}
+		if internalSBOM.Packages[i].Supplier == "" {
+			internalSBOM.Packages[i].Supplier = internalSBOM.Packages[i].Originator
+		}
+	}
+
 	return internalSBOM, nil
 }
 
