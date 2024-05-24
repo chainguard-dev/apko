@@ -1,0 +1,71 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT-apk-libattr1-2.5.1-r2",
+  "name": "apk-libattr1-2.5.1-r2",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2023-01-28T06:47:56Z",
+    "creators": [
+      "Tool: melange (v0.2.0-97-g0d91d11)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.18"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/chainguard/melange/",
+  "documentDescribes": [
+    "SPDXRef-Package-libattr1-2.5.1-r2"
+  ],
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File--lib-libattr.so.1.1.2501",
+      "fileName": "/lib/libattr.so.1.1.2501",
+      "licenseConcluded": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "1b3a09852617e25522cfb46410c7f68c4149a7b5"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "575c60ac3c5a5201ef30cec6b8f6aded46c76a35b27eaf0700a617f95236c3cd"
+        },
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "b437a3dd87c7777b0c0ee0ecb7ce3d24794e027471891f9861ec08e6b30e2896e5962a887cda2170156721d99685405fea39cc655a8606e441fdf6c1b3697980"
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",
+      "name": "libattr1",
+      "versionInfo": "2.5.1-r2",
+      "filesAnalyzed": true,
+      "hasFiles": [
+        "SPDXRef-File--lib-libattr.so.1.1.2501"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "downloadLocation": "NOASSERTION",
+      "copyrightText": "TODO\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/libattr1@2.5.1-r2?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ],
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "ac84254f783b469f1ea6212ab2645b7c839144f9"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-libattr1-2.5.1-r2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File--lib-libattr.so.1.1.2501"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "0001-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-",
+      "name": "",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Apko Images, Plc",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/image?mediaType=\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",
+      "name": "libattr1",
+      "versionInfo": "2.5.1-r2",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Apko Images, Plc",
+      "supplier": "Organization: Apko Images, Plc",
+      "copyrightText": "TODO\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/libattr1@2.5.1-r2?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ],
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "ac84254f783b469f1ea6212ab2645b7c839144f9"
+      }
+    }
+  ],
+  "relationships": []
+}

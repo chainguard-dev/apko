@@ -85,6 +85,31 @@ var testCustomLicenseOpts = &options.Options{
 	},
 }
 
+var testNoSupplierOpts = &options.Options{
+	OS: struct {
+		Name    string
+		ID      string
+		Version string
+	}{
+		Name:    "Apko Images, Plc",
+		ID:      "apko-images",
+		Version: "3.0",
+	},
+	FileName: "sbom",
+	Packages: []*apk.InstalledPackage{
+		{
+			Package: apk.Package{
+				Name:        "libattr1",
+				Version:     "2.5.1-r2",
+				Arch:        "x86_64",
+				Description: "library for managing filesystem extended attributes",
+				License:     "GPL-2.0-or-later",
+				Origin:      "attr",
+			},
+		},
+	},
+}
+
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
@@ -115,6 +140,28 @@ func TestGenerateCustomLicense(t *testing.T) {
 	expected, err := os.ReadFile("testdata/expected.ubuntu-font.spdx.json")
 	require.NoError(t, err)
 	require.Equal(t, expected, got, "CustomLicense SPDX")
+}
+
+func TestNoSupplier(t *testing.T) {
+	spdx, err := os.ReadFile("testdata/libattr1.spdx.json")
+	require.NoError(t, err)
+
+	fsys := apkfs.NewMemFS()
+	fsys.MkdirAll("/var/lib/db/sbom", 0750)
+
+	err = fsys.WriteFile("/var/lib/db/sbom/libattr1.spdx.json", spdx, 0644)
+	require.NoError(t, err)
+
+	sx := New(fsys)
+	path := filepath.Join(t.TempDir(), testNoSupplierOpts.FileName+"."+sx.Ext())
+	err = sx.Generate(testNoSupplierOpts, path)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	expected, err := os.ReadFile("testdata/expected.libattr1.spdx.json")
+	require.NoError(t, err)
+	require.Equal(t, expected, got, "NoSupplier SPDX")
 }
 
 func TestReproducible(t *testing.T) {
