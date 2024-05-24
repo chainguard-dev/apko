@@ -49,10 +49,7 @@
           "referenceLocator": "pkg:apk/wolfi/libattr1@2.5.1-r2?arch=x86_64",
           "referenceType": "purl"
         }
-      ],
-      "packageVerificationCode": {
-        "packageVerificationCodeValue": "ac84254f783b469f1ea6212ab2645b7c839144f9"
-      }
+      ]
     }
   ],
   "relationships": []
