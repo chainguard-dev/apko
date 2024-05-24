@@ -112,7 +112,7 @@ func TestGenerateCustomLicense(t *testing.T) {
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
-	expected, err := os.ReadFile("testdata/expected.spdx.json")
+	expected, err := os.ReadFile("testdata/expected.ubuntu-font.spdx.json")
 	require.NoError(t, err)
 	require.Equal(t, expected, got, "CustomLicense SPDX")
 }
