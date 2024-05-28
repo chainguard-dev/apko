@@ -65,6 +65,16 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 
 		mergedIc := ImageConfiguration{}
 
+		// Merge packages, repositories and keyrings from base and overlay configurations
+		keyring := append([]string{}, baseIc.Contents.Keyring...)
+		keyring = append(keyring, ic.Contents.Keyring...)
+
+		repos := append([]string{}, baseIc.Contents.Repositories...)
+		repos = append(repos, ic.Contents.Repositories...)
+
+		pkgs := append([]string{}, baseIc.Contents.Packages...)
+		pkgs = append(pkgs, ic.Contents.Packages...)
+
 		// Copy the base configuration...
 		if err := copier.Copy(&mergedIc, &baseIc); err != nil {
 			return fmt.Errorf("failed to copy base configuration: %w", err)
@@ -80,17 +90,9 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, conf
 			return fmt.Errorf("failed to copy merged configuration: %w", err)
 		}
 
-		// Merge packages, repositories and keyrings.
-		keyring := append([]string{}, baseIc.Contents.Keyring...)
-		keyring = append(keyring, mergedIc.Contents.Keyring...)
+		// Finally, update the repeated fields to the merged ones.
 		ic.Contents.Keyring = keyring
-
-		repos := append([]string{}, baseIc.Contents.Repositories...)
-		repos = append(repos, mergedIc.Contents.Repositories...)
 		ic.Contents.Repositories = repos
-
-		pkgs := append([]string{}, baseIc.Contents.Packages...)
-		pkgs = append(pkgs, mergedIc.Contents.Packages...)
 		ic.Contents.Packages = pkgs
 	}
 

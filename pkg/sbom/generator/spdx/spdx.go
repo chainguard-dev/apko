@@ -1,4 +1,4 @@
-// Copyright 2022, 2023 Chainguard, Inc.
+// Copyright 2022-2024 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -90,10 +90,11 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			},
 			LicenseListVersion: "3.16",
 		},
-		DataLicense:   "CC0-1.0",
-		Namespace:     "https://spdx.org/spdxdocs/apko/",
-		Packages:      []Package{},
-		Relationships: []Relationship{},
+		DataLicense:    "CC0-1.0",
+		Namespace:      "https://spdx.org/spdxdocs/apko/",
+		Packages:       []Package{},
+		Relationships:  []Relationship{},
+		LicensingInfos: []LicensingInfo{},
 	}
 	var imagePackage *Package
 	layerPackage := sx.layerPackage(opts)
@@ -129,13 +130,6 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		))
 
 		doc.Packages = append(doc.Packages, p)
-
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: layerPackage.ID,
-			Type:    "CONTAINS",
-			Related: p.ID,
-		})
 
 		// Check to see if the apk contains an sbom describing itself
 		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
@@ -259,6 +253,10 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return fmt.Errorf("copying element: %w", err)
 	}
 
+	if err := mergeLicensingInfos(internalDoc, doc); err != nil {
+		return fmt.Errorf("merging LicensingInfos: %w", err)
+	}
+
 	// TODO: This loop seems very wrong.
 	for id := range targetElementIDs {
 		// Search for a package in the new SBOM describing the same thing
@@ -279,6 +277,9 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
 		for _, r := range sourceDoc.Relationships {
+			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+				continue
+			}
 			if _, ok := todo[r.Element]; ok {
 				todo[r.Related] = struct{}{}
 			}
@@ -295,16 +296,11 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 		}
 	}
 
-	for _, f := range sourceDoc.Files {
-		if _, ok := todo[f.ID]; !ok {
-			continue
-		}
-
-		done[f.ID] = struct{}{}
-	}
-
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
+			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+				continue
+			}
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
 		}
 	}
@@ -324,6 +320,26 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	return nil
 }
 
+func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
+	var found bool
+	for _, sourceinfo := range sourceDoc.LicensingInfos {
+		found = false
+		for _, targetinfo := range targetDoc.LicensingInfos {
+			if targetinfo.LicenseID == sourceinfo.LicenseID {
+				if targetinfo.ExtractedText != sourceinfo.ExtractedText {
+					return fmt.Errorf("source & target LicenseID %s differ in Text", targetinfo.LicenseID)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			targetDoc.LicensingInfos = append(targetDoc.LicensingInfos, sourceinfo)
+		}
+	}
+	return nil
+}
+
 // ParseInternalSBOM opens an SBOM inside apks and
 func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
@@ -335,6 +351,26 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
 		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
+
+	// Fix up missing data, checkers require Originator &
+	// Supplier, but older apks do not have it set, copy image
+	// Supplier. Also files are stripped from sbom, thus set
+	// filesAnalyzed to false and omit packageVerificationCode
+	for i := range internalSBOM.Packages {
+		if internalSBOM.Packages[i].Originator == "" {
+			internalSBOM.Packages[i].Originator = supplier(opts)
+		}
+		if internalSBOM.Packages[i].Supplier == "" {
+			internalSBOM.Packages[i].Supplier = internalSBOM.Packages[i].Originator
+		}
+		if internalSBOM.Packages[i].FilesAnalyzed {
+			internalSBOM.Packages[i].FilesAnalyzed = false
+		}
+		if internalSBOM.Packages[i].VerificationCode != nil {
+			internalSBOM.Packages[i].VerificationCode = nil
+		}
+	}
+
 	return internalSBOM, nil
 }
 
@@ -356,6 +392,13 @@ func renderDoc(doc *Document, path string) error {
 	return nil
 }
 
+func supplier(opts *options.Options) string {
+	if opts.OS.Name == "" {
+		return NOASSERTION
+	}
+	return "Organization: " + opts.OS.Name
+}
+
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
@@ -363,7 +406,7 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		DownloadLocation: NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
@@ -395,7 +438,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Pac
 		)),
 		Name:             pkg.Name,
 		Version:          pkg.Version,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		LicenseConcluded: pkg.License,
 		Description:      pkg.Description,
@@ -435,7 +478,7 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
 		Originator:       "",
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
@@ -458,16 +501,22 @@ type Document struct {
 	DataLicense          string                `json:"dataLicense"`
 	Namespace            string                `json:"documentNamespace"`
 	DocumentDescribes    []string              `json:"documentDescribes"`
-	Files                []File                `json:"files,omitempty"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
+	LicensingInfos       []LicensingInfo       `json:"hasExtractedLicensingInfos,omitempty"`
 }
 
 type ExternalDocumentRef struct {
 	Checksum           Checksum `json:"checksum"`
 	ExternalDocumentID string   `json:"externalDocumentId"`
 	SPDXDocument       string   `json:"spdxDocument"`
+}
+
+// Can also contain name, comment, seeAlso
+type LicensingInfo struct {
+	LicenseID     string `json:"licenseId"`
+	ExtractedText string `json:"extractedText"`
 }
 
 type CreationInfo struct {
@@ -559,7 +608,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
 		Version:          opts.ImageInfo.IndexDigest.DeepCopy().String(),
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
@@ -593,7 +642,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
 			Version:          fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
-			Supplier:         "Organization: " + opts.OS.Name,
+			Supplier:         supplier(opts),
 			FilesAnalyzed:    false,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
@@ -661,7 +710,7 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
 		Name:             packageName,
 		Version:          version,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		PrimaryPurpose:   "SOURCE",
 		Description:      "Image configuration source",
