@@ -16,6 +16,7 @@ package types
 
 import (
 	"fmt"
+	"net/url"
 	"runtime"
 	"sort"
 
@@ -93,6 +94,33 @@ type ImageContents struct {
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
 	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty"`
+}
+
+// MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
+// the ImageContents struct fields.
+func (i ImageContents) MarshalYAML() (interface{}, error) {
+	type redactedImageContents ImageContents
+	ri := redactedImageContents(i)
+
+	for idx, repo := range ri.Repositories {
+		rawURL := repo
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("parsing repository URL: %w", err)
+		}
+		ri.Repositories[idx] = parsed.Redacted()
+	}
+
+	for idx, key := range ri.Keyring {
+		rawURL := key
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("parsing public key URL: %w", err)
+		}
+		ri.Keyring[idx] = parsed.Redacted()
+	}
+
+	return ri, nil
 }
 
 type ImageEntrypoint struct {
