@@ -30,6 +30,8 @@ github.com/chainguard-dev/clog v1.3.1 h1:CDNCty5WKQhJzoOPubk0GdXt+bPQyargmfClqeb
 github.com/chainguard-dev/clog v1.3.1/go.mod h1:cV516KZWqYc/phZsCNwF36u/KMGS+Gj5Uqeb8Hlp95Y=
 github.com/chainguard-dev/go-apk v0.0.0-20240514202343-05db79c0242f h1:TrHbtcSJcXZF9Uo18JNjVV644p4sMpsEty6yyjO2INU=
 github.com/chainguard-dev/go-apk v0.0.0-20240514202343-05db79c0242f/go.mod h1:2tpUKTTAWl5dJmtvOwvSUjNRFp3oc7qOPqSW8I+XLDM=
+github.com/chainguard-dev/go-apk v0.0.0-20240529143655-d11a334256b3 h1:fIKTpUNkAhfoo4ecuXhmnUdrUQlf/+zFfqC1KHmoJ78=
+github.com/chainguard-dev/go-apk v0.0.0-20240529143655-d11a334256b3/go.mod h1:4UVB5GXk5yVOVwe3QPdmMLMVTpYbvzygjXlRrJxJPMc=
 github.com/charmbracelet/lipgloss v0.10.0 h1:KWeXFSexGcfahHX+54URiZGkBFazf70JNMtwg/AFW3s=
 github.com/charmbracelet/lipgloss v0.10.0/go.mod h1:Wig9DSfvANsxqkRsqj6x87irdy123SR4dOXlKa91ciE=
 github.com/charmbracelet/log v0.4.0 h1:G9bQAcx8rWA2T3pWvx7YtPTPwgqpk7D68BX21IRW8ZM=
