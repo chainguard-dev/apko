@@ -268,7 +268,6 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	}
 
 	if bc.o.User != "" || bc.o.Pass != "" {
-		log.Infof("using auth for apk") // TODO: remove
 		apkOpts = append(apkOpts, apk.WithAuth(bc.o.User, bc.o.Pass))
 	}
 

@@ -100,7 +100,13 @@ in a keychain.`,
 			defer os.RemoveAll(tmp)
 
 			var user, pass string
-			if parts := strings.Split(os.Getenv("HTTP_AUTH"), ":"); len(parts) != 4 && parts[0] == "basic" {
+			if auth, ok := os.LookupEnv("HTTP_AUTH"); !ok {
+				// Fine, no auth.
+			} else if parts := strings.SplitN(auth, ":", 4); len(parts) != 4 {
+				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %d parts)", len(parts))
+			} else if parts[0] != "basic" {
+				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %q for first parth)", parts[0])
+			} else {
 				// NB: parts[1] is the realm, which we ignore.
 				user, pass = parts[2], parts[3]
 			}
