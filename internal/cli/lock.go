@@ -23,9 +23,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"

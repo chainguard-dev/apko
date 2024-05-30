@@ -26,12 +26,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
 	"github.com/tmc/dot"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"

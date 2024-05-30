@@ -23,13 +23,14 @@ import (
 	"sort"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
 	khash "sigs.k8s.io/release-utils/hash"
+
+	"github.com/chainguard-dev/clog"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"

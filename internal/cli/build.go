@@ -25,7 +25,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
@@ -33,6 +32,8 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"

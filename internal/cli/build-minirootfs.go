@@ -20,8 +20,9 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/spf13/cobra"
+
+	"github.com/chainguard-dev/clog"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"

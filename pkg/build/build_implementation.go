@@ -26,10 +26,11 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/chainguard-dev/clog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/tarball"
