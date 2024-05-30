@@ -28,8 +28,8 @@ github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chainguard-dev/clog v1.3.1 h1:CDNCty5WKQhJzoOPubk0GdXt+bPQyargmfClqebrpaQ=
 github.com/chainguard-dev/clog v1.3.1/go.mod h1:cV516KZWqYc/phZsCNwF36u/KMGS+Gj5Uqeb8Hlp95Y=
-github.com/chainguard-dev/go-apk v0.0.0-20240530040448-3abd88f8c185 h1:CfgI8ap6f0OHuUSe2NPBixHRT1jUViro1xTFAXwnuHU=
-github.com/chainguard-dev/go-apk v0.0.0-20240530040448-3abd88f8c185/go.mod h1:4UVB5GXk5yVOVwe3QPdmMLMVTpYbvzygjXlRrJxJPMc=
+github.com/chainguard-dev/go-apk v0.0.0-20240530214935-2ff9aee8385a h1:E8EgiRgZsmq1Twz6H2gyyzDB0OxHfZ+h3g8R9BimdAU=
+github.com/chainguard-dev/go-apk v0.0.0-20240530214935-2ff9aee8385a/go.mod h1:4UVB5GXk5yVOVwe3QPdmMLMVTpYbvzygjXlRrJxJPMc=
 github.com/charmbracelet/lipgloss v0.10.0 h1:KWeXFSexGcfahHX+54URiZGkBFazf70JNMtwg/AFW3s=
 github.com/charmbracelet/lipgloss v0.10.0/go.mod h1:Wig9DSfvANsxqkRsqj6x87irdy123SR4dOXlKa91ciE=
 github.com/charmbracelet/log v0.4.0 h1:G9bQAcx8rWA2T3pWvx7YtPTPwgqpk7D68BX21IRW8ZM=
