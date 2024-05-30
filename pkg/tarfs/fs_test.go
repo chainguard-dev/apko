@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
 )

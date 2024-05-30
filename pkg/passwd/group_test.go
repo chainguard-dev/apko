@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"testing"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/stretchr/testify/require"
 )
 

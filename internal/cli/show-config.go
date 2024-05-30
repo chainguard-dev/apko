@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 

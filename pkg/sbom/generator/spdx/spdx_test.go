@@ -21,8 +21,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/release-utils/command"

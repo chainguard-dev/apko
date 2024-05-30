@@ -22,7 +22,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"chainguard.dev/apko/pkg/apk/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"

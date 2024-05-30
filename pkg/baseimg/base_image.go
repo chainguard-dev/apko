@@ -22,7 +22,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"chainguard.dev/apko/pkg/apk/apk"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	ocitypes "github.com/google/go-containerregistry/pkg/v1/types"

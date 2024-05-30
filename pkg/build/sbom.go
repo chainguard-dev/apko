@@ -29,8 +29,8 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"

@@ -103,7 +103,7 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 	}
 
 	cfg = cfg.DeepCopy()
-	cfg.Author = "github.com/chainguard-dev/apko"
+	cfg.Author = "chainguard.dev/apko"
 	platform := arch.ToOCIPlatform()
 	cfg.Architecture = platform.Architecture
 	cfg.Variant = platform.Variant

@@ -32,9 +32,9 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"go.opentelemetry.io/otel"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/tarball"
 	"github.com/chainguard-dev/clog"
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	"github.com/chainguard-dev/go-apk/pkg/tarball"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 )
 

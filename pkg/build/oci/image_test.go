@@ -46,7 +46,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			Environment: map[string]string{},
 		},
 		want: &v1.ConfigFile{
-			Author: "github.com/chainguard-dev/apko",
+			Author: "chainguard.dev/apko",
 			History: []v1.History{{
 				Created:   v1now,
 				Author:    "apko",
@@ -72,7 +72,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			},
 		},
 		want: &v1.ConfigFile{
-			Author: "github.com/chainguard-dev/apko",
+			Author: "chainguard.dev/apko",
 			History: []v1.History{{
 				Created:   v1now,
 				Author:    "apko",
@@ -100,7 +100,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			},
 		},
 		want: &v1.ConfigFile{
-			Author: "github.com/chainguard-dev/apko",
+			Author: "chainguard.dev/apko",
 			History: []v1.History{{
 				Created:   v1now,
 				Author:    "apko",
@@ -128,7 +128,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			},
 		},
 		want: &v1.ConfigFile{
-			Author: "github.com/chainguard-dev/apko",
+			Author: "chainguard.dev/apko",
 			History: []v1.History{{
 				Created:   v1now,
 				Author:    "apko",

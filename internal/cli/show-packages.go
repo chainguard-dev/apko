@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"text/template"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 

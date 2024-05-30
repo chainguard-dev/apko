@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/build/types"

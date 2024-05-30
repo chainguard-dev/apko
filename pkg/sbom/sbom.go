@@ -20,7 +20,7 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"chainguard.dev/apko/pkg/apk/apk"
 	osr "github.com/dominodatalab/os-release"
 
 	"chainguard.dev/apko/pkg/sbom/options"

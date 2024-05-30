@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 func TestParser(t *testing.T) {

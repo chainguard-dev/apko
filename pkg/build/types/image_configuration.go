@@ -202,7 +202,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.OSRelease.HomeURL == "" {
-		ic.OSRelease.HomeURL = "https://github.com/chainguard-dev/apko"
+		ic.OSRelease.HomeURL = "https://chainguard.dev/apko"
 	}
 
 	return nil

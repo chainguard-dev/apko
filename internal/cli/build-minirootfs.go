@@ -20,8 +20,8 @@ import (
 	"os"
 	"runtime"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 
 	"chainguard.dev/apko/pkg/build"

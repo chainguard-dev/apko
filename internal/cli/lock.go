@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 

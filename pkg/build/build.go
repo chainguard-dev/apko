@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
