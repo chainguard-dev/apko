@@ -99,6 +99,12 @@ in a keychain.`,
 			}
 			defer os.RemoveAll(tmp)
 
+			var user, pass string
+			if parts := strings.Split(os.Getenv("HTTP_AUTH"), ":"); len(parts) != 4 && parts[0] == "basic" {
+				// NB: parts[1] is the realm, which we ignore.
+				user, pass = parts[2], parts[3]
+			}
+
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
@@ -115,6 +121,7 @@ in a keychain.`,
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
 					build.WithTempDir(tmp),
+					build.WithAuth(user, pass),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd

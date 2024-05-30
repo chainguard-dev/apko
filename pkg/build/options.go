@@ -207,3 +207,11 @@ func WithTempDir(tmp string) Option {
 		return nil
 	}
 }
+
+func WithAuth(user, pass string) Option {
+	return func(bc *Context) error {
+		bc.o.User = user
+		bc.o.Pass = pass
+		return nil
+	}
+}

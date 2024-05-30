@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/chainguard-dev/clog"
@@ -91,6 +92,12 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 			}
 			defer os.RemoveAll(tmp)
 
+			var user, pass string
+			if parts := strings.Split(os.Getenv("HTTP_AUTH"), ":"); len(parts) != 4 && parts[0] == "basic" {
+				// NB: parts[1] is the realm, which we ignore.
+				user, pass = parts[2], parts[3]
+			}
+
 			return BuildCmd(cmd.Context(), args[1], args[2], archs,
 				[]string{args[1]},
 				writeSBOM,
@@ -109,6 +116,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithCacheDir(cacheDir, offline),
 				build.WithLockFile(lockfile),
 				build.WithTempDir(tmp),
+				build.WithAuth(user, pass),
 			)
 		},
 	}
