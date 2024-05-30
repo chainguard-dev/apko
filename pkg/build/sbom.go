@@ -23,13 +23,6 @@ import (
 	"sort"
 	"time"
 
-	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
-	"chainguard.dev/apko/pkg/sbom"
-	"chainguard.dev/apko/pkg/sbom/generator"
-	soptions "chainguard.dev/apko/pkg/sbom/options"
-
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -37,6 +30,13 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
 	khash "sigs.k8s.io/release-utils/hash"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator"
+	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
 func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) soptions.Options {

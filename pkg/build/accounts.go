@@ -19,9 +19,9 @@ import (
 	"os"
 	"path/filepath"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"golang.org/x/sync/errgroup"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/passwd"
 )

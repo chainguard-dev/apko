@@ -26,16 +26,15 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"chainguard.dev/apko/pkg/lock"
-	"chainguard.dev/apko/pkg/options"
-
+	"github.com/chainguard-dev/clog"
 	gzip "github.com/klauspost/pgzip"
+	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/tarball"
-	"github.com/chainguard-dev/clog"
-	"github.com/sigstore/cosign/v2/pkg/oci"
+	"chainguard.dev/apko/pkg/lock"
+	"chainguard.dev/apko/pkg/options"
 )
 
 // pgzip's default is GOMAXPROCS(0)

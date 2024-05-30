@@ -18,8 +18,9 @@ import (
 	"bytes"
 	"testing"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 func TestGroupParser(t *testing.T) {

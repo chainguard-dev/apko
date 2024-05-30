@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"chainguard.dev/apko/pkg/apk/apk"
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"github.com/chainguard-dev/clog"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
@@ -35,6 +33,8 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
