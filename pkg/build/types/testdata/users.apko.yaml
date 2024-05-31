@@ -1,0 +1,17 @@
+contents:
+  repositories:
+    - "repository"
+  keyring:
+    - "key"
+  packages:
+    - "package"
+
+accounts:
+  users:
+    - gid: 1
+      uid: 2
+      homedir: "/not/home"
+      username: "something-else"
+    - gid: 2
+      uid: 3
+      username: "user"

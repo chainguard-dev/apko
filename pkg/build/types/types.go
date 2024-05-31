@@ -30,8 +30,10 @@ type User struct {
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
 	GID uint32 `json:"gid,omitempty"`
-	// Required: The user's shell
+	// Optional: The user's shell
 	Shell string `json:"shell,omitempty"`
+	// Optional: The user's home directory
+	HomeDir string `json:"homedir,omitempty"`
 }
 
 type Group struct {
@@ -138,9 +140,9 @@ type ImageAccounts struct {
 	// Required: The user to run the container as. This can be a username or UID.
 	RunAs string `json:"run-as,omitempty" yaml:"run-as"`
 	// Required: List of users to populate the image with
-	Users []User `json:"users,omitempty"`
+	Users []User `json:"users,omitempty" yaml:"users"`
 	// Required: List of groups to populate the image with
-	Groups []Group `json:"groups,omitempty"`
+	Groups []Group `json:"groups,omitempty" yaml:"groups"`
 }
 
 type ImageConfiguration struct {
