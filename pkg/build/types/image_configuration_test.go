@@ -36,3 +36,19 @@ func TestOverlayWithAdditionalPackages(t *testing.T) {
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package", "other_package"})
 }
+
+func TestUserContents(t *testing.T) {
+	ctx := context.Background()
+
+	configPath := filepath.Join("testdata", "users.apko.yaml")
+	hasher := sha256.New()
+	ic := types.ImageConfiguration{}
+
+	require.NoError(t, ic.Load(ctx, configPath, hasher))
+	if err := ic.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, "/not/home", ic.Accounts.Users[0].HomeDir)
+	require.Equal(t, "/home/user", ic.Accounts.Users[1].HomeDir)
+}
