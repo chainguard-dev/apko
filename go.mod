@@ -2,6 +2,8 @@ module chainguard.dev/apko
 
 go 1.22.3
 
+replace github.com/chainguard-dev/go-apk => ../go-apk
+
 require (
 	github.com/chainguard-dev/clog v1.3.1
 	github.com/chainguard-dev/go-apk v0.0.0-20240530214935-2ff9aee8385a

@@ -92,7 +92,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 			}
 			defer os.RemoveAll(tmp)
 
-			var user, pass string
+			var domain, user, pass string
 			if auth, ok := os.LookupEnv("HTTP_AUTH"); !ok {
 				// Fine, no auth.
 			} else if parts := strings.SplitN(auth, ":", 4); len(parts) != 4 {
@@ -100,8 +100,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 			} else if parts[0] != "basic" {
 				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %q for first part)", parts[0])
 			} else {
-				// NB: parts[1] is the realm, which we ignore.
-				user, pass = parts[2], parts[3]
+				domain, user, pass = parts[1], parts[2], parts[3]
 			}
 
 			return BuildCmd(cmd.Context(), args[1], args[2], archs,
@@ -122,7 +121,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithCacheDir(cacheDir, offline),
 				build.WithLockFile(lockfile),
 				build.WithTempDir(tmp),
-				build.WithAuth(user, pass),
+				build.WithAuth(domain, user, pass),
 			)
 		},
 	}
