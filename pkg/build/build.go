@@ -267,8 +267,8 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}
 
-	if bc.o.User != "" || bc.o.Pass != "" {
-		apkOpts = append(apkOpts, apk.WithAuth(bc.o.User, bc.o.Pass))
+	for domain, auth := range bc.o.Auth {
+		apkOpts = append(apkOpts, apk.WithAuth(domain, auth.User, auth.Pass))
 	}
 
 	if bc.ic.Contents.BaseImage != nil {
