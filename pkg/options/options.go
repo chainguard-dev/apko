@@ -48,6 +48,8 @@ type Options struct {
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
+	User                    string             `json:"user"`
+	Pass                    string             `json:"-"`
 }
 
 var Default = Options{

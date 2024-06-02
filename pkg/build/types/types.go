@@ -16,6 +16,7 @@ package types
 
 import (
 	"fmt"
+	"net/url"
 	"runtime"
 	"sort"
 
@@ -29,8 +30,10 @@ type User struct {
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
 	GID uint32 `json:"gid,omitempty"`
-	// Required: The user's shell
+	// Optional: The user's shell
 	Shell string `json:"shell,omitempty"`
+	// Optional: The user's home directory
+	HomeDir string `json:"homedir,omitempty"`
 }
 
 type Group struct {
@@ -95,6 +98,33 @@ type ImageContents struct {
 	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty"`
 }
 
+// MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
+// the ImageContents struct fields.
+func (i ImageContents) MarshalYAML() (interface{}, error) {
+	type redactedImageContents ImageContents
+	ri := redactedImageContents(i)
+
+	for idx, repo := range ri.Repositories {
+		rawURL := repo
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("parsing repository URL: %w", err)
+		}
+		ri.Repositories[idx] = parsed.Redacted()
+	}
+
+	for idx, key := range ri.Keyring {
+		rawURL := key
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("parsing public key URL: %w", err)
+		}
+		ri.Keyring[idx] = parsed.Redacted()
+	}
+
+	return ri, nil
+}
+
 type ImageEntrypoint struct {
 	// Optional: The type of entrypoint. Only "service-bundle" is supported.
 	Type string `json:"type,omitempty"`
@@ -110,9 +140,9 @@ type ImageAccounts struct {
 	// Required: The user to run the container as. This can be a username or UID.
 	RunAs string `json:"run-as,omitempty" yaml:"run-as"`
 	// Required: List of users to populate the image with
-	Users []User `json:"users,omitempty"`
+	Users []User `json:"users,omitempty" yaml:"users"`
 	// Required: List of groups to populate the image with
-	Groups []Group `json:"groups,omitempty"`
+	Groups []Group `json:"groups,omitempty" yaml:"groups"`
 }
 
 type ImageConfiguration struct {

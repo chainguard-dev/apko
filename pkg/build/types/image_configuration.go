@@ -164,13 +164,17 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 
-	for _, u := range ic.Accounts.Users {
+	for i, u := range ic.Accounts.Users {
 		if u.UserName == "" {
 			return fmt.Errorf("configured user %v has no configured user name", u)
 		}
 
 		if u.UID == 0 {
 			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
+		}
+
+		if u.HomeDir == "" {
+			ic.Accounts.Users[i].HomeDir = "/home/" + u.UserName
 		}
 	}
 

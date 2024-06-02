@@ -99,6 +99,18 @@ in a keychain.`,
 			}
 			defer os.RemoveAll(tmp)
 
+			var user, pass string
+			if auth, ok := os.LookupEnv("HTTP_AUTH"); !ok {
+				// Fine, no auth.
+			} else if parts := strings.SplitN(auth, ":", 4); len(parts) != 4 {
+				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %d parts)", len(parts))
+			} else if parts[0] != "basic" {
+				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %q for first part)", parts[0])
+			} else {
+				// NB: parts[1] is the realm, which we ignore.
+				user, pass = parts[2], parts[3]
+			}
+
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
@@ -115,6 +127,7 @@ in a keychain.`,
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
 					build.WithTempDir(tmp),
+					build.WithAuth(user, pass),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd

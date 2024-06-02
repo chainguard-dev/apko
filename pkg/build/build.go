@@ -267,6 +267,10 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}
 
+	if bc.o.User != "" || bc.o.Pass != "" {
+		apkOpts = append(apkOpts, apk.WithAuth(bc.o.User, bc.o.Pass))
+	}
+
 	if bc.ic.Contents.BaseImage != nil {
 		baseImg, err := baseimg.New(bc.ic.Contents.BaseImage.Image, bc.ic.Contents.BaseImage.APKIndex, bc.Arch(), bc.o.TempDir())
 		if err != nil {

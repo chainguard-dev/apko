@@ -274,7 +274,11 @@
         },
         "shell": {
           "type": "string",
-          "description": "Required: The user's shell"
+          "description": "Optional: The user's shell"
+        },
+        "homedir": {
+          "type": "string",
+          "description": "Optional: The user's home directory"
         }
       },
       "additionalProperties": false,
