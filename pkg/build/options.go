@@ -209,14 +209,12 @@ func WithTempDir(tmp string) Option {
 	}
 }
 
-type auth struct{ user, pass string }
-
 func WithAuth(domain, user, pass string) Option {
 	return func(bc *Context) error {
 		if bc.o.Auth == nil {
 			bc.o.Auth = make(map[string]options.Auth)
 		}
-		bc.o.Auth[domain] = options.Auth{user, pass}
+		bc.o.Auth[domain] = options.Auth{User: user, Pass: pass}
 		return nil
 	}
 }
