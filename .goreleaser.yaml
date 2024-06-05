@@ -1,4 +1,5 @@
 project_name: apko
+version: 2
 
 before:
   hooks:
