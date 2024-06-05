@@ -79,6 +79,7 @@ func TestTarFS(t *testing.T) {
 	}
 	if file == nil {
 		t.Fatalf("did not find %q", want)
+		return
 	}
 	file.Typeflag = tar.TypeReg
 

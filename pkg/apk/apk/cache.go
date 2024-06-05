@@ -300,7 +300,7 @@ func (t *cacheTransport) retrieveAndSaveFile(request *http.Request, cp cachePlac
 	// Now that we have the file has been written, rename to atomically populate
 	// the cache
 	if err := os.Rename(tmp.Name(), cacheFile); err != nil {
-		return "", fmt.Errorf("unable to populate cache: %v", err)
+		return "", fmt.Errorf("unable to populate cache: %w", err)
 	}
 
 	return cacheFile, nil

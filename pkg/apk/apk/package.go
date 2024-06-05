@@ -22,8 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"chainguard.dev/apko/pkg/apk/expandapk"
 	"gopkg.in/ini.v1"
+
+	"chainguard.dev/apko/pkg/apk/expandapk"
 )
 
 // PackageToInstalled takes a Package and returns it as the string representation of lines in a /lib/apk/db/installed file.
@@ -106,14 +107,14 @@ func (p *Package) ChecksumString() string {
 func ParsePackage(ctx context.Context, apkPackage io.Reader) (*Package, error) {
 	expanded, err := expandapk.ExpandApk(ctx, apkPackage, "")
 	if err != nil {
-		return nil, fmt.Errorf("expandApk(): %v", err)
+		return nil, fmt.Errorf("expandApk(): %w", err)
 	}
 
 	defer expanded.Close()
 
 	r, err := expanded.ControlFS.Open(".PKGINFO")
 	if err != nil {
-		return nil, fmt.Errorf("expanded.ControlData(): %v", err)
+		return nil, fmt.Errorf("expanded.ControlData(): %w", err)
 	}
 
 	cfg, err := ini.ShadowLoad(r)
