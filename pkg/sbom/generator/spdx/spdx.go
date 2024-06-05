@@ -277,7 +277,7 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
 		for _, r := range sourceDoc.Relationships {
-			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
 				continue
 			}
 			if _, ok := todo[r.Element]; ok {
@@ -298,7 +298,7 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
-			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
 				continue
 			}
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
