@@ -72,8 +72,13 @@ func TestParsePackage(t *testing.T) {
 				t.Fatalf("opening apk: %v", err)
 			}
 			defer f.Close()
+
+			stat, err := f.Stat()
+			if err != nil {
+				t.Fatal(err)
+			}
 			ctx := context.Background()
-			got, err := ParsePackage(ctx, f)
+			got, err := ParsePackage(ctx, f, uint64(stat.Size()))
 			if err != nil {
 				t.Fatalf("ParsePackage(): %v", err)
 			}

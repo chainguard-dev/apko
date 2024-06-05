@@ -15,9 +15,14 @@
 package apk
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"encoding/base64"
 	"fmt"
+	"hash"
 	"io"
 	"strings"
 	"time"
@@ -62,6 +67,27 @@ type InstallablePackage interface {
 	ChecksumString() string
 }
 
+// PackageInfo represents the information present in .PKGINFO.
+type PackageInfo struct {
+	Name             string   `ini:"pkgname"`
+	Version          string   `ini:"pkgver"`
+	Arch             string   `ini:"arch"`
+	Description      string   `ini:"pkgdesc"`
+	License          string   `ini:"license"`
+	Origin           string   `ini:"origin"`
+	Maintainer       string   `ini:"maintainer"`
+	URL              string   `ini:"url"`
+	Dependencies     []string `ini:"depend,,allowshadow"`
+	Provides         []string `ini:"provides,,allowshadow"`
+	InstallIf        []string `ini:"install_if,,allowshadow"`
+	Size             uint64   `ini:"size"`
+	ProviderPriority uint64   `ini:"provider_priority"`
+	BuildDate        int64    `ini:"builddate"`
+	RepoCommit       string   `ini:"commit"`
+	Replaces         []string `ini:"replaces,,allowshadow"`
+	DataHash         string   `ini:"datahash"`
+}
+
 // Package represents a single package with the information present in an
 // APKINDEX.
 type Package struct {
@@ -104,32 +130,82 @@ func (p *Package) ChecksumString() string {
 }
 
 // ParsePackage parses a .apk file and returns a Package struct
-func ParsePackage(ctx context.Context, apkPackage io.Reader) (*Package, error) {
-	expanded, err := expandapk.ExpandApk(ctx, apkPackage, "")
+func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Package, error) {
+	pkginfo, h, err := ParsePackageInfo(apkPackage)
 	if err != nil {
-		return nil, fmt.Errorf("expandApk(): %w", err)
+		return nil, err
 	}
 
-	defer expanded.Close()
+	return &Package{
+		Name:             pkginfo.Name,
+		Version:          pkginfo.Version,
+		Arch:             pkginfo.Arch,
+		Description:      pkginfo.Description,
+		License:          pkginfo.License,
+		Origin:           pkginfo.Origin,
+		Maintainer:       pkginfo.Maintainer,
+		URL:              pkginfo.URL,
+		Checksum:         h.Sum(nil),
+		Dependencies:     pkginfo.Dependencies,
+		Provides:         pkginfo.Provides,
+		InstallIf:        pkginfo.InstallIf,
+		Size:             size,
+		InstalledSize:    pkginfo.Size,
+		ProviderPriority: pkginfo.ProviderPriority,
+		BuildTime:        time.Unix(pkginfo.BuildDate, 0).UTC(),
+		BuildDate:        pkginfo.BuildDate,
+		RepoCommit:       pkginfo.RepoCommit,
+		Replaces:         pkginfo.Replaces,
+		DataHash:         pkginfo.DataHash,
+	}, nil
+}
 
-	r, err := expanded.ControlFS.Open(".PKGINFO")
+// ParsePackageInfo returns a parsed .PKGINFO from an APK reader and the control section hash.
+func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, hash.Hash, error) {
+	split, err := expandapk.Split(apkPackage)
 	if err != nil {
-		return nil, fmt.Errorf("expanded.ControlData(): %w", err)
+		return nil, nil, fmt.Errorf("splitting apk: %w", err)
+	}
+	control := split[0]
+	if len(split) == 3 {
+		// signature section is present
+		control = split[1]
 	}
 
-	cfg, err := ini.ShadowLoad(r)
+	b, err := io.ReadAll(control)
 	if err != nil {
-		return nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
+		return nil, nil, err
 	}
 
-	pkg := new(Package)
-	if err = cfg.MapTo(pkg); err != nil {
-		return nil, fmt.Errorf("cfg.MapTo(): %w", err)
+	h := sha1.New() //nolint:gosec
+	if _, err = h.Write(b); err != nil {
+		return nil, nil, err
 	}
-	pkg.BuildTime = time.Unix(pkg.BuildDate, 0).UTC()
-	pkg.InstalledSize = pkg.Size
-	pkg.Size = uint64(expanded.Size)
-	pkg.Checksum = expanded.ControlHash
 
-	return pkg, nil
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tr := tar.NewReader(zr)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			return nil, nil, fmt.Errorf("did not see .PKGINFO in APK: %w", err)
+		}
+
+		if hdr.Name == ".PKGINFO" {
+			cfg, err := ini.ShadowLoad(tr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
+			}
+
+			pkg := new(PackageInfo)
+			if err = cfg.MapTo(pkg); err != nil {
+				return nil, nil, fmt.Errorf("cfg.MapTo(): %w", err)
+			}
+
+			return pkg, h, nil
+		}
+	}
 }
