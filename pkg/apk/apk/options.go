@@ -30,7 +30,7 @@ type opts struct {
 	version            string
 	cache              *cache
 	noSignatureIndexes []string
-	user, pass         string
+	auth               map[string]auth
 }
 
 type Option func(*opts) error
@@ -106,10 +106,14 @@ func WithNoSignatureIndexes(noSignatureIndex ...string) Option {
 	}
 }
 
-func WithAuth(user, pass string) Option {
+type auth struct{ user, pass string }
+
+func WithAuth(domain, user, pass string) Option {
 	return func(o *opts) error {
-		o.user = user
-		o.pass = pass
+		if o.auth == nil {
+			o.auth = make(map[string]auth)
+		}
+		o.auth[domain] = auth{user, pass}
 		return nil
 	}
 }

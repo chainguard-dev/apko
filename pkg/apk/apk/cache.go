@@ -54,7 +54,9 @@ func (e *etagCache) get(t *cacheTransport, request *http.Request, cacheFile stri
 	// Do all the expensive things inside the once.
 	once, _ := e.etags.LoadOrStore(url, &sync.Once{})
 	once.(*sync.Once).Do(func() {
-		resp, rerr := t.wrapped.Head(url)
+		req := request.Clone(request.Context())
+		req.Method = http.MethodHead
+		resp, rerr := t.wrapped.Do(req)
 		if resp != nil {
 			// We don't expect any body from a HEAD so just always close it to appease the linter.
 			resp.Body.Close()

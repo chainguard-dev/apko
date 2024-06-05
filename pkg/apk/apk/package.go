@@ -22,9 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/ini.v1"
-
 	"chainguard.dev/apko/pkg/apk/expandapk"
+	"gopkg.in/ini.v1"
 )
 
 // PackageToInstalled takes a Package and returns it as the string representation of lines in a /lib/apk/db/installed file.

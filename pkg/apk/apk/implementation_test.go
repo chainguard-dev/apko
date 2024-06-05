@@ -238,6 +238,7 @@ func TestInitKeyring(t *testing.T) {
 			http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
 		}))
 		defer s.Close()
+		host := strings.TrimPrefix(s.URL, "http://")
 
 		ctx := context.Background()
 
@@ -246,7 +247,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuth(testUser, testPass))
+			a, err := New(WithFS(src), WithAuth(host, testUser, testPass))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -261,7 +262,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuth("baduser", "badpass"))
+			a, err := New(WithFS(src), WithAuth(host, "baduser", "badpass"))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -544,6 +545,7 @@ func TestAuth_good(t *testing.T) {
 		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	repo := Repository{URI: s.URL}
 	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
@@ -554,7 +556,7 @@ func TestAuth_good(t *testing.T) {
 	err := src.MkdirAll("lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuth(testUser, testPass))
+	a, err := New(WithFS(src), WithAuth(host, testUser, testPass))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)
@@ -575,6 +577,7 @@ func TestAuth_bad(t *testing.T) {
 		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	repo := Repository{URI: s.URL}
 	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
@@ -585,7 +588,7 @@ func TestAuth_bad(t *testing.T) {
 	err := src.MkdirAll("lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuth("baduser", "badpass"))
+	a, err := New(WithFS(src), WithAuth(host, "baduser", "badpass"))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)

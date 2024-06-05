@@ -315,11 +315,12 @@ func TestIndexAuth_good(t *testing.T) {
 		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth(testUser, testPass),
+		WithAuth(host, testUser, testPass),
 		WithArch("x86_64"))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
@@ -343,11 +344,12 @@ func TestIndexAuth_bad(t *testing.T) {
 		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth("baduser", "badpass"),
+		WithAuth(host, "baduser", "badpass"),
 		WithArch("x86_64"))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)

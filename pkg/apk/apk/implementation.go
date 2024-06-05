@@ -65,7 +65,7 @@ type APK struct {
 	cache              *cache
 	ignoreSignatures   bool
 	noSignatureIndexes []string
-	user, pass         string
+	auth               map[string]auth
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -94,8 +94,7 @@ func New(options ...Option) (*APK, error) {
 		cache:              opt.cache,
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
-		user:               opt.user,
-		pass:               opt.pass,
+		auth:               opt.auth,
 	}, nil
 }
 
@@ -414,7 +413,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 					pass, _ := asURL.User.Password()
 					req.SetBasicAuth(user, pass)
 					req.URL.User = nil
-				} else if a.user != "" && a.pass != "" {
+				} else if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
 					req.SetBasicAuth(a.user, a.pass)
 				}
 
@@ -1053,7 +1052,7 @@ func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.Read
 		if err != nil {
 			return nil, err
 		}
-		if a.user != "" && a.pass != "" {
+		if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
 			req.SetBasicAuth(a.user, a.pass)
 		}
 

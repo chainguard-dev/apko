@@ -213,8 +213,8 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 			user := asURL.User.Username()
 			pass, _ := asURL.User.Password()
 			req.SetBasicAuth(user, pass)
-		} else if opts.user != "" || opts.pass != "" {
-			req.SetBasicAuth(opts.user, opts.pass)
+		} else if a, ok := opts.auth[asURL.Host]; ok && a.user != "" || a.pass != "" {
+			req.SetBasicAuth(a.user, a.pass)
 		}
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
@@ -320,7 +320,7 @@ type indexOpts struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	httpClient         *http.Client
-	user, pass         string
+	auth               map[string]auth
 }
 type IndexOption func(*indexOpts)
 
@@ -342,9 +342,11 @@ func WithHTTPClient(c *http.Client) IndexOption {
 	}
 }
 
-func WithIndexAuth(user, pass string) IndexOption {
+func WithIndexAuth(domain, user, pass string) IndexOption {
 	return func(o *indexOpts) {
-		o.user = user
-		o.pass = pass
+		if o.auth == nil {
+			o.auth = make(map[string]auth)
+		}
+		o.auth[domain] = auth{user, pass}
 	}
 }

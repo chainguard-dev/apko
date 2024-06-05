@@ -26,13 +26,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/klauspost/compress/gzip"
-
 	"github.com/psanford/memfs"
 
 	"chainguard.dev/apko/pkg/apk/tarball"
-
-	"github.com/chainguard-dev/clog"
 )
 
 func SignIndex(ctx context.Context, signingKey string, indexFile string) error {
