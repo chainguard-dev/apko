@@ -2,6 +2,7 @@ package fs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"testing"
@@ -60,7 +61,7 @@ func TestReadAPKFile(t *testing.T) {
 		var readSoFar int64
 		for {
 			readThisTime, err := file.Read(buffer)
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				require.Nil(t, err)
 			}
 			readSoFar += int64(readThisTime)
@@ -85,7 +86,7 @@ func TestReadAPKFile(t *testing.T) {
 		var readSoFar int64
 		for {
 			readThisTime, err := file.Read(buffer)
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				require.Nil(t, err)
 			}
 			readSoFar += int64(readThisTime)

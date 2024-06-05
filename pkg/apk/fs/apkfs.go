@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -175,7 +176,7 @@ func (a *apkFSFile) acquireCopy() *apkFSFile {
 func (a *apkFSFile) seekTo(reader *tar.Reader) error {
 	for {
 		header, err := reader.Next()
-		if err == os.ErrNotExist {
+		if errors.Is(err, os.ErrNotExist) {
 			break
 		} else if err != nil {
 			return err

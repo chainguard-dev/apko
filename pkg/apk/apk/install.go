@@ -308,10 +308,11 @@ func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, tf *t
 	_, span := otel.Tracer("go-apk").Start(ctx, "lazilyInstallAPKFiles")
 	defer span.End()
 
-	var files []tar.Header
+	entries := tf.Entries()
+	files := make([]tar.Header, 0, len(entries))
 
 	var startedDataSection bool
-	for _, file := range tf.Entries() {
+	for _, file := range entries {
 		// per https://git.alpinelinux.org/apk-tools/tree/src/extract_v2.c?id=337734941831dae9a6aa441e38611c43a5fd72c0#n120
 		//  * APKv1.0 compatibility - first non-hidden file is
 		//  * considered to start the data section of the file.
