@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -33,6 +32,8 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/sigstore/cosign/v2/pkg/oci/signed"
 	"golang.org/x/exp/maps"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"

@@ -20,9 +20,9 @@ import (
 	"os"
 	"strings"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	purl "github.com/package-url/packageurl-go"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 

@@ -22,9 +22,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )

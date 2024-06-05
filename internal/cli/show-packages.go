@@ -22,11 +22,12 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 
+	"github.com/chainguard-dev/clog"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )

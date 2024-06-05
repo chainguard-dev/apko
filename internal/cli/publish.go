@@ -22,7 +22,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -30,6 +29,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"

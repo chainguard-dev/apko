@@ -24,11 +24,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
