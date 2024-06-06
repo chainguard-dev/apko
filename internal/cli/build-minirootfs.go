@@ -20,10 +20,11 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 
+	"github.com/chainguard-dev/clog"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )

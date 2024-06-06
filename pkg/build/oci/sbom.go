@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -31,6 +30,8 @@ import (
 	ctypes "github.com/sigstore/cosign/v2/pkg/types"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build/types"
 )

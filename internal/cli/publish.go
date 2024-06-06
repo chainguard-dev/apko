@@ -22,7 +22,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -30,6 +29,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
@@ -99,7 +100,7 @@ in a keychain.`,
 			}
 			defer os.RemoveAll(tmp)
 
-			var user, pass string
+			var domain, user, pass string
 			if auth, ok := os.LookupEnv("HTTP_AUTH"); !ok {
 				// Fine, no auth.
 			} else if parts := strings.SplitN(auth, ":", 4); len(parts) != 4 {
@@ -107,8 +108,7 @@ in a keychain.`,
 			} else if parts[0] != "basic" {
 				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %q for first part)", parts[0])
 			} else {
-				// NB: parts[1] is the realm, which we ignore.
-				user, pass = parts[2], parts[3]
+				domain, user, pass = parts[1], parts[2], parts[3]
 			}
 
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
@@ -127,7 +127,7 @@ in a keychain.`,
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
 					build.WithTempDir(tmp),
-					build.WithAuth(user, pass),
+					build.WithAuth(domain, user, pass),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd

@@ -21,10 +21,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/fetch"
 	"chainguard.dev/apko/pkg/vcs"
@@ -202,7 +203,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.OSRelease.HomeURL == "" {
-		ic.OSRelease.HomeURL = "https://github.com/chainguard-dev/apko"
+		ic.OSRelease.HomeURL = "https://chainguard.dev/apko"
 	}
 
 	return nil

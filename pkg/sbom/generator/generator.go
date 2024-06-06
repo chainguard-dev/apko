@@ -15,7 +15,7 @@
 package generator
 
 import (
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 
 	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
 	"chainguard.dev/apko/pkg/sbom/generator/idb"

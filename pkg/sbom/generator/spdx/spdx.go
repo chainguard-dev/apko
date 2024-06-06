@@ -24,11 +24,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -277,7 +277,7 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
 		for _, r := range sourceDoc.Relationships {
-			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
 				continue
 			}
 			if _, ok := todo[r.Element]; ok {
@@ -298,7 +298,7 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
-			if strings.HasPrefix(r.Related, "SPDXRef-File--") {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
 				continue
 			}
 			targetDoc.Relationships = append(targetDoc.Relationships, r)

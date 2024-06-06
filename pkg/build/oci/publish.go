@@ -20,7 +20,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
@@ -30,6 +29,8 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/oci/walk"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/chainguard-dev/clog"
 )
 
 // PublishImage publishes an image to a registry.

@@ -27,9 +27,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chainguard-dev/clog"
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
@@ -37,6 +34,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
@@ -267,8 +268,8 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}
 
-	if bc.o.User != "" || bc.o.Pass != "" {
-		apkOpts = append(apkOpts, apk.WithAuth(bc.o.User, bc.o.Pass))
+	for domain, auth := range bc.o.Auth {
+		apkOpts = append(apkOpts, apk.WithAuth(domain, auth.User, auth.Pass))
 	}
 
 	if bc.ic.Contents.BaseImage != nil {

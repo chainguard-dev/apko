@@ -19,11 +19,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -124,10 +125,11 @@ func TestAuth_good(t *testing.T) {
 		http.FileServer(http.Dir("testdata/packages")).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
 	bc, err := build.New(ctx, fs.NewMemFS(),
-		build.WithAuth(testUser, testPass),
+		build.WithAuth(host, testUser, testPass),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Repositories: []string{s.URL},
@@ -162,10 +164,11 @@ func TestAuth_bad(t *testing.T) {
 		http.FileServer(http.Dir("testdata/packages")).ServeHTTP(w, r)
 	}))
 	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
 	_, err := build.New(ctx, fs.NewMemFS(),
-		build.WithAuth("baduser", "badpass"),
+		build.WithAuth(host, "baduser", "badpass"),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Keyring: []string{s.URL + "/melange.rsa.pub"},

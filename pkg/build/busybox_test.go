@@ -4,9 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 // Copyright 2023 Chainguard, Inc.

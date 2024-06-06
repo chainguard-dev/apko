@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
 )
@@ -79,6 +79,7 @@ func TestTarFS(t *testing.T) {
 	}
 	if file == nil {
 		t.Fatalf("did not find %q", want)
+		return
 	}
 	file.Typeflag = tar.TypeReg
 

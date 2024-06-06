@@ -19,8 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 func TestReadReleaseData(t *testing.T) {

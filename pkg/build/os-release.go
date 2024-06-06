@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 
 	"github.com/chainguard-dev/clog"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 

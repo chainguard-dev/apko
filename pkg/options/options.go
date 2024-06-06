@@ -48,9 +48,10 @@ type Options struct {
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
-	User                    string             `json:"user"`
-	Pass                    string             `json:"-"`
+	Auth                    map[string]Auth    `json:"-"`
 }
+
+type Auth struct{ User, Pass string }
 
 var Default = Options{
 	Arch:            types.ParseArchitecture(runtime.GOARCH),

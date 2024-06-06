@@ -15,7 +15,7 @@
 package s6
 
 import (
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 type Services map[string]string
