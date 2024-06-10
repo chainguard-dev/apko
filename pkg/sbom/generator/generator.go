@@ -17,8 +17,6 @@ package generator
 import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 
-	"chainguard.dev/apko/pkg/sbom/generator/cyclonedx"
-	"chainguard.dev/apko/pkg/sbom/generator/idb"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -35,12 +33,6 @@ func Generators(fsys apkfs.FullFS) map[string]Generator {
 
 	sx := spdx.New(fsys)
 	generators[sx.Key()] = &sx
-
-	cdx := cyclonedx.New(fsys)
-	generators[cdx.Key()] = &cdx
-
-	idb := idb.New(fsys)
-	generators[idb.Key()] = &idb
 
 	return generators
 }
