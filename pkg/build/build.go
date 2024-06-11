@@ -41,6 +41,7 @@ import (
 	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
 )
 
@@ -273,7 +274,15 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	}
 
 	if bc.ic.Contents.BaseImage != nil {
-		baseImg, err := baseimg.New(bc.ic.Contents.BaseImage.Image, bc.ic.Contents.BaseImage.APKIndex, bc.Arch(), bc.o.TempDir())
+		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)
+		if err != nil {
+			return nil, err
+		}
+		apkindexPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.APKIndex, bc.o.IncludePaths)
+		if err != nil {
+			return nil, err
+		}
+		baseImg, err := baseimg.New(imgPath, apkindexPath, bc.Arch(), bc.o.TempDir())
 		if err != nil {
 			return nil, err
 		}

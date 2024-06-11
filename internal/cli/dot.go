@@ -67,7 +67,7 @@ apko dot --web -S example.yaml
 		RunE: func(cmd *cobra.Command, args []string) error {
 			archs := types.ParseArchitectures(archstrs)
 			return DotCmd(cmd.Context(), args[0], archs, web, span,
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
 				build.WithCacheDir(cacheDir, offline),

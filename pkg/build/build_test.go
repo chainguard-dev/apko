@@ -36,7 +36,7 @@ func TestBuildImage(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithConfig("apko.yaml", []string{"testdata"}),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -64,7 +64,7 @@ func TestBuildImageFromLockFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
 		build.WithLockFile(filepath.Join("testdata", "apko.lock.json")),
 	}
 
@@ -93,7 +93,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
 		build.WithLockFile(filepath.Join("testdata", "apko.pre-0.13.lock.json")),
 	}
 

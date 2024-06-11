@@ -42,7 +42,7 @@ func buildMinirootFS() *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return BuildMinirootFSCmd(cmd.Context(),
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
 				build.WithTarball(args[1]),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),

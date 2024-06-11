@@ -30,7 +30,7 @@ func TestTarFS(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
 	}
 
 	bc, err := build.New(ctx, tfs, opts...)
