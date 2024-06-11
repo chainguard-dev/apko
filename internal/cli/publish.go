@@ -53,6 +53,7 @@ func publish() *cobra.Command {
 	var local bool
 	var cacheDir string
 	var offline bool
+	var lockfile string
 
 	cmd := &cobra.Command{
 		Use:   "publish <config.yaml> <tag...>",
@@ -126,6 +127,7 @@ in a keychain.`,
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
 					build.WithCacheDir(cacheDir, offline),
+					build.WithLockFile(lockfile),
 					build.WithTempDir(tmp),
 					build.WithAuth(domain, user, pass),
 				},
@@ -153,6 +155,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
