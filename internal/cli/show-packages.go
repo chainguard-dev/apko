@@ -107,7 +107,7 @@ packagelock and packagelock-source are particularly useful for inserting back in
 				tmpl = format
 			}
 			return ShowPackagesCmd(cmd.Context(), tmpl, archs,
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),
 				build.WithCacheDir(cacheDir, offline),

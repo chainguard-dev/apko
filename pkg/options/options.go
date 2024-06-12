@@ -49,6 +49,7 @@ type Options struct {
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
 	Auth                    map[string]Auth    `json:"-"`
+	IncludePaths            []string           `json:"includePaths,omitempty"`
 }
 
 type Auth struct{ User, Pass string }

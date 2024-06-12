@@ -14,11 +14,11 @@ import (
 func TestOverlayWithEmptyContents(t *testing.T) {
 	ctx := context.Background()
 
-	configPath := filepath.Join("testdata", "overlay", "overlay.apko.yaml")
+	configPath := filepath.Join("overlay", "overlay.apko.yaml")
 	hasher := sha256.New()
 	ic := types.ImageConfiguration{}
 
-	require.NoError(t, ic.Load(ctx, configPath, hasher))
+	require.NoError(t, ic.Load(ctx, configPath, []string{"testdata"}, hasher))
 	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package"})
@@ -31,7 +31,7 @@ func TestOverlayWithAdditionalPackages(t *testing.T) {
 	hasher := sha256.New()
 	ic := types.ImageConfiguration{}
 
-	require.NoError(t, ic.Load(ctx, configPath, hasher))
+	require.NoError(t, ic.Load(ctx, configPath, []string{}, hasher))
 	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package", "other_package"})
@@ -44,7 +44,7 @@ func TestUserContents(t *testing.T) {
 	hasher := sha256.New()
 	ic := types.ImageConfiguration{}
 
-	require.NoError(t, ic.Load(ctx, configPath, hasher))
+	require.NoError(t, ic.Load(ctx, configPath, []string{}, hasher))
 	if err := ic.Validate(); err != nil {
 		t.Fatal(err)
 	}

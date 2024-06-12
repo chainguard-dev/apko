@@ -115,7 +115,7 @@ in a keychain.`,
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
-					build.WithConfig(args[0]),
+					build.WithConfig(args[0], []string{}),
 					build.WithBuildDate(buildDate),
 					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 					build.WithSBOM(sbomPath),

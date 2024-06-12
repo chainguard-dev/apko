@@ -34,7 +34,7 @@ type Option func(*Context) error
 // The image configuration is parsed from given config file.
 // TODO(jason): Remove this.
 // Deprecated: Use WithImageConfiguration instead.
-func WithConfig(configFile string) Option {
+func WithConfig(configFile string, includePaths []string) Option {
 	return func(bc *Context) error {
 		ctx := context.Background()
 		log := clog.FromContext(ctx)
@@ -42,7 +42,7 @@ func WithConfig(configFile string) Option {
 
 		var ic types.ImageConfiguration
 		hasher := sha2562.New()
-		if err := ic.Load(ctx, configFile, hasher); err != nil {
+		if err := ic.Load(ctx, configFile, includePaths, hasher); err != nil {
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
@@ -143,6 +143,13 @@ func WithExtraRepos(repos []string) Option {
 func WithExtraPackages(packages []string) Option {
 	return func(bc *Context) error {
 		bc.o.ExtraPackages = packages
+		return nil
+	}
+}
+
+func WithIncludePaths(includePaths []string) Option {
+	return func(bc *Context) error {
+		bc.o.IncludePaths = includePaths
 		return nil
 	}
 }

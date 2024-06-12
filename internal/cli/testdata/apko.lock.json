@@ -1,7 +1,7 @@
 {
   "version": "v1",
   "config": {
-    "name": "testdata/apko.yaml",
+    "name": "apko.yaml",
     "checksum": "sha256-eal7+HCFuOLz/8m3vNO5cYyNK0Zw7AphCcsc76TbTXg="
   },
   "contents": {
