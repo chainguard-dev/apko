@@ -62,7 +62,7 @@ func TestPublish(t *testing.T) {
 	outputRefs := ""
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	ropt := []remote.Option{remote.WithTransport(st)}
-	opts := []build.Option{build.WithConfig(config), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
+	opts := []build.Option{build.WithConfig(config, []string{}), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
 
 	sbomPath := filepath.Join(tmp, "sboms")

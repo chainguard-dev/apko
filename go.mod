@@ -13,7 +13,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jinzhu/copier v0.4.0
-	github.com/klauspost/compress v1.17.8
+	github.com/klauspost/compress v1.17.9
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.3
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e

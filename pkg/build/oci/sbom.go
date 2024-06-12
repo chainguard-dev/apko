@@ -146,10 +146,6 @@ func attachSBOM(
 	switch matched[0].Format {
 	case "spdx":
 		mt = ctypes.SPDXJSONMediaType
-	case "cyclonedx":
-		mt = ctypes.CycloneDXJSONMediaType
-	case "idb":
-		mt = "application/vnd.apko.installed-db"
 	default:
 		return nil, fmt.Errorf("unsupported SBOM format: %s", matched[0].Format)
 	}

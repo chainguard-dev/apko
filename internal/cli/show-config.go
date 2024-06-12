@@ -44,7 +44,7 @@ The derived configuration is rendered in YAML.
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ShowConfigCmd(cmd.Context(),
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
 				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraRepos(extraRepos),

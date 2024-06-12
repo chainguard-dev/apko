@@ -35,9 +35,9 @@ func TestLock(t *testing.T) {
 
 	golden := filepath.Join("testdata", "apko.lock.json")
 
-	config := filepath.Join("testdata", "apko.yaml")
+	config := "apko.yaml"
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config)}
+	opts := []build.Option{build.WithConfig(config, []string{"testdata"})}
 	outputPath := filepath.Join(tmp, "apko.lock.json")
 
 	err := cli.LockCmd(ctx, outputPath, archs, opts)
@@ -94,7 +94,7 @@ func TestLockWithBaseImage(t *testing.T) {
 
 	config := filepath.Join("testdata", "image_on_top.apko.yaml")
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config)}
+	opts := []build.Option{build.WithConfig(config, []string{})}
 	outputPath := filepath.Join(tmp, "apko.lock.json")
 
 	err := cli.LockCmd(ctx, outputPath, archs, opts)
