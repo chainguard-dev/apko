@@ -34,7 +34,6 @@ func New() *cobra.Command {
 	if err != nil {
 		cwd = ""
 	}
-	var logPolicy []string
 	var level log.CharmLogLevel
 	cmd := &cobra.Command{
 		Use:               "apko",
@@ -48,15 +47,10 @@ func New() *cobra.Command {
 				}
 			}
 
-			out, err := log.Writer(logPolicy)
-			if err != nil {
-				return fmt.Errorf("failed to create log writer: %w", err)
-			}
-			slog.SetDefault(slog.New(charmlog.NewWithOptions(out, charmlog.Options{ReportTimestamp: true, Level: charmlog.Level(level)})))
+			slog.SetDefault(slog.New(charmlog.NewWithOptions(os.Stderr, charmlog.Options{ReportTimestamp: true, Level: charmlog.Level(level)})))
 			return nil
 		},
 	}
-	cmd.PersistentFlags().StringSliceVar(&logPolicy, "log-policy", []string{"builtin:stderr"}, "log policy (e.g. builtin:stderr, /tmp/log/foo)")
 	cmd.PersistentFlags().Var(&level, "log-level", "log level (e.g. debug, info, warn, error, fatal, panic)")
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login

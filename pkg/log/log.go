@@ -14,62 +14,7 @@
 
 package log
 
-import (
-	"io"
-	"log"
-	"os"
-	"path/filepath"
-	"strings"
-
-	charmlog "github.com/charmbracelet/log"
-)
-
-// writerFromTarget returns a writer given a target specification.
-func writerFromTarget(target string) (io.Writer, error) {
-	switch target {
-	case "builtin:stderr":
-		return os.Stderr, nil
-	case "builtin:stdout":
-		return os.Stdout, nil
-	case "builtin:discard":
-		return io.Discard, nil
-	default:
-		if strings.Contains(target, "/") {
-			parent := filepath.Dir(target)
-			if err := os.MkdirAll(parent, 0o755); err != nil {
-				return nil, err
-			}
-		}
-
-		log.Println("writing log file to", target)
-		out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0o644)
-		if err != nil {
-			return nil, err
-		}
-
-		return out, nil
-	}
-}
-
-// writer returns a writer which writes to multiple target specifications.
-func Writer(targets []string) (io.Writer, error) {
-	writers := []io.Writer{}
-
-	if len(targets) == 1 {
-		return writerFromTarget(targets[0])
-	}
-
-	for _, target := range targets {
-		writer, err := writerFromTarget(target)
-		if err != nil {
-			return nil, err
-		}
-
-		writers = append(writers, writer)
-	}
-
-	return io.MultiWriter(writers...), nil
-}
+import charmlog "github.com/charmbracelet/log"
 
 // TODO: remove this once charmbracelet/log or log/slog supports a log level flag.
 type CharmLogLevel charmlog.Level
