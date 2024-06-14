@@ -141,12 +141,19 @@
     },
     "ImageContents": {
       "properties": {
+        "build_repositories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of apk repositories to use for pulling packages at build time,\nwhich are not installed into /etc/apk/repositories in the image (to\ninstall packages at runtime)"
+        },
         "repositories": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "A list of apk repositories to use for pulling packages"
+          "description": "A list of apk repositories to use for pulling packages during both the\ninitial construction of the image, and also at runtime by seeding them\ninto /etc/apk/repositories in the resulting image."
         },
         "keyring": {
           "items": {

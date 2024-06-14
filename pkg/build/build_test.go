@@ -132,9 +132,9 @@ func TestAuth_good(t *testing.T) {
 		build.WithAuth(host, testUser, testPass),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Repositories: []string{s.URL},
-				Keyring:      []string{s.URL + "/melange.rsa.pub"},
-				Packages:     []string{"pretend-baselayout"},
+				RuntimeRepositories: []string{s.URL},
+				Keyring:             []string{s.URL + "/melange.rsa.pub"},
+				Packages:            []string{"pretend-baselayout"},
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
 		}),

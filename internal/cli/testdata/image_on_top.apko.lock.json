@@ -11,6 +11,7 @@
         "url": "./testdata/melange.rsa.pub"
       }
     ],
+    "build_repositories": [],
     "repositories": [
       {
         "name": "./testdata/packages/x86_64",

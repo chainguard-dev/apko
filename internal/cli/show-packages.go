@@ -65,7 +65,8 @@ type pkgInfo struct {
 
 func showPackages() *cobra.Command {
 	var extraKeys []string
-	var extraRepos []string
+	var extraBuildRepos []string
+	var extraRuntimeRepos []string
 	var archstrs []string
 	var format string
 	var tmpl string
@@ -109,14 +110,16 @@ packagelock and packagelock-source are particularly useful for inserting back in
 			return ShowPackagesCmd(cmd.Context(), tmpl, archs,
 				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
-				build.WithExtraRepos(extraRepos),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
 				build.WithCacheDir(cacheDir, offline),
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&format, "format", showPkgsFormatDefault, "format for showing packages; if pre-defined from list, will use that, else go template. See https://pkg.go.dev/text/template for more information. Available vars are `.Name`, `.Version`, `.Source`")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")

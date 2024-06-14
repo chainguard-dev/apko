@@ -21,8 +21,9 @@ type Config struct {
 }
 
 type LockContents struct {
-	Keyrings     []LockKeyring `json:"keyring"`
-	Repositories []LockRepo    `json:"repositories"`
+	Keyrings            []LockKeyring `json:"keyring"`
+	BuildRepositories   []LockRepo    `json:"build_repositories"`
+	RuntimeRepositories []LockRepo    `json:"repositories"`
 	// Packages in order of installation -> for a single architecture.
 	Packages []LockPkg `json:"packages"`
 }
