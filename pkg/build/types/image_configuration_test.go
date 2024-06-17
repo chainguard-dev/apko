@@ -19,7 +19,8 @@ func TestOverlayWithEmptyContents(t *testing.T) {
 	ic := types.ImageConfiguration{}
 
 	require.NoError(t, ic.Load(ctx, configPath, []string{"testdata"}, hasher))
-	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
+	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository"})
+	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package"})
 }
@@ -32,7 +33,8 @@ func TestOverlayWithAdditionalPackages(t *testing.T) {
 	ic := types.ImageConfiguration{}
 
 	require.NoError(t, ic.Load(ctx, configPath, []string{}, hasher))
-	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
+	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository", "other_secret repository"})
+	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package", "other_package"})
 }

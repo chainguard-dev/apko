@@ -36,7 +36,8 @@ type Options struct {
 	SBOMPath                string             `json:"sbomPath,omitempty"`
 	SBOMFormats             []string           `json:"sbomFormats,omitempty"`
 	ExtraKeyFiles           []string           `json:"extraKeyFiles,omitempty"`
-	ExtraRepos              []string           `json:"extraRepos,omitempty"`
+	ExtraBuildRepos         []string           `json:"extraBuildRepos,omitempty"`
+	ExtraRuntimeRepos       []string           `json:"extraRepos,omitempty"`
 	ExtraPackages           []string           `json:"extraPackages,omitempty"`
 	Arch                    types.Architecture `json:"arch,omitempty"`
 	TempDirPath             string             `json:"tempDirPath,omitempty"`

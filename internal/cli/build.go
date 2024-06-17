@@ -50,7 +50,8 @@ func buildCmd() *cobra.Command {
 	var sbomPath string
 	var sbomFormats []string
 	var extraKeys []string
-	var extraRepos []string
+	var extraBuildRepos []string
+	var extraRuntimeRepos []string
 	var extraPackages []string
 	var rawAnnotations []string
 	var cacheDir string
@@ -115,7 +116,8 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),
-				build.WithExtraRepos(extraRepos),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
 				build.WithExtraPackages(extraPackages),
 				build.WithTags(args[1]),
 				build.WithVCS(withVCS),
@@ -136,7 +138,8 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
-	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")

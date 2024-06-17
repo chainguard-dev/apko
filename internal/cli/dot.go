@@ -42,7 +42,8 @@ import (
 
 func dotcmd() *cobra.Command {
 	var extraKeys []string
-	var extraRepos []string
+	var extraBuildRepos []string
+	var extraRuntimeRepos []string
 	var archstrs []string
 	var web, span bool
 	var cacheDir string
@@ -69,14 +70,16 @@ apko dot --web -S example.yaml
 			return DotCmd(cmd.Context(), args[0], archs, web, span,
 				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
-				build.WithExtraRepos(extraRepos),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
 				build.WithCacheDir(cacheDir, offline),
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().BoolVarP(&span, "spanning-tree", "S", false, "does something like a spanning tree to avoid a huge number of edges")
 	cmd.Flags().BoolVar(&web, "web", false, "launch a browser")
