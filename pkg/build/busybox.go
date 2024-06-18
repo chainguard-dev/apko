@@ -107,7 +107,12 @@ func installBusyboxLinks(fsys apkfs.FullFS, installed []*apk.InstalledPackage) e
 		if link == busybox || link == "" {
 			continue
 		}
+
 		dir := filepath.Dir(link)
+		if dir == "." {
+			continue
+		}
+
 		if err := fsys.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
