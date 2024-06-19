@@ -1,0 +1,23 @@
+image:
+  name: apko-jdk21
+  version: 1.0.0
+
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+
+  packages:
+    - wolfi-base
+    - openssl
+    - openjdk-21
+    - maven
+
+environment:
+  JAVA_HOME: /usr/lib/jvm/java-21-openjdk/
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/jvm/java-21-openjdk/bin
+
+archs:
+- x86_64
+- arm64
