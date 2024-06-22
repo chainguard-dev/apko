@@ -1,4 +1,6 @@
 contents:
+  build_repositories:
+    - "secret repository"
   repositories:
     - "repository"
   keyring:

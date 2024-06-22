@@ -168,7 +168,7 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 	traversed := make([]string, 0)
 	anode := m.tree
 	for _, part := range parts {
-		if part == "" {
+		if part == "" || part == "." {
 			continue
 		}
 		if anode.children == nil {

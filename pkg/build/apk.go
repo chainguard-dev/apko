@@ -25,14 +25,14 @@ import (
 )
 
 func (bc *Context) postBuildSetApk(ctx context.Context) error {
-	if bc.baseimg == nil {
-		return nil
-	}
 	// When building on top of base image, we add "artificial" apkindex to repositories that is
 	// stored in some temp path. After build is done we need to bring the repositories file to
 	// clean state so that image builds are byte identical.
-	repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
-	if err := bc.apk.SetRepositories(ctx, repos); err != nil {
+	//
+	// We do not include the build-time repositories here, because this is
+	// what defines the /etc/apk/repositories file in the final image.
+	runtimeRepos := sets.List(sets.New(bc.ic.Contents.RuntimeRepositories...).Insert(bc.o.ExtraRuntimeRepos...))
+	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
 		return fmt.Errorf("failed to set apk repositories: %w", err)
 	}
 	// TODO(sfc-gh-mhazy) Handle the rest of apk files (scripts, triggers)
@@ -43,7 +43,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "iniializeApk")
 	defer span.End()
 
-	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.Repositories)
+	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.RuntimeRepositories)
 	if err := bc.apk.InitDB(ctx, alpineVersions...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
@@ -59,12 +59,20 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+		// We set the repositories file to be the union of all of the
+		// repositories when we initialize things, and we overwrite it
+		// with just the runtime repositories when we are done.
+		buildRepos := sets.List(
+			sets.New(bc.ic.Contents.BuildRepositories...).
+				Insert(bc.ic.Contents.RuntimeRepositories...).
+				Insert(bc.o.ExtraBuildRepos...).
+				Insert(bc.o.ExtraRuntimeRepos...),
+		)
 		// We add auxiliary repository to resolve packages from the base image.
 		if bc.baseimg != nil {
-			repos = append(repos, bc.baseimg.APKIndexPath())
+			buildRepos = append(buildRepos, bc.baseimg.APKIndexPath())
 		}
-		if err := bc.apk.SetRepositories(ctx, repos); err != nil {
+		if err := bc.apk.SetRepositories(ctx, buildRepos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil

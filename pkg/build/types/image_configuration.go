@@ -71,8 +71,11 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 		keyring := append([]string{}, baseIc.Contents.Keyring...)
 		keyring = append(keyring, ic.Contents.Keyring...)
 
-		repos := append([]string{}, baseIc.Contents.Repositories...)
-		repos = append(repos, ic.Contents.Repositories...)
+		buildRepos := append([]string{}, baseIc.Contents.BuildRepositories...)
+		buildRepos = append(buildRepos, ic.Contents.BuildRepositories...)
+
+		runtimeRepos := append([]string{}, baseIc.Contents.RuntimeRepositories...)
+		runtimeRepos = append(runtimeRepos, ic.Contents.RuntimeRepositories...)
 
 		pkgs := append([]string{}, baseIc.Contents.Packages...)
 		pkgs = append(pkgs, ic.Contents.Packages...)
@@ -94,16 +97,24 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 
 		// Finally, update the repeated fields to the merged ones.
 		ic.Contents.Keyring = keyring
-		ic.Contents.Repositories = repos
+		ic.Contents.BuildRepositories = buildRepos
+		ic.Contents.RuntimeRepositories = runtimeRepos
 		ic.Contents.Packages = pkgs
 	}
 
-	repos := make([]string, 0, len(ic.Contents.Repositories))
-	for _, repo := range ic.Contents.Repositories {
+	runtimeRepos := make([]string, 0, len(ic.Contents.RuntimeRepositories))
+	for _, repo := range ic.Contents.RuntimeRepositories {
 		repo = strings.TrimRight(repo, "/")
-		repos = append(repos, repo)
+		runtimeRepos = append(runtimeRepos, repo)
 	}
-	ic.Contents.Repositories = repos
+	ic.Contents.RuntimeRepositories = runtimeRepos
+
+	buildRepos := make([]string, 0, len(ic.Contents.BuildRepositories))
+	for _, repo := range ic.Contents.BuildRepositories {
+		repo = strings.TrimRight(repo, "/")
+		buildRepos = append(buildRepos, repo)
+	}
+	ic.Contents.BuildRepositories = buildRepos
 
 	// The top level components restriction is on the conservative side. Some of them would probably work out of the box.
 	// If someone needs any of them, it should be a matter of testing and hopefully doing minor changes.
@@ -235,7 +246,8 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 
 	log.Infof("image configuration:")
 	log.Infof("  contents:")
-	log.Infof("    repositories: %v", ic.Contents.Repositories)
+	log.Infof("    build repositories: %v", ic.Contents.BuildRepositories)
+	log.Infof("    runtime repositories: %v", ic.Contents.RuntimeRepositories)
 	log.Infof("    keyring:      %v", ic.Contents.Keyring)
 	log.Infof("    packages:     %v", ic.Contents.Packages)
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {

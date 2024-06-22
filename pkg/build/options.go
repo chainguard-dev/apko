@@ -133,9 +133,16 @@ func WithExtraKeys(keys []string) Option {
 	}
 }
 
-func WithExtraRepos(repos []string) Option {
+func WithExtraBuildRepos(repos []string) Option {
 	return func(bc *Context) error {
-		bc.o.ExtraRepos = repos
+		bc.o.ExtraBuildRepos = repos
+		return nil
+	}
+}
+
+func WithExtraRuntimeRepos(repos []string) Option {
+	return func(bc *Context) error {
+		bc.o.ExtraRuntimeRepos = repos
 		return nil
 	}
 }
