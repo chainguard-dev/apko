@@ -210,7 +210,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 		for _, repositoryURI := range ic.Contents.BuildRepositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-      name, err := RemoveLabel(stripURLScheme(repo.URI))
+      		name, err := RemoveLabel(stripURLScheme(repo.URI))
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository URI: %w", err)
 			}
@@ -226,7 +226,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 		for _, repositoryURI := range ic.Contents.RuntimeRepositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-      name, err := RemoveLabel(stripURLScheme(repo.URI))
+      		name, err := RemoveLabel(stripURLScheme(repo.URI))
 			if err != nil {
 				return fmt.Errorf("failed to remove label from repository URI: %w", err)
 			}
