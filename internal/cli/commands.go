@@ -56,6 +56,7 @@ func New() *cobra.Command {
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
 	cmd.AddCommand(buildCmd())
 	cmd.AddCommand(buildMinirootFS())
+	cmd.AddCommand(buildCPIO())
 	cmd.AddCommand(showConfig())
 	cmd.AddCommand(publish())
 	cmd.AddCommand(showPackages())
