@@ -251,6 +251,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithFS(bc.fs),
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
+		apk.WithIgnoreIndexSignatures(bc.o.IgnoreSignatures),
 	}
 	// only try to pass the cache dir if one of the following is true:
 	// - the user has explicitly set a cache dir
