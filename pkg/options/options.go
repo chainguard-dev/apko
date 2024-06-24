@@ -51,6 +51,7 @@ type Options struct {
 	Lockfile                string             `json:"lockfile,omitempty"`
 	Auth                    map[string]Auth    `json:"-"`
 	IncludePaths            []string           `json:"includePaths,omitempty"`
+	IgnoreSignatures        bool               `json:"ignoreSignatures,omitempty"`
 }
 
 type Auth struct{ User, Pass string }

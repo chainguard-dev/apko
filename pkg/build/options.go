@@ -232,3 +232,12 @@ func WithAuth(domain, user, pass string) Option {
 		return nil
 	}
 }
+
+// WithIgnoreSignatures sets whether to ignore repository signature verification.
+// Default is false.
+func WithIgnoreSignatures(ignore bool) Option {
+	return func(bc *Context) error {
+		bc.o.IgnoreSignatures = ignore
+		return nil
+	}
+}

@@ -92,6 +92,7 @@ func New(options ...Option) (*APK, error) {
 		ignoreMknodErrors:  opt.ignoreMknodErrors,
 		version:            opt.version,
 		cache:              opt.cache,
+		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
