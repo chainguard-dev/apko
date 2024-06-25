@@ -16,24 +16,28 @@ package build
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sync"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarfs"
+
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"golang.org/x/sync/errgroup"
 )
 
-// Multi is a build context that can be used to build a multi-architecture image.
+// MultiArch is a build context that can be used to build a multi-architecture image.
 // It is used to coordinate the solvers across architectures to ensure they have a consistent solution.
 // It does this by disqualifying any packages that are not present in other architectures.
-type Multi struct {
+type MultiArch struct {
 	Contexts map[types.Architecture]*Context
 }
 
-func NewMulti(ctx context.Context, archs []types.Architecture, opts ...Option) (*Multi, error) {
-	m := &Multi{
+func NewMultiArch(ctx context.Context, archs []types.Architecture, opts ...Option) (*MultiArch, error) {
+	m := &MultiArch{
 		Contexts: make(map[types.Architecture]*Context),
 	}
 
@@ -48,23 +52,35 @@ func NewMulti(ctx context.Context, archs []types.Architecture, opts ...Option) (
 		m.Contexts[arch] = c
 	}
 
+	apks := map[string]*apk.APK{}
+	for arch, bc := range m.Contexts {
+		apks[arch.String()] = bc.apk
+	}
+
+	for _, bc := range m.Contexts {
+		bc.apk.Others = apks
+	}
+
 	return m, nil
 }
 
-func (m *Multi) BuildLayers(ctx context.Context) (map[types.Architecture]v1.Layer, error) {
+func (m *MultiArch) BuildLayers(ctx context.Context) (map[types.Architecture]v1.Layer, error) {
 	var (
 		g  errgroup.Group
 		mu sync.Mutex
 	)
 	layers := map[types.Architecture]v1.Layer{}
+	errs := []error{}
 	for arch, bc := range m.Contexts {
 		arch, bc := arch, bc
 
 		g.Go(func() error {
 			_, layer, err := bc.BuildLayer(ctx)
 			if err != nil {
-				return err
+				errs = append(errs, fmt.Errorf("for arch %q: %w", arch, err))
+				return nil
 			}
+
 			mu.Lock()
 			defer mu.Unlock()
 			layers[arch] = layer
@@ -73,5 +89,9 @@ func (m *Multi) BuildLayers(ctx context.Context) (map[types.Architecture]v1.Laye
 		})
 	}
 
-	return layers, g.Wait()
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return layers, errors.Join(errs...)
 }

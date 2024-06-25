@@ -246,7 +246,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	// computation.
 	multiArchBDE := o.SourceDateEpoch
 
-	mc, err := build.NewMulti(ctx, archs, opts...)
+	mc, err := build.NewMultiArch(ctx, archs, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -257,6 +257,12 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		}
 	}
 
+	// This is a little different, but we use a multiarch builder to call BuildLayers because we want
+	// each architecture to be aware of the other architectures during the solve stage. We don't want
+	// to select any packages unless they are available on every architecture because we want solutions
+	// to match across architectures.
+	//
+	// Eventually, we probably want to do something similar for all this logic around stitching images together.
 	layers, err := mc.BuildLayers(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building layers: %w", err)
