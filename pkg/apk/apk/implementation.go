@@ -69,6 +69,10 @@ type APK struct {
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
+
+	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
+	// It's stuffed here to avoid plumbing it across every method, but it's optional.
+	Others map[string]*APK
 }
 
 func New(options ...Option) (*APK, error) {
@@ -471,7 +475,23 @@ func (a *APK) ResolveWorld(ctx context.Context) (toInstall []*RepositoryPackage,
 		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
 	}
 	resolver := NewPkgResolver(ctx, indexes)
-	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs)
+
+	// For other architectures we're building (if any), we want to disqualify any packages not present in all archs.
+	others := map[string][]NamedIndex{}
+	for otherArch, otherAPK := range a.Others {
+		if otherArch == a.arch {
+			// No need to do this on ourselves.
+			continue
+		}
+
+		indexes, err := otherAPK.GetRepositoryIndexes(ctx, a.ignoreSignatures)
+		if err != nil {
+			return toInstall, conflicts, fmt.Errorf("getting indexes for %q sibling: %w", otherArch, err)
+		}
+		others[otherArch] = indexes
+	}
+
+	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs, others)
 	if err != nil {
 		return
 	}

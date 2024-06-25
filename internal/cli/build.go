@@ -29,7 +29,6 @@ import (
 	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -39,7 +38,6 @@ import (
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
-	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func buildCmd() *cobra.Command {
@@ -236,10 +234,9 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	if err := os.MkdirAll(imageDir, 0755); err != nil {
 		return nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
 	}
+	opts = append(opts, build.WithSBOM(imageDir))
 
 	imgs := map[types.Architecture]coci.SignedImage{}
-	contexts := map[types.Architecture]*build.Context{}
-	imageTars := map[types.Architecture]string{}
 
 	mtx := sync.Mutex{}
 
@@ -249,34 +246,37 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	// computation.
 	multiArchBDE := o.SourceDateEpoch
 
-	for _, arch := range archs {
-		arch := arch
-		bopts := slices.Clone(opts)
-		bopts = append(bopts,
-			build.WithArch(arch),
-			build.WithSBOM(imageDir),
-		)
+	mc, err := build.NewMultiArch(ctx, archs, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
 
-		bc, err := build.New(ctx, tarfs.New(), bopts...)
-		if err != nil {
-			return nil, nil, err
-		}
-
+	for _, bc := range mc.Contexts {
 		if bc.ImageConfiguration().Contents.BaseImage != nil && o.Lockfile == "" {
 			return nil, nil, fmt.Errorf("building with base image is supported only with a lockfile")
 		}
+	}
 
-		// save the build context for later
-		contexts[arch] = bc
+	// This is a little different, but we use a multiarch builder to call BuildLayers because we want
+	// each architecture to be aware of the other architectures during the solve stage. We don't want
+	// to select any packages unless they are available on every architecture because we want solutions
+	// to match across architectures.
+	//
+	// Eventually, we probably want to do something similar for all this logic around stitching images together.
+	layers, err := mc.BuildLayers(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building layers: %w", err)
+	}
+
+	for _, arch := range archs {
+		arch := arch
 
 		errg.Go(func() error {
 			log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
 			ctx := clog.WithLogger(ctx, log)
 
-			layerTarGZ, layer, err := bc.BuildLayer(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
-			}
+			bc := mc.Contexts[arch]
+			layer := layers[arch]
 
 			// Compute the "build date epoch" from the packages that were
 			// installed.  The "build date epoch" is the MAX of the builddate
@@ -299,7 +299,6 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 			defer mtx.Unlock()
 
 			imgs[arch] = img
-			imageTars[arch] = layerTarGZ
 
 			if bde.After(multiArchBDE) {
 				multiArchBDE = bde
@@ -321,7 +320,6 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	opts = append(opts,
 		build.WithImageConfiguration(*ic),       // We mutate Archs above.
 		build.WithSourceDateEpoch(multiArchBDE), // Maximum child's time.
-		build.WithSBOM(imageDir),
 	)
 
 	o, ic, err = build.NewOptions(opts...)
@@ -341,7 +339,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		)
 		for arch, img := range imgs {
 			arch, img := arch, img
-			bc := contexts[arch]
+			bc := mc.Contexts[arch]
 
 			g.Go(func() error {
 				log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())

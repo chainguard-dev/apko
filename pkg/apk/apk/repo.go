@@ -433,14 +433,55 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 	return nil
 }
 
+func (p *PkgResolver) disqualifyMissingArchs(otherArchs map[string][]NamedIndex, dq map[*RepositoryPackage]string) {
+	// arch -> name -> set[version]
+	allowablePackages := map[string]map[string]map[string]struct{}{}
+
+	// Build up a map per arch to quickly check existence of a package name+version.
+	for arch, indexes := range otherArchs {
+		allowed := map[string]map[string]struct{}{}
+		for _, index := range indexes {
+			for _, pkg := range index.Packages() {
+				versions, ok := allowed[pkg.Name]
+				if !ok {
+					versions = map[string]struct{}{}
+				}
+				versions[pkg.Version] = struct{}{}
+				allowed[pkg.Name] = versions
+			}
+		}
+		allowablePackages[arch] = allowed
+	}
+
+	// Check each package in this arch against every other arch, disqualifying any that are missing.
+	for _, pkgVersions := range p.nameMap {
+		for _, pkg := range pkgVersions {
+			for arch, allowed := range allowablePackages {
+				versions, ok := allowed[pkg.Name]
+				if !ok {
+					p.disqualify(dq, pkg.RepositoryPackage, fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), arch))
+				}
+				if _, ok := versions[pkg.Version]; !ok {
+					p.disqualify(dq, pkg.RepositoryPackage, fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), arch))
+				}
+			}
+		}
+	}
+}
+
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
-func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, otherArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackageWithDependencies")
 	defer span.End()
 
 	// Tracks all the packages we have disqualified and the reason we disqualified them.
 	dq := map[*RepositoryPackage]string{}
+
+	// If we are solving in the context of other architectures, we want to disqualify any packages that aren't available in all architectures.
+	if len(otherArchs) != 0 {
+		p.disqualifyMissingArchs(otherArchs, dq)
+	}
 
 	// We're going to mutate this as our set of input packages to install, so make a copy.
 	constraints := slices.Clone(packages)
