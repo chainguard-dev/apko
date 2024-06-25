@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tarfs
+package tarfs_test
 
 import (
 	"archive/tar"
@@ -23,10 +23,11 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func TestTarFS(t *testing.T) {
-	tfs := New()
+	tfs := tarfs.New()
 	ctx := context.Background()
 
 	opts := []build.Option{
