@@ -31,6 +31,7 @@ type opts struct {
 	cache              *cache
 	noSignatureIndexes []string
 	auth               map[string]auth
+	ignoreSignatures   bool
 }
 
 type Option func(*opts) error
@@ -95,6 +96,15 @@ func WithCache(cacheDir string, offline bool) Option {
 			dir:     cacheDir,
 			offline: offline,
 		}
+		return nil
+	}
+}
+
+// WithIgnoreIndexSignatures sets whether to ignore repository signature verification.
+// Default is false.
+func WithIgnoreIndexSignatures(ignore bool) Option {
+	return func(o *opts) error {
+		o.ignoreSignatures = ignore
 		return nil
 	}
 }
