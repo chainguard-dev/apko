@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
@@ -129,7 +130,6 @@ func TestAuth_good(t *testing.T) {
 
 	ctx := context.Background()
 	bc, err := build.New(ctx, fs.NewMemFS(),
-		build.WithAuth(host, testUser, testPass),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				RuntimeRepositories: []string{s.URL},
@@ -138,7 +138,7 @@ func TestAuth_good(t *testing.T) {
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
 		}),
-	)
+		build.WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,6 @@ func TestAuth_bad(t *testing.T) {
 
 	ctx := context.Background()
 	_, err := build.New(ctx, fs.NewMemFS(),
-		build.WithAuth(host, "baduser", "badpass"),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Keyring: []string{s.URL + "/melange.rsa.pub"},
@@ -176,6 +175,7 @@ func TestAuth_bad(t *testing.T) {
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
 		}),
+		build.WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")),
 	)
 	require.Error(t, err, "build should have failed to init keyring")
 	require.True(t, called)

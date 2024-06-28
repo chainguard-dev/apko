@@ -76,3 +76,17 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
 	}
 	req.SetBasicAuth("user", string(out))
 }
+
+// StaticAuth is an Authenticator that adds HTTP basic auth to the request if
+// the request URL matches the given domain.
+func StaticAuth(domain, user, pass string) Authenticator {
+	return staticAuth{domain, user, pass}
+}
+
+type staticAuth struct{ domain, user, pass string }
+
+func (s staticAuth) AddAuth(_ context.Context, req *http.Request) {
+	if req.Host == s.domain {
+		req.SetBasicAuth(s.user, s.pass)
+	}
+}
