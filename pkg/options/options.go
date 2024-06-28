@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -49,7 +50,7 @@ type Options struct {
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
-	Auth                    map[string]Auth    `json:"-"`
+	Auth                    auth.Authenticator `json:"-"`
 	IncludePaths            []string           `json:"includePaths,omitempty"`
 	IgnoreSignatures        bool               `json:"ignoreSignatures,omitempty"`
 }

@@ -34,6 +34,7 @@ import (
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
 )
 
@@ -208,14 +209,8 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 		if err != nil {
 			return nil, err
 		}
-		// if the repo URL contains HTTP Basic Auth credentials, add them to the request
-		if asURL.User != nil {
-			user := asURL.User.Username()
-			pass, _ := asURL.User.Password()
-			req.SetBasicAuth(user, pass)
-		} else if a, ok := opts.auth[asURL.Host]; ok && a.user != "" || a.pass != "" {
-			req.SetBasicAuth(a.user, a.pass)
-		}
+
+		opts.auth.AddAuth(ctx, req)
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
 		rrt := newRangeRetryTransport(ctx, client)
@@ -320,7 +315,7 @@ type indexOpts struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	httpClient         *http.Client
-	auth               map[string]auth
+	auth               auth.Authenticator
 }
 type IndexOption func(*indexOpts)
 
@@ -342,11 +337,8 @@ func WithHTTPClient(c *http.Client) IndexOption {
 	}
 }
 
-func WithIndexAuth(domain, user, pass string) IndexOption {
+func WithIndexAuthenticator(a auth.Authenticator) IndexOption {
 	return func(o *indexOpts) {
-		if o.auth == nil {
-			o.auth = make(map[string]auth)
-		}
-		o.auth[domain] = auth{user, pass}
+		o.auth = a
 	}
 }
