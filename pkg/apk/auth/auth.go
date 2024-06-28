@@ -67,6 +67,7 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
 		return
 	}
 
+	// TODO(jason): Don't call this more than once per minute.
 	cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host)
 	out, err := cmd.Output()
 	if err != nil {
