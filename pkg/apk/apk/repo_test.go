@@ -33,6 +33,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
@@ -321,8 +322,8 @@ func TestIndexAuth_good(t *testing.T) {
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth(host, testUser, testPass),
-		WithArch("x86_64"))
+		WithArch("x86_64"),
+		WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err, "unable to init db")
@@ -350,8 +351,8 @@ func TestIndexAuth_bad(t *testing.T) {
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth(host, "baduser", "badpass"),
-		WithArch("x86_64"))
+		WithArch("x86_64"),
+		WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err, "unable to init db")

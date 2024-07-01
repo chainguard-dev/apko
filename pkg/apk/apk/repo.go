@@ -178,9 +178,8 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	}
 	opts := []IndexOption{WithIgnoreSignatures(ignoreSignatures),
 		WithIgnoreSignatureForIndexes(a.noSignatureIndexes...),
-		WithHTTPClient(httpClient)}
-	for domain, auth := range a.auth {
-		opts = append(opts, WithIndexAuth(domain, auth.user, auth.pass))
+		WithHTTPClient(httpClient),
+		WithIndexAuthenticator(a.auth),
 	}
 	return GetRepositoryIndexes(ctx, repos, keys, arch, opts...)
 }

@@ -252,6 +252,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
 		apk.WithIgnoreIndexSignatures(bc.o.IgnoreSignatures),
+		apk.WithAuthenticator(bc.o.Auth),
 	}
 	// only try to pass the cache dir if one of the following is true:
 	// - the user has explicitly set a cache dir
@@ -268,10 +269,6 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
 	} else {
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
-	}
-
-	for domain, auth := range bc.o.Auth {
-		apkOpts = append(apkOpts, apk.WithAuth(domain, auth.User, auth.Pass))
 	}
 
 	if bc.ic.Contents.BaseImage != nil {

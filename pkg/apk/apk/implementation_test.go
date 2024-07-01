@@ -31,6 +31,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
@@ -247,7 +248,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuth(host, testUser, testPass))
+			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -262,7 +263,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuth(host, "baduser", "badpass"))
+			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -556,7 +557,7 @@ func TestAuth_good(t *testing.T) {
 	err := src.MkdirAll("lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuth(host, testUser, testPass))
+	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)
@@ -588,7 +589,7 @@ func TestAuth_bad(t *testing.T) {
 	err := src.MkdirAll("lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuth(host, "baduser", "badpass"))
+	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)

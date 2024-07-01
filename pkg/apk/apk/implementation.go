@@ -43,6 +43,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/apk/internal/tarfs"
@@ -65,7 +66,7 @@ type APK struct {
 	cache              *cache
 	ignoreSignatures   bool
 	noSignatureIndexes []string
-	auth               map[string]auth
+	auth               auth.Authenticator
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -411,16 +412,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if err != nil {
 					return err
 				}
-
-				// if the URL contains HTTP Basic Auth credentials, add them to the request
-				if asURL.User != nil {
-					user := asURL.User.Username()
-					pass, _ := asURL.User.Password()
-					req.SetBasicAuth(user, pass)
-					req.URL.User = nil
-				} else if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
-					req.SetBasicAuth(a.user, a.pass)
-				}
+				a.auth.AddAuth(ctx, req)
 
 				resp, err := client.Do(req)
 				if err != nil {
@@ -429,7 +421,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				defer resp.Body.Close()
 
 				if resp.StatusCode < 200 || resp.StatusCode > 299 {
-					return fmt.Errorf("failed to fetch apk key: http response indicated error code: %d", resp.StatusCode)
+					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
 				}
 
 				data, err = io.ReadAll(resp.Body)
@@ -1073,9 +1065,7 @@ func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.Read
 		if err != nil {
 			return nil, err
 		}
-		if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
-			req.SetBasicAuth(a.user, a.pass)
-		}
+		a.auth.AddAuth(ctx, req)
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
 		rrt := newRangeRetryTransport(ctx, client)

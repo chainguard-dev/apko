@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -223,12 +223,9 @@ func WithTempDir(tmp string) Option {
 	}
 }
 
-func WithAuth(domain, user, pass string) Option {
+func WithAuthenticator(a auth.Authenticator) Option {
 	return func(bc *Context) error {
-		if bc.o.Auth == nil {
-			bc.o.Auth = make(map[string]options.Auth)
-		}
-		bc.o.Auth[domain] = options.Auth{User: user, Pass: pass}
+		bc.o.Auth = a
 		return nil
 	}
 }
