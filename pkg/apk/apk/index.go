@@ -209,7 +209,6 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 		if err != nil {
 			return nil, err
 		}
-
 		opts.auth.AddAuth(ctx, req)
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.

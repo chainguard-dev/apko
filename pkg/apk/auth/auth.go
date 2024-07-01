@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/chainguard-dev/clog"
+	"golang.org/x/time/rate"
 )
 
 // DefaultAuthenciators is a list of authenticators that are used by default.
@@ -54,27 +56,30 @@ func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) {
 // apk.cgr.dev and the chainctl command is available.
 type CGRAuth struct{}
 
+var sometimes = rate.Sometimes{Interval: 10 * time.Minute}
+var tok string
+
 func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
 	log := clog.FromContext(ctx)
 
-	host := req.Host
-	if host != "apk.cgr.dev" {
+	host := "apk.cgr.dev"
+	// TODO(jason): Use a more general way to get the host.
+	if h := os.Getenv("APKO_APK_HOST"); h != "" {
+		host = h
+	}
+	if req.Host != host {
 		return
 	}
 
-	if _, err := exec.LookPath("chainctl"); err != nil {
-		log.Warnf("chainctl not found, skipping CGR auth")
-		return
-	}
-
-	// TODO(jason): Don't call this more than once per minute.
-	cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host)
-	out, err := cmd.Output()
-	if err != nil {
-		log.Warnf("Error running `chainctl auth token`: %v", err)
-		return
-	}
-	req.SetBasicAuth("user", string(out))
+	sometimes.Do(func() {
+		out, err := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host).Output()
+		if err != nil {
+			log.Warnf("Error running `chainctl auth token`: %v", err)
+			return
+		}
+		tok = string(out)
+	})
+	req.SetBasicAuth("user", tok)
 }
 
 // StaticAuth is an Authenticator that adds HTTP basic auth to the request if

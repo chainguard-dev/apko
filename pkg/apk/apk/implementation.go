@@ -412,7 +412,6 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if err != nil {
 					return err
 				}
-
 				a.auth.AddAuth(ctx, req)
 
 				resp, err := client.Do(req)
@@ -422,7 +421,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				defer resp.Body.Close()
 
 				if resp.StatusCode < 200 || resp.StatusCode > 299 {
-					return fmt.Errorf("failed to fetch apk key: http response indicated error code: %d", resp.StatusCode)
+					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
 				}
 
 				data, err = io.ReadAll(resp.Body)
