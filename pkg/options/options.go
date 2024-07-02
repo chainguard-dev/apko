@@ -60,7 +60,7 @@ type Auth struct{ User, Pass string }
 var Default = Options{
 	Arch:            types.ParseArchitecture(runtime.GOARCH),
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
-	Auth:            auth.DefaultAuthenciators,
+	Auth:            auth.DefaultAuthenticators,
 }
 
 // Tempdir returns the temporary directory where apko will create

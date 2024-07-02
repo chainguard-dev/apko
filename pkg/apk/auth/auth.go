@@ -12,8 +12,8 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// DefaultAuthenciators is a list of authenticators that are used by default.
-var DefaultAuthenciators = multiAuthenticator{EnvAuth{}, CGRAuth{}}
+// DefaultAuthenticators is a list of authenticators that are used by default.
+var DefaultAuthenticators = multiAuthenticator{EnvAuth{}, CGRAuth{}}
 
 // Authenticator is an interface for types that can add HTTP basic auth to a
 // request.

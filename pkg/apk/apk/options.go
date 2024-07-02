@@ -128,6 +128,6 @@ func defaultOpts() *opts {
 	return &opts{
 		arch:              ArchToAPK(runtime.GOARCH),
 		ignoreMknodErrors: false,
-		auth:              auth.DefaultAuthenciators,
+		auth:              auth.DefaultAuthenticators,
 	}
 }
