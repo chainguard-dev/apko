@@ -17,17 +17,13 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
-	"path/filepath"
 	"text/template"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/slices"
 
 	"github.com/chainguard-dev/clog"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -166,25 +162,21 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		return fmt.Errorf("failed to parse format: %w", err)
 	}
 
-	for _, arch := range archs {
-		arch := arch
-		log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
-		ctx = clog.WithLogger(ctx, log)
+	opts = append(opts, build.WithImageConfiguration(*ic))
 
-		// working directory for this architecture
-		wd := filepath.Join(wd, arch.ToAPK())
-		bopts := slices.Clone(opts)
-		bopts = append(bopts, build.WithArch(arch))
-		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
-		bc, err := build.New(ctx, fs, bopts...)
-		if err != nil {
-			return err
-		}
-		log.Infof("using working directory %s", wd)
+	mc, err := build.NewMultiArch(ctx, archs, opts...)
+	if err != nil {
+		return err
+	}
 
-		pkgs, _, err := bc.BuildPackageList(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get package list for image: %w", err)
+	lists, err := mc.BuildPackageLists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get package list for image: %w", err)
+	}
+
+	for arch, pkgs := range lists {
+		if len(archs) != 1 {
+			log.Infof("packages for %s", arch)
 		}
 		var p pkgInfo
 		for _, pkg := range pkgs {
