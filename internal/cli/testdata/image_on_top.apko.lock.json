@@ -39,7 +39,7 @@
           "checksum": "sha1-ADqt8AXOdbDPVa9UeGNJngcURrk="
         },
         "data": {
-          "range": "bytes=975-2848",
+          "range": "bytes=975-2335",
           "checksum": "sha256-irIVeq+6d/ZEIg59H1sjgVycwhfmwYwD79+Gv5DJXb0="
         },
         "checksum": "Q1ADqt8AXOdbDPVa9UeGNJngcURrk="
@@ -58,7 +58,7 @@
           "checksum": "sha1-twZgE0XMokZ89rlCxtGjp+XgtIc="
         },
         "data": {
-          "range": "bytes=978-2849",
+          "range": "bytes=978-2338",
           "checksum": "sha256-Mkciu4YKl5ibdvTTg7BQOBSN2xVT1GC5VBZ3/D4qz24="
         },
         "checksum": "Q1twZgE0XMokZ89rlCxtGjp+XgtIc="
