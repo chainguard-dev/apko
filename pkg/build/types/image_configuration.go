@@ -52,7 +52,9 @@ func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath s
 func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, includePaths []string, configHasher hash.Hash) error {
 	log := clog.FromContext(ctx)
 	configHasher.Write(configData)
-	if err := yaml.Unmarshal(configData, ic); err != nil {
+	dec := yaml.NewDecoder(strings.NewReader(string(configData)))
+	dec.KnownFields(true)
+	if err := dec.Decode(ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
