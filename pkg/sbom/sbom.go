@@ -15,17 +15,7 @@
 package sbom
 
 import (
-	"fmt"
-	"io/fs"
-	"path/filepath"
-
-	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/sbom/options"
-)
-
-var (
-	osReleasePath    = filepath.Join("etc", "os-release")
-	packageIndexPath = filepath.Join("lib", "apk", "db", "installed")
 )
 
 var DefaultOptions = options.Options{
@@ -37,19 +27,4 @@ var DefaultOptions = options.Options{
 	},
 	FileName: "sbom",
 	Formats:  []string{"spdx"},
-}
-
-func ReadPackageIndex(fsys fs.FS) (packages []*apk.Package, err error) {
-	installedDB, err := fsys.Open(packageIndexPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening APK installed db: %w", err)
-	}
-	defer installedDB.Close()
-
-	// apk.ParsePackageIndex closes the file itself
-	packages, err = apk.ParsePackageIndex(installedDB)
-	if err != nil {
-		return nil, fmt.Errorf("parsing APK installed db: %w", err)
-	}
-	return packages, nil
 }
