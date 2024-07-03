@@ -494,6 +494,17 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 		return nil, nil, fmt.Errorf("constraining initial packages: %w", err)
 	}
 
+	// Drop any conflicts.
+	constraints = slices.DeleteFunc(constraints, func(s string) bool {
+		// TODO: This is a little strange, we should revisit why we do this.
+		if strings.HasPrefix(s, "!") {
+			conflicts = append(conflicts, s)
+			return true
+		}
+
+		return false
+	})
+
 	for len(constraints) != 0 {
 		next, err := p.nextPackage(constraints, dq)
 		if err != nil {
@@ -518,6 +529,9 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 
 	// now get the dependencies for each package
 	for _, pkgName := range packages {
+		if strings.HasPrefix(pkgName, "!") {
+			continue
+		}
 		pkg, deps, confs, err := p.GetPackageWithDependencies(pkgName, dependenciesMap, dq)
 		if err != nil {
 			return toInstall, nil, &ConstraintError{pkgName, err}
