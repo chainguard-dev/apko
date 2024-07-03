@@ -24,35 +24,6 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
-func TestReadReleaseData(t *testing.T) {
-	osinfoData := `ID=wolfi
-NAME="Wolfi"
-PRETTY_NAME="Wolfi"
-VERSION_ID="2022, 20230914"
-HOME_URL="https://wolfi.dev"
-`
-	fsys := apkfs.NewMemFS()
-	require.NoError(t, fsys.MkdirAll(filepath.Dir(osReleasePath), os.FileMode(0o644)))
-	require.NoError(t, fsys.WriteFile(osReleasePath, []byte(osinfoData), os.FileMode(0o644)))
-	// Non existent file, should err
-	info, err := ReadReleaseData(fsys)
-	require.NoError(t, err)
-	require.Equal(t, "wolfi", info.ID, "id")
-	require.Equal(t, "Wolfi", info.Name, "name")
-	require.Equal(t, "2022, 20230914", info.VersionID, "version")
-}
-
-func TestReadReleaseData_EmptyDefaults(t *testing.T) {
-	fsys := apkfs.NewMemFS()
-	require.NoError(t, fsys.MkdirAll(filepath.Dir(osReleasePath), os.FileMode(0o644)))
-	require.NoError(t, fsys.WriteFile(osReleasePath, nil, os.FileMode(0o644))) // Non existent file, should err
-	info, err := ReadReleaseData(fsys)
-	require.NoError(t, err)
-	require.Equal(t, "", info.ID, "id")
-	require.Equal(t, "", info.Name, "name")
-	require.Equal(t, "", info.VersionID, "version")
-}
-
 func TestReadPackageIndex(t *testing.T) {
 	sampleDB := `
 C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=

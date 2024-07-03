@@ -16,11 +16,8 @@ package sbom
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
 	"path/filepath"
-
-	osr "github.com/dominodatalab/os-release"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/sbom/options"
@@ -40,21 +37,6 @@ var DefaultOptions = options.Options{
 	},
 	FileName: "sbom",
 	Formats:  []string{"spdx"},
-}
-
-// readReleaseDataInternal reads the information from /etc/os-release
-func ReadReleaseData(fsys fs.FS) (*osr.Data, error) {
-	f, err := fsys.Open(osReleasePath)
-	if err != nil {
-		return nil, fmt.Errorf("opening os-release: %w", err)
-	}
-	defer f.Close()
-	osReleaseData, err := io.ReadAll(f)
-	if err != nil {
-		return nil, fmt.Errorf("reading os-release: %w", err)
-	}
-
-	return osr.Parse(string(osReleaseData)), nil
 }
 
 func ReadPackageIndex(fsys fs.FS) (packages []*apk.Package, err error) {
