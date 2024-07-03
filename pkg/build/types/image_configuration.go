@@ -208,24 +208,6 @@ func (ic *ImageConfiguration) Validate() error {
 			return fmt.Errorf("configured group %v has GID 0", g)
 		}
 	}
-
-	if ic.OSRelease.ID == "" {
-		ic.OSRelease.ID = "unknown"
-	}
-
-	if ic.OSRelease.Name == "" {
-		ic.OSRelease.Name = "apko-generated image"
-		ic.OSRelease.PrettyName = "apko-generated image"
-	}
-
-	if ic.OSRelease.VersionID == "" {
-		ic.OSRelease.VersionID = "unknown"
-	}
-
-	if ic.OSRelease.HomeURL == "" {
-		ic.OSRelease.HomeURL = "https://chainguard.dev/apko"
-	}
-
 	return nil
 }
 
