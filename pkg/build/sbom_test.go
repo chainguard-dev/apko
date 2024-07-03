@@ -40,6 +40,7 @@ HOME_URL="https://wolfi.dev"
 	require.Equal(t, "wolfi", info.ID, "id")
 	require.Equal(t, "Wolfi", info.Name, "name")
 	require.Equal(t, "2022, 20230914", info.VersionID, "version")
+	require.Equal(t, "Wolfi", info.PrettyName, "pretty name")
 }
 
 func TestReadReleaseData_EmptyDefaults(t *testing.T) {
@@ -48,5 +49,6 @@ func TestReadReleaseData_EmptyDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "unknown", info.ID)
 	require.Equal(t, "apko-generated image", info.Name)
-	require.Equal(t, "", info.VersionID)
+	require.Equal(t, "unknown", info.VersionID)
+	require.Equal(t, "", info.PrettyName)
 }

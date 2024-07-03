@@ -158,8 +158,9 @@ func readReleaseData(fsys fs.FS) (*osr.Data, error) {
 	f, err := fsys.Open("/etc/os-release")
 	if errors.Is(err, fs.ErrNotExist) {
 		return &osr.Data{
-			ID:   "unknown",
-			Name: "apko-generated image",
+			ID:        "unknown",
+			Name:      "apko-generated image",
+			VersionID: "unknown",
 		}, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("opening os-release: %w", err)
