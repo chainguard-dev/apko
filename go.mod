@@ -1,6 +1,6 @@
 module chainguard.dev/apko
 
-go 1.22.3
+go 1.22.5
 
 require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
