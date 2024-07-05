@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
 
       - name: build
         run: |
