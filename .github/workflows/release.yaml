@@ -6,9 +6,6 @@ on:
     tags:
     - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
-env:
-  GO_VERSION: '1.21'
-
 jobs:
   cli:
     # Only release CLI for tagged releases
@@ -30,6 +27,7 @@ jobs:
     - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.2.0
       with:
         go-version-file: 'go.mod'
+        check-latest: true
 
     - uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0
 
