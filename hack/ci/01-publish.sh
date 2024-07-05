@@ -20,7 +20,7 @@ for f in examples/alpine-base-rootless.yaml examples/wolfi-base.yaml; do
   echo "=== building $f"
 
   REF="localhost:${PORT}/ci-testing:$(basename ${f})"
-  img=$("${APKO}" publish "${f}" "${REF}")
+  img=$("${APKO}" publish "${f}" "${REF}"  --arch amd64,arm64)
 
   # Run the image.
   docker run --rm ${img} echo hello | grep hello

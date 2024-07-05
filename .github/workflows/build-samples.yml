@@ -67,7 +67,7 @@ jobs:
           go-version-file: 'go.mod'
       - run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar --arch x86_64,386,armv7,aarch64,s390x,ppc64le
 
       - name: Check SBOM Conformance
         run: |
@@ -136,11 +136,11 @@ jobs:
           SOURCE_DATE_EPOCH: "0"
         run: |
           make apko
-          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
           for idx in {2..10}
           do
-            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
             if [ "${FIRST}" = "${NEXT}" ]; then
               echo "Build ${idx} matches."
@@ -174,11 +174,11 @@ jobs:
           make apko
           # Without SOURCE_DATE_EPOCH set, the timestamp of the image will be computed to be
           # the maximum build date of the resolved APKs.
-          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
           for idx in {2..10}
           do
-            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
             if [ "${FIRST}" = "${NEXT}" ]; then
               echo "Build ${idx} matches."
@@ -212,7 +212,7 @@ jobs:
           make apko
 
           # Build image with annotations.
-          ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx)
+          ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx --arch x86_64,386,armv7,aarch64,s390x,ppc64le)
 
           # Check index annotations.
           crane manifest $ref | jq -r '.annotations.foo' | grep bar
