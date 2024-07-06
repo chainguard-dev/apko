@@ -11,12 +11,3 @@ environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
 
 cmd: /bin/sh -l
-
-# data for /etc/os-release if it does not already exist
-# in the image
-os-release:
-  id: alpine
-  version-id: '3.16.0'
-  name: 'Alpine Slim'
-  pretty-name: 'Alpine Slim (apko)'
-

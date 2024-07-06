@@ -107,6 +107,7 @@ jobs:
           make apko
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
+            echo "Building ${name}..."
             build_script=$(dirname ${cfg})/build.sh
             if [ -f ${build_script} ]; then
               ${build_script} ./apko

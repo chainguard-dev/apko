@@ -51,7 +51,9 @@ func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath s
 func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, includePaths []string, configHasher hash.Hash) error {
 	log := clog.FromContext(ctx)
 	configHasher.Write(configData)
-	if err := yaml.Unmarshal(configData, ic); err != nil {
+	dec := yaml.NewDecoder(strings.NewReader(string(configData)))
+	dec.KnownFields(true)
+	if err := dec.Decode(ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
@@ -184,24 +186,6 @@ func (ic *ImageConfiguration) Validate() error {
 			return fmt.Errorf("configured group %v has GID 0", g)
 		}
 	}
-
-	if ic.OSRelease.ID == "" {
-		ic.OSRelease.ID = "unknown"
-	}
-
-	if ic.OSRelease.Name == "" {
-		ic.OSRelease.Name = "apko-generated image"
-		ic.OSRelease.PrettyName = "apko-generated image"
-	}
-
-	if ic.OSRelease.VersionID == "" {
-		ic.OSRelease.VersionID = "unknown"
-	}
-
-	if ic.OSRelease.HomeURL == "" {
-		ic.OSRelease.HomeURL = "https://chainguard.dev/apko"
-	}
-
 	return nil
 }
 

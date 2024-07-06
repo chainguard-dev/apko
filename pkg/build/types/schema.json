@@ -109,10 +109,6 @@
           "type": "array",
           "description": "Optional: List of paths mutations"
         },
-        "os-release": {
-          "$ref": "#/$defs/OSRelease",
-          "description": "Optional: The /etc/os-release configuration for the container image"
-        },
         "vcs-url": {
           "type": "string",
           "description": "Optional: The link to version control system for this container's source code"
@@ -196,36 +192,6 @@
             "type": "string"
           },
           "type": "object"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "OSRelease": {
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Optional: The name of the OS"
-        },
-        "id": {
-          "type": "string",
-          "description": "Optional: The unique identifier for the OS"
-        },
-        "version-id": {
-          "type": "string",
-          "description": "Optional: The unique identifier for the version of the OS"
-        },
-        "pretty-name": {
-          "type": "string",
-          "description": "Optional: The human readable description of the OS"
-        },
-        "home-url": {
-          "type": "string",
-          "description": "Optional: The URL of the homepage for the OS"
-        },
-        "bug-report-url": {
-          "type": "string",
-          "description": "Optional: The URL of the bug reporting website for the OS"
         }
       },
       "additionalProperties": false,
