@@ -76,13 +76,15 @@ func (m *MultiArch) BuildLayers(ctx context.Context) (map[types.Architecture]v1.
 
 		g.Go(func() error {
 			_, layer, err := bc.BuildLayer(ctx)
+
+			mu.Lock()
+			defer mu.Unlock()
+
 			if err != nil {
 				errs = append(errs, fmt.Errorf("for arch %q: %w", arch, err))
 				return nil
 			}
 
-			mu.Lock()
-			defer mu.Unlock()
 			layers[arch] = layer
 
 			return nil
@@ -93,5 +95,47 @@ func (m *MultiArch) BuildLayers(ctx context.Context) (map[types.Architecture]v1.
 		return nil, err
 	}
 
-	return layers, errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return nil, fmt.Errorf("building layers: %w", err)
+	}
+
+	return layers, nil
+}
+
+func (m *MultiArch) BuildPackageLists(ctx context.Context) (map[types.Architecture][]*apk.RepositoryPackage, error) {
+	var (
+		g  errgroup.Group
+		mu sync.Mutex
+	)
+	toInstalls := map[types.Architecture][]*apk.RepositoryPackage{}
+	errs := []error{}
+	for arch, bc := range m.Contexts {
+		arch, bc := arch, bc
+
+		g.Go(func() error {
+			toInstall, _, err := bc.apk.ResolveWorld(ctx)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				errs = append(errs, fmt.Errorf("for arch %q: %w", arch, err))
+				return nil
+			}
+
+			toInstalls[arch] = toInstall
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return nil, fmt.Errorf("resolving apk packages: %w", err)
+	}
+
+	return toInstalls, errors.Join(errs...)
 }
