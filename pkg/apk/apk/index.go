@@ -33,6 +33,8 @@ import (
 	"github.com/klauspost/compress/gzip"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
@@ -65,6 +67,9 @@ type indexCache struct {
 }
 
 func (i *indexCache) get(ctx context.Context, u string, keys map[string][]byte, arch string, opts *indexOpts) (*APKIndex, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("indexCache.get(%q)", u))
+	defer span.End()
+
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 		// We don't want remote indexes to change while we're running.
 		once, _ := i.onces.LoadOrStore(u, &sync.Once{})
@@ -117,7 +122,7 @@ func IndexURL(repo, arch string) string {
 // The signatures for each index are verified unless ignoreSignatures is set to true.
 // The key-value pairs in the map for `keys` are the name of the key and the contents of the key.
 // The name is just indicative. If it finds a match, it will use it. Else, it will try all keys.
-func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][]byte, arch string, options ...IndexOption) (indexes []NamedIndex, err error) {
+func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][]byte, arch string, options ...IndexOption) ([]NamedIndex, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetRepositoryIndexes")
 	defer span.End()
 
@@ -126,39 +131,57 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 		opt(opts)
 	}
 
-	for _, repo := range repos {
-		// does it start with a pin?
-		var (
-			repoName string
-			repoURL  = repo
-		)
-		if strings.HasPrefix(repo, "@") {
-			// it's a pinned repository, get the name
-			parts := strings.Fields(repo)
-			if len(parts) < 2 {
-				return nil, fmt.Errorf("invalid repository line: %q", repo)
+	indexes := make([]NamedIndex, len(repos))
+
+	var eg errgroup.Group
+	for i, repo := range repos {
+		i, repo := i, repo
+
+		eg.Go(func() error {
+			// does it start with a pin?
+			var (
+				repoName string
+				repoURL  = repo
+			)
+			if strings.HasPrefix(repo, "@") {
+				// it's a pinned repository, get the name
+				parts := strings.Fields(repo)
+				if len(parts) < 2 {
+					return fmt.Errorf("invalid repository line: %q", repo)
+				}
+				repoName = parts[0][1:]
+				repoURL = parts[1]
 			}
-			repoName = parts[0][1:]
-			repoURL = parts[1]
-		}
 
-		u := IndexURL(repoURL, arch)
-		repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
+			u := IndexURL(repoURL, arch)
+			repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
 
-		index, err := globalIndexCache.get(ctx, u, keys, arch, opts)
-		if err != nil {
-			asURL, _ := url.Parse(u)
-			return nil, fmt.Errorf("reading index %s: %w", asURL.Redacted(), err)
-		}
+			index, err := globalIndexCache.get(ctx, u, keys, arch, opts)
+			if err != nil {
+				asURL, _ := url.Parse(u)
+				return fmt.Errorf("reading index %s: %w", asURL.Redacted(), err)
+			}
 
-		// Can happen for fs.ErrNotExist in file scheme, we just ignore it.
-		if index == nil {
-			continue
-		}
+			// Can happen for fs.ErrNotExist in file scheme, we just ignore it.
+			if index == nil {
+				return nil
+			}
 
-		repoRef := Repository{URI: repoBase}
-		indexes = append(indexes, NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(index)))
+			repoRef := Repository{URI: repoBase}
+
+			indexes[i] = NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(index))
+			return nil
+		})
 	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	indexes = slices.DeleteFunc(indexes, func(idx NamedIndex) bool {
+		return idx == nil
+	})
+
 	return indexes, nil
 }
 
@@ -175,6 +198,9 @@ func shouldCheckSignatureForIndex(index string, arch string, opts *indexOpts) bo
 }
 
 func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "getRepositoryIndex")
+	defer span.End()
+
 	// Normalize the repo as a URI, so that local paths
 	// are translated into file:// URLs, allowing them to be parsed
 	// into a url.URL{}.

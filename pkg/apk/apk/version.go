@@ -427,7 +427,7 @@ func withInstalledPackage(pkg *RepositoryPackage) filterOption {
 	}
 }
 
-func (p *PkgResolver) filterPackages(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string, opts ...filterOption) []*repositoryPackage {
+func filterPackages(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string, opts ...filterOption) []*repositoryPackage {
 	o := &filterOptions{
 		compare: versionAny,
 	}
@@ -461,13 +461,13 @@ func (p *PkgResolver) filterPackages(pkgs []*repositoryPackage, dq map[*Reposito
 		}
 
 		// We check this error later in the loop.
-		requiredVersion, reqErr := p.parseVersion(o.version)
+		requiredVersion, reqErr := cachedParseVersion(o.version)
 		// if the required version is invalid, we can't compare, so we return no matches
 		if reqErr != nil {
 			return nil
 		}
 
-		actualVersion, err := p.parseVersion(pkg.Version)
+		actualVersion, err := cachedParseVersion(pkg.Version)
 		// skip invalid ones
 		if err != nil {
 			continue
@@ -479,12 +479,12 @@ func (p *PkgResolver) filterPackages(pkgs []*repositoryPackage, dq map[*Reposito
 		}
 
 		for _, prov := range pkg.Provides {
-			version := p.resolvePackageNameVersionPin(prov).version
+			version := cachedResolvePackageNameVersionPin(prov).version
 			if version == "" {
 				continue
 			}
 
-			actualVersion, err = p.parseVersion(version)
+			actualVersion, err = cachedParseVersion(version)
 			// again, we skip invalid ones
 			if err != nil {
 				continue
