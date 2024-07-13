@@ -54,3 +54,171 @@ func TestUserContents(t *testing.T) {
 	require.Equal(t, "/not/home", ic.Accounts.Users[0].HomeDir)
 	require.Equal(t, "/home/user", ic.Accounts.Users[1].HomeDir)
 }
+
+func TestMergeInto(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   types.ImageConfiguration
+		target   types.ImageConfiguration
+		expected types.ImageConfiguration
+	}{{
+		name: "simple blend of contents",
+		source: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo"},
+				BuildRepositories:   []string{"foo"},
+				RuntimeRepositories: []string{"foo"},
+				Packages:            []string{"foo"},
+			},
+			Environment: map[string]string{
+				"EXTRA": "foo",
+				"VAR":   "foo",
+			},
+			Annotations: map[string]string{
+				"org.extra": "foo",
+				"org.blah":  "foo",
+			},
+		},
+		target: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"bar"},
+				BuildRepositories:   []string{"bar"},
+				RuntimeRepositories: []string{"bar"},
+				Packages:            []string{"bar"},
+			},
+		},
+		expected: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo", "bar"},
+				BuildRepositories:   []string{"foo", "bar"},
+				RuntimeRepositories: []string{"foo", "bar"},
+				Packages:            []string{"foo", "bar"},
+			},
+			Environment: map[string]string{
+				"EXTRA": "foo",
+				"VAR":   "foo",
+			},
+			Annotations: map[string]string{
+				"org.extra": "foo",
+				"org.blah":  "foo",
+			},
+		},
+	}, {
+		name: "simple blend of contents",
+		source: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo"},
+				BuildRepositories:   []string{"foo"},
+				RuntimeRepositories: []string{"foo"},
+				Packages:            []string{"foo"},
+			},
+		},
+		target: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"bar"},
+				BuildRepositories:   []string{"bar"},
+				RuntimeRepositories: []string{"bar"},
+				Packages:            []string{"bar"},
+			},
+		},
+		expected: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo", "bar"},
+				BuildRepositories:   []string{"foo", "bar"},
+				RuntimeRepositories: []string{"foo", "bar"},
+				Packages:            []string{"foo", "bar"},
+			},
+		},
+	}, {
+		name: "conflict resolution",
+		source: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo"},
+				BuildRepositories:   []string{"foo"},
+				RuntimeRepositories: []string{"foo"},
+				Packages:            []string{"foo"},
+			},
+			Cmd:        "foo",
+			StopSignal: "foo",
+			WorkDir:    "foo",
+			Accounts: types.ImageAccounts{
+				RunAs: "foo",
+				Users: []types.User{{
+					UserName: "foo",
+					UID:      1000,
+					GID:      1000,
+					HomeDir:  "/home/foo",
+				}},
+			},
+			Environment: map[string]string{
+				"EXTRA": "foo",
+				"VAR":   "foo",
+			},
+			Annotations: map[string]string{
+				"org.extra": "foo",
+				"org.blah":  "foo",
+			},
+		},
+		target: types.ImageConfiguration{
+			Cmd:        "bar",
+			StopSignal: "bar",
+			WorkDir:    "bar",
+			Accounts: types.ImageAccounts{
+				RunAs: "bar",
+				Users: []types.User{{
+					UserName: "bar",
+					UID:      1001,
+					GID:      1001,
+					HomeDir:  "/home/bar",
+				}},
+			},
+			Environment: map[string]string{
+				"VAR": "bar",
+			},
+			Annotations: map[string]string{
+				"org.blah": "bar",
+			},
+		},
+		expected: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring:             []string{"foo"},
+				BuildRepositories:   []string{"foo"},
+				RuntimeRepositories: []string{"foo"},
+				Packages:            []string{"foo"},
+			},
+			Cmd:        "bar",
+			StopSignal: "bar",
+			WorkDir:    "bar",
+			Accounts: types.ImageAccounts{
+				RunAs: "bar",
+				Users: []types.User{{
+					UserName: "foo",
+					UID:      1000,
+					GID:      1000,
+					HomeDir:  "/home/foo",
+				}, {
+					UserName: "bar",
+					UID:      1001,
+					GID:      1001,
+					HomeDir:  "/home/bar",
+				}},
+			},
+			Environment: map[string]string{
+				"EXTRA": "foo",
+				"VAR":   "bar",
+			},
+			Annotations: map[string]string{
+				"org.extra": "foo",
+				"org.blah":  "bar",
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.source.MergeInto(&tt.target)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, tt.target)
+		})
+	}
+}
