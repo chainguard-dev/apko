@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
 
 	"github.com/chainguard-dev/clog"
@@ -60,47 +60,15 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 	if ic.Include != "" {
 		log.Infof("including %s for configuration", ic.Include)
 
-		baseIc := ImageConfiguration{}
+		included := &ImageConfiguration{}
 
-		if err := baseIc.Load(ctx, ic.Include, includePaths, configHasher); err != nil {
+		if err := included.Load(ctx, ic.Include, includePaths, configHasher); err != nil {
 			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
-		mergedIc := ImageConfiguration{}
-
-		// Merge packages, repositories and keyrings from base and overlay configurations
-		keyring := append([]string{}, baseIc.Contents.Keyring...)
-		keyring = append(keyring, ic.Contents.Keyring...)
-
-		buildRepos := append([]string{}, baseIc.Contents.BuildRepositories...)
-		buildRepos = append(buildRepos, ic.Contents.BuildRepositories...)
-
-		runtimeRepos := append([]string{}, baseIc.Contents.RuntimeRepositories...)
-		runtimeRepos = append(runtimeRepos, ic.Contents.RuntimeRepositories...)
-
-		pkgs := append([]string{}, baseIc.Contents.Packages...)
-		pkgs = append(pkgs, ic.Contents.Packages...)
-
-		// Copy the base configuration...
-		if err := copier.Copy(&mergedIc, &baseIc); err != nil {
-			return fmt.Errorf("failed to copy base configuration: %w", err)
+		if err := included.MergeInto(ic); err != nil {
+			return fmt.Errorf("failed to merge included configuration: %w", err)
 		}
-
-		// ... and then overlay the local configuration on top.
-		if err := copier.CopyWithOption(&mergedIc, ic, copier.Option{IgnoreEmpty: true}); err != nil {
-			return fmt.Errorf("failed to overlay specific configuration: %w", err)
-		}
-
-		// Now copy the merged configuration back to ic.
-		if err := copier.Copy(ic, &mergedIc); err != nil {
-			return fmt.Errorf("failed to copy merged configuration: %w", err)
-		}
-
-		// Finally, update the repeated fields to the merged ones.
-		ic.Contents.Keyring = keyring
-		ic.Contents.BuildRepositories = buildRepos
-		ic.Contents.RuntimeRepositories = runtimeRepos
-		ic.Contents.Packages = pkgs
 	}
 
 	runtimeRepos := make([]string, 0, len(ic.Contents.RuntimeRepositories))
@@ -132,6 +100,64 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 		}
 	}
 
+	return nil
+}
+
+// Merge this configuration into the target, with the target taking precedence.
+func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
+	if reflect.ValueOf(target.Entrypoint).IsZero() {
+		target.Entrypoint = ic.Entrypoint
+	}
+	if target.Cmd == "" {
+		target.Cmd = ic.Cmd
+	}
+	if target.StopSignal == "" {
+		target.StopSignal = ic.StopSignal
+	}
+	if target.WorkDir == "" {
+		target.WorkDir = ic.WorkDir
+	}
+	if err := ic.Accounts.MergeInto(&target.Accounts); err != nil {
+		return err
+	}
+	if target.Environment == nil && ic.Environment != nil {
+		target.Environment = ic.Environment
+	} else {
+		for k, v := range ic.Environment {
+			if _, ok := target.Environment[k]; !ok {
+				target.Environment[k] = v
+			}
+		}
+	}
+	target.Paths = append(ic.Paths, target.Paths...)
+	if target.Annotations == nil && ic.Annotations != nil {
+		target.Annotations = ic.Annotations
+	} else {
+		for k, v := range ic.Annotations {
+			if _, ok := target.Annotations[k]; !ok {
+				target.Annotations[k] = v
+			}
+		}
+	}
+
+	// Update the contents.
+	return ic.Contents.MergeInto(&target.Contents)
+}
+
+func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
+	if target.RunAs == "" {
+		target.RunAs = a.RunAs
+	}
+	target.Users = append(a.Users, target.Users...)
+	target.Groups = append(a.Groups, target.Groups...)
+	return nil
+}
+
+func (i *ImageContents) MergeInto(target *ImageContents) error {
+	target.Keyring = append(i.Keyring, target.Keyring...)
+	target.BuildRepositories = append(i.BuildRepositories, target.BuildRepositories...)
+	target.RuntimeRepositories = append(i.RuntimeRepositories, target.RuntimeRepositories...)
+	target.Packages = append(i.Packages, target.Packages...)
 	return nil
 }
 
