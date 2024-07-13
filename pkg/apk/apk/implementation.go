@@ -412,7 +412,9 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if err != nil {
 					return err
 				}
-				a.auth.AddAuth(ctx, req)
+				if err := a.auth.AddAuth(ctx, req); err != nil {
+					return fmt.Errorf("failed to add auth to request: %w", err)
+				}
 
 				resp, err := client.Do(req)
 				if err != nil {
@@ -1065,7 +1067,9 @@ func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.Read
 		if err != nil {
 			return nil, err
 		}
-		a.auth.AddAuth(ctx, req)
+		if err := a.auth.AddAuth(ctx, req); err != nil {
+			return nil, err
+		}
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
 		rrt := newRangeRetryTransport(ctx, client)
