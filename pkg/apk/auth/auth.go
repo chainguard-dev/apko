@@ -18,7 +18,7 @@ var DefaultAuthenticators = multiAuthenticator{EnvAuth{}, CGRAuth{}}
 // Authenticator is an interface for types that can add HTTP basic auth to a
 // request.
 type Authenticator interface {
-	AddAuth(ctx context.Context, req *http.Request)
+	AddAuth(ctx context.Context, req *http.Request) error
 }
 
 // MultiAuthenticator returns an Authenticator that tries each of the given
@@ -27,29 +27,33 @@ func MultiAuthenticator(auths ...Authenticator) Authenticator { return multiAuth
 
 type multiAuthenticator []Authenticator
 
-func (m multiAuthenticator) AddAuth(ctx context.Context, req *http.Request) {
+func (m multiAuthenticator) AddAuth(ctx context.Context, req *http.Request) error {
 	for _, a := range m {
 		if _, _, ok := req.BasicAuth(); ok {
 			// The request has auth, so we can stop here.
-			return
+			return nil
 		}
-		a.AddAuth(ctx, req)
+		if err := a.AddAuth(ctx, req); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // EnvAuth adds HTTP basic auth to the request if the request URL matches the
 // HTTP_AUTH environment variable.
 type EnvAuth struct{}
 
-func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) {
+func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) error {
 	env := os.Getenv("HTTP_AUTH")
 	parts := strings.Split(env, ":")
 	if len(parts) != 4 || parts[0] != "basic" {
-		return
+		return nil
 	}
 	if req.URL.Host == parts[1] {
 		req.SetBasicAuth(parts[2], parts[3])
 	}
+	return nil
 }
 
 // CGRAuth adds HTTP basic auth to the request if the request URL matches
@@ -59,7 +63,7 @@ type CGRAuth struct{}
 var sometimes = rate.Sometimes{Interval: 10 * time.Minute}
 var tok string
 
-func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
+func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 	log := clog.FromContext(ctx)
 
 	host := "apk.cgr.dev"
@@ -68,7 +72,7 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
 		host = h
 	}
 	if req.Host != host {
-		return
+		return nil
 	}
 
 	sometimes.Do(func() {
@@ -80,6 +84,7 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) {
 		tok = string(out)
 	})
 	req.SetBasicAuth("user", tok)
+	return nil
 }
 
 // StaticAuth is an Authenticator that adds HTTP basic auth to the request if
@@ -90,8 +95,9 @@ func StaticAuth(domain, user, pass string) Authenticator {
 
 type staticAuth struct{ domain, user, pass string }
 
-func (s staticAuth) AddAuth(_ context.Context, req *http.Request) {
+func (s staticAuth) AddAuth(_ context.Context, req *http.Request) error {
 	if req.Host == s.domain {
 		req.SetBasicAuth(s.user, s.pass)
 	}
+	return nil
 }

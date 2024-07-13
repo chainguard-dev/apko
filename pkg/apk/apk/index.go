@@ -239,7 +239,9 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 		if opts.auth == nil {
 			opts.auth = auth.DefaultAuthenticators
 		}
-		opts.auth.AddAuth(ctx, req)
+		if err := opts.auth.AddAuth(ctx, req); err != nil {
+			return nil, fmt.Errorf("unable to add auth to request: %w", err)
+		}
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
 		rrt := newRangeRetryTransport(ctx, client)
