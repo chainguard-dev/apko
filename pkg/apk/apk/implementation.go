@@ -43,6 +43,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/apk/internal/tarfs"
@@ -65,10 +66,14 @@ type APK struct {
 	cache              *cache
 	ignoreSignatures   bool
 	noSignatureIndexes []string
-	auth               map[string]auth
+	auth               auth.Authenticator
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
+
+	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
+	// It's stuffed here to avoid plumbing it across every method, but it's optional.
+	Others map[string]*APK
 }
 
 func New(options ...Option) (*APK, error) {
@@ -92,6 +97,7 @@ func New(options ...Option) (*APK, error) {
 		ignoreMknodErrors:  opt.ignoreMknodErrors,
 		version:            opt.version,
 		cache:              opt.cache,
+		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
@@ -406,15 +412,8 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if err != nil {
 					return err
 				}
-
-				// if the URL contains HTTP Basic Auth credentials, add them to the request
-				if asURL.User != nil {
-					user := asURL.User.Username()
-					pass, _ := asURL.User.Password()
-					req.SetBasicAuth(user, pass)
-					req.URL.User = nil
-				} else if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
-					req.SetBasicAuth(a.user, a.pass)
+				if err := a.auth.AddAuth(ctx, req); err != nil {
+					return fmt.Errorf("failed to add auth to request: %w", err)
 				}
 
 				resp, err := client.Do(req)
@@ -424,7 +423,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				defer resp.Body.Close()
 
 				if resp.StatusCode < 200 || resp.StatusCode > 299 {
-					return fmt.Errorf("failed to fetch apk key: http response indicated error code: %d", resp.StatusCode)
+					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
 				}
 
 				data, err = io.ReadAll(resp.Body)
@@ -471,7 +470,23 @@ func (a *APK) ResolveWorld(ctx context.Context) (toInstall []*RepositoryPackage,
 		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
 	}
 	resolver := NewPkgResolver(ctx, indexes)
-	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs)
+
+	// For other architectures we're building (if any), we want to disqualify any packages not present in all archs.
+	others := map[string][]NamedIndex{}
+	for otherArch, otherAPK := range a.Others {
+		if otherArch == a.arch {
+			// No need to do this on ourselves.
+			continue
+		}
+
+		indexes, err := otherAPK.GetRepositoryIndexes(ctx, a.ignoreSignatures)
+		if err != nil {
+			return toInstall, conflicts, fmt.Errorf("getting indexes for %q sibling: %w", otherArch, err)
+		}
+		others[otherArch] = indexes
+	}
+
+	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs, others)
 	if err != nil {
 		return
 	}
@@ -1052,8 +1067,8 @@ func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.Read
 		if err != nil {
 			return nil, err
 		}
-		if a, ok := a.auth[asURL.Host]; ok && a.user != "" && a.pass != "" {
-			req.SetBasicAuth(a.user, a.pass)
+		if err := a.auth.AddAuth(ctx, req); err != nil {
+			return nil, err
 		}
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.

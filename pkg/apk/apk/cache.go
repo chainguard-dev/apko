@@ -15,6 +15,7 @@
 package apk
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"go.opentelemetry.io/otel"
 )
 
 // This is terrible but simpler than plumbing around a cache for now.
@@ -48,12 +51,18 @@ type etagCache struct {
 // in a sync.Map[string]etagResp. If we request the same URL multiple times, we will only ever reach out to
 // the internet for the first once and reuse the results for all subsequent calls (unless the response does
 // not have an etag).
-func (e *etagCache) get(t *cacheTransport, request *http.Request, cacheFile string) (*http.Response, error) {
+func (e *etagCache) get(ctx context.Context, t *cacheTransport, request *http.Request, cacheFile string) (*http.Response, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("etagCache.get(%q)", request.URL.String()))
+	defer span.End()
+
 	url := request.URL.String()
 
 	// Do all the expensive things inside the once.
 	once, _ := e.etags.LoadOrStore(url, &sync.Once{})
 	once.(*sync.Once).Do(func() {
+		ctx, span := otel.Tracer("go-apk").Start(ctx, "once.Do")
+		defer span.End()
+
 		req := request.Clone(request.Context())
 		req.Method = http.MethodHead
 		resp, rerr := t.wrapped.Do(req)
@@ -85,7 +94,9 @@ func (e *etagCache) get(t *cacheTransport, request *http.Request, cacheFile stri
 		}
 
 		// Only download the index once.
-		etagFile, err := t.retrieveAndSaveFile(request, func(r *http.Response) (string, error) {
+		etagFile, err := t.retrieveAndSaveFile(ctx, request, func(r *http.Response) (string, error) {
+			_, span := otel.Tracer("go-apk").Start(ctx, "callback")
+			defer span.End()
 			// On the etag path, use the etag from the actual response to
 			// compute the final file name.
 			finalEtag, ok := etagFromResponse(r)
@@ -158,6 +169,9 @@ type cacheTransport struct {
 }
 
 func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	ctx, span := otel.Tracer("go-apk").Start(request.Context(), "cacheTransport.RoundTrip")
+	defer span.End()
+
 	// do we have the file in the cache?
 	if request.URL == nil {
 		return nil, fmt.Errorf("no URL in request")
@@ -170,6 +184,8 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 	if !t.etagRequired {
 		// We don't cache the response for these because they get cached later in cachePackage.
 
+		ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("Open(%q)", cacheFile))
+		defer span.End()
 		// Try to open the file in the cache.
 		// If we hit an error, just send the request.
 		f, err := os.Open(cacheFile)
@@ -177,6 +193,9 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 			if t.offline {
 				return nil, fmt.Errorf("failed to read %q in offline cache: %w", cacheFile, err)
 			}
+			_, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("Request(%q)", request.URL.String()))
+			defer span.End()
+
 			return t.wrapped.Do(request)
 		}
 
@@ -225,7 +244,7 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 		}, nil
 	}
 
-	return globalEtagCache.get(t, request, cacheFile)
+	return globalEtagCache.get(ctx, t, request, cacheFile)
 }
 
 func cacheDirFromFile(cacheFile string) string {
@@ -261,7 +280,10 @@ func etagFromResponse(resp *http.Response) (string, bool) {
 
 type cachePlacer func(*http.Response) (string, error)
 
-func (t *cacheTransport) retrieveAndSaveFile(request *http.Request, cp cachePlacer) (string, error) {
+func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.Request, cp cachePlacer) (string, error) {
+	_, span := otel.Tracer("go-apk").Start(ctx, "cacheTransport.retrieveAndSaveFile")
+	defer span.End()
+
 	if t.wrapped == nil {
 		return "", fmt.Errorf("wrapped client is nil")
 	}

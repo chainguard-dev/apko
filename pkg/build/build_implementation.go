@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -160,18 +159,17 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		}
 	}
 
-	if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
-		return fmt.Errorf("failed to mutate accounts: %w", err)
+	// For now adding additional accounts is banned when using base image. On the other hand, we don't want to
+	// wipe out the users set in base.
+	// If one wants to add a support for adding additional users they would need to look into this piece of code.
+	if bc.ic.Contents.BaseImage == nil {
+		if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
+			return fmt.Errorf("failed to mutate accounts: %w", err)
+		}
 	}
 
 	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
-	}
-
-	if err := generateOSRelease(ctx, bc.fs, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
-		log.Debugf("did not generate /etc/os-release: %v", err)
-	} else if err != nil {
-		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
 	}
 
 	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {

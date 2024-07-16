@@ -41,11 +41,10 @@ func uniqify[T comparable](s []T) []T {
 
 func controlValue(controlTar io.Reader, want ...string) (map[string][]string, error) {
 	tr := tar.NewReader(controlTar)
-	mapping := map[string][]string{}
 	for {
 		header, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			break
+			return nil, fmt.Errorf("control file not found")
 		}
 		if err != nil {
 			return nil, err
@@ -60,6 +59,7 @@ func controlValue(controlTar io.Reader, want ...string) (map[string][]string, er
 		if err != nil {
 			return nil, fmt.Errorf("unable to read .PKGINFO from control tar.gz file: %w", err)
 		}
+		mapping := map[string][]string{}
 		lines := strings.Split(string(b), "\n")
 		for _, line := range lines {
 			parts := strings.Split(line, "=")
@@ -81,8 +81,6 @@ func controlValue(controlTar io.Reader, want ...string) (map[string][]string, er
 
 			mapping[key] = values
 		}
-
-		break
+		return mapping, nil
 	}
-	return mapping, nil
 }

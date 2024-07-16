@@ -33,6 +33,7 @@ func buildMinirootFS() *cobra.Command {
 	var buildDate string
 	var buildArch string
 	var sbomPath string
+	var ignoreSignatures bool
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -47,6 +48,7 @@ func buildMinirootFS() *cobra.Command {
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithIgnoreSignatures(ignoreSignatures),
 			)
 		},
 	}
@@ -54,6 +56,7 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
 
 	return cmd
 }

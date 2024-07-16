@@ -40,7 +40,7 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 }
 
 func (bc *Context) initializeApk(ctx context.Context) error {
-	ctx, span := otel.Tracer("apko").Start(ctx, "iniializeApk")
+	ctx, span := otel.Tracer("apko").Start(ctx, "initializeApk")
 	defer span.End()
 
 	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.RuntimeRepositories)

@@ -39,7 +39,7 @@
           "checksum": "sha1-cs+Hlyu5sY+1mmwKPedcRWj8E24="
         },
         "data": {
-          "range": "bytes=965-2899",
+          "range": "bytes=965-2329",
           "checksum": "sha256-6Gbikm5tHIqetbTVz/wPcmtCcrO17ed1vPM6xuR0IrU="
         },
         "checksum": "Q1cs+Hlyu5sY+1mmwKPedcRWj8E24="
@@ -58,7 +58,7 @@
           "checksum": "sha1-ADqt8AXOdbDPVa9UeGNJngcURrk="
         },
         "data": {
-          "range": "bytes=975-2848",
+          "range": "bytes=975-2335",
           "checksum": "sha256-irIVeq+6d/ZEIg59H1sjgVycwhfmwYwD79+Gv5DJXb0="
         },
         "checksum": "Q1ADqt8AXOdbDPVa9UeGNJngcURrk="
@@ -77,7 +77,7 @@
           "checksum": "sha1-IhHX8PA1MiPcnOa5ig/Wjr/qhbU="
         },
         "data": {
-          "range": "bytes=962-2900",
+          "range": "bytes=962-2327",
           "checksum": "sha256-HxWjXtCvMsSYOmhE5OUPz9KQ4kpm0Ywg17OzSf3Ikl4="
         },
         "checksum": "Q1IhHX8PA1MiPcnOa5ig/Wjr/qhbU="
@@ -96,7 +96,7 @@
           "checksum": "sha1-twZgE0XMokZ89rlCxtGjp+XgtIc="
         },
         "data": {
-          "range": "bytes=978-2849",
+          "range": "bytes=978-2338",
           "checksum": "sha256-Mkciu4YKl5ibdvTTg7BQOBSN2xVT1GC5VBZ3/D4qz24="
         },
         "checksum": "Q1twZgE0XMokZ89rlCxtGjp+XgtIc="

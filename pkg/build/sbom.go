@@ -18,11 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"sort"
 	"time"
 
+	osr "github.com/dominodatalab/os-release"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
@@ -101,7 +104,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 
 	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
 
-	info, err := sbom.ReadReleaseData(bc.fs)
+	info, err := readReleaseData(bc.fs)
 	if err != nil {
 		return nil, fmt.Errorf("reading release data: %w", err)
 	}
@@ -146,6 +149,29 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		})
 	}
 	return sboms, nil
+}
+
+// readReleaseData reads the information from /etc/os-release
+//
+// If no os-release file is found, it returns a Data struct with ID set to "unknown".
+func readReleaseData(fsys fs.FS) (*osr.Data, error) {
+	f, err := fsys.Open("/etc/os-release")
+	if errors.Is(err, fs.ErrNotExist) {
+		return &osr.Data{
+			ID:        "unknown",
+			Name:      "apko-generated image",
+			VersionID: "unknown",
+		}, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("opening os-release: %w", err)
+	}
+	defer f.Close()
+	osReleaseData, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("reading os-release: %w", err)
+	}
+
+	return osr.Parse(string(osReleaseData)), nil
 }
 
 func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {

@@ -29,8 +29,9 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+        uses: docker/setup-qemu-action@5927c834f5b4fdf503fca6f4c7eccda82949e1ee # v3.1.0
       - run: |
           make apko
           ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
@@ -65,9 +66,10 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
       - run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar
+          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx.tar --arch x86_64,386,armv7,aarch64,s390x,ppc64le
 
       - name: Check SBOM Conformance
         run: |
@@ -99,11 +101,13 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
       - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
       - run: |
           make apko
           for cfg in $(find ./examples/ -name '*.yaml'); do
             name=$(basename ${cfg} .yaml)
+            echo "Building ${name}..."
             build_script=$(dirname ${cfg})/build.sh
             if [ -f ${build_script} ]; then
               ${build_script} ./apko
@@ -127,6 +131,7 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
       - uses: chainguard-dev/actions/setup-registry@main
         with:
           port: 5000
@@ -136,11 +141,11 @@ jobs:
           SOURCE_DATE_EPOCH: "0"
         run: |
           make apko
-          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
           for idx in {2..10}
           do
-            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
             if [ "${FIRST}" = "${NEXT}" ]; then
               echo "Build ${idx} matches."
@@ -165,6 +170,7 @@ jobs:
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
           go-version-file: 'go.mod'
+          check-latest: true
       - uses: chainguard-dev/actions/setup-registry@main
         with:
           port: 5000
@@ -174,11 +180,11 @@ jobs:
           make apko
           # Without SOURCE_DATE_EPOCH set, the timestamp of the image will be computed to be
           # the maximum build date of the resolved APKs.
-          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+          FIRST=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
           for idx in {2..10}
           do
-            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine 2> /dev/null)
+            NEXT=$(./apko publish ./examples/alpine-base.yaml localhost:5000/alpine --arch x86_64,386,armv7,aarch64,s390x,ppc64le 2> /dev/null)
 
             if [ "${FIRST}" = "${NEXT}" ]; then
               echo "Build ${idx} matches."
@@ -202,7 +208,7 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v2.1.5
         with:
-          go-version: "1.21"
+          go-version-file: 'go.mod'
           check-latest: true
       - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
       - uses: chainguard-dev/actions/setup-registry@main
@@ -212,7 +218,7 @@ jobs:
           make apko
 
           # Build image with annotations.
-          ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx)
+          ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx --arch x86_64,386,armv7,aarch64,s390x,ppc64le)
 
           # Check index annotations.
           crane manifest $ref | jq -r '.annotations.foo' | grep bar

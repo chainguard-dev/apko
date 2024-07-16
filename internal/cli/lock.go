@@ -189,11 +189,11 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 				Architecture: rpkg.Package.Arch,
 				Version:      rpkg.Package.Version,
 				Control: pkglock.LockPkgRangeAndChecksum{
-					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize, rpkg.ControlSize-1),
+					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize, rpkg.SignatureSize+rpkg.ControlSize-1),
 					Checksum: "sha1-" + base64.StdEncoding.EncodeToString(rpkg.ControlHash),
 				},
 				Data: pkglock.LockPkgRangeAndChecksum{
-					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.ControlSize, rpkg.DataSize),
+					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize+rpkg.ControlSize, rpkg.SignatureSize+rpkg.ControlSize+rpkg.DataSize-1),
 					Checksum: "sha256-" + base64.StdEncoding.EncodeToString(rpkg.DataHash),
 				},
 				Checksum: rpkg.Package.ChecksumString(),

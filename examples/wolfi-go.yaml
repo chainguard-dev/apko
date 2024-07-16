@@ -1,7 +1,3 @@
-image:
-  name: apko-go
-  version: 1.0.0
-
 contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub

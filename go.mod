@@ -1,18 +1,17 @@
 module chainguard.dev/apko
 
-go 1.22.3
+go 1.22.5
 
 require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
-	github.com/chainguard-dev/clog v1.3.1
+	github.com/chainguard-dev/clog v1.4.0
 	github.com/charmbracelet/log v0.4.0
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/google/go-cmp v0.6.0
-	github.com/google/go-containerregistry v0.19.2
+	github.com/google/go-containerregistry v0.20.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/invopop/jsonschema v0.12.0
-	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/compress v1.17.9
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.3
@@ -23,15 +22,16 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
 	go.lsp.dev/uri v0.3.0
-	go.opentelemetry.io/otel v1.27.0
-	go.opentelemetry.io/otel/trace v1.27.0
+	go.opentelemetry.io/otel v1.28.0
+	go.opentelemetry.io/otel/trace v1.28.0
 	golang.org/x/exp v0.0.0-20231108232855-2478ac86f678
 	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.21.0
+	golang.org/x/sys v0.22.0
+	golang.org/x/time v0.5.0
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.30.2
-	sigs.k8s.io/release-utils v0.8.2
+	sigs.k8s.io/release-utils v0.8.3
 )
 
 require (
@@ -60,7 +60,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
-	github.com/go-logr/logr v1.4.1 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect
@@ -107,7 +107,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
-	go.opentelemetry.io/otel/metric v1.27.0 // indirect
+	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.25.0 // indirect

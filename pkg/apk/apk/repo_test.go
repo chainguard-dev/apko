@@ -30,8 +30,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
@@ -320,8 +322,8 @@ func TestIndexAuth_good(t *testing.T) {
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth(host, testUser, testPass),
-		WithArch("x86_64"))
+		WithArch("x86_64"),
+		WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err, "unable to init db")
@@ -349,8 +351,8 @@ func TestIndexAuth_bad(t *testing.T) {
 	ctx := context.Background()
 
 	a, err := New(WithFS(apkfs.NewMemFS()),
-		WithAuth(host, "baduser", "badpass"),
-		WithArch("x86_64"))
+		WithArch("x86_64"),
+		WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoErrorf(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err, "unable to init db")
@@ -458,7 +460,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		// - eliminate duplicates
 		// - reverse the order, so that it is in order of installation
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
-		pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.NoErrorf(t, err, "unable to get packages")
 		actual := make([]string, 0, len(pkgs))
 		for _, pkg := range pkgs {
@@ -479,7 +481,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 			name, version := "package5", "2.0.0" //nolint:goconst // no, we do not want to make it a constant
 			names := []string{name, "abc9"}
 			sort.Strings(names)
-			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 			require.NoErrorf(t, err, "unable to get packages")
 			require.Len(t, pkgs, 2)
 			for _, pkg := range pkgs {
@@ -493,7 +495,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 			name, version := "package5", "1.5.1"
 			names := []string{fmt.Sprintf("%s=%s", name, version), "abc9"}
 			sort.Strings(names)
-			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 			require.NoErrorf(t, err, "unable to get packages")
 			require.Len(t, pkgs, 2)
 			for _, pkg := range pkgs {
@@ -507,7 +509,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 			providesName, version := "package5-special", "1.2.0"
 			names := []string{providesName, "abc9"}
 			sort.Strings(names)
-			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+			pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 			require.NoErrorf(t, err, "unable to get packages")
 			require.Len(t, pkgs, 2)
 			for _, pkg := range pkgs {
@@ -525,7 +527,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
 		names := []string{"package5-special", "package5-noconflict", "abc9"}
 		sort.Strings(names)
-		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.NoError(t, err, "provided package should not conflict")
 	})
 	t.Run("conflicting provides", func(t *testing.T) {
@@ -535,7 +537,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
 		names := []string{"package5-special", "package5-conflict", "abc9"}
 		sort.Strings(names)
-		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.Error(t, err, "provided package should conflict")
 	})
 	t.Run("locked versions", func(t *testing.T) {
@@ -545,7 +547,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
 		names := []string{"package5", "locked-dep"}
 		sort.Strings(names)
-		install, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		install, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.NoError(t, err)
 		want := []string{
 			"package5-1.5.1",
@@ -562,7 +564,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
 		names := []string{"package5>1.0.0", "package5=1.5.1"}
 		sort.Strings(names)
-		install, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		install, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.NoError(t, err)
 		want := []string{
 			"package5-1.5.1",
@@ -578,7 +580,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
 		names := []string{"package5=1.0.0", "package5=1.5.1"}
 		sort.Strings(names)
-		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names)
+		_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
 		require.Error(t, err, "Packages should conflict")
 	})
 }
@@ -852,7 +854,7 @@ func TestExcludedDeps(t *testing.T) {
 	}
 
 	resolver := makeResolver(providers, dependers)
-	pkgs, conflicts, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"})
+	pkgs, conflicts, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"}, nil)
 	require.NoError(t, err)
 
 	wantPkgs := []string{
@@ -879,7 +881,7 @@ func TestSameProvidedVersion(t *testing.T) {
 	}
 
 	resolver := makeResolver(providers, dependers)
-	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"})
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"}, nil)
 	require.NoError(t, err)
 
 	// When two options provide the same version of a virtual, we expect to take the higher version package.
@@ -904,7 +906,7 @@ func TestHigherProvidedVersion(t *testing.T) {
 	}
 
 	resolver := makeResolver(providers, dependers)
-	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"})
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc"}, nil)
 	require.NoError(t, err)
 
 	// When two options provide the different versions of a virtual, we expect to take the higher virtual version.
@@ -931,7 +933,7 @@ func TestConstrains(t *testing.T) {
 	}
 
 	resolver := makeResolver(providers, dependers)
-	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc~2.38", "foo"})
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc~2.38", "foo"}, nil)
 	require.NoError(t, err)
 
 	// We expect to get the r10 of ld-linux because glibc~2.38 should constraint the solution to that, even though "foo" doesn't care.
@@ -998,4 +1000,24 @@ func makeResolver(provs, deps map[string][]string) *PkgResolver {
 		Packages: maps.Values(packages),
 	})
 	return NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{repoWithIndex}))
+}
+
+func TestDisqualifyingOtherArchitectures(t *testing.T) {
+	names := []string{"package1", "package2", "onlyinarm64"}
+	_, index := testGetPackagesAndIndex()
+
+	others := map[string][]NamedIndex{
+		"x86_64": testNamedRepositoryFromIndexes(index),
+	}
+
+	arm64 := slices.Clone(index)
+	repo := Repository{}
+	repoWithIndex := repo.WithIndex(&APKIndex{
+		Packages: []*Package{{Name: "onlyinarm64", Version: "1.0.0"}},
+	})
+	arm64 = append(arm64, repoWithIndex)
+
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(arm64))
+	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, others)
+	require.ErrorContains(t, err, "package \"onlyinarm64-1.0.0.apk\" not available for arch \"x86_64\"")
 }

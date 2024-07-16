@@ -55,6 +55,7 @@ func publish() *cobra.Command {
 	var cacheDir string
 	var offline bool
 	var lockfile string
+	var ignoreSignatures bool
 
 	cmd := &cobra.Command{
 		Use:   "publish <config.yaml> <tag...>",
@@ -102,17 +103,6 @@ in a keychain.`,
 			}
 			defer os.RemoveAll(tmp)
 
-			var domain, user, pass string
-			if auth, ok := os.LookupEnv("HTTP_AUTH"); !ok {
-				// Fine, no auth.
-			} else if parts := strings.SplitN(auth, ":", 4); len(parts) != 4 {
-				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %d parts)", len(parts))
-			} else if parts[0] != "basic" {
-				return fmt.Errorf("HTTP_AUTH must be in the form 'basic:REALM:USERNAME:PASSWORD' (got %q for first part)", parts[0])
-			} else {
-				domain, user, pass = parts[1], parts[2], parts[3]
-			}
-
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
@@ -131,7 +121,7 @@ in a keychain.`,
 					build.WithCacheDir(cacheDir, offline),
 					build.WithLockFile(lockfile),
 					build.WithTempDir(tmp),
-					build.WithAuth(domain, user, pass),
+					build.WithIgnoreSignatures(ignoreSignatures),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
@@ -159,6 +149,7 @@ in a keychain.`,
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")

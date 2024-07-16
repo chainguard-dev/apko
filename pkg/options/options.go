@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -49,8 +50,9 @@ type Options struct {
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
 	Lockfile                string             `json:"lockfile,omitempty"`
-	Auth                    map[string]Auth    `json:"-"`
+	Auth                    auth.Authenticator `json:"-"`
 	IncludePaths            []string           `json:"includePaths,omitempty"`
+	IgnoreSignatures        bool               `json:"ignoreSignatures,omitempty"`
 }
 
 type Auth struct{ User, Pass string }
@@ -58,6 +60,7 @@ type Auth struct{ User, Pass string }
 var Default = Options{
 	Arch:            types.ParseArchitecture(runtime.GOARCH),
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
+	Auth:            auth.DefaultAuthenticators,
 }
 
 // Tempdir returns the temporary directory where apko will create

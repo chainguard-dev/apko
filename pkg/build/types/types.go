@@ -64,21 +64,6 @@ type PathMutation struct {
 	Recursive bool `json:"recursive,omitempty"`
 }
 
-type OSRelease struct {
-	// Optional: The name of the OS
-	Name string `json:"name,omitempty"`
-	// Optional: The unique identifier for the OS
-	ID string `json:"id,omitempty"`
-	// Optional: The unique identifier for the version of the OS
-	VersionID string `json:"version-id,omitempty" yaml:"version-id"`
-	// Optional: The human readable description of the OS
-	PrettyName string `json:"pretty-name,omitempty" yaml:"pretty-name"`
-	// Optional: The URL of the homepage for the OS
-	HomeURL string `json:"home-url,omitempty" yaml:"home-url"`
-	// Optional: The URL of the bug reporting website for the OS
-	BugReportURL string `json:"bug-report-url,omitempty" yaml:"bug-report-url"`
-}
-
 type BaseImageDescriptor struct {
 	// Required: Path to the base image OCI layout. Right now only local files are supported.
 	Image string `json:"image,omitempty" yaml:"image,omitempty"`
@@ -187,8 +172,6 @@ type ImageConfiguration struct {
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
 	// Optional: List of paths mutations
 	Paths []PathMutation `json:"paths,omitempty" yaml:"paths,omitempty"`
-	// Optional: The /etc/os-release configuration for the container image
-	OSRelease OSRelease `json:"os-release,omitempty" yaml:"os-release,omitempty"`
 	// Optional: The link to version control system for this container's source code
 	VCSUrl string `json:"vcs-url,omitempty" yaml:"vcs-url,omitempty"`
 	// Optional: Annotations to apply to the images manifests

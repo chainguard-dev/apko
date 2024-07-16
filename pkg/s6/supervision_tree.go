@@ -17,53 +17,10 @@ package s6
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/chainguard-dev/clog"
 )
-
-func (sc *Context) CreateSupervisionDirectory(ctx context.Context, name string) (string, error) {
-	log := clog.FromContext(ctx)
-
-	svbase := "sv"
-	svcdir := filepath.Join(svbase, name)
-	log.Debugf("  supervision dir: %s", svcdir)
-
-	if err := sc.fs.MkdirAll(svcdir, 0777); err != nil {
-		return svcdir, fmt.Errorf("could not make supervision directory: %w", err)
-	}
-	return svcdir, nil
-}
-
-func (sc *Context) WriteSupervisionTemplate(svcdir string, command string) error {
-	filename := filepath.Join(svcdir, "run")
-	file, err := sc.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		return fmt.Errorf("could not create runfile: %w", err)
-	}
-	defer file.Close()
-
-	fmt.Fprintf(file, "#!/bin/execlineb\n%s\n", command)
-
-	return nil
-}
-
-func (sc *Context) WriteSupervisionServiceSimple(ctx context.Context, name string, command string) error {
-	log := clog.FromContext(ctx)
-	log.Debugf("simple service: %s => %s", name, command)
-
-	svcdir, err := sc.CreateSupervisionDirectory(ctx, name)
-	if err != nil {
-		return err
-	}
-
-	if err := sc.WriteSupervisionTemplate(svcdir, command); err != nil {
-		return err
-	}
-
-	return nil
-}
 
 func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) error {
 	log := clog.FromContext(ctx)
@@ -71,8 +28,13 @@ func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) 
 
 	// generate the leaves
 	for service, svccmd := range services {
-		if err := sc.WriteSupervisionServiceSimple(ctx, service, svccmd); err != nil {
-			return err
+		svcdir := filepath.Join("sv", service)
+		if err := sc.fs.MkdirAll(svcdir, 0777); err != nil {
+			return fmt.Errorf("could not make supervision directory: %w", err)
+		}
+
+		if err := sc.fs.WriteFile(filepath.Join(svcdir, "run"), []byte(fmt.Sprintf("#!/bin/execlineb\n%s\n", svccmd)), 0755); err != nil {
+			return fmt.Errorf("could not write runfile: %w", err)
 		}
 	}
 

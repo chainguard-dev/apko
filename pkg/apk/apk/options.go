@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
@@ -30,7 +31,8 @@ type opts struct {
 	version            string
 	cache              *cache
 	noSignatureIndexes []string
-	auth               map[string]auth
+	auth               auth.Authenticator
+	ignoreSignatures   bool
 }
 
 type Option func(*opts) error
@@ -99,6 +101,15 @@ func WithCache(cacheDir string, offline bool) Option {
 	}
 }
 
+// WithIgnoreIndexSignatures sets whether to ignore repository signature verification.
+// Default is false.
+func WithIgnoreIndexSignatures(ignore bool) Option {
+	return func(o *opts) error {
+		o.ignoreSignatures = ignore
+		return nil
+	}
+}
+
 func WithNoSignatureIndexes(noSignatureIndex ...string) Option {
 	return func(o *opts) error {
 		o.noSignatureIndexes = append(o.noSignatureIndexes, noSignatureIndex...)
@@ -106,14 +117,9 @@ func WithNoSignatureIndexes(noSignatureIndex ...string) Option {
 	}
 }
 
-type auth struct{ user, pass string }
-
-func WithAuth(domain, user, pass string) Option {
+func WithAuthenticator(a auth.Authenticator) Option {
 	return func(o *opts) error {
-		if o.auth == nil {
-			o.auth = make(map[string]auth)
-		}
-		o.auth[domain] = auth{user, pass}
+		o.auth = a
 		return nil
 	}
 }
@@ -122,5 +128,6 @@ func defaultOpts() *opts {
 	return &opts{
 		arch:              ArchToAPK(runtime.GOARCH),
 		ignoreMknodErrors: false,
+		auth:              auth.DefaultAuthenticators,
 	}
 }
