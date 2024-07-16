@@ -6,8 +6,7 @@
 //
 // To regenerate, run
 //
-//   go generate
-//
+//	go generate
 package build
 
 func init() {

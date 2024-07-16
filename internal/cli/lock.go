@@ -46,6 +46,22 @@ func resolve() *cobra.Command {
 		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
 }
 
+func RemoveLabel(s string) (string, error) {
+	if s == "" {
+		return "", fmt.Errorf("input is empty")
+	}
+
+	for strings.HasPrefix(s, "@") {
+		parts := strings.SplitN(s, " ", 2)
+		if len(parts) < 2 {
+			return "", fmt.Errorf("input does not follow the format '@label url'")
+		}
+		s = parts[1]
+	}
+
+	return s, nil
+}
+
 func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
@@ -162,7 +178,6 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 
 		resolvedPkgs, err := bc.ResolveWithBase(ctx)
-
 		if err != nil {
 			return fmt.Errorf("failed to get package list for image: %w", err)
 		}
@@ -195,17 +210,33 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		}
 		for _, repositoryURI := range ic.Contents.BuildRepositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+			name, err := RemoveLabel(stripURLScheme(repo.URI))
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+			}
+			url, err := RemoveLabel(repo.IndexURI())
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
+			}
 			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, pkglock.LockRepo{
-				Name:         stripURLScheme(repo.URI),
-				URL:          repo.IndexURI(),
+				Name:         name,
+				URL:          url,
 				Architecture: arch.ToAPK(),
 			})
 		}
 		for _, repositoryURI := range ic.Contents.RuntimeRepositories {
 			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+			name, err := RemoveLabel(stripURLScheme(repo.URI))
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+			}
+			url, err := RemoveLabel(repo.IndexURI())
+			if err != nil {
+				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
+			}
 			lock.Contents.RuntimeRepositories = append(lock.Contents.RuntimeRepositories, pkglock.LockRepo{
-				Name:         stripURLScheme(repo.URI),
-				URL:          repo.IndexURI(),
+				Name:         name,
+				URL:          url,
 				Architecture: arch.ToAPK(),
 			})
 		}
