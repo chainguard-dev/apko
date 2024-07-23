@@ -75,5 +75,6 @@ func (lock Lock) SaveToFile(lockFile string) error {
 	// Github and pre-commit checks (like end-of-file-fixer) are expecting ASCII files
 	// to end with a newline that marshal is not providing.
 	jsonb = append(jsonb, '\n')
+	// #nosec G306 -- apk world must be publicly readable
 	return os.WriteFile(lockFile, jsonb, os.ModePerm)
 }
