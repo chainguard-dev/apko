@@ -62,7 +62,12 @@ func TestPublish(t *testing.T) {
 	outputRefs := ""
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	ropt := []remote.Option{remote.WithTransport(st)}
-	opts := []build.Option{build.WithConfig(config, []string{}), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
+	opts := []build.Option{
+		build.WithConfig(config, []string{}),
+		build.WithTags(dst),
+		build.WithSBOMFormats(sbom.DefaultOptions.Formats),
+		build.WithAnnotations(map[string]string{"foo": "bar"}),
+	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
 
 	sbomPath := filepath.Join(tmp, "sboms")
@@ -86,7 +91,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:685a8f5d66554057ea6e697be713d81bdaec276f4ef845243e60fc61df698168"
+	want := "sha256:04fd170ec7fc5904638c1ebb09196f2329d06eae68c8b4dd9ac7fb1cf5fbb7cc"
 	require.Equal(t, want, digest.String())
 
 	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
@@ -104,7 +109,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:6ed334e76657dd2297b575dfcca7430d5b0982f7d07d3f1645ba26ed8904e46f"
+	swant := "sha256:21e2b7e0f29f989a9da47b397048a6543bcd394931ecf3818e757aebdf8b0123"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
@@ -113,8 +118,8 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:8d5651b0ee5110df20af50925c13fa634d340e358b06c3941f2a17d38d366f08",
-		"sha256:8a3b851d420550508511c0426c141694cf385cc2ba8c2189d82db6a6eff41dbe",
+		"sha256:c1e01ba7017c59abf15295bc031aecff632aa01ec855c08c5db037a030b17e86",
+		"sha256:432bb01194d2761ee239380bd8f1b281d45d7edb3389e797c3c8b9f477b2284c",
 	}
 
 	for i, m := range im.Manifests {
