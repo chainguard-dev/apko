@@ -225,3 +225,6 @@ jobs:
 
           # Check per-image annotations.
           crane manifest --platform=linux/arm64 $ref | jq -r '.annotations.foo' | grep bar
+
+          # Check per-image config labels.
+          crane config --platform=linux/arm64 $ref | jq -r '.config.Labels' | grep bar
