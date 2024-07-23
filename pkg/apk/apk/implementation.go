@@ -19,9 +19,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -37,7 +39,6 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -874,6 +875,9 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	}
 
 	for _, key := range jwks.Keys {
+		if key.KeyID == "" {
+			return fmt.Errorf(`key missing "kid"`)
+		}
 		filename := filepath.Join(keysDirPath, key.KeyID+".rsa.pub")
 		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
@@ -881,11 +885,16 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 		}
 		defer f.Close()
 
-		pubBytes, err := cryptoutils.MarshalPublicKeyToPEM(key.Key.(*rsa.PublicKey))
+		b, err := x509.MarshalPKIXPublicKey(key.Key.(*rsa.PublicKey))
 		if err != nil {
 			return err
+		} else if len(b) == 0 {
+			return fmt.Errorf("empty public key")
 		}
-		if _, err := f.Write(pubBytes); err != nil {
+		if err := pem.Encode(f, &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: b,
+		}); err != nil {
 			return fmt.Errorf("failed to write key file %s: %w", filename, err)
 		}
 	}
