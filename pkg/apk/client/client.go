@@ -1,4 +1,4 @@
-package apk
+package client
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 )
 
@@ -25,9 +26,9 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient creates a new Client, suitable for accessing remote APK indexes and
+// New creates a new Client, suitable for accessing remote APK indexes and
 // packages.
-func NewClient(httpClient *http.Client) *Client {
+func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -36,8 +37,8 @@ func NewClient(httpClient *http.Client) *Client {
 
 // GetRemoteIndex retrieves the index of APK packages from the specified remote
 // repository.
-func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*APKIndex, error) {
-	indexURL := IndexURL(apkRepo, arch)
+func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*apk.APKIndex, error) {
+	indexURL := apk.IndexURL(apkRepo, arch)
 
 	u, err := url.Parse(indexURL)
 	if err != nil {
@@ -61,5 +62,5 @@ func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*APKI
 		return nil, fmt.Errorf("GET %q: status %d: %s", u.Redacted(), resp.StatusCode, resp.Status)
 	}
 
-	return IndexFromArchive(resp.Body)
+	return apk.IndexFromArchive(resp.Body)
 }
