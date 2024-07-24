@@ -83,6 +83,13 @@ func TestInitDB(t *testing.T) {
 		require.Equal(t, f.perms, fi.Mode().Perm(), "mismatched permissions for %s", f.path)
 		require.GreaterOrEqual(t, fi.Size(), int64(len(f.contents)), "mismatched size for %s", f.path) // actual file can be bigger than original size
 	}
+	for _, f := range initFiles {
+		fi, err := fs.Stat(src, f.path)
+		require.NoError(t, err, "error statting %s", f.path)
+		require.True(t, fi.Mode().IsRegular(), "expected %s to be a regular file, got %v", f.path, fi.Mode())
+		require.Equal(t, f.perms, fi.Mode().Perm(), "mismatched permissions for %s", f.path)
+		require.GreaterOrEqual(t, fi.Size(), int64(len(f.contents)), "mismatched size for %s", f.path) // actual file can be bigger than original size
+	}
 	if !ignoreMknodErrors {
 		for _, f := range initDeviceFiles {
 			fi, err := fs.Stat(src, f.path)
@@ -93,6 +100,52 @@ func TestInitDB(t *testing.T) {
 			require.Equal(t, targetPerms, actualPerms, "expected %s to have permissions %v, got %v", f.path, targetPerms, actualPerms)
 		}
 	}
+
+	ent, err := fs.ReadDir(src, "etc/apk/keys")
+	require.NoError(t, err)
+	require.Len(t, ent, 0) // No keys discovered
+}
+
+func TestInitDB_ChainguardDiscovery(t *testing.T) {
+	src := apkfs.NewMemFS()
+	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	// This is a staging group that was set up to host public images published
+	// by https://github.com/chainguard-dev/terraform-provider-apko presubmit.
+	// TODO(mattmoor): Once we push this out to production, we should switch to
+	// using apk.cgr.dev/chainguard or apk.cgr.dev/extra-packages.
+	err = apk.InitDB(context.Background(), "https://apk.chainreg.biz/tf-apko.pub")
+	require.NoError(t, err)
+	// check all of the contents
+	for _, d := range initDirectories {
+		fi, err := fs.Stat(src, d.path)
+		require.NoError(t, err, "error statting %s", d.path)
+		require.True(t, fi.IsDir(), "expected %s to be a directory, got %v", d.path, fi.Mode())
+		require.Equal(t, d.perms, fi.Mode().Perm(), "expected %s to have permissions %v, got %v", d.path, d.perms, fi.Mode().Perm())
+	}
+	for _, f := range initFiles {
+		fi, err := fs.Stat(src, f.path)
+		require.NoError(t, err, "error statting %s", f.path)
+		require.True(t, fi.Mode().IsRegular(), "expected %s to be a regular file, got %v", f.path, fi.Mode())
+		require.Equal(t, f.perms, fi.Mode().Perm(), "mismatched permissions for %s", f.path)
+		require.GreaterOrEqual(t, fi.Size(), int64(len(f.contents)), "mismatched size for %s", f.path) // actual file can be bigger than original size
+	}
+	if !ignoreMknodErrors {
+		for _, f := range initDeviceFiles {
+			fi, err := fs.Stat(src, f.path)
+			require.NoError(t, err, "error statting %s", f.path)
+			require.Equal(t, fi.Mode().Type()&os.ModeCharDevice, os.ModeCharDevice, "expected %s to be a character file, got %v", f.path, fi.Mode())
+			targetPerms := f.perms
+			actualPerms := fi.Mode().Perm()
+			require.Equal(t, targetPerms, actualPerms, "expected %s to have permissions %v, got %v", f.path, targetPerms, actualPerms)
+		}
+	}
+
+	// Confirm that we find at least one discovered key.
+	ent, err := fs.ReadDir(src, "etc/apk/keys")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(ent), 1) // We should discover at least one key
 }
 
 func TestSetWorld(t *testing.T) {

@@ -18,9 +18,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -29,11 +32,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -231,7 +236,7 @@ func (a *APK) ListInitFiles() []tar.Header {
 // Returns the list of files and directories and files installed and permissions,
 // unless those files will be included in the installed database, in which case they can
 // be retrieved via GetInstalled().
-func (a *APK) InitDB(ctx context.Context, alpineVersions ...string) error {
+func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	log := clog.FromContext(ctx)
 	/*
 		equivalent of: "apk add --initdb --arch arch --root root"
@@ -303,19 +308,35 @@ func (a *APK) InitDB(ctx context.Context, alpineVersions ...string) error {
 
 	// nothing to add to it; scripts.tar should be empty
 
-	// get the alpine-keys base keys for our usage
-	if len(alpineVersions) > 0 {
-		if err := a.fetchAlpineKeys(ctx, alpineVersions); err != nil {
-			var nokeysErr *NoKeysFoundError
-			if !errors.As(err, &nokeysErr) {
-				return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+	// Perform key discovery for the various build-time repositories.
+	for _, repo := range buildRepos {
+		if ver, ok := parseAlpineVersion(repo); ok {
+			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
+				var nokeysErr *NoKeysFoundError
+				if !errors.As(err, &nokeysErr) {
+					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+				}
+				log.Warnf("ignoring missing keys: %v", err)
 			}
+		}
+
+		if err := a.fetchChainguardKeys(ctx, repo); err != nil {
 			log.Warnf("ignoring missing keys: %v", err)
 		}
 	}
 
 	log.Debug("finished initializing apk database")
 	return nil
+}
+
+var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
+
+func parseAlpineVersion(repo string) (version string, ok bool) {
+	parts := repoRE.FindStringSubmatch(repo)
+	if len(parts) < 2 {
+		return "", false
+	}
+	return parts[1], true
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
@@ -725,7 +746,7 @@ func (e *NoKeysFoundError) Error() string {
 }
 
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions []string) error {
+func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
 	defer span.End()
 
@@ -791,6 +812,93 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions []string) erro
 			return fmt.Errorf("failed to write key file %s: %w", filename, err)
 		}
 	}
+	return nil
+}
+
+// fetchChainguardKeys fetches the public keys for the repositories in the APK database.
+func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
+	defer span.End()
+
+	client := a.client
+	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", strings.TrimSuffix(repository, "/"), "apk-configuration"), nil)
+	if err != nil {
+		return err
+	}
+	if err := a.auth.AddAuth(ctx, discoveryRequest); err != nil {
+		return err
+	}
+	discoveryResponse, err := client.Do(discoveryRequest)
+	if err != nil {
+		return fmt.Errorf("failed to perform key discovery: %w", err)
+	}
+	defer discoveryResponse.Body.Close()
+	switch discoveryResponse.StatusCode {
+	case http.StatusNotFound:
+		// This doesn't implement Chainguard-style key discovery.
+		return nil
+
+	case http.StatusOK:
+		// proceed!
+		break
+
+	default:
+		return fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
+	}
+	// Parse our the JWKS URI
+	var discovery struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.NewDecoder(discoveryResponse.Body).Decode(&discovery); err != nil {
+		return fmt.Errorf("failed to unmarshal discovery payload: %w", err)
+	}
+
+	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
+	if err != nil {
+		return err
+	}
+	if err := a.auth.AddAuth(ctx, jwksRequest); err != nil {
+		return err
+	}
+	jwksResponse, err := client.Do(jwksRequest)
+	if err != nil {
+		return fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+	defer jwksResponse.Body.Close()
+	if jwksResponse.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
+	}
+
+	jwks := jose.JSONWebKeySet{}
+	if err := json.NewDecoder(jwksResponse.Body).Decode(&jwks); err != nil {
+		return fmt.Errorf("failed to unmarshal JWKS: %w", err)
+	}
+
+	for _, key := range jwks.Keys {
+		if key.KeyID == "" {
+			return fmt.Errorf(`key missing "kid"`)
+		}
+		filename := filepath.Join(keysDirPath, key.KeyID+".rsa.pub")
+		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open key file %s: %w", filename, err)
+		}
+		defer f.Close()
+
+		b, err := x509.MarshalPKIXPublicKey(key.Key.(*rsa.PublicKey))
+		if err != nil {
+			return err
+		} else if len(b) == 0 {
+			return fmt.Errorf("empty public key")
+		}
+		if err := pem.Encode(f, &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: b,
+		}); err != nil {
+			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		}
+	}
+
 	return nil
 }
 

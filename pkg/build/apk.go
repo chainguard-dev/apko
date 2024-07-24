@@ -17,7 +17,6 @@ package build
 import (
 	"context"
 	"fmt"
-	"regexp"
 
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -43,8 +42,16 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "initializeApk")
 	defer span.End()
 
-	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.RuntimeRepositories)
-	if err := bc.apk.InitDB(ctx, alpineVersions...); err != nil {
+	// We set the repositories file to be the union of all of the
+	// repositories when we initialize things, and we overwrite it
+	// with just the runtime repositories when we are done.
+	buildRepos := sets.List(
+		sets.New(bc.ic.Contents.BuildRepositories...).
+			Insert(bc.ic.Contents.RuntimeRepositories...).
+			Insert(bc.o.ExtraBuildRepos...).
+			Insert(bc.o.ExtraRuntimeRepos...),
+	)
+	if err := bc.apk.InitDB(ctx, buildRepos...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
@@ -59,15 +66,6 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		// We set the repositories file to be the union of all of the
-		// repositories when we initialize things, and we overwrite it
-		// with just the runtime repositories when we are done.
-		buildRepos := sets.List(
-			sets.New(bc.ic.Contents.BuildRepositories...).
-				Insert(bc.ic.Contents.RuntimeRepositories...).
-				Insert(bc.o.ExtraBuildRepos...).
-				Insert(bc.o.ExtraRuntimeRepos...),
-		)
 		// We add auxiliary repository to resolve packages from the base image.
 		if bc.baseimg != nil {
 			buildRepos = append(buildRepos, bc.baseimg.APKIndexPath())
@@ -100,18 +98,4 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
-
-func parseOptionsFromRepositories(repos []string) []string {
-	var versions = make([]string, 0)
-	for _, r := range repos {
-		parts := repoRE.FindStringSubmatch(r)
-		if len(parts) < 2 {
-			continue
-		}
-		versions = append(versions, parts[1])
-	}
-	return versions
 }
