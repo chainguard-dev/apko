@@ -70,17 +70,6 @@ func WithTarball(path string) Option {
 	}
 }
 
-// WithAssertions adds assertions to validate the result
-// of this build context.
-// Assertions are checked in parallel at the end of the
-// build process.
-func WithAssertions(a ...Assertion) Option {
-	return func(bc *Context) error {
-		bc.assertions = append(bc.assertions, a...)
-		return nil
-	}
-}
-
 // WithBuildDate sets the timestamps for the build context.
 // The string is parsed according to RFC3339.
 // An empty string is a special case and will default to

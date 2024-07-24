@@ -99,7 +99,6 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				sbomPath,
 				build.WithConfig(args[0], includePaths),
 				build.WithBuildDate(buildDate),
-				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithSBOM(sbomPath),
 				build.WithSBOMFormats(sbomFormats),
 				build.WithExtraKeys(extraKeys),

@@ -31,7 +31,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
 	"github.com/chainguard-dev/clog"
@@ -55,11 +54,10 @@ type Context struct {
 	ic types.ImageConfiguration
 	o  options.Options
 
-	s6         *s6.Context
-	assertions []Assertion
-	fs         apkfs.FullFS
-	apk        *apk.APK
-	baseimg    *baseimg.BaseImage
+	s6      *s6.Context
+	fs      apkfs.FullFS
+	apk     *apk.APK
+	baseimg *baseimg.BaseImage
 }
 
 func (bc *Context) Summarize(ctx context.Context) {
@@ -138,8 +136,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	ctx, span := otel.Tracer("apko").Start(ctx, "ImageLayoutToLayer")
 	defer span.End()
 
-	// run any assertions defined
-	if err := bc.runAssertions(); err != nil {
+	if err := bc.checkPaths(ctx); err != nil {
 		return "", nil, err
 	}
 
@@ -170,25 +167,21 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	return layerTarGZ, l, nil
 }
 
-func (bc *Context) runAssertions() error {
-	errs := make([]error, len(bc.assertions))
+func (bc *Context) checkPaths(ctx context.Context) error {
+	log := clog.FromContext(ctx)
 
-	var eg errgroup.Group
-	for i, a := range bc.assertions {
-		i, a := i, a
-		eg.Go(func() error {
-			errs[i] = a(bc)
-
-			// We don't want to fail early.
-			return nil
-		})
+	for _, p := range []string{
+		"/etc/passwd",
+		"/etc/group",
+		"/etc/os-release",
+	} {
+		if _, err := bc.fs.Stat(p); errors.Is(err, os.ErrNotExist) {
+			log.Warnf("%s is missing", p)
+		} else if err != nil {
+			return fmt.Errorf("checking %s file: %w", p, err)
+		}
 	}
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	return errors.Join(errs...)
+	return nil
 }
 
 // NewOptions evaluates the build.Options in the same way as New().

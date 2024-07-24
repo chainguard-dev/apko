@@ -108,7 +108,6 @@ in a keychain.`,
 				[]build.Option{
 					build.WithConfig(args[0], []string{}),
 					build.WithBuildDate(buildDate),
-					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 					build.WithSBOM(sbomPath),
 					build.WithSBOMFormats(sbomFormats),
 					build.WithExtraKeys(extraKeys),
