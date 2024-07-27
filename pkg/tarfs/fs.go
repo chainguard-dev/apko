@@ -131,7 +131,13 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			}
 		}
 
-	case tar.TypeReg:
+	case tar.TypeReg, tar.TypeSymlink:
+		if hdr.Typeflag == tar.TypeSymlink {
+			// TODO: I think we can drop this because the header checksum thing should catch this.
+			if target, err := m.Readlink(hdr.Name); err == nil && target == hdr.Linkname {
+				return false, nil
+			}
+		}
 		// We trust this because we verify it earlier in ExpandAPK.
 		checksum, err := checksumFromHeader(&hdr)
 		if err != nil {
@@ -165,16 +171,6 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 		}
 
 		return installed, nil
-	case tar.TypeSymlink:
-		// some underlying filesystems and some memfs that we use in tests do not support symlinks.
-		// attempt it, and if it fails, just copy it.
-		// if it already exists, pointing to the same target, we can ignore it
-		if target, err := m.Readlink(hdr.Name); err == nil && target == hdr.Linkname {
-			return false, nil
-		}
-		if err := m.Symlink(hdr.Linkname, hdr.Name); err != nil {
-			return false, fmt.Errorf("unable to install symlink from %s -> %s: %w", hdr.Name, hdr.Linkname, err)
-		}
 	case tar.TypeLink:
 		if err := m.link(hdr.Linkname, hdr.Name, &hdr); err != nil {
 			return false, err
