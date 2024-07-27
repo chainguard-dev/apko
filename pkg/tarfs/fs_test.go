@@ -17,6 +17,8 @@ package tarfs_test
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"path/filepath"
 	"testing"
 
@@ -110,5 +112,47 @@ func TestTarFS(t *testing.T) {
 	otherPkg.Replaces = []string{pkg.Name}
 	if _, err := tfs.WriteHeader(*file, tfs, otherPkg); err != nil {
 		t.Errorf("pkg replaces file, got %v", err)
+	}
+
+	// Ensure that symlinks work with replaces.
+	{
+		original := tar.Header{
+			Name:     "etc/os-release-symlink",
+			Typeflag: tar.TypeSymlink,
+			Linkname: "etc/os-release-symlink",
+		}
+		originalDigest := sha1.Sum([]byte(original.Linkname)) //nolint:gosec
+		originalChecksum := hex.EncodeToString(originalDigest[:])
+		original.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": originalChecksum,
+		}
+
+		if _, err := tfs.WriteHeader(original, tfs, &pkg.Package); err != nil {
+			t.Fatalf("symlinking: %v", err)
+		}
+
+		link := tar.Header{
+			Name:     "etc/os-release-symlink",
+			Typeflag: tar.TypeSymlink,
+			Linkname: "etc/somewhere-else",
+		}
+		linkDigest := sha1.Sum([]byte(link.Linkname)) //nolint:gosec
+		linkChecksum := hex.EncodeToString(linkDigest[:])
+		link.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": linkChecksum,
+		}
+
+		if _, err := tfs.WriteHeader(link, tfs, otherPkg); err != nil {
+			t.Errorf("pkg replaces symlink, got %v", err)
+		}
+
+		target, err := tfs.Readlink(link.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if want, got := "etc/somewhere-else", target; want != got {
+			t.Errorf("readlink: want %q, got %q", want, got)
+		}
 	}
 }
