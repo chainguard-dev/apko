@@ -117,6 +117,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.WorkDir == "" {
 		target.WorkDir = ic.WorkDir
 	}
+	if len(target.Archs) == 0 {
+		target.Archs = ic.Archs
+	}
 	if err := ic.Accounts.MergeInto(&target.Accounts); err != nil {
 		return err
 	}
