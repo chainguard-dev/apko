@@ -233,7 +233,7 @@ var AllArchs = []Architecture{
 
 // ToAPK returns the apk-style equivalent string for the Architecture.
 func (a Architecture) ToAPK() string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return "x86"
 	case amd64:
@@ -251,7 +251,7 @@ func (a Architecture) ToAPK() string {
 
 func (a Architecture) ToOCIPlatform() *v1.Platform {
 	plat := v1.Platform{OS: "linux"}
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case armv6:
 		plat.Architecture = "arm"
 		plat.Variant = "v6"
@@ -265,7 +265,7 @@ func (a Architecture) ToOCIPlatform() *v1.Platform {
 }
 
 func (a Architecture) ToQEmu() string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return "i386"
 	case amd64:
@@ -282,7 +282,7 @@ func (a Architecture) ToQEmu() string {
 }
 
 func (a Architecture) ToTriplet(suffix string) string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return fmt.Sprintf("i486-pc-linux-%s", suffix)
 	case amd64:
@@ -303,7 +303,7 @@ func (a Architecture) ToTriplet(suffix string) string {
 }
 
 func (a Architecture) ToRustTriplet(suffix string) string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return fmt.Sprintf("i686-unknown-linux-%s", suffix)
 	case amd64:
@@ -324,7 +324,7 @@ func (a Architecture) ToRustTriplet(suffix string) string {
 }
 
 func (a Architecture) Compatible(b Architecture) bool {
-	switch b {
+	switch ParseArchitecture(b.String()) {
 	case _386:
 		return a == b
 	case amd64:
