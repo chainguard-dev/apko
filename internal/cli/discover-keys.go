@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"os"
 
-	"chainguard.dev/apko/pkg/apk/auth"
-	"chainguard.dev/apko/pkg/apk/client"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"chainguard.dev/apko/pkg/apk/auth"
+	"chainguard.dev/apko/pkg/apk/client"
 )
 
 func discoverKeys() *cobra.Command {
