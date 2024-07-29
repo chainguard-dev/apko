@@ -57,7 +57,10 @@ func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) error {
 }
 
 // CGRAuth adds HTTP basic auth to the request if the request URL matches
-// apk.cgr.dev and the chainctl command is available.
+// apk.cgr.dev and the `chainctl` command is available.
+//
+// It executes `chainctl` to get a token. If you need to assume an identity
+// then you should use NewChainguardIdentityAuth instead.
 type CGRAuth struct{}
 
 var sometimes = rate.Sometimes{Interval: 10 * time.Minute}
