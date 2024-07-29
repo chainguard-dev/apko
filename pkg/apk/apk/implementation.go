@@ -38,12 +38,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/hashicorp/go-retryablehttp"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.step.sm/crypto/jose"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -821,86 +821,116 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
 	defer span.End()
 
-	client := a.client
+	keys, err := a.DiscoverKeys(ctx, repository)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		filename := filepath.Join(keysDirPath, key.ID+".rsa.pub")
+		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open key file %s: %w", filename, err)
+		}
+		defer f.Close()
+		if _, err := f.Write(key.Bytes); err != nil {
+			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		}
+	}
+	return nil
+}
+
+type Key struct {
+	ID    string
+	Bytes PubKey
+}
+
+type PubKey []byte
+
+func (pk PubKey) MarshalYAML() (interface{}, error) { return string(pk), nil }
+
+func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
+	defer span.End()
+
 	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", strings.TrimSuffix(repository, "/"), "apk-configuration"), nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := a.auth.AddAuth(ctx, discoveryRequest); err != nil {
-		return err
+		return nil, err
 	}
-	discoveryResponse, err := client.Do(discoveryRequest)
+	discoveryResponse, err := a.client.Do(discoveryRequest)
 	if err != nil {
-		return fmt.Errorf("failed to perform key discovery: %w", err)
+		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
 	defer discoveryResponse.Body.Close()
 	switch discoveryResponse.StatusCode {
 	case http.StatusNotFound:
 		// This doesn't implement Chainguard-style key discovery.
-		return nil
+		return nil, nil
 
 	case http.StatusOK:
 		// proceed!
 		break
 
 	default:
-		return fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
+		return nil, fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
 	}
 	// Parse our the JWKS URI
 	var discovery struct {
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.NewDecoder(discoveryResponse.Body).Decode(&discovery); err != nil {
-		return fmt.Errorf("failed to unmarshal discovery payload: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal discovery payload: %w", err)
 	}
 
 	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := a.auth.AddAuth(ctx, jwksRequest); err != nil {
-		return err
+		return nil, err
 	}
-	jwksResponse, err := client.Do(jwksRequest)
+	jwksResponse, err := a.client.Do(jwksRequest)
 	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %w", err)
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 	defer jwksResponse.Body.Close()
 	if jwksResponse.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
+		return nil, fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
 	}
 
 	jwks := jose.JSONWebKeySet{}
 	if err := json.NewDecoder(jwksResponse.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("failed to unmarshal JWKS: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal JWKS: %w", err)
 	}
 
+	keys := make([]Key, 0, len(jwks.Keys))
 	for _, key := range jwks.Keys {
 		if key.KeyID == "" {
-			return fmt.Errorf(`key missing "kid"`)
+			return nil, fmt.Errorf(`key missing "kid"`)
 		}
-		filename := filepath.Join(keysDirPath, key.KeyID+".rsa.pub")
-		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to open key file %s: %w", filename, err)
-		}
-		defer f.Close()
 
 		b, err := x509.MarshalPKIXPublicKey(key.Key.(*rsa.PublicKey))
 		if err != nil {
-			return err
+			return nil, err
 		} else if len(b) == 0 {
-			return fmt.Errorf("empty public key")
+			return nil, fmt.Errorf("empty public key")
 		}
-		if err := pem.Encode(f, &pem.Block{
+		var buf bytes.Buffer
+		if err := pem.Encode(&buf, &pem.Block{
 			Type:  "PUBLIC KEY",
 			Bytes: b,
 		}); err != nil {
-			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+			return nil, fmt.Errorf("failed to encode key bytes: %w", err)
 		}
+		keys = append(keys, Key{
+			ID:    key.KeyID,
+			Bytes: buf.Bytes(),
+		})
 	}
 
-	return nil
+	return keys, nil
 }
 
 func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
