@@ -2,32 +2,36 @@ package cli
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
-	"chainguard.dev/apko/pkg/apk/auth"
-	"chainguard.dev/apko/pkg/apk/client"
+	"chainguard.dev/apko/pkg/apk/apk"
 )
 
-func discoverKeys() *cobra.Command {
-	var install bool
-	cmd := &cobra.Command{
-		Use:     "discover-keys",
-		Example: `wolfictl apk discover-keys https://<apk-host>/<path>`,
-		Args:    cobra.ExactArgs(1),
+func installKeys() *cobra.Command {
+	return &cobra.Command{
+		Use:     "install-keys",
+		Example: `apko install-keys`,
+		Short:   "Discover and install keys for all repositories",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			u := args[0]
 
-			keys, err := client.DiscoverKeys(ctx, u, http.DefaultClient, auth.DefaultAuthenticators)
+			a, err := apk.New()
 			if err != nil {
 				return err
 			}
+			repos, err := a.GetRepositories()
+			if err != nil {
+				return err
+			}
+			for _, repo := range repos {
+				keys, err := a.DiscoverKeys(ctx, repo)
+				if err != nil {
+					return err
+				}
 
-			if install {
 				if err := os.MkdirAll("/etc/apk/keys", 0755); err != nil {
 					return err
 				}
@@ -36,14 +40,8 @@ func discoverKeys() *cobra.Command {
 						return fmt.Errorf("failed to write key %s: %w", key.ID, err)
 					}
 				}
-			} else {
-				if err := yaml.NewEncoder(os.Stdout).Encode(keys); err != nil {
-					return err
-				}
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&install, "install", "i", false, "install the discovered keys")
-	return cmd
 }

@@ -841,12 +841,8 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 type Key struct {
 	ID    string
-	Bytes PubKey
+	Bytes []byte
 }
-
-type PubKey []byte
-
-func (pk PubKey) MarshalYAML() (interface{}, error) { return string(pk), nil }
 
 func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
