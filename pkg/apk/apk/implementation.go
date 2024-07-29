@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/hashicorp/go-retryablehttp"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -95,7 +96,7 @@ func New(options ...Option) (*APK, error) {
 	}
 
 	return &APK{
-		client:             http.DefaultClient,
+		client:             retryablehttp.NewClient().StandardClient(),
 		fs:                 opt.fs,
 		arch:               opt.arch,
 		executor:           opt.executor,
