@@ -62,3 +62,32 @@ func TestParseArchitectures(t *testing.T) {
 		})
 	}
 }
+
+func TestOCIPlatform(t *testing.T) {
+	for _, c := range []struct {
+		desc string
+		in   string
+		want string
+	}{{
+		desc: "x86_64",
+		in:   "x86_64",
+		want: "amd64",
+	}, {
+		desc: "amd64",
+		in:   "amd64",
+		want: "amd64",
+	}, {
+		desc: "arm64",
+		in:   "arm64",
+		want: "arm64",
+	}, {
+		desc: "aarch64",
+		in:   "aarch64",
+		want: "arm64",
+	}} {
+		t.Run(c.desc, func(t *testing.T) {
+			got := Architecture(c.in)
+			require.Equal(t, c.want, got.ToOCIPlatform().Architecture)
+		})
+	}
+}
