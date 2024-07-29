@@ -38,12 +38,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/hashicorp/go-retryablehttp"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.step.sm/crypto/jose"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -819,8 +819,13 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 	return nil
 }
 
+type Key struct {
+	ID    string
+	Bytes []byte
+}
+
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
-func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) (map[string][]byte, error) {
+func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
@@ -828,10 +833,10 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 	if err != nil {
 		return nil, err
 	}
-	if err := auth.AddAuth(ctx, discoveryRequest); err != nil {
+	if err := a.auth.AddAuth(ctx, discoveryRequest); err != nil {
 		return nil, err
 	}
-	discoveryResponse, err := client.Do(discoveryRequest)
+	discoveryResponse, err := a.client.Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -860,10 +865,10 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 	if err != nil {
 		return nil, err
 	}
-	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
+	if err := a.auth.AddAuth(ctx, jwksRequest); err != nil {
 		return nil, err
 	}
-	jwksResponse, err := client.Do(jwksRequest)
+	jwksResponse, err := a.client.Do(jwksRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -877,8 +882,7 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, fmt.Errorf("failed to unmarshal JWKS: %w", err)
 	}
 
-	keys := map[string][]byte{}
-
+	keys := make([]Key, 0, len(jwks.Keys))
 	for _, key := range jwks.Keys {
 		if key.KeyID == "" {
 			return nil, fmt.Errorf(`key missing "kid"`)
@@ -891,7 +895,6 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		} else if len(b) == 0 {
 			return nil, fmt.Errorf("empty public key")
 		}
-
 		var buf bytes.Buffer
 		if err := pem.Encode(&buf, &pem.Block{
 			Type:  "PUBLIC KEY",
@@ -900,7 +903,10 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 			return nil, fmt.Errorf("failed to pem encode key %s: %w", keyName, err)
 		}
 
-		keys[keyName] = buf.Bytes()
+		keys = append(keys, Key{
+			ID:    keyName,
+			Bytes: buf.Bytes(),
+		})
 	}
 
 	return keys, nil
@@ -913,18 +919,17 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 	log := clog.FromContext(ctx)
 
-	keys, err := DiscoverKeys(ctx, a.client, a.auth, repository)
+	keys, err := a.DiscoverKeys(ctx, repository)
 	if err != nil {
 		log.Warnf("ignoring missing keys for %s: %v", repository, err)
 	}
 
-	for keyName, key := range keys {
-		filename := filepath.Join(keysDirPath, keyName)
-		if err := a.fs.WriteFile(filename, key, 0o644); err != nil {
+	for _, key := range keys {
+		filename := filepath.Join(keysDirPath, key.ID)
+		if err := a.fs.WriteFile(filename, key.Bytes, 0o644); err != nil {
 			return fmt.Errorf("failed to write key file %s: %w", filename, err)
 		}
 	}
-
 	return nil
 }
 
