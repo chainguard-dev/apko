@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"chainguard.dev/sdk/sts"
+	"golang.org/x/time/rate"
 	"google.golang.org/api/idtoken"
 )
 
@@ -27,23 +29,35 @@ type authenticator struct {
 	id, iss, aud string
 }
 
+var cgSometimes = rate.Sometimes{Interval: 10 * time.Minute}
+var cgtok string
+var cerr error
+
 func (a authenticator) AddAuth(ctx context.Context, req *http.Request) error {
 	if req.Host != strings.TrimPrefix(a.aud, "https://") {
 		return nil
 	}
 
-	ts, err := idtoken.NewTokenSource(ctx, a.iss)
-	if err != nil {
-		return err
+	cgSometimes.Do(func() {
+		ts, err := idtoken.NewTokenSource(ctx, a.iss)
+		if err != nil {
+			cerr = err
+			return
+		}
+		tok, err := ts.Token()
+		if err != nil {
+			cerr = err
+			return
+		}
+		ctok, err := sts.Exchange(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
+		if err != nil {
+			cerr = err
+		}
+		cgtok = ctok
+	})
+	if cerr != nil {
+		return cerr
 	}
-	tok, err := ts.Token()
-	if err != nil {
-		return err
-	}
-	ctok, err := sts.Exchange(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+ctok)
+	req.Header.Set("Authorization", "Bearer "+cgtok)
 	return nil
 }
