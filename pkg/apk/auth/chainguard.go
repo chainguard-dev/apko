@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -41,17 +42,17 @@ func (a authenticator) AddAuth(ctx context.Context, req *http.Request) error {
 	cgSometimes.Do(func() {
 		ts, err := idtoken.NewTokenSource(ctx, a.iss)
 		if err != nil {
-			cerr = err
+			cerr = fmt.Errorf("creating token source: %w", err)
 			return
 		}
 		tok, err := ts.Token()
 		if err != nil {
-			cerr = err
+			cerr = fmt.Errorf("getting token: %w", err)
 			return
 		}
 		ctok, err := sts.Exchange(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
 		if err != nil {
-			cerr = err
+			cerr = fmt.Errorf("exchanging token: %w", err)
 		}
 		cgtok = ctok
 	})
