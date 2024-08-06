@@ -59,6 +59,6 @@ func (a authenticator) AddAuth(ctx context.Context, req *http.Request) error {
 	if cerr != nil {
 		return cerr
 	}
-	req.SetBasicAuth(a.id, cgtok)
+	req.SetBasicAuth("user", cgtok)
 	return nil
 }
