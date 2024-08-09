@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,6 +76,8 @@ htBqojBnThmjJQFgZXocHG8CAwEAAQ==
 )
 
 func TestGetRepositoryIndexes(t *testing.T) {
+	var mu sync.Mutex
+	counter := 0
 	prepLayout := func(t *testing.T, cache string, repos []string) *APK {
 		src := apkfs.NewMemFS()
 		err := src.MkdirAll("etc/apk", 0o755)
@@ -92,7 +95,12 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			err = src.WriteFile(reposFilePath, []byte(strings.Join(repos, "\n")), 0o644)
 			require.NoErrorf(t, err, "unable to write repositories")
 		} else {
-			err = src.WriteFile(reposFilePath, []byte(testAlpineRepos), 0o644)
+			// Append an int to the testAlpineRepos path to bust the global cache if repos are unspecified.
+			// TODO: Stop being lazy and remove the global caches.
+			mu.Lock()
+			counter++
+			err = src.WriteFile(reposFilePath, []byte(fmt.Sprintf("%s/%d", testAlpineRepos, counter)), 0o644)
+			mu.Unlock()
 			require.NoErrorf(t, err, "unable to write repositories")
 		}
 
@@ -159,7 +167,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, tmpDir, []string{testAlpineRepos})
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 
