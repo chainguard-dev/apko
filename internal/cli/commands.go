@@ -20,8 +20,7 @@ import (
 	"net/http"
 	"os"
 
-	"chainguard.dev/apko/pkg/log"
-
+	"github.com/chainguard-dev/clog/slag"
 	charmlog "github.com/charmbracelet/log"
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
@@ -34,7 +33,7 @@ func New() *cobra.Command {
 	if err != nil {
 		cwd = ""
 	}
-	var level log.CharmLogLevel
+	level := slag.Level(slog.LevelInfo)
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
@@ -46,7 +45,6 @@ func New() *cobra.Command {
 					return fmt.Errorf("failed to change dir to %s: %w", workDir, err)
 				}
 			}
-
 			slog.SetDefault(slog.New(charmlog.NewWithOptions(os.Stderr, charmlog.Options{ReportTimestamp: true, Level: charmlog.Level(level)})))
 			return nil
 		},
