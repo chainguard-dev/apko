@@ -95,8 +95,11 @@ func New(options ...Option) (*APK, error) {
 		opt.fs = apkfs.DirFS("/")
 	}
 
+	client := retryablehttp.NewClient()
+	client.Logger = clog.FromContext(context.Background())
+
 	return &APK{
-		client:             retryablehttp.NewClient().StandardClient(),
+		client:             client.StandardClient(),
 		fs:                 opt.fs,
 		arch:               opt.arch,
 		executor:           opt.executor,
