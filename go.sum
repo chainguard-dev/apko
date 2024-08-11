@@ -43,6 +43,8 @@ github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyY
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
+github.com/chainguard-dev/clog v1.5.1-0.20240811185937-4c523ae4593f h1:xRgn6phdh0RY1neJcftPVEcmb2AbvMvPZF44bFkxi+0=
+github.com/chainguard-dev/clog v1.5.1-0.20240811185937-4c523ae4593f/go.mod h1:4+WFhRMsGH79etYXY3plYdp+tCz/KCkU8fAr0HoaPvs=
 github.com/chainguard-dev/slogctx v1.2.2 h1:aDfTjasw/ApX0By8Nicl0C02oV/bXzBD8Dh7AG014ZM=
 github.com/chainguard-dev/slogctx v1.2.2/go.mod h1:+/TwogApSQPC+Umn9LF/T6my0KDml1XDAgpuSN/nwU4=
 github.com/charmbracelet/lipgloss v0.10.0 h1:KWeXFSexGcfahHX+54URiZGkBFazf70JNMtwg/AFW3s=
