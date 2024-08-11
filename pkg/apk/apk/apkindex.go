@@ -14,8 +14,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/MakeNowJust/heredoc/v2"
 )
 
 const apkIndexFilename = "APKINDEX"
@@ -28,51 +26,51 @@ var apkIndexTemplate = template.Must(template.New(apkIndexFilename).Funcs(
 		"join": func(s []string) string {
 			return strings.Join(s, " ")
 		},
-	}).Parse(heredoc.Doc(`C:{{.ChecksumString}}
-		P:{{.Name}}
-		V:{{.Version}}
-		{{- if .Arch}}
-		A:{{.Arch}}
-		{{- end }}
-		{{- if .Size}}
-		S:{{.Size}}
-		{{- end }}
-		{{- if .InstalledSize}}
-		I:{{.InstalledSize}}
-		{{- end}}
-		T:{{.Description}}
-		{{- if .URL}}
-		U:{{.URL}}
-		{{- end}}
-		{{- if .License}}
-		L:{{.License}}
-		{{- end}}
-		{{- if .Origin}}
-		o:{{.Origin}}
-		{{- end}}
-		{{- if .Maintainer}}
-		m:{{.Maintainer}}
-		{{- end}}
-		{{- if and .BuildTime (not .BuildTime.IsZero)}}
-		t:{{.BuildTime.Unix}}
-		{{- end}}
-		{{- if .RepoCommit}}
-		c:{{.RepoCommit}}
-		{{- end}}
-		{{- if .Dependencies}}
-		D:{{join .Dependencies}}
-		{{- end}}
-		{{- if .InstallIf}}
-		i:{{.InstallIf}}
-		{{- end}}
-		{{- if .Provides}}
-		p:{{join .Provides}}
-		{{- end}}
-		{{- if .ProviderPriority}}
-		k:{{.ProviderPriority}}
-		{{- end}}
+	}).Parse(`C:{{.ChecksumString}}
+P:{{.Name}}
+V:{{.Version}}
+{{- if .Arch}}
+A:{{.Arch}}
+{{- end }}
+{{- if .Size}}
+S:{{.Size}}
+{{- end }}
+{{- if .InstalledSize}}
+I:{{.InstalledSize}}
+{{- end}}
+T:{{.Description}}
+{{- if .URL}}
+U:{{.URL}}
+{{- end}}
+{{- if .License}}
+L:{{.License}}
+{{- end}}
+{{- if .Origin}}
+o:{{.Origin}}
+{{- end}}
+{{- if .Maintainer}}
+m:{{.Maintainer}}
+{{- end}}
+{{- if and .BuildTime (not .BuildTime.IsZero)}}
+t:{{.BuildTime.Unix}}
+{{- end}}
+{{- if .RepoCommit}}
+c:{{.RepoCommit}}
+{{- end}}
+{{- if .Dependencies}}
+D:{{join .Dependencies}}
+{{- end}}
+{{- if .InstallIf}}
+i:{{.InstallIf}}
+{{- end}}
+{{- if .Provides}}
+p:{{join .Provides}}
+{{- end}}
+{{- if .ProviderPriority}}
+k:{{.ProviderPriority}}
+{{- end}}
 
-	`)))
+`))
 
 type APKIndex struct { //nolint:revive
 	Signature   []byte

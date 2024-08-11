@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,26 +16,25 @@ import (
 func TestSinglePackage(t *testing.T) {
 	assert := assert.New(t)
 
-	apkIndexFile := strings.NewReader(heredoc.Doc(`
-		C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
-		P:a-pkg
-		V:1.2.3-r1
-		A:x86_64
-		S:9180
-		I:40960
-		T:A sample package
-		U:http://a.package.org
-		L:Apache-2.0
-		o:a-pkg
-		m:maintainer <maint@iner.org>
-		t:1600096848
-		c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
-		D:so:libc.musl-x86_64.so.1
-		p:thing1 thing2
-		i:abc xyz
-		k:9001
+	apkIndexFile := strings.NewReader(`C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
+P:a-pkg
+V:1.2.3-r1
+A:x86_64
+S:9180
+I:40960
+T:A sample package
+U:http://a.package.org
+L:Apache-2.0
+o:a-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
+p:thing1 thing2
+i:abc xyz
+k:9001
 
-	`))
+`)
 
 	packages, err := ParsePackageIndex(io.NopCloser(apkIndexFile))
 	require.NoError(t, err)
@@ -73,44 +71,43 @@ func TestSinglePackage(t *testing.T) {
 func TestMultiplePackages(t *testing.T) {
 	assert := assert.New(t)
 
-	apkIndexFile := strings.NewReader(heredoc.Doc(`
-		C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
-		P:a-pkg
-		V:1.2.3-r1
-		A:x86_64
-		S:9180
-		I:40960
-		T:A sample package
-		U:http://a.package.org
-		L:Apache-2.0
-		o:a-pkg
-		m:maintainer <maint@iner.org>
-		t:1600096848
-		c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
-		D:so:libc.musl-x86_64.so.1
-		p:thing1 thing2
-		i:abc xyz
-		k:9001
+	apkIndexFile := strings.NewReader(`C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
+P:a-pkg
+V:1.2.3-r1
+A:x86_64
+S:9180
+I:40960
+T:A sample package
+U:http://a.package.org
+L:Apache-2.0
+o:a-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
+p:thing1 thing2
+i:abc xyz
+k:9001
 
-		C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
-		P:b-pkg
-		V:1.1.1-r1
-		A:x86_64
-		S:5243
-		I:11392
-		T:Another package
-		U:http://b.package.org
-		L:Apache-2.0
-		o:b-pkg
-		m:maintainer <maint@iner.org>
-		t:1600096848
-		c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
-		D:so:libc.musl-x86_64.so.1
-		p:thing3 thing4
-		i:def uvw
-		k:9002
+C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
+P:b-pkg
+V:1.1.1-r1
+A:x86_64
+S:5243
+I:11392
+T:Another package
+U:http://b.package.org
+L:Apache-2.0
+o:b-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
+p:thing3 thing4
+i:def uvw
+k:9002
 
-	`))
+`)
 
 	packages, _ := ParsePackageIndex(io.NopCloser(apkIndexFile))
 
@@ -137,23 +134,22 @@ func TestParseFromArchive(t *testing.T) {
 
 // Test reading from io.Reader that doesn't implement io.Closer
 func TestSinglePackageOnlyReader(t *testing.T) {
-	apkIndexFile := strings.NewReader(heredoc.Doc(`
-		C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
-		P:a-pkg
-		V:1.2.3-r1
-		A:x86_64
-		S:9180
-		I:40960
-		T:A sample package
-		U:http://a.package.org
-		L:Apache-2.0
-		o:a-pkg
-		m:maintainer <maint@iner.org>
-		t:1600096848
-		c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
-		D:so:libc.musl-x86_64.so.1
+	apkIndexFile := strings.NewReader(`C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
+P:a-pkg
+V:1.2.3-r1
+A:x86_64
+S:9180
+I:40960
+T:A sample package
+U:http://a.package.org
+L:Apache-2.0
+o:a-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
 
-	`))
+`)
 
 	packages, err := ParsePackageIndex(apkIndexFile)
 	require.NoError(t, err)
@@ -212,26 +208,25 @@ func TestArchiveFromIndex(t *testing.T) {
 }
 
 func TestEmptyRepeatedFields(t *testing.T) {
-	apkIndexFile := strings.NewReader(heredoc.Doc(`
-		C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
-		P:a-pkg
-		V:1.2.3-r1
-		A:x86_64
-		S:9180
-		I:40960
-		T:A sample package
-		U:http://a.package.org
-		L:Apache-2.0
-		o:a-pkg
-		m:maintainer <maint@iner.org>
-		t:1600096848
-		c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
-		D:
-		p:
-		i:abc xyz
-		k:9001
-		
-	`))
+	apkIndexFile := strings.NewReader(`C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
+P:a-pkg
+V:1.2.3-r1
+A:x86_64
+S:9180
+I:40960
+T:A sample package
+U:http://a.package.org
+L:Apache-2.0
+o:a-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:
+p:
+i:abc xyz
+k:9001
+
+`)
 
 	packages, err := ParsePackageIndex(io.NopCloser(apkIndexFile))
 	require.NoError(t, err)
