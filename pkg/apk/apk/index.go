@@ -31,7 +31,6 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/gzip"
-	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -201,21 +200,8 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "getRepositoryIndex")
 	defer span.End()
 
-	// Normalize the repo as a URI, so that local paths
-	// are translated into file:// URLs, allowing them to be parsed
-	// into a url.URL{}.
-	var (
-		b     []byte
-		asURL *url.URL
-		err   error
-	)
-	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
-		asURL, err = url.Parse(u)
-	} else {
-		// Attempt to parse non-https elements into URI's so they are translated into
-		// file:// URLs allowing them to parse into a url.URL{}
-		asURL, err = url.Parse(string(uri.New(u)))
-	}
+	var b []byte
+	asURL, err := packageAsURL(u)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repo as URI: %w", err)
 	}
