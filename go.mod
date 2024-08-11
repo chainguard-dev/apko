@@ -4,7 +4,6 @@ go 1.22.5
 
 require (
 	chainguard.dev/sdk v0.1.23
-	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/chainguard-dev/clog v1.5.0
 	github.com/charmbracelet/log v0.4.0
 	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
