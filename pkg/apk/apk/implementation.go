@@ -1127,7 +1127,7 @@ func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expand
 }
 
 func packageAsURL(u string) (*url.URL, error) {
-	if strings.HasPrefix(u, "./") {
+	if fs.ValidPath(u) {
 		u = "file://" + u
 	}
 	if filepath.IsAbs(u) {

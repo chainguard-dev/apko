@@ -651,3 +651,41 @@ func TestAuth_bad(t *testing.T) {
 	require.Error(t, err, "should fail with bad auth")
 	require.True(t, called, "did not make request")
 }
+
+func TestPackageAsURL(t *testing.T) {
+	for _, c := range []struct {
+		desc string
+		in   string
+		want string
+	}{{
+		desc: "http",
+		in:   "http://example.com",
+		want: "http://example.com",
+	}, {
+		desc: "https",
+		in:   "https://example.com",
+		want: "https://example.com",
+	}, {
+		desc: "file",
+		in:   "file:///tmp/foo",
+		want: "file:///tmp/foo",
+	}, {
+		desc: "relative file no scheme",
+		in:   "tmp/foo",
+		want: "file://tmp/foo",
+	}, {
+		desc: "absolute file no scheme",
+		in:   "/tmp/foo",
+		want: "file:///tmp/foo",
+	}} {
+		t.Run(c.desc, func(t *testing.T) {
+			u, err := packageAsURL(c.in)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if u.String() != c.want {
+				t.Fatalf("expected %q, got %q", c.want, u.String())
+			}
+		})
+	}
+}
