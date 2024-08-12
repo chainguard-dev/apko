@@ -40,6 +40,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/hashicorp/go-retryablehttp"
+	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -414,7 +415,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			} else {
 				// Attempt to parse non-https elements into URI's so they are translated into
 				// file:// URLs allowing them to parse into a url.URL{}
-				asURL, err = packageAsURL(element)
+				asURL, err = url.Parse(string(uri.New(element)))
 			}
 			if err != nil {
 				return fmt.Errorf("failed to parse key as URI: %w", err)
@@ -1126,14 +1127,23 @@ func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expand
 	return a.cachePackage(ctx, pkg, exp, cacheDir)
 }
 
-func packageAsURL(u string) (*url.URL, error) {
-	if strings.HasPrefix(u, "./") {
-		u = "file://" + u
+func packageAsURI(pkg InstallablePackage) (uri.URI, error) {
+	u := pkg.URL()
+
+	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
+		return uri.Parse(u)
 	}
-	if filepath.IsAbs(u) {
-		u = "file://" + u
+
+	return uri.New(u), nil
+}
+
+func packageAsURL(pkg InstallablePackage) (*url.URL, error) {
+	asURI, err := packageAsURI(pkg)
+	if err != nil {
+		return nil, err
 	}
-	return url.Parse(u)
+
+	return url.Parse(string(asURI))
 }
 
 func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.ReadCloser, error) {
@@ -1145,7 +1155,10 @@ func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.Read
 
 	u := pkg.URL()
 
-	asURL, err := packageAsURL(pkg.URL())
+	// Normalize the repo as a URI, so that local paths
+	// are translated into file:// URLs, allowing them to be parsed
+	// into a url.URL{}.
+	asURL, err := packageAsURL(pkg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse package as URL: %w", err)
 	}
