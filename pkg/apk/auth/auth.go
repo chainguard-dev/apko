@@ -13,7 +13,7 @@ import (
 )
 
 // DefaultAuthenticators is a list of authenticators that are used by default.
-var DefaultAuthenticators = multiAuthenticator{EnvAuth{}, CGRAuth{}}
+var DefaultAuthenticators Authenticator = multiAuthenticator{EnvAuth{}, CGRAuth{}}
 
 // Authenticator is an interface for types that can add HTTP basic auth to a
 // request.
