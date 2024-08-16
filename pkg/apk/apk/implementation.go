@@ -325,7 +325,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 		}
 
 		if err := a.fetchChainguardKeys(ctx, repo); err != nil {
-			log.Warnf("ignoring missing keys: %v", err)
+			return fmt.Errorf("fetching chainguard keys for %s: %w", repo, err)
 		}
 	}
 
@@ -819,86 +819,108 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 	return nil
 }
 
-// fetchChainguardKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
+// DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) (map[string][]byte, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
-	client := a.client
 	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", strings.TrimSuffix(repository, "/"), "apk-configuration"), nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := a.auth.AddAuth(ctx, discoveryRequest); err != nil {
-		return err
+	if err := auth.AddAuth(ctx, discoveryRequest); err != nil {
+		return nil, err
 	}
 	discoveryResponse, err := client.Do(discoveryRequest)
 	if err != nil {
-		return fmt.Errorf("failed to perform key discovery: %w", err)
+		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
 	defer discoveryResponse.Body.Close()
 	switch discoveryResponse.StatusCode {
 	case http.StatusNotFound:
 		// This doesn't implement Chainguard-style key discovery.
-		return nil
+		return nil, nil
 
 	case http.StatusOK:
 		// proceed!
 		break
 
 	default:
-		return fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
+		return nil, fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
 	}
 	// Parse our the JWKS URI
 	var discovery struct {
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.NewDecoder(discoveryResponse.Body).Decode(&discovery); err != nil {
-		return fmt.Errorf("failed to unmarshal discovery payload: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal discovery payload: %w", err)
 	}
 
 	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := a.auth.AddAuth(ctx, jwksRequest); err != nil {
-		return err
+	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
+		return nil, err
 	}
 	jwksResponse, err := client.Do(jwksRequest)
 	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %w", err)
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 	defer jwksResponse.Body.Close()
 	if jwksResponse.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
+		return nil, fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
 	}
 
 	jwks := jose.JSONWebKeySet{}
 	if err := json.NewDecoder(jwksResponse.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("failed to unmarshal JWKS: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal JWKS: %w", err)
 	}
+
+	keys := map[string][]byte{}
 
 	for _, key := range jwks.Keys {
 		if key.KeyID == "" {
-			return fmt.Errorf(`key missing "kid"`)
+			return nil, fmt.Errorf(`key missing "kid"`)
 		}
-		filename := filepath.Join(keysDirPath, key.KeyID+".rsa.pub")
-		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to open key file %s: %w", filename, err)
-		}
-		defer f.Close()
+		keyName := key.KeyID + ".rsa.pub"
 
 		b, err := x509.MarshalPKIXPublicKey(key.Key.(*rsa.PublicKey))
 		if err != nil {
-			return err
+			return nil, err
 		} else if len(b) == 0 {
-			return fmt.Errorf("empty public key")
+			return nil, fmt.Errorf("empty public key")
 		}
-		if err := pem.Encode(f, &pem.Block{
+
+		var buf bytes.Buffer
+		if err := pem.Encode(&buf, &pem.Block{
 			Type:  "PUBLIC KEY",
 			Bytes: b,
 		}); err != nil {
+			return nil, fmt.Errorf("failed to pem encode key %s: %w", keyName, err)
+		}
+
+		keys[keyName] = buf.Bytes()
+	}
+
+	return keys, nil
+}
+
+// fetchChainguardKeys fetches the public keys for the repositories in the APK database.
+func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
+	defer span.End()
+
+	log := clog.FromContext(ctx)
+
+	keys, err := DiscoverKeys(ctx, a.client, a.auth, repository)
+	if err != nil {
+		log.Warnf("ignoring missing keys for %s: %v", repository, err)
+	}
+
+	for keyName, key := range keys {
+		filename := filepath.Join(keysDirPath, keyName)
+		if err := a.fs.WriteFile(filename, key, 0o644); err != nil {
 			return fmt.Errorf("failed to write key file %s: %w", filename, err)
 		}
 	}
