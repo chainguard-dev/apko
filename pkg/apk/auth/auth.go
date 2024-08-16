@@ -79,7 +79,9 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 	}
 
 	sometimes.Do(func() {
-		out, err := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host).Output()
+		cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host)
+		cmd.Stderr = os.Stderr
+		out, err := cmd.Output()
 		if err != nil {
 			log.Warnf("Error running `chainctl auth token`: %v", err)
 			return
