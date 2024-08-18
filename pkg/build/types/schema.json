@@ -93,7 +93,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Optional: List of CPU architectures to build the container image for\n\nThe list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x"
+          "description": "Optional: List of CPU architectures to build the container image for\n\nThe list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64"
         },
         "environment": {
           "additionalProperties": {
