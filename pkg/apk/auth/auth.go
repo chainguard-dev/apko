@@ -13,7 +13,12 @@ import (
 )
 
 // DefaultAuthenticators is a list of authenticators that are used by default.
-var DefaultAuthenticators Authenticator = multiAuthenticator{EnvAuth{}, CGRAuth{}}
+var DefaultAuthenticators Authenticator = multiAuthenticator{
+	EnvAuth{},
+	NewChainguardIdentityAuth(os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	NewK8sAuth(os.Getenv("K8S_TOKEN_PATH"), os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	CGRAuth{},
+}
 
 // Authenticator is an interface for types that can add HTTP basic auth to a
 // request.
@@ -88,7 +93,9 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 		}
 		tok = string(out)
 	})
-	req.SetBasicAuth("user", tok)
+	if tok != "" {
+		req.SetBasicAuth("user", tok)
+	}
 	return nil
 }
 
