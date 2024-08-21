@@ -578,7 +578,7 @@ type Relationship struct {
 }
 
 func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
-	if opts.ImageInfo.Images == nil || len(opts.ImageInfo.Images) == 0 {
+	if len(opts.ImageInfo.Images) == 0 {
 		return errors.New("unable to render index sbom, no architecture images found")
 	}
 	documentName := "sbom"
