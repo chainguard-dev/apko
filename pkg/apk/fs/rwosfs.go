@@ -62,6 +62,7 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 	var options dirFSOpts
 	for _, opt := range opts {
 		if err := opt(&options); err != nil {
+			panic(err)
 			return nil
 		}
 	}
@@ -72,15 +73,19 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 	fi, err := os.Stat(dir)
 	switch {
 	case err != nil && !os.IsNotExist(err):
+		panic(err)
 		return nil
 	case err != nil && os.IsNotExist(err):
 		if !options.mkdir {
+			panic("dir does not exist")
 			return nil
 		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
+			panic(err)
 			return nil
 		}
 	case !fi.IsDir():
+		panic(err)
 		return nil
 	}
 
@@ -97,7 +102,8 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 				continue
 			}
 			if err := os.WriteFile(filepath.Join(dir, filename), []byte("test"), 0o600); err != nil {
-				return nil
+				caseSensitive = false // If this fails, let's just assume it's not case sensitive.
+				break
 			}
 			// see if it exists
 			if _, err := os.Stat(filepath.Join(dir, strings.ToUpper(filename))); err != nil {
