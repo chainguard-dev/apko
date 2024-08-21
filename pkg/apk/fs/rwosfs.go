@@ -17,6 +17,7 @@ package fs
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,10 +60,12 @@ func WithCreateDir() DirFSOption {
 }
 
 func DirFS(dir string, opts ...DirFSOption) FullFS {
+	log := slog.Default()
+
 	var options dirFSOpts
 	for _, opt := range opts {
 		if err := opt(&options); err != nil {
-			panic(err)
+			log.Warn("error applying option", "error", err)
 			return nil
 		}
 	}
@@ -73,19 +76,19 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 	fi, err := os.Stat(dir)
 	switch {
 	case err != nil && !os.IsNotExist(err):
-		panic(err)
+		log.Warn("error checking dir", "error", err)
 		return nil
 	case err != nil && os.IsNotExist(err):
 		if !options.mkdir {
-			panic("dir does not exist")
+			log.Warn("dir does not exist", "dir", dir)
 			return nil
 		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			panic(err)
+			log.Warn("error creating dir", "dir", dir, "error", err)
 			return nil
 		}
 	case !fi.IsDir():
-		panic(err)
+		log.Warn("not a directory", "dir", dir)
 		return nil
 	}
 

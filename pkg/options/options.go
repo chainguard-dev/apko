@@ -72,7 +72,7 @@ func (o *Options) TempDir() string {
 
 	path, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
 	if err != nil {
-		log.Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
+		log.Fatalf("creating tempdir: %v", err)
 	}
 	o.TempDirPath = path
 	return o.TempDirPath
