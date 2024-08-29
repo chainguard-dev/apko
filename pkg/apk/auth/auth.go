@@ -13,7 +13,16 @@ import (
 )
 
 // DefaultAuthenticators is a list of authenticators that are used by default.
-var DefaultAuthenticators Authenticator = multiAuthenticator{EnvAuth{}, CGRAuth{}}
+var DefaultAuthenticators Authenticator = multiAuthenticator{
+	// First, we'll try to use the HTTP_AUTH environment variable if it's set.
+	EnvAuth{},
+	// If both of these envs are set, we'll try to use the k8s token first.
+	NewK8sAuth(os.Getenv("K8S_TOKEN_PATH"), os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	// If only the identity env is set, and k8s auth didn't work, we'll try to use exchanged GCP auth.
+	NewChainguardIdentityAuth(os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	// If nothing has worked yet, we'll try to use chainctl.
+	CGRAuth{},
+}
 
 // Authenticator is an interface for types that can add HTTP basic auth to a
 // request.
@@ -23,6 +32,9 @@ type Authenticator interface {
 
 // MultiAuthenticator returns an Authenticator that tries each of the given
 // authenticators in order until one of them adds auth to the request.
+//
+// If any of the authenticators returns an error, the request will not be
+// modified and the error will be returned.
 func MultiAuthenticator(auths ...Authenticator) Authenticator { return multiAuthenticator(auths) }
 
 type multiAuthenticator []Authenticator
@@ -88,7 +100,9 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 		}
 		tok = string(out)
 	})
-	req.SetBasicAuth("user", tok)
+	if tok != "" {
+		req.SetBasicAuth("user", tok)
+	}
 	return nil
 }
 
