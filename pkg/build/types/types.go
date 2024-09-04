@@ -166,7 +166,7 @@ type ImageConfiguration struct {
 	Accounts ImageAccounts `json:"accounts,omitempty" yaml:"accounts,omitempty"`
 	// Optional: List of CPU architectures to build the container image for
 	//
-	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x
+	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64
 	Archs []Architecture `json:"archs,omitempty" yaml:"archs,omitempty"`
 	// Optional: Envionment variables to set in the container image
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
@@ -213,6 +213,7 @@ var (
 	arm64   = Architecture("arm64")
 	armv6   = Architecture("arm/v6")
 	armv7   = Architecture("arm/v7")
+	loong64 = Architecture("loong64")
 	ppc64le = Architecture("ppc64le")
 	riscv64 = Architecture("riscv64")
 	s390x   = Architecture("s390x")
@@ -226,6 +227,7 @@ var AllArchs = []Architecture{
 	arm64,
 	armv6,
 	armv7,
+	loong64,
 	ppc64le,
 	riscv64,
 	s390x,
@@ -244,6 +246,8 @@ func (a Architecture) ToAPK() string {
 		return "armhf"
 	case armv7:
 		return "armv7"
+	case loong64:
+		return "loongarch64"
 	default:
 		return string(a)
 	}
@@ -357,6 +361,8 @@ func ParseArchitecture(s string) Architecture {
 		return armv6
 	case "armv7":
 		return armv7
+	case "loong64", "loongarch64":
+		return loong64
 	}
 	return Architecture(s)
 }
