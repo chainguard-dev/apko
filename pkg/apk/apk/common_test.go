@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	testPrimaryPkgDir   = "testdata/alpine-316"
-	testAlternatePkgDir = "testdata/alpine-317"
+	testPrimaryPkgDir     = "testdata/alpine-316"
+	testAlternatePkgDir   = "testdata/alpine-317"
+	testRSA256IndexPkgDir = "testdata/rsa256-signed"
 )
 
 type testLocalTransport struct {

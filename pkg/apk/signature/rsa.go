@@ -7,7 +7,8 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1" //nolint:gosec
+	_ "crypto/sha1" //nolint:gosec
+	_ "crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -16,17 +17,17 @@ import (
 )
 
 var (
-	errNoPemBlock    = errors.New("no PEM block found")
-	errDigestNotSHA1 = errors.New("digest is not a SHA1 hash")
-	errNoPassphrase  = errors.New("key is encrypted but no passphrase was provided")
-	errNoRSAKey      = errors.New("key is not an RSA key")
+	errNoPemBlock   = errors.New("no PEM block found")
+	errDigestLength = errors.New("digest has unexpected length")
+	errNoPassphrase = errors.New("key is encrypted but no passphrase was provided")
+	errNoRSAKey     = errors.New("key is not an RSA key")
 )
 
-// RSASignSHA1Digest signs the provided SHA1 message digest. The key file
-// must be in the PEM format and can either be encrypted or not.
-func RSASignSHA1Digest(sha1Digest []byte, keyFile, passphrase string) ([]byte, error) {
-	if len(sha1Digest) != sha1.Size {
-		return nil, errDigestNotSHA1
+// RSASignDigest signs the provided message digest. The key file must
+// be in the PEM format and can either be encrypted or not.
+func RSASignDigest(digest []byte, digestType crypto.Hash, keyFile, passphrase string) ([]byte, error) {
+	if len(digest) != digestType.Size() {
+		return nil, errDigestLength
 	}
 
 	keyFileContent, err := os.ReadFile(keyFile)
@@ -60,7 +61,7 @@ func RSASignSHA1Digest(sha1Digest []byte, keyFile, passphrase string) ([]byte, e
 		return nil, fmt.Errorf("parse PKCS1 private key: %w", err)
 	}
 
-	signature, err := priv.Sign(rand.Reader, sha1Digest, crypto.SHA1)
+	signature, err := priv.Sign(rand.Reader, digest, digestType)
 	if err != nil {
 		return nil, fmt.Errorf("signing: %w", err)
 	}
@@ -68,11 +69,12 @@ func RSASignSHA1Digest(sha1Digest []byte, keyFile, passphrase string) ([]byte, e
 	return signature, nil
 }
 
-// RSAVerifySHA1Digest is exported for use in tests and verifies a signature over the
-// provided SHA1 hash of a message. The key file must be in the PEM format.
-func RSAVerifySHA1Digest(sha1Digest, signature []byte, publicKey []byte) error {
-	if len(sha1Digest) != sha1.Size {
-		return errDigestNotSHA1
+// RSAVerifyDigest is exported for use in tests and verifies a
+// signature over the provided hash of a message. The key file must be
+// in the PEM format.
+func RSAVerifyDigest(digest []byte, digestType crypto.Hash, signature []byte, publicKey []byte) error {
+	if len(digest) != digestType.Size() {
+		return errDigestLength
 	}
 
 	block, _ := pem.Decode(publicKey)
@@ -90,10 +92,18 @@ func RSAVerifySHA1Digest(sha1Digest, signature []byte, publicKey []byte) error {
 		return errNoRSAKey
 	}
 
-	err = rsa.VerifyPKCS1v15(rsaPub, crypto.SHA1, sha1Digest, signature)
+	err = rsa.VerifyPKCS1v15(rsaPub, digestType, digest, signature)
 	if err != nil {
 		return fmt.Errorf("verify PKCS1v15 signature: %w", err)
 	}
 
 	return nil
+}
+
+// Backwards compat
+func RSASignSHA1Digest(digest []byte, keyFile, passphrase string) ([]byte, error) {
+	return RSASignDigest(digest, crypto.SHA1, keyFile, passphrase)
+}
+func RSAVerifySHA1Digest(digest, signature []byte, publicKey []byte) error {
+	return RSAVerifyDigest(digest, crypto.SHA1, signature, publicKey)
 }
