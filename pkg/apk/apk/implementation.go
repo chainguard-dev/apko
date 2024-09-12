@@ -825,7 +825,7 @@ type Key struct {
 }
 
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
-func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
@@ -833,10 +833,10 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 	if err != nil {
 		return nil, err
 	}
-	if err := a.auth.AddAuth(ctx, discoveryRequest); err != nil {
+	if err := auth.AddAuth(ctx, discoveryRequest); err != nil {
 		return nil, err
 	}
-	discoveryResponse, err := a.client.Do(discoveryRequest)
+	discoveryResponse, err := client.Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -865,10 +865,10 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 	if err != nil {
 		return nil, err
 	}
-	if err := a.auth.AddAuth(ctx, jwksRequest); err != nil {
+	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
 		return nil, err
 	}
-	jwksResponse, err := a.client.Do(jwksRequest)
+	jwksResponse, err := client.Do(jwksRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -910,6 +910,10 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 	}
 
 	return keys, nil
+}
+
+func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
+	return DiscoverKeys(ctx, a.client, a.auth, repository)
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.
