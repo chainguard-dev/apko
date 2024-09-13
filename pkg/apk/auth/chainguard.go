@@ -59,11 +59,12 @@ func (a *cgAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			a.cgerr = fmt.Errorf("getting token: %w", err)
 			return
 		}
-		ctok, err := sts.Exchange(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
+
+		ctok, err := sts.ExchangePair(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
 		if err != nil {
 			a.cgerr = fmt.Errorf("exchanging token: %w", err)
 		}
-		a.cgtok = ctok
+		a.cgtok = ctok.AccessToken
 	})
 	if a.cgerr != nil {
 		return a.cgerr
@@ -113,11 +114,11 @@ func (k *k8sAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			return
 		}
 		log.Infof("Exchanging K8s token for Chainguard identity %s", k.id)
-		ctok, err := sts.Exchange(ctx, k.iss, k.aud, string(b), sts.WithIdentity(k.id))
+		ctok, err := sts.ExchangePair(ctx, k.iss, k.aud, string(b), sts.WithIdentity(k.id))
 		if err != nil {
 			k.cgerr = fmt.Errorf("exchanging token: %w", err)
 		}
-		k.cgtok = ctok
+		k.cgtok = ctok.AccessToken
 	})
 	if k.cgerr != nil {
 		return k.cgerr
