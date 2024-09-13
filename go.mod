@@ -1,6 +1,7 @@
 module chainguard.dev/apko
 
-go 1.23.0
+go 1.23.1
+
 require (
 	chainguard.dev/sdk v0.1.25
 	github.com/chainguard-dev/clog v1.5.1-0.20240811185937-4c523ae4593f
