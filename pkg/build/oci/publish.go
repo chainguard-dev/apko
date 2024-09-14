@@ -33,63 +33,6 @@ import (
 	"github.com/chainguard-dev/clog"
 )
 
-// PublishImage publishes an image to a registry.
-// `local` determines if it should push to the local docker daemon or to the actual registry.
-// `shouldPushTags` determines whether to push the tags provided in the `tags` parameter, or whether
-// to treat the first tag as a digest and push that instead.
-func PublishImage(ctx context.Context, image oci.SignedImage, shouldPushTags bool, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
-	log := clog.FromContext(ctx)
-	ref, err := name.ParseReference(tags[0])
-	if err != nil {
-		return name.Digest{}, fmt.Errorf("parsing tag %q: %w", tags[0], err)
-	}
-
-	hash, err := image.Digest()
-	if err != nil {
-		return name.Digest{}, fmt.Errorf("failed to compute digest: %w", err)
-	}
-
-	dig := ref.Context().Digest(hash.String())
-
-	toPublish := tags
-	msg := "publish image tag"
-
-	if !shouldPushTags {
-		toPublish = []string{dig.String()}
-		msg = "publishing image without tag (digest only)"
-	}
-
-	g, ctx := errgroup.WithContext(ctx)
-	for _, tag := range toPublish {
-		tag := tag
-		g.Go(func() error {
-			log.Infof("%s %v", msg, tag)
-			ref, err := name.ParseReference(tag)
-			if err != nil {
-				return fmt.Errorf("unable to parse reference: %w", err)
-			}
-
-			// Write any attached SBOMs/signatures.
-			wp := writePeripherals(ctx, ref, remoteOpts...)
-			g.Go(func() error {
-				return wp(ctx, image)
-			})
-
-			g.Go(func() error {
-				return remote.Write(ref, image, remoteOpts...)
-			})
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return name.Digest{}, fmt.Errorf("failed to publish: %w", err)
-	}
-
-	return dig, nil
-}
-
 func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.Reference, error) {
 	log := clog.FromContext(ctx)
 	hash, err := image.Digest()
@@ -321,34 +264,4 @@ func writePeripherals(ctx context.Context, tag name.Reference, opt ...remote.Opt
 
 		return nil
 	}
-}
-
-// Copt copies an image from one registry repository to another.
-func Copy(ctx context.Context, src, dst string, remoteOpts ...remote.Option) error {
-	log := clog.FromContext(ctx)
-	ctx, span := otel.Tracer("apko").Start(ctx, "oci.Copy")
-	defer span.End()
-
-	log.Infof("Copying %s to %s", src, dst)
-	srcRef, err := name.ParseReference(src)
-	if err != nil {
-		return err
-	}
-	dstRef, err := name.ParseReference(dst)
-	if err != nil {
-		return err
-	}
-	desc, err := remote.Get(srcRef, remoteOpts...)
-	if err != nil {
-		return fmt.Errorf("fetching %s: %w", src, err)
-	}
-	pusher, err := remote.NewPusher(remoteOpts...)
-	if err != nil {
-		return err
-	}
-	if err := pusher.Push(ctx, dstRef, desc); err != nil {
-		return fmt.Errorf("tagging %s with tag %s: %w", src, dst, err)
-	}
-
-	return nil
 }

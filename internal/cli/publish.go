@@ -28,7 +28,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/chainguard-dev/clog"
 
@@ -184,7 +183,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var (
 		local           = opts.local
 		tags            = opts.tags
-		additionalTags  []string
 		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
@@ -228,24 +226,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0o666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
 		}
-	}
-
-	// TODO: Why does this happen separately from PublishIndex?
-	skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
-	g, ctx := errgroup.WithContext(ctx)
-	for _, at := range additionalTags {
-		at := at
-		if skipLocalCopy {
-			// TODO: We probably don't need this now that we return early.
-			log.Warnf("skipping local domain tag %s", at)
-			continue
-		}
-		g.Go(func() error {
-			return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
 	}
 
 	// publish each arch-specific sbom
