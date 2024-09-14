@@ -149,9 +149,7 @@ func (c *Context) writeTar(ctx context.Context, tw *tar.Writer, fsys fs.FS, user
 		header.Name = path
 
 		// zero out timestamps for reproducibility
-		header.AccessTime = c.SourceDateEpoch
-		header.ModTime = c.SourceDateEpoch
-		header.ChangeTime = c.SourceDateEpoch
+		header.ModTime = info.ModTime()
 
 		if uid, ok := c.remapUIDs[header.Uid]; ok {
 			header.Uid = uid
