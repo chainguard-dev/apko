@@ -129,13 +129,11 @@ func (m *memFS) Mkdir(path string, perms fs.FileMode) error {
 	}
 	// now create the directory
 	anode.children[filepath.Base(path)] = &node{
-		name:       filepath.Base(path),
-		mode:       fs.ModeDir | perms,
-		dir:        true,
-		modTime:    time.Now(),
-		createTime: time.Now(),
-		children:   map[string]*node{},
-		xattrs:     map[string][]byte{},
+		name:     filepath.Base(path),
+		mode:     fs.ModeDir | perms,
+		dir:      true,
+		children: map[string]*node{},
+		xattrs:   map[string][]byte{},
 	}
 	return nil
 }
@@ -179,13 +177,11 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 		newnode, ok := anode.children[part]
 		if !ok {
 			newnode = &node{
-				name:       part,
-				mode:       fs.ModeDir | perm,
-				dir:        true,
-				modTime:    time.Now(),
-				createTime: time.Now(),
-				children:   map[string]*node{},
-				xattrs:     map[string][]byte{},
+				name:     part,
+				mode:     fs.ModeDir | perm,
+				dir:      true,
+				children: map[string]*node{},
+				xattrs:   map[string][]byte{},
 			}
 			anode.children[part] = newnode
 		}
@@ -245,12 +241,10 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 	if flag&os.O_CREATE != 0 && !ok {
 		// create the file
 		anode = &node{
-			name:       base,
-			mode:       perm,
-			dir:        false,
-			modTime:    time.Now(),
-			createTime: time.Now(),
-			xattrs:     map[string][]byte{},
+			name:   base,
+			mode:   perm,
+			dir:    false,
+			xattrs: map[string][]byte{},
 		}
 		parentAnode.children[base] = anode
 	}
@@ -332,13 +326,11 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		return os.ErrExist
 	}
 	anode.children[base] = &node{
-		name:       base,
-		mode:       fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
-		modTime:    time.Now(),
-		createTime: time.Now(),
-		major:      unix.Major(uint64(dev)),
-		minor:      unix.Minor(uint64(dev)),
-		xattrs:     map[string][]byte{},
+		name:   base,
+		mode:   fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
+		major:  unix.Major(uint64(dev)),
+		minor:  unix.Minor(uint64(dev)),
+		xattrs: map[string][]byte{},
 	}
 
 	return nil
@@ -401,7 +393,6 @@ func (m *memFS) Symlink(oldname, newname string) error {
 	anode.children[base] = &node{
 		name:       base,
 		mode:       0o777 | os.ModeSymlink,
-		modTime:    time.Now(),
 		linkTarget: oldname,
 		xattrs:     map[string][]byte{},
 	}
@@ -625,7 +616,6 @@ type node struct {
 	name         string
 	data         []byte
 	modTime      time.Time
-	createTime   time.Time
 	linkTarget   string
 	linkCount    int // extra links, so 0 means a single pointer. O-based, like most compuuter counting systems.
 	major, minor uint32
