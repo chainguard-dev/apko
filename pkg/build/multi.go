@@ -58,7 +58,7 @@ func NewMultiArch(ctx context.Context, archs []types.Architecture, opts ...Optio
 	}
 
 	for _, bc := range m.Contexts {
-		bc.apk.Others = apks
+		bc.apk.ByArch = apks
 	}
 
 	return m, nil

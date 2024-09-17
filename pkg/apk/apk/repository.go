@@ -19,10 +19,22 @@ func NewRepositoryFromComponents(baseURI, release, repo, arch string) Repository
 
 // WithIndex returns a RepositoryWithIndex object with the
 func (r *Repository) WithIndex(index *APKIndex) *RepositoryWithIndex {
-	return &RepositoryWithIndex{
+	rwi := &RepositoryWithIndex{
 		Repository: r,
 		index:      index,
 	}
+	pkgs := make([]*RepositoryPackage, 0, len(index.Packages))
+	for _, pkg := range index.Packages {
+		rp := &RepositoryPackage{
+			Package:    pkg,
+			repository: rwi,
+		}
+		pkgs = append(pkgs, rp)
+	}
+
+	rwi.pkgs = pkgs
+
+	return rwi
 }
 
 // IndexURI returns the uri of the APKINDEX for this repository
@@ -40,19 +52,12 @@ func (r *Repository) IsRemote() bool {
 type RepositoryWithIndex struct {
 	*Repository
 	index *APKIndex
+	pkgs  []*RepositoryPackage
 }
 
 // Packages returns a list of RepositoryPackage in this repository
-func (r *RepositoryWithIndex) Packages() (pkgs []*RepositoryPackage) {
-	for _, pkg := range r.index.Packages {
-		rp := &RepositoryPackage{
-			Package:    pkg,
-			repository: r,
-		}
-		pkgs = append(pkgs, rp)
-	}
-
-	return
+func (r *RepositoryWithIndex) Packages() []*RepositoryPackage {
+	return r.pkgs
 }
 
 // Count returns the amout of packages that are available in this repository

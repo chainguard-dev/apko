@@ -51,7 +51,7 @@ var globalIndexCache = &indexCache{
 }
 
 type indexResult struct {
-	idx *APKIndex
+	idx NamedIndex
 	err error
 }
 
@@ -67,19 +67,29 @@ type indexCache struct {
 	indexes sync.Map
 }
 
-func (i *indexCache) get(ctx context.Context, u string, keys map[string][]byte, arch string, opts *indexOpts) (*APKIndex, error) {
+func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
+	u := IndexURL(repoURL, arch)
+
 	ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("indexCache.get(%q)", u))
 	defer span.End()
+
+	repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
+	repoRef := Repository{URI: repoBase}
 
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 		// We don't want remote indexes to change while we're running.
 		once, _ := i.onces.LoadOrStore(u, &sync.Once{})
 		once.(*sync.Once).Do(func() {
 			idx, err := getRepositoryIndex(ctx, u, keys, arch, opts)
-			i.indexes.Store(u, indexResult{
-				idx: idx,
-				err: err,
-			})
+			if err != nil {
+				i.indexes.Store(u, indexResult{
+					err: err,
+				})
+			} else {
+				i.indexes.Store(u, indexResult{
+					idx: NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)),
+				})
+			}
 		})
 	} else {
 		i.Lock()
@@ -96,10 +106,15 @@ func (i *indexCache) get(ctx context.Context, u string, keys map[string][]byte, 
 		if !ok || mod.After(before) {
 			// If this is the first time or it has changed since the last time...
 			idx, err := getRepositoryIndex(ctx, u, keys, arch, opts)
-			i.indexes.Store(u, indexResult{
-				idx: idx,
-				err: err,
-			})
+			if err != nil {
+				i.indexes.Store(u, indexResult{
+					err: err,
+				})
+			} else {
+				i.indexes.Store(u, indexResult{
+					idx: NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)),
+				})
+			}
 			i.modtimes[u] = mod
 		}
 	}
@@ -154,11 +169,9 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 				repoURL = parts[1]
 			}
 
-			u := IndexURL(repoURL, arch)
-			repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
-
-			index, err := globalIndexCache.get(ctx, u, keys, arch, opts)
+			index, err := globalIndexCache.get(ctx, repoName, repoURL, keys, arch, opts)
 			if err != nil {
+				u := IndexURL(repoURL, arch)
 				asURL, _ := url.Parse(u)
 				return fmt.Errorf("reading index %s: %w", asURL.Redacted(), err)
 			}
@@ -167,10 +180,7 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 			if index == nil {
 				return nil
 			}
-
-			repoRef := Repository{URI: repoBase}
-
-			indexes[i] = NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(index))
+			indexes[i] = index
 			return nil
 		})
 	}

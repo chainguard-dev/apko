@@ -21,13 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -205,9 +205,22 @@ type PkgResolver struct {
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 }
 
+// Clone returns a copy of PkgResolver.
+func (p *PkgResolver) Clone() *PkgResolver {
+	return &PkgResolver{
+		indexes:      p.indexes,
+		nameMap:      maps.Clone(p.nameMap),
+		installIfMap: maps.Clone(p.installIfMap),
+	}
+}
+
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
 // The indexes are anything that implements NamedIndex.
 func NewPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	return globalResolverCache.Get(ctx, indexes)
+}
+
+func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
@@ -436,55 +449,14 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 	return nil
 }
 
-func (p *PkgResolver) disqualifyMissingArchs(otherArchs map[string][]NamedIndex, dq map[*RepositoryPackage]string) {
-	// arch -> name -> set[version]
-	allowablePackages := map[string]map[string]map[string]struct{}{}
-
-	// Build up a map per arch to quickly check existence of a package name+version.
-	for arch, indexes := range otherArchs {
-		allowed := map[string]map[string]struct{}{}
-		for _, index := range indexes {
-			for _, pkg := range index.Packages() {
-				versions, ok := allowed[pkg.Name]
-				if !ok {
-					versions = map[string]struct{}{}
-				}
-				versions[pkg.Version] = struct{}{}
-				allowed[pkg.Name] = versions
-			}
-		}
-		allowablePackages[arch] = allowed
-	}
-
-	// Check each package in this arch against every other arch, disqualifying any that are missing.
-	for _, pkgVersions := range p.nameMap {
-		for _, pkg := range pkgVersions {
-			for arch, allowed := range allowablePackages {
-				versions, ok := allowed[pkg.Name]
-				if !ok {
-					p.disqualify(dq, pkg.RepositoryPackage, fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), arch))
-				}
-				if _, ok := versions[pkg.Version]; !ok {
-					p.disqualify(dq, pkg.RepositoryPackage, fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), arch))
-				}
-			}
-		}
-	}
-}
-
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
-func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, otherArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, allArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackageWithDependencies")
 	defer span.End()
 
 	// Tracks all the packages we have disqualified and the reason we disqualified them.
-	dq := map[*RepositoryPackage]string{}
-
-	// If we are solving in the context of other architectures, we want to disqualify any packages that aren't available in all architectures.
-	if len(otherArchs) != 0 {
-		p.disqualifyMissingArchs(otherArchs, dq)
-	}
+	dq := globalDisqualifyCache.Get(ctx, allArchs)
 
 	// We're going to mutate this as our set of input packages to install, so make a copy.
 	constraints := slices.Clone(packages)
@@ -780,7 +752,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 			options[dep] = pkgs
 		}
 
-		constraints = maps.Keys(options)
+		constraints = slices.Collect(maps.Keys(options))
 		if len(constraints) == 0 {
 			// Nothing left to solve.
 			continue
@@ -1067,4 +1039,56 @@ func maybedqerror(constraint string, pkgs []*repositoryPackage, dq map[*Reposito
 	}
 
 	return fmt.Errorf("could not find constraint %q in indexes", constraint)
+}
+
+func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
+	dq := map[*RepositoryPackage]string{}
+
+	if len(byArch) == 1 {
+		// There is no difference between archs if we have one arch.
+		return dq
+	}
+
+	// arch -> name -> set[version]
+	allowablePackages := map[string]map[string]map[string]struct{}{}
+
+	for arch, indexes := range byArch {
+		// Build up a map per arch to quickly check existence of a package name+version.
+		allowed := map[string]map[string]struct{}{}
+		for _, index := range indexes {
+			for _, pkg := range index.Packages() {
+				versions, ok := allowed[pkg.Name]
+				if !ok {
+					versions = map[string]struct{}{}
+				}
+				versions[pkg.Version] = struct{}{}
+				allowed[pkg.Name] = versions
+			}
+		}
+		allowablePackages[arch] = allowed
+	}
+
+	for arch := range allowablePackages {
+		p := newPkgResolver(ctx, byArch[arch])
+		for otherArch, allowed := range allowablePackages {
+			if otherArch == arch {
+				continue
+			}
+
+			for _, pkgVersions := range p.nameMap {
+				for _, pkg := range pkgVersions {
+					versions, ok := allowed[pkg.Name]
+					if !ok {
+						dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+						continue
+					}
+					if _, ok := versions[pkg.Version]; !ok {
+						dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+					}
+				}
+			}
+		}
+	}
+
+	return dq
 }
