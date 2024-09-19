@@ -148,8 +148,15 @@ func (c *Context) writeTar(ctx context.Context, tw *tar.Writer, fsys fs.FS, user
 		// work around some weirdness, without this we wind up with just the basename
 		header.Name = path
 
-		// zero out timestamps for reproducibility
-		header.ModTime = info.ModTime()
+		// if SourceDateEpoch is set explicitly, overwrite the timestamps, otherwise propagate modtime
+		// (this option is unused in apko but melange uses this, so we support it for now)
+		if c.useSourceDateEpoch {
+			header.AccessTime = c.SourceDateEpoch
+			header.ModTime = c.SourceDateEpoch
+			header.ChangeTime = c.SourceDateEpoch
+		} else {
+			header.ModTime = info.ModTime()
+		}
 
 		if uid, ok := c.remapUIDs[header.Uid]; ok {
 			header.Uid = uid

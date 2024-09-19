@@ -20,17 +20,19 @@ import (
 )
 
 type Context struct {
-	SourceDateEpoch time.Time
-	OverrideUIDGID  bool
-	UID             int
-	GID             int
-	OverrideUname   string
-	OverrideGname   string
-	SkipClose       bool
-	UseChecksums    bool
-	remapUIDs       map[int]int
-	remapGIDs       map[int]int
-	overridePerms   map[string]tar.Header
+	SourceDateEpoch    time.Time
+	useSourceDateEpoch bool
+
+	OverrideUIDGID bool
+	UID            int
+	GID            int
+	OverrideUname  string
+	OverrideGname  string
+	SkipClose      bool
+	UseChecksums   bool
+	remapUIDs      map[int]int
+	remapGIDs      map[int]int
+	overridePerms  map[string]tar.Header
 }
 
 type Option func(*Context) error
@@ -52,6 +54,10 @@ func NewContext(opts ...Option) (*Context, error) {
 func WithSourceDateEpoch(t time.Time) Option {
 	return func(ctx *Context) error {
 		ctx.SourceDateEpoch = t
+
+		// to distinguish between unset and zero value
+		ctx.useSourceDateEpoch = true
+
 		return nil
 	}
 }
