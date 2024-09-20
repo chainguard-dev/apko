@@ -12,8 +12,8 @@ import (
 
 const (
 	WolfiAPKRepo                = "https://packages.wolfi.dev/os"
-	ChainguardEnterpriseAPKRepo = "https://packages.cgr.dev/os"
-	ChainguardExtrasAPKRepo     = "https://packages.cgr.dev/extras"
+	ChainguardEnterpriseAPKRepo = "https://apk.cgr.dev/chainguard-private"
+	ChainguardExtrasAPKRepo     = "https://apk.cgr.dev/extra-packages"
 )
 
 const (
