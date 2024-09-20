@@ -17,9 +17,9 @@ var DefaultAuthenticators Authenticator = multiAuthenticator{
 	// First, we'll try to use the HTTP_AUTH environment variable if it's set.
 	EnvAuth{},
 	// If both of these envs are set, we'll try to use the k8s token first.
-	NewK8sAuth(os.Getenv("K8S_TOKEN_PATH"), os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	NewK8sAuth(os.Getenv("K8S_TOKEN_PATH"), os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "apk.cgr.dev"),
 	// If only the identity env is set, and k8s auth didn't work, we'll try to use exchanged GCP auth.
-	NewChainguardIdentityAuth(os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "https://apk.cgr.dev"),
+	NewChainguardIdentityAuth(os.Getenv("CHAINGUARD_IDENTITY"), "https://issuer.enforce.dev", "apk.cgr.dev"),
 	// If nothing has worked yet, we'll try to use chainctl.
 	CGRAuth{},
 }
