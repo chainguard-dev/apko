@@ -24,9 +24,10 @@ import (
 // Audience is usually https://apk.cgr.dev.
 func NewChainguardIdentityAuth(identity, issuer, audience string) Authenticator {
 	return &cgAuth{
-		id:  identity,
-		iss: issuer,
-		aud: audience,
+		id:        identity,
+		iss:       issuer,
+		aud:       audience,
+		sometimes: rate.Sometimes{Interval: 10 * time.Minute},
 	}
 }
 
