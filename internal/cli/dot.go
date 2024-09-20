@@ -51,8 +51,8 @@ func dotcmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "dot",
-		Short: "Output a digraph showing the resolved dependencies of an apko config.",
-		Long: `Output a digraph showing the resolved dependencies of an apko config.
+		Short: "Output a digraph showing the resolved dependencies of an apko config",
+		Long: `Output a digraph showing the resolved dependencies of an apko config
 
 # Render an svg of example.yaml
 apko dot example.yaml | dot -Tvsg > graph.svg
