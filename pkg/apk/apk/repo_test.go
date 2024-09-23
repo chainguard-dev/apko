@@ -1039,10 +1039,6 @@ func TestDisqualifyingOtherArchitectures(t *testing.T) {
 	names := []string{"package1", "package2", "onlyinarm64"}
 	_, index := testGetPackagesAndIndex()
 
-	others := map[string][]NamedIndex{
-		"x86_64": testNamedRepositoryFromIndexes(index),
-	}
-
 	arm64 := slices.Clone(index)
 	repo := Repository{}
 	repoWithIndex := repo.WithIndex(&APKIndex{
@@ -1050,7 +1046,14 @@ func TestDisqualifyingOtherArchitectures(t *testing.T) {
 	})
 	arm64 = append(arm64, repoWithIndex)
 
-	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(arm64))
-	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, others)
+	armIndex := testNamedRepositoryFromIndexes(arm64)
+
+	byArch := map[string][]NamedIndex{
+		"x86_64":  testNamedRepositoryFromIndexes(index),
+		"aarch64": armIndex,
+	}
+
+	resolver := NewPkgResolver(context.Background(), armIndex)
+	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, byArch)
 	require.ErrorContains(t, err, "package \"onlyinarm64-1.0.0.apk\" not available for arch \"x86_64\"")
 }
