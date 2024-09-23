@@ -301,7 +301,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	}
 
 	// generate the index
-	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs)
+	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs, multiArchBDE)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
 	}
