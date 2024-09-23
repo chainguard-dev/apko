@@ -93,6 +93,7 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 			annotations["org.opencontainers.image.revision"] = hash
 		}
 	}
+	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 
 	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
 		v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)

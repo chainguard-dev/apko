@@ -61,7 +61,9 @@ func TestBuildImageFromLayer(t *testing.T) {
 					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -88,7 +90,9 @@ func TestBuildImageFromLayer(t *testing.T) {
 					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -116,7 +120,9 @@ func TestBuildImageFromLayer(t *testing.T) {
 					"PATH=/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -144,7 +150,9 @@ func TestBuildImageFromLayer(t *testing.T) {
 					"PATH=",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}} {
@@ -160,8 +168,4 @@ func TestBuildImageFromLayer(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestBuildImageTarballFromLayer(t *testing.T) {
-
 }
