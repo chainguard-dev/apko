@@ -119,8 +119,12 @@ func ParsePackageIndex(apkIndexUnpacked io.Reader) ([]*Package, error) {
 			continue
 		}
 
-		if len(line) > 1 && line[1:2] != ":" {
-			return nil, fmt.Errorf("cannot parse line %d: expected \":\" in not found", linenr)
+		if len(line) < 2 {
+			return nil, fmt.Errorf("cannot parse line %d: expected len >= 2, saw %q", linenr, line)
+		}
+
+		if line[1:2] != ":" {
+			return nil, fmt.Errorf("cannot parse line %d: expected \":\" not found", linenr)
 		}
 
 		token := line[:1]
