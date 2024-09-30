@@ -58,5 +58,5 @@ changelog:
 
 release:
   draft: false
-  prerelease: true
+  prerelease: false
   name_template: "Release {{ .Tag }}"
