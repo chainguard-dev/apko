@@ -40,8 +40,6 @@ To use the examples, you'll generally want to mount your current directory into 
 docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:edge apko-alpine.tar
 ```
 
-Alternatively, if you're on a Mac, you can use [Lima](./mac/README.md) to run an Alpine Linux VM.
-
 ## Quickstart
 
 An apko file for building an Alpine base image looks like this:
@@ -142,5 +140,3 @@ The [ko](https://github.com/google/ko) project builds Go projects from source in
 
 The [kontain.me](https://github.com/imjasonh/kontain.me) service creates fresh container images on
 demand using different forms of declarative configuration (including ko and apko).
-
-
