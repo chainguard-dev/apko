@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"chainguard.dev/sdk/sts"
-	"github.com/charmbracelet/log"
 	"golang.org/x/time/rate"
 	"google.golang.org/api/idtoken"
 )
@@ -54,7 +54,7 @@ func (a *cgAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			a.cgerr = fmt.Errorf("creating token source: %w", err)
 			return
 		}
-		log.Infof("Exchanging GCP token for Chainguard identity %s", a.id)
+		slog.Default().With("iss", a.iss, "aud", a.aud).Info("Exchanging GCP token for Chainguard identity " + a.id)
 		tok, err := ts.Token()
 		if err != nil {
 			a.cgerr = fmt.Errorf("getting token: %w", err)
@@ -114,7 +114,7 @@ func (k *k8sAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			k.cgerr = fmt.Errorf("reading token: %w", err)
 			return
 		}
-		log.Infof("Exchanging K8s token for Chainguard identity %s", k.id)
+		slog.Default().With("iss", k.iss, "aud", k.aud).Info("Exchanging K8s token for Chainguard identity " + k.id)
 		ctok, err := sts.ExchangePair(ctx, k.iss, k.aud, string(b), sts.WithIdentity(k.id))
 		if err != nil {
 			k.cgerr = fmt.Errorf("exchanging token: %w", err)
