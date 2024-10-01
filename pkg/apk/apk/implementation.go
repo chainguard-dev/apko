@@ -824,7 +824,16 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
-	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", strings.TrimSuffix(repository, "/"), "apk-configuration"), nil)
+	if !strings.HasPrefix(repository, "https://") && !strings.HasPrefix(repository, "http://") {
+		// Ignore non-remote repositories.
+		return nil, nil
+	}
+	asURL, err := url.Parse(strings.TrimSuffix(repository, "/") + "/apk-configuration")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse repository URL: %w", err)
+	}
+
+	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
