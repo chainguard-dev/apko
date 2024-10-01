@@ -33,6 +33,7 @@ import (
 
 	"github.com/chainguard-dev/clog"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -108,7 +109,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithTags(args[1]),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
-				build.WithCacheDir(cacheDir, offline),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 				build.WithLockFile(lockfile),
 				build.WithTempDir(tmp),
 				build.WithIncludePaths(includePaths),

@@ -421,7 +421,7 @@ func TestFetchPackage(t *testing.T) {
 
 		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
 		if cache != "" {
-			opts = append(opts, WithCache(cache, false))
+			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
 		a, err := New(opts...)
 		require.NoError(t, err, "unable to create APK")

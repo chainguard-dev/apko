@@ -72,7 +72,7 @@ apko dot --web -S example.yaml
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRuntimeRepos(extraRuntimeRepos),
-				build.WithCacheDir(cacheDir, offline),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
 	}

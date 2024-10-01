@@ -112,7 +112,7 @@ func TestAuth_good(t *testing.T) {
 	called := false
 	testUser, testPass := "user", "pass"
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", "123")
+		w.Header().Set("ETag", "234")
 		if r.Method == http.MethodHead {
 			return
 		}
@@ -151,7 +151,7 @@ func TestAuth_bad(t *testing.T) {
 	called := false
 	testUser, testPass := "user", "pass"
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", "123")
+		w.Header().Set("ETag", "345")
 		if r.Method == http.MethodHead {
 			return
 		}

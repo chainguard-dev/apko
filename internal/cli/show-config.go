@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 )
@@ -49,7 +50,7 @@ The derived configuration is rendered in YAML.
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRuntimeRepos(extraRuntimeRepos),
-				build.WithCacheDir(cacheDir, offline),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
 	}

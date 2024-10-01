@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -49,6 +50,7 @@ type Options struct {
 	Local                   bool               `json:"local,omitempty"`
 	CacheDir                string             `json:"cacheDir,omitempty"`
 	Offline                 bool               `json:"offline,omitempty"`
+	SharedCache             *apk.Cache         `json:"-"`
 	Lockfile                string             `json:"lockfile,omitempty"`
 	Auth                    auth.Authenticator `json:"-"`
 	IncludePaths            []string           `json:"includePaths,omitempty"`
@@ -61,6 +63,7 @@ var Default = Options{
 	Arch:            types.ParseArchitecture(runtime.GOARCH),
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
 	Auth:            auth.DefaultAuthenticators,
+	SharedCache:     apk.NewCache(false),
 }
 
 // Tempdir returns the temporary directory where apko will create

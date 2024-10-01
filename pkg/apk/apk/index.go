@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/klauspost/compress/gzip"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
@@ -47,7 +48,8 @@ var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(
 // We just hold the parsed index in memory rather than re-parsing it every time,
 // which requires gunzipping, which is (somewhat) expensive.
 var globalIndexCache = &indexCache{
-	modtimes: map[string]time.Time{},
+	modtimes:  map[string]time.Time{},
+	urlToEtag: map[string]string{},
 }
 
 type indexResult struct {
@@ -57,14 +59,37 @@ type indexResult struct {
 
 type indexCache struct {
 	// For remote indexes.
-	onces sync.Map
+	onces     sync.Map
+	urlToEtag map[string]string
 
 	// For local indexes.
 	sync.Mutex
 	modtimes map[string]time.Time
 
-	// repoBase -> indexResult
+	// etag|filename -> indexResult
 	indexes sync.Map
+}
+
+func (i *indexCache) forget(key string) {
+	i.onces.Delete(key)
+	i.indexes.Delete(key)
+}
+
+func (i *indexCache) store(key string, idx NamedIndex, err error) {
+	i.indexes.Store(key, indexResult{
+		idx: idx,
+		err: err,
+	})
+}
+
+func (i *indexCache) load(key string) (NamedIndex, error) {
+	v, ok := i.indexes.Load(key)
+	if !ok {
+		return nil, fmt.Errorf("indexCache did not see key %q after writing it", key)
+	}
+	result := v.(indexResult)
+
+	return result.idx, result.err
 }
 
 func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
@@ -77,20 +102,69 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 	repoRef := Repository{URI: repoBase}
 
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
-		// We don't want remote indexes to change while we're running.
-		once, _ := i.onces.LoadOrStore(u, &sync.Once{})
-		once.(*sync.Once).Do(func() {
-			idx, err := getRepositoryIndex(ctx, u, keys, arch, opts)
+		asURL, err := url.Parse(u)
+		if err != nil {
+			return nil, fmt.Errorf("parsing repo: %w", err)
+		}
+
+		// We usually don't want remote indexes to change while we're running.
+		// But sometimes, we do, in which case we want to key off of the etag.
+		// We can use a separate etag cache in the httpClient to avoid the HEAD
+		// if it's set, but if it's not set we need to do a HEAD each time.
+		client := opts.httpClient
+		head, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		if opts.auth == nil {
+			opts.auth = auth.DefaultAuthenticators
+		}
+		if err := opts.auth.AddAuth(ctx, head); err != nil {
+			return nil, fmt.Errorf("unable to add auth to request: %w", err)
+		}
+
+		resp, err := client.Do(head)
+		if err != nil {
+			return nil, err
+		}
+
+		fetchAndParse := func(etag string) (NamedIndex, error) {
+			b, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
-				i.indexes.Store(u, indexResult{
-					err: err,
-				})
-			} else {
-				i.indexes.Store(u, indexResult{
-					idx: NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)),
-				})
+				return nil, fmt.Errorf("fetching %s: %w", asURL.Redacted(), err)
 			}
+			idx, err := parseRepositoryIndex(ctx, u, keys, arch, b, opts)
+			if err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", asURL.Redacted(), err)
+			}
+			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
+		}
+
+		etag, ok := etagFromResponse(resp)
+		if !ok {
+			// If there's no etag, we can't cache it, so just return the result.
+			return fetchAndParse(etag)
+		}
+
+		key := fmt.Sprintf("%s@%s", u, etag)
+
+		once, _ := i.onces.LoadOrStore(key, &sync.Once{})
+		once.(*sync.Once).Do(func() {
+			// If we've seen this URL before, delete any references to old indexes so we can GC them.
+			prev, ok := i.urlToEtag[u]
+			if ok {
+				prevKey := fmt.Sprintf("%s@%s", u, prev)
+				i.forget(prevKey)
+			}
+
+			idx, err := fetchAndParse(etag)
+			i.store(key, idx, err)
+
+			// Record the current etag for this URL so we can GC it later.
+			i.urlToEtag[u] = etag
 		})
+
+		return i.load(key)
 	} else {
 		i.Lock()
 		defer i.Unlock()
@@ -98,35 +172,28 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		// We do expect local indexes to change, so we check modtimes.
 		stat, err := os.Stat(u)
 		if err != nil {
-			return nil, nil
+			return nil, fmt.Errorf("stat: %w", err)
 		}
 
 		mod := stat.ModTime()
 		before, ok := i.modtimes[u]
 		if !ok || mod.After(before) {
-			// If this is the first time or it has changed since the last time...
-			idx, err := getRepositoryIndex(ctx, u, keys, arch, opts)
+			b, err := os.ReadFile(u)
 			if err != nil {
-				i.indexes.Store(u, indexResult{
-					err: err,
-				})
+				return nil, fmt.Errorf("reading file: %w", err)
+			}
+			// If this is the first time or it has changed since the last time...
+			idx, err := parseRepositoryIndex(ctx, u, keys, arch, b, opts)
+			if err != nil {
+				i.store(u, nil, err)
 			} else {
-				i.indexes.Store(u, indexResult{
-					idx: NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)),
-				})
+				i.store(u, NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil)
 			}
 			i.modtimes[u] = mod
 		}
-	}
 
-	v, ok := i.indexes.Load(u)
-	if !ok {
-		asURL, _ := url.Parse(u)
-		panic(fmt.Errorf("did not see index %q after writing it", asURL.Redacted()))
+		return i.load(u)
 	}
-	result := v.(indexResult)
-
-	return result.idx, result.err
 }
 
 // IndexURL full URL to the index file for the given repo and arch
@@ -171,15 +238,16 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 
 			index, err := globalIndexCache.get(ctx, repoName, repoURL, keys, arch, opts)
 			if err != nil {
-				u := IndexURL(repoURL, arch)
-				asURL, _ := url.Parse(u)
-				return fmt.Errorf("reading index %s: %w", asURL.Redacted(), err)
+				redacted := redact(IndexURL(repoURL, arch))
+				if errors.Is(err, fs.ErrNotExist) {
+					// This can happen for local repos, just log and continue.
+					clog.WarnContextf(ctx, "getting local index %s: %v", redacted, err)
+					return nil
+				}
+
+				return fmt.Errorf("reading index %s: %w", redacted, err)
 			}
 
-			// Can happen for fs.ErrNotExist in file scheme, we just ignore it.
-			if index == nil {
-				return nil
-			}
 			indexes[i] = index
 			return nil
 		})
@@ -208,75 +276,51 @@ func shouldCheckSignatureForIndex(index string, arch string, opts *indexOpts) bo
 	return true
 }
 
-func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "getRepositoryIndex")
-	defer span.End()
-
-	// Normalize the repo as a URI, so that local paths
-	// are translated into file:// URLs, allowing them to be parsed
-	// into a url.URL{}.
-	var (
-		b     []byte
-		asURL *url.URL
-		err   error
-	)
-	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
-		asURL, err = url.Parse(u)
-	} else {
-		// Attempt to parse non-https elements into URI's so they are translated into
-		// file:// URLs allowing them to parse into a url.URL{}
-		asURL, err = url.Parse(string(uri.New(u)))
-	}
+func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *indexOpts) ([]byte, error) { //nolint:gocyclo
+	client := opts.httpClient
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse repo as URI: %w", err)
+		return nil, err
 	}
 
-	switch asURL.Scheme {
-	case "file":
-		b, err = os.ReadFile(u)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("failed to read repository %s: %w", asURL.Redacted(), err)
-			}
-			return nil, nil
-		}
-	case "https", "http":
-		client := opts.httpClient
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if opts.auth == nil {
-			opts.auth = auth.DefaultAuthenticators
-		}
-		if err := opts.auth.AddAuth(ctx, req); err != nil {
-			return nil, fmt.Errorf("unable to add auth to request: %w", err)
-		}
-
-		// This will return a body that retries requests using Range requests if Read() hits an error.
-		rrt := newRangeRetryTransport(ctx, client)
-		res, err := rrt.RoundTrip(req)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get repository index at %s: %w", asURL.Redacted(), err)
-		}
-		switch res.StatusCode {
-		case http.StatusOK:
-			// this is fine
-		case http.StatusNotFound:
-			return nil, fmt.Errorf("repository index not found for architecture %s at %s", arch, asURL.Redacted())
-		default:
-			return nil, fmt.Errorf("unexpected status code %d when getting repository index for architecture %s at %s", res.StatusCode, arch, asURL.Redacted())
-		}
-		defer res.Body.Close()
-		buf := bytes.NewBuffer(nil)
-		if _, err := io.Copy(buf, res.Body); err != nil {
-			return nil, fmt.Errorf("unable to read repository index at %s: %w", asURL.Redacted(), err)
-		}
-		b = buf.Bytes()
-	default:
-		return nil, fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
+	if etag != "" {
+		// This is a hack, I'm sorry, but it's the only way to avoid modifying our weird transportCache too much.
+		// Earlier, we check the etag value to avoid re-parsing the APKINDEX if it hasn't changed, but the transport
+		// also really wants to do a HEAD request in order to do etag-based caching itself. To avoid the double HEAD,
+		// I'm stuffing the etag into the If-None-Match header, which isn't exactly correct semantics but it rhymes.
+		// The alternative is to rewrite everything, which I don't have time to do right now, so it is what it is.
+		req.Header.Set("If-None-Match", etag)
 	}
+
+	if opts.auth == nil {
+		opts.auth = auth.DefaultAuthenticators
+	}
+	if err := opts.auth.AddAuth(ctx, req); err != nil {
+		return nil, fmt.Errorf("unable to add auth to request: %w", err)
+	}
+
+	// This will return a body that retries requests using Range requests if Read() hits an error.
+	rrt := newRangeRetryTransport(ctx, client)
+	res, err := rrt.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", res.StatusCode)
+	}
+	defer res.Body.Close()
+
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading body: %w", err)
+	}
+
+	return b, nil
+}
+
+func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
+	_, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
+	defer span.End()
 
 	// validate the signature
 	if shouldCheckSignatureForIndex(u, arch, opts) {
@@ -371,7 +415,7 @@ func getRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, a
 	// with a valid signature, convert it to an ApkIndex
 	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b)))
 	if err != nil {
-		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct at %s: %w", asURL.Redacted(), err)
+		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
 	}
 
 	return index, err
@@ -407,4 +451,20 @@ func WithIndexAuthenticator(a auth.Authenticator) IndexOption {
 	return func(o *indexOpts) {
 		o.auth = a
 	}
+}
+
+func redact(in string) string {
+	asURL, err := url.Parse(in)
+	if err != nil {
+		// Attempt to parse non-https elements into URI's so they are translated into
+		// file:// URLs allowing them to parse into a url.URL{}
+		asURL, err := url.Parse(string(uri.New(in)))
+		if err != nil {
+			return in
+		}
+
+		return asURL.Redacted()
+	}
+
+	return asURL.Redacted()
 }
