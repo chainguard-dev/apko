@@ -26,7 +26,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -92,8 +91,6 @@ guyM+Ks3c29KlRf3iX35Gt0CAwEAAQ==
 )
 
 func TestGetRepositoryIndexes(t *testing.T) {
-	var mu sync.Mutex
-	counter := 0
 	prepLayout := func(t *testing.T, cache string, repos []string) *APK {
 		src := apkfs.NewMemFS()
 		err := src.MkdirAll("etc/apk", 0o755)
@@ -111,18 +108,13 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			err = src.WriteFile(reposFilePath, []byte(strings.Join(repos, "\n")), 0o644)
 			require.NoErrorf(t, err, "unable to write repositories")
 		} else {
-			// Append an int to the testAlpineRepos path to bust the global cache if repos are unspecified.
-			// TODO: Stop being lazy and remove the global caches.
-			mu.Lock()
-			counter++
-			err = src.WriteFile(reposFilePath, []byte(fmt.Sprintf("%s/%d", testAlpineRepos, counter)), 0o644)
-			mu.Unlock()
+			err = src.WriteFile(reposFilePath, []byte(testAlpineRepos), 0o644)
 			require.NoErrorf(t, err, "unable to write repositories")
 		}
 
 		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
 		if cache != "" {
-			opts = append(opts, WithCache(cache, false))
+			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
 		a, err := New(opts...)
 		require.NoError(t, err, "unable to create APK")
@@ -149,9 +141,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
 	t.Run("cache miss no network", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache, globalIndexCache = &etagCache{}, &indexCache{}
-
 		// we use a transport that always returns a 404 so we know we're not hitting the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
@@ -163,9 +152,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.Error(t, err, "should fail when no cache and no network")
 	})
 	t.Run("we can fetch, but do not cache indices without etag", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache, globalIndexCache = &etagCache{}, &indexCache{}
-
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
@@ -186,9 +172,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		}))
 	})
 	t.Run("cache miss network should fill cache", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache, globalIndexCache = &etagCache{}, &indexCache{}
-
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
@@ -216,9 +199,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.Equal(t, index1, index2, "index files do not match")
 	})
 	t.Run("repo url with http basic auth", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache = &etagCache{}
-
 		tmpDir := t.TempDir()
 		a := prepLayout(t, tmpDir, []string{"https://user:pass@dl-cdn.alpinelinux.org/alpine/v3.16/main"})
 
@@ -235,9 +215,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
 	t.Run("cache hit etag match", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache = &etagCache{}
-
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
@@ -270,9 +247,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.Equal(t, index1, index2, "index files do not match")
 	})
 	t.Run("cache hit etag miss", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache, globalIndexCache = &etagCache{}, &indexCache{}
-
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
@@ -297,9 +271,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}},
 		})
 
-		// Reset etag cache.
-		globalEtagCache, globalIndexCache = &etagCache{}, &indexCache{}
-
 		indexes, err = a.GetRepositoryIndexes(context.TODO(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -310,9 +281,6 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.NotEqual(t, index1, index2, "index files do not match")
 	})
 	t.Run("test cache concurrency", func(t *testing.T) {
-		// Reset etag cache so we have isolated tests.
-		globalEtagCache = &etagCache{}
-
 		// Use the same temp directory for the cache.
 		tmpDir := t.TempDir()
 

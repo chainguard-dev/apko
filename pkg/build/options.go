@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 
@@ -189,11 +190,12 @@ func WithAnnotations(annotations map[string]string) Option {
 	}
 }
 
-// WithCacheDir set the cache directory to use
-func WithCacheDir(cacheDir string, offline bool) Option {
+// WithCache set the cache directory to use
+func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	return func(bc *Context) error {
 		bc.o.CacheDir = cacheDir
 		bc.o.Offline = offline
+		bc.o.SharedCache = shared
 		return nil
 	}
 }

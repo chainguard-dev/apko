@@ -24,6 +24,7 @@ import (
 
 	"github.com/chainguard-dev/clog"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -108,7 +109,7 @@ packagelock and packagelock-source are particularly useful for inserting back in
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRuntimeRepos(extraRuntimeRepos),
-				build.WithCacheDir(cacheDir, offline),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
 	}

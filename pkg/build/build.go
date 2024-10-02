@@ -257,9 +257,9 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	// note that this is not easy to do in a switch statement, because of the second
 	// condition, if err := ...; err == nil {}
 	if bc.o.CacheDir != "" {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
+		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
 	} else if _, err := os.UserCacheDir(); err == nil {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
+		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
 	} else {
 		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
 	}

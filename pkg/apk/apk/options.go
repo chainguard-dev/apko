@@ -83,7 +83,7 @@ func WithFS(fs apkfs.FullFS) Option {
 //
 // If offline is true, only read from the cache and do not make any network requests to
 // populate it.
-func WithCache(cacheDir string, offline bool) Option {
+func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 	return func(o *opts) error {
 		var err error
 		if cacheDir == "" {
@@ -96,6 +96,7 @@ func WithCache(cacheDir string, offline bool) Option {
 		o.cache = &cache{
 			dir:     cacheDir,
 			offline: offline,
+			shared:  shared,
 		}
 		return nil
 	}

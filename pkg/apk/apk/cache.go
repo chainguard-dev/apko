@@ -26,133 +26,74 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/singleflight"
 )
 
-// This is terrible but simpler than plumbing around a cache for now.
-// We will assume that for a given process, we want to reuse etag values.
-// Doing this cuts down on the number of requests we send for index and keys.
-var globalEtagCache = &etagCache{}
-
-type etagResp struct {
-	resp      *http.Response
-	err       error
-	cacheFile string
+type Cache struct {
+	etagCache  *sync.Map
+	headFlight *singleflight.Group
+	getFlight  *singleflight.Group
 }
 
-type etagCache struct {
-	// url -> *sync.Once
-	etags sync.Map
+// NewCache returns a new Cache, which allows us to persist the results of HEAD requests
+// for a given URL across multiple builds. This is generally desirable when building many images
+// all at once, since we can eliminate round trips to HEAD the same e.g. APKINDEX repeatedly.
+// However, this is not desirable for long-lived processes where we expected the APKINDEX to change
+// over time and want to observe those changes and re-fetch the new APKINDEX. Since apko is used
+// in both contexts, this knob is exposed, but very few people actually should be using apko as a library,
+// so I'm mostly just talking to myself here. This used to be a process-wide global cache, which was
+// great for the short-lived terraform module, but a terrible default behavior for a library.
+//
+// Even if you don't want to cache HEAD requests, this is still useful for coalescing concurrent
+// requests for the same resource when passing etag=false.
+func NewCache(etag bool) *Cache {
+	c := &Cache{
+		headFlight: &singleflight.Group{},
+		getFlight:  &singleflight.Group{},
+	}
 
-	// url -> etagResp
-	resps sync.Map
+	if etag {
+		c.etagCache = &sync.Map{}
+	}
+
+	return c
 }
 
-// get dedupes incoming etag-based requests by url (using a sync.Map[string]sync.Once) and stores the results
-// in a sync.Map[string]etagResp. If we request the same URL multiple times, we will only ever reach out to
-// the internet for the first once and reuse the results for all subsequent calls (unless the response does
-// not have an etag).
-func (e *etagCache) get(ctx context.Context, t *cacheTransport, request *http.Request, cacheFile string) (*http.Response, error) {
-	ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("etagCache.get(%q)", request.URL.String()))
-	defer span.End()
+func (c *Cache) load(cacheFile string) (*http.Response, bool) {
+	if c == nil || c.etagCache == nil {
+		return nil, false
+	}
 
-	url := request.URL.String()
-
-	// Do all the expensive things inside the once.
-	once, _ := e.etags.LoadOrStore(url, &sync.Once{})
-	once.(*sync.Once).Do(func() {
-		ctx, span := otel.Tracer("go-apk").Start(ctx, "once.Do")
-		defer span.End()
-
-		req := request.Clone(request.Context())
-		req.Method = http.MethodHead
-		resp, rerr := t.wrapped.Do(req)
-		if resp != nil {
-			// We don't expect any body from a HEAD so just always close it to appease the linter.
-			resp.Body.Close()
-		}
-		if rerr != nil || resp.StatusCode != 200 {
-			e.resps.Store(url, etagResp{
-				resp: resp,
-				err:  rerr,
-			})
-			return
-		}
-
-		initialEtag, ok := etagFromResponse(resp)
-		if !ok {
-			return
-		}
-
-		// We simulate content-based addressing with the etag values using an .etag
-		// file extension.
-		etagFile := cacheFileFromEtag(cacheFile, initialEtag)
-		if _, err := os.Stat(etagFile); err == nil {
-			e.resps.Store(url, etagResp{
-				cacheFile: etagFile,
-			})
-			return
-		}
-
-		// Only download the index once.
-		etagFile, err := t.retrieveAndSaveFile(ctx, request, func(r *http.Response) (string, error) {
-			_, span := otel.Tracer("go-apk").Start(ctx, "callback")
-			defer span.End()
-			// On the etag path, use the etag from the actual response to
-			// compute the final file name.
-			finalEtag, ok := etagFromResponse(r)
-			if !ok {
-				return "", fmt.Errorf("GET response did not contain an etag, but HEAD returned %q", initialEtag)
-			}
-
-			return cacheFileFromEtag(cacheFile, finalEtag), nil
-		})
-		e.resps.Store(url, etagResp{
-			err:       err,
-			cacheFile: etagFile,
-		})
-	})
-
-	v, ok := e.resps.Load(url)
+	v, ok := c.etagCache.Load(cacheFile)
 	if !ok {
-		// If the server doesn't return etags, and we require them,
-		// then do not cache.
-		return t.wrapped.Do(request)
-	}
-	resp := v.(etagResp)
-
-	// If we didn't manage to cache it, return the response and/or error.
-	if resp.cacheFile == "" {
-		return resp.resp, resp.err
+		return nil, false
 	}
 
-	f, err := os.Open(resp.cacheFile)
-	if err != nil {
-		return nil, fmt.Errorf("open(%q): %w", resp.cacheFile, err)
+	return v.(*http.Response), true
+}
+
+func (c *Cache) store(cacheFile string, resp *http.Response) {
+	if c == nil || c.etagCache == nil {
+		return
 	}
 
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat(%q): %w", resp.cacheFile, err)
-	}
-
-	return &http.Response{
-		StatusCode:    http.StatusOK,
-		Body:          f,
-		ContentLength: fi.Size(),
-	}, nil
+	c.etagCache.Store(cacheFile, resp)
 }
 
 // cache
 type cache struct {
 	dir     string
 	offline bool
+
+	shared *Cache
 }
 
 // client return an http.Client that knows how to read from and write to the cache
 // key is in the implementation of https://pkg.go.dev/net/http#RoundTripper
-func (c cache) client(wrapped *http.Client, etagRequired bool) *http.Client {
+func (c *cache) client(wrapped *http.Client, etagRequired bool) *http.Client {
 	return &http.Client{
 		Transport: &cacheTransport{
+			cache:        c.shared,
 			wrapped:      wrapped,
 			root:         c.dir,
 			offline:      c.offline,
@@ -162,6 +103,7 @@ func (c cache) client(wrapped *http.Client, etagRequired bool) *http.Client {
 }
 
 type cacheTransport struct {
+	cache        *Cache
 	wrapped      *http.Client
 	root         string
 	offline      bool
@@ -172,20 +114,12 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 	ctx, span := otel.Tracer("go-apk").Start(request.Context(), "cacheTransport.RoundTrip")
 	defer span.End()
 
-	// do we have the file in the cache?
-	if request.URL == nil {
-		return nil, fmt.Errorf("no URL in request")
-	}
 	cacheFile, err := cachePathFromURL(t.root, *request.URL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cache path based on URL: %w", err)
 	}
 
 	if !t.etagRequired {
-		// We don't cache the response for these because they get cached later in cachePackage.
-
-		ctx, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("Open(%q)", cacheFile))
-		defer span.End()
 		// Try to open the file in the cache.
 		// If we hit an error, just send the request.
 		f, err := os.Open(cacheFile)
@@ -193,9 +127,11 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 			if t.offline {
 				return nil, fmt.Errorf("failed to read %q in offline cache: %w", cacheFile, err)
 			}
+
 			_, span := otel.Tracer("go-apk").Start(ctx, fmt.Sprintf("Request(%q)", request.URL.String()))
 			defer span.End()
 
+			// We don't cache the response for these because they get cached later in cachePackage.
 			return t.wrapped.Do(request)
 		}
 
@@ -206,45 +142,157 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 	}
 
 	if t.offline {
-		cacheDir := cacheDirFromFile(cacheFile)
-		des, err := os.ReadDir(cacheDir)
-		if err != nil {
-			return nil, fmt.Errorf("listing %q for offline cache: %w", cacheDir, err)
-		}
-
-		if len(des) == 0 {
-			return nil, fmt.Errorf("no offline cached entries for %s", cacheDir)
-		}
-
-		newest, err := des[0].Info()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, de := range des[1:] {
-			fi, err := de.Info()
-			if err != nil {
-				return nil, err
-			}
-
-			if fi.ModTime().After(newest.ModTime()) {
-				newest = fi
-			}
-		}
-
-		f, err := os.Open(filepath.Join(cacheDir, newest.Name()))
-		if err != nil {
-			return nil, err
-		}
-
-		return &http.Response{
-			StatusCode:    http.StatusOK,
-			Body:          f,
-			ContentLength: newest.Size(),
-		}, nil
+		return t.fetchOffline(cacheFile)
 	}
 
-	return globalEtagCache.get(ctx, t, request, cacheFile)
+	return t.fetchAndCache(ctx, request, cacheFile)
+}
+
+func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Response, error) {
+	resp, ok := t.cache.load(cacheFile)
+	if ok {
+		return resp, nil
+	}
+
+	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (interface{}, error) {
+		req := request.Clone(request.Context())
+		req.Method = http.MethodHead
+		resp, err := t.wrapped.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		// HEAD shouldn't have a body. Make sure we close it so we can reuse the connection.
+		defer resp.Body.Close()
+
+		t.cache.store(cacheFile, resp)
+
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return v.(*http.Response), nil
+}
+
+func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFile, initialEtag string) (string, error) {
+	v, err, _ := t.cache.getFlight.Do(cacheFile, func() (interface{}, error) {
+		// We simulate content-based addressing with the etag values using an .etag file extension.
+		etagFile, err := cacheFileFromEtag(cacheFile, initialEtag)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(etagFile); err == nil {
+			return etagFile, nil
+		}
+
+		// Only download the index once.
+		return t.retrieveAndSaveFile(ctx, request, func(r *http.Response) (string, error) {
+			_, span := otel.Tracer("go-apk").Start(ctx, "callback")
+			defer span.End()
+
+			// On the etag path, use the etag from the actual response to compute the final file name.
+			finalEtag, ok := etagFromResponse(r)
+			if !ok {
+				return "", fmt.Errorf("GET response did not contain an etag, but HEAD returned %q", initialEtag)
+			}
+
+			return cacheFileFromEtag(cacheFile, finalEtag)
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return v.(string), nil
+}
+
+func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Request, cacheFile string) (*http.Response, error) {
+	initialEtag := request.Header.Get("If-None-Match")
+	if initialEtag == "" {
+		resp, err := t.head(request, cacheFile)
+		if err != nil {
+			return nil, err
+		}
+
+		if request.Method == http.MethodHead {
+			return resp, err
+		}
+
+		etag, ok := etagFromResponse(resp)
+		if !ok {
+			return t.wrapped.Do(request)
+		}
+
+		initialEtag = etag
+	}
+
+	// This is a bit of a hack. We cache parsed APKINDEX files in globalIndexCache, which needs the etag as a cache key.
+	// Since we already send a HEAD request to get that etag, we want to avoid sending a redundant HEAD request above if we can.
+	// However, we don't actually want to pass along this header because it's using the "parsed" version of the Etag from
+	// etagFromResponse and doesn't actually attempt to follow HTTP semantics, so we remove it here to avoid any confusion.
+	request.Header.Del("If-None-Match")
+
+	etagFile, err := t.get(ctx, request, cacheFile, initialEtag)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(etagFile)
+	if err != nil {
+		return nil, fmt.Errorf("open(%q): %w", etagFile, err)
+	}
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat(%q): %w", etagFile, err)
+	}
+
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Body:          f,
+		ContentLength: fi.Size(),
+	}, nil
+}
+
+func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) {
+	cacheDir := cacheDirFromFile(cacheFile)
+	des, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("listing %q for offline cache: %w", cacheDir, err)
+	}
+
+	if len(des) == 0 {
+		return nil, fmt.Errorf("no offline cached entries for %s", cacheDir)
+	}
+
+	newest, err := des[0].Info()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, de := range des[1:] {
+		fi, err := de.Info()
+		if err != nil {
+			return nil, err
+		}
+
+		if fi.ModTime().After(newest.ModTime()) {
+			newest = fi
+		}
+	}
+
+	f, err := os.Open(filepath.Join(cacheDir, newest.Name()))
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Body:          f,
+		ContentLength: newest.Size(),
+	}, nil
 }
 
 func cacheDirFromFile(cacheFile string) string {
@@ -255,7 +303,7 @@ func cacheDirFromFile(cacheFile string) string {
 	return filepath.Dir(cacheFile)
 }
 
-func cacheFileFromEtag(cacheFile, etag string) string {
+func cacheFileFromEtag(cacheFile, etag string) (string, error) {
 	cacheDir := filepath.Dir(cacheFile)
 	ext := ".etag"
 
@@ -265,7 +313,15 @@ func cacheFileFromEtag(cacheFile, etag string) string {
 		ext = ".tar.gz"
 	}
 
-	return filepath.Join(cacheDir, etag+ext)
+	absPath, err := filepath.Abs(filepath.Join(cacheDir, etag+ext))
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(absPath, cacheDir) {
+		return "", fmt.Errorf("unsafe etag value: %q", etag)
+	}
+
+	return absPath, nil
 }
 
 func etagFromResponse(resp *http.Response) (string, bool) {

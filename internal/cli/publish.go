@@ -31,6 +31,7 @@ import (
 
 	"github.com/chainguard-dev/clog"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
@@ -116,7 +117,7 @@ in a keychain.`,
 					build.WithTags(args[1:]...),
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
-					build.WithCacheDir(cacheDir, offline),
+					build.WithCache(cacheDir, offline, apk.NewCache(true)),
 					build.WithLockFile(lockfile),
 					build.WithTempDir(tmp),
 					build.WithIgnoreSignatures(ignoreSignatures),
