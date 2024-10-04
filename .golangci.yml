@@ -15,6 +15,10 @@ linters-settings:
         ws: "\\s*"
   goimports:
     local-prefixes: chainguard.dev/apko
+  gosec:
+    excludes:
+      # TODO: review those and remove if possible
+      - G115  # integer overflow conversion uint64 -> int
 
 linters:
   enable:
