@@ -317,8 +317,8 @@ github.com/secure-systems-lab/go-securesystemslib v0.8.0 h1:mr5An6X45Kb2nddcFlbm
 github.com/secure-systems-lab/go-securesystemslib v0.8.0/go.mod h1:UH2VZVuJfCYR8WgMlCU1uFsOUU+KeyrTWcSS73NBOzU=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 h1:n661drycOFuPLCN3Uc8sB6B/s6Z4t2xvBgU1htSHuq8=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
-github.com/sigstore/cosign/v2 v2.4.0 h1:2NdidNgClg+oXr/fDIr37E/BE6j00gqgUhSiBK2kjSQ=
-github.com/sigstore/cosign/v2 v2.4.0/go.mod h1:j+fH1DCUkcn92qp6ezDj4JbGMri6eG1nLJC+hs64rvc=
+github.com/sigstore/cosign/v2 v2.4.1 h1:b8UXEfJFks3hmTwyxrRNrn6racpmccUycBHxDMkEPvU=
+github.com/sigstore/cosign/v2 v2.4.1/go.mod h1:GvzjBeUKigI+XYnsoVQDmMAsMMc6engxztRSuxE+x9I=
 github.com/sigstore/protobuf-specs v0.3.2 h1:nCVARCN+fHjlNCk3ThNXwrZRqIommIeNKWwQvORuRQo=
 github.com/sigstore/protobuf-specs v0.3.2/go.mod h1:RZ0uOdJR4OB3tLQeAyWoJFbNCBFrPQdcokntde4zRBA=
 github.com/sigstore/rekor v1.3.6 h1:QvpMMJVWAp69a3CHzdrLelqEqpTM3ByQRt5B5Kspbi8=
