@@ -99,11 +99,3 @@ func RSAVerifyDigest(digest []byte, digestType crypto.Hash, signature []byte, pu
 
 	return nil
 }
-
-// Backwards compat
-func RSASignSHA1Digest(digest []byte, keyFile, passphrase string) ([]byte, error) {
-	return RSASignDigest(digest, crypto.SHA1, keyFile, passphrase)
-}
-func RSAVerifySHA1Digest(digest, signature []byte, publicKey []byte) error {
-	return RSAVerifyDigest(digest, crypto.SHA1, signature, publicKey)
-}
