@@ -504,12 +504,20 @@ func (f *dirFS) Chmod(path string, perm fs.FileMode) error {
 	}
 	return f.overrides.Chmod(path, perm)
 }
+
 func (f *dirFS) Chown(path string, uid, gid int) error {
 	if f.caseSensitiveOnDisk(path) {
 		// ignore error, as we track it in memory anyways, and disk filesystem might not support it
 		_ = os.Chown(filepath.Join(f.base, path), uid, gid)
 	}
 	return f.overrides.Chown(path, uid, gid)
+}
+
+func (f *dirFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
+	if err := os.Chtimes(filepath.Join(f.base, path), atime, mtime); err != nil {
+		return fmt.Errorf("unable to change times: %w", err)
+	}
+	return f.overrides.Chtimes(path, atime, mtime)
 }
 
 func (f *dirFS) Mknod(name string, mode uint32, dev int) error {

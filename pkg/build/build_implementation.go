@@ -77,10 +77,7 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 	bc.o.TarballPath = outfile.Name()
 	defer outfile.Close()
 
-	// we use a general override of 0,0 for all files, but the specific overrides, that come from the installed package DB, come later
-	tw, err := tarball.NewContext(
-		tarball.WithSourceDateEpoch(bc.o.SourceDateEpoch),
-	)
+	tw, err := tarball.NewContext()
 	if err != nil {
 		return "", nil, nil, 0, fmt.Errorf("failed to construct tarball build context: %w", err)
 	}

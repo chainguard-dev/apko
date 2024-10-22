@@ -631,6 +631,7 @@ func (m *memFS) Chmod(path string, perm fs.FileMode) error {
 	anode.mode = perm | (anode.mode & os.ModeType)
 	return nil
 }
+
 func (m *memFS) Chown(path string, uid, gid int) error {
 	anode, err := m.getNode(path)
 	if err != nil {
@@ -638,6 +639,15 @@ func (m *memFS) Chown(path string, uid, gid int) error {
 	}
 	anode.uid = uid
 	anode.gid = gid
+	return nil
+}
+
+func (m *memFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
+	anode, err := m.getNode(path)
+	if err != nil {
+		return err
+	}
+	anode.modTime = mtime
 	return nil
 }
 
