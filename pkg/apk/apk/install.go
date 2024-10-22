@@ -242,6 +242,10 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 
 			if installed {
 				a.installedFiles[header.Name] = pkg
+
+				if err := a.fs.Chtimes(header.Name, header.AccessTime, header.ModTime); err != nil {
+					return nil, fmt.Errorf("chtimes for %s: %w", header.Name, err)
+				}
 			}
 
 		case tar.TypeSymlink:

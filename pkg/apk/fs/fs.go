@@ -16,6 +16,7 @@ package fs
 import (
 	"io"
 	"io/fs"
+	"time"
 )
 
 // FullFS is a filesystem that supports all filesystem operations.
@@ -39,6 +40,7 @@ type FullFS interface {
 	Remove(name string) error
 	Chmod(path string, perm fs.FileMode) error
 	Chown(path string, uid int, gid int) error
+	Chtimes(path string, atime time.Time, mtime time.Time) error
 	SetXattr(path string, attr string, data []byte) error
 	GetXattr(path string, attr string) ([]byte, error)
 	RemoveXattr(path string, attr string) error
