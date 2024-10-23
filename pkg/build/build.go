@@ -305,6 +305,18 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	return &bc, nil
 }
 
+type notAFile struct {
+	rc *os.File
+}
+
+func (f *notAFile) Read(p []byte) (int, error) {
+	return f.rc.Read(p)
+}
+
+func (f *notAFile) Close() error {
+	return f.rc.Close()
+}
+
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
 type layer struct {
@@ -322,7 +334,14 @@ func (l *layer) Digest() (v1.Hash, error) {
 }
 
 func (l *layer) Compressed() (io.ReadCloser, error) {
-	return os.Open(l.filename)
+	f, err := os.Open(l.filename)
+	if err != nil {
+		return nil, err
+	}
+
+	// There is a bug in how go uses sendfile on macos, so we need to make this not a file.
+	// See https://github.com/golang/go/issues/70000
+	return &notAFile{f}, nil
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
