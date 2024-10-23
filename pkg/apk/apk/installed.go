@@ -216,7 +216,7 @@ func (a *APK) updateTriggers(pkg *Package, controlTarGz io.Reader) error {
 	}
 
 	for _, value := range values {
-		if _, err := triggers.Write([]byte(fmt.Sprintf("%s Q1%s\n", base64.StdEncoding.EncodeToString(pkg.Checksum), value))); err != nil {
+		if _, err := triggers.Write([]byte(fmt.Sprintf("Q1%s %s\n", base64.StdEncoding.EncodeToString(pkg.Checksum), value))); err != nil {
 			return fmt.Errorf("unable to write triggers file %s: %w", triggersFilePath, err)
 		}
 	}

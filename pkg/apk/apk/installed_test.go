@@ -256,7 +256,7 @@ func TestUpdateTriggers(t *testing.T) {
 	readTriggers, err := a.readTriggers()
 	require.NoError(t, err, "unable to read triggers: %v", err)
 	defer readTriggers.Close()
-	cksum := base64.StdEncoding.EncodeToString(pkg.Checksum)
+	cksum := "Q1" + base64.StdEncoding.EncodeToString(pkg.Checksum)
 	// read every line in triggers, looking for one with our comment
 	scanner := bufio.NewScanner(readTriggers)
 	for scanner.Scan() {
@@ -271,7 +271,7 @@ func TestUpdateTriggers(t *testing.T) {
 		return
 	}
 	//nolint:forbidigo // this is a valid use case
-	t.Errorf("could not find entry for commit: %s", cksum)
+	t.Errorf("could not find entry for checksum: %s", cksum)
 }
 
 func TestSortTarHeaders(t *testing.T) {
