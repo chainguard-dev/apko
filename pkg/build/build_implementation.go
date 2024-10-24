@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
@@ -165,6 +166,10 @@ func (bc *Context) buildImage(ctx context.Context) error {
 		}
 	}
 
+	if err := bc.WriteEtcApkoConfig(ctx); err != nil {
+		return fmt.Errorf("failed to install apko config: %w", err)
+	}
+
 	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
 		return fmt.Errorf("failed to mutate paths: %w", err)
 	}
@@ -190,6 +195,24 @@ func (bc *Context) buildImage(ctx context.Context) error {
 
 	log.Debug("finished building filesystem")
 
+	return nil
+}
+
+func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
+	// Encode the image configuration and write it to /etc/apko.json
+	f, err := bc.fs.Create("/etc/apko.json")
+	if err != nil {
+		return fmt.Errorf("creating /etc/apko.json: %w", err)
+	}
+	if err := json.NewEncoder(f).Encode(bc.ic); err != nil {
+		return fmt.Errorf("encoding image config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing /etc/apko.json: %w", err)
+	}
+	if err := bc.fs.Chmod("/etc/apko.json", 0444); err != nil {
+		return fmt.Errorf("chmod /etc/apko.json: %w", err)
+	}
 	return nil
 }
 
