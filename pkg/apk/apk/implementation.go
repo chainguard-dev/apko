@@ -927,8 +927,8 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 	log := clog.FromContext(ctx)
 
-	if !strings.HasPrefix(repository, "https://") {
-		log.Debugf("ignoring non-https repository %s", repository)
+	if !strings.HasPrefix(repository, "https://") && !strings.HasPrefix(repository, "http://") {
+		log.Debugf("ignoring non-http(s) repository %s", repository)
 		return nil
 	}
 
