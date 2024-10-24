@@ -209,7 +209,7 @@ func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFi
 }
 
 func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Request, cacheFile string) (*http.Response, error) {
-	initialEtag := request.Header.Get("If-None-Match")
+	initialEtag := request.Header.Get("I-Cant-Believe-Its-Not-If-None-Match")
 	if initialEtag == "" {
 		resp, err := t.head(request, cacheFile)
 		if err != nil {
@@ -232,7 +232,7 @@ func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Reques
 	// Since we already send a HEAD request to get that etag, we want to avoid sending a redundant HEAD request above if we can.
 	// However, we don't actually want to pass along this header because it's using the "parsed" version of the Etag from
 	// etagFromResponse and doesn't actually attempt to follow HTTP semantics, so we remove it here to avoid any confusion.
-	request.Header.Del("If-None-Match")
+	request.Header.Del("I-Cant-Believe-Its-Not-If-None-Match")
 
 	etagFile, err := t.get(ctx, request, cacheFile, initialEtag)
 	if err != nil {
