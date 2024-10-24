@@ -31,11 +31,7 @@ import (
 )
 
 var testOpts = &options.Options{
-	OS: struct {
-		Name    string
-		ID      string
-		Version string
-	}{
+	OS: options.OSInfo{
 		Name:    "unknown",
 		ID:      "unknown",
 		Version: "3.0",
@@ -61,11 +57,7 @@ var testOpts = &options.Options{
 }
 
 var testCustomLicenseOpts = &options.Options{
-	OS: struct {
-		Name    string
-		ID      string
-		Version string
-	}{
+	OS: options.OSInfo{
 		Name:    "unknown",
 		ID:      "unknown",
 		Version: "3.0",
@@ -86,11 +78,7 @@ var testCustomLicenseOpts = &options.Options{
 }
 
 var testNoSupplierOpts = &options.Options{
-	OS: struct {
-		Name    string
-		ID      string
-		Version string
-	}{
+	OS: options.OSInfo{
 		Name:    "Apko Images, Plc",
 		ID:      "apko-images",
 		Version: "3.0",
@@ -121,7 +109,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestGenerateCustomLicense(t *testing.T) {
-	spdx, err := os.ReadFile("testdata/font-ubuntu.spdx.json")
+	spdx, err := os.ReadFile("testdata/apk_sboms/font-ubuntu.spdx.json")
 	require.NoError(t, err)
 
 	fsys := apkfs.NewMemFS()
@@ -137,13 +125,13 @@ func TestGenerateCustomLicense(t *testing.T) {
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
-	expected, err := os.ReadFile("testdata/expected.ubuntu-font.spdx.json")
+	expected, err := os.ReadFile("testdata/expected_image_sboms/ubuntu-font.spdx.json")
 	require.NoError(t, err)
 	require.Equal(t, expected, got, "CustomLicense SPDX")
 }
 
 func TestNoSupplier(t *testing.T) {
-	spdx, err := os.ReadFile("testdata/libattr1.spdx.json")
+	spdx, err := os.ReadFile("testdata/apk_sboms/libattr1.spdx.json")
 	require.NoError(t, err)
 
 	fsys := apkfs.NewMemFS()
@@ -159,7 +147,7 @@ func TestNoSupplier(t *testing.T) {
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
-	expected, err := os.ReadFile("testdata/expected.libattr1.spdx.json")
+	expected, err := os.ReadFile("testdata/expected_image_sboms/libattr1.spdx.json")
 	require.NoError(t, err)
 	require.Equal(t, expected, got, "NoSupplier SPDX")
 }
