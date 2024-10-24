@@ -1,0 +1,132 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "0001-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-",
+      "name": "",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: unknown",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/image?mediaType=\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-logstash-8-8.15.3-r4",
+      "name": "logstash-8",
+      "versionInfo": "8.15.3-r4",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Wolfi",
+      "supplier": "Organization: Wolfi",
+      "copyrightText": "\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/logstash-8@8.15.3-r4?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-logstash-8.yaml-c7d40faa38ddffa98700cfa4c2f9bde196acc504",
+      "name": "logstash-8.yaml",
+      "versionInfo": "c7d40faa38ddffa98700cfa4c2f9bde196acc504",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Wolfi",
+      "supplier": "Organization: Wolfi",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:github/wolfi-dev/os@c7d40faa38ddffa98700cfa4c2f9bde196acc504#logstash-8.yaml",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-github.com-elastic-logstash-v8.15.3-8364c8e89cfb113e38ec3f966df7eb1e9abe9d33-0",
+      "name": "logstash",
+      "versionInfo": "v8.15.3",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Elastic",
+      "supplier": "Organization: Elastic",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:github/elastic/logstash@v8.15.3",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-logstash-8-compat-8.15.3-r4",
+      "name": "logstash-8-compat",
+      "versionInfo": "8.15.3-r4",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Wolfi",
+      "supplier": "Organization: Wolfi",
+      "copyrightText": "\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/logstash-8-compat@8.15.3-r4?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-logstash-8-8.15.3-r4",
+      "relationshipType": "DESCRIBED_BY",
+      "relatedSpdxElement": "SPDXRef-Package-logstash-8.yaml-c7d40faa38ddffa98700cfa4c2f9bde196acc504"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-logstash-8-8.15.3-r4",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-Package-github.com-elastic-logstash-v8.15.3-8364c8e89cfb113e38ec3f966df7eb1e9abe9d33-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-logstash-8-compat-8.15.3-r4",
+      "relationshipType": "DESCRIBED_BY",
+      "relatedSpdxElement": "SPDXRef-Package-logstash-8.yaml-c7d40faa38ddffa98700cfa4c2f9bde196acc504"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-logstash-8-compat-8.15.3-r4",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-Package-github.com-elastic-logstash-v8.15.3-8364c8e89cfb113e38ec3f966df7eb1e9abe9d33-0"
+    }
+  ]
+}

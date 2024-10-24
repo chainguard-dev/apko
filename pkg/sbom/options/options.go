@@ -51,7 +51,7 @@ type Options struct {
 	// Formats dictates which SBOM formats we will output
 	Formats []string
 
-	// Packages is alist of packages which will be listed in the SBOM
+	// Packages is a list of packages which will be listed in the SBOM
 	Packages []*apk.InstalledPackage
 }
 

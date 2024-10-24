@@ -24,6 +24,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/log"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
@@ -137,6 +138,18 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 	}
 
+	dedupedPackages := make([]Package, 0, len(doc.Packages))
+	seenIDs := make(map[string]struct{})
+	for i := range doc.Packages {
+		if _, ok := seenIDs[doc.Packages[i].ID]; !ok {
+			seenIDs[doc.Packages[i].ID] = struct{}{}
+			dedupedPackages = append(dedupedPackages, doc.Packages[i])
+		} else {
+			log.Info("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
+		}
+	}
+	doc.Packages = dedupedPackages
+
 	if err := renderDoc(doc, path); err != nil {
 		return fmt.Errorf("rendering document: %w", err)
 	}
@@ -178,7 +191,9 @@ func replacePackage(doc *Document, originalID, newID string) {
 	}
 }
 
-// locateApkSBOM returns the SBOM
+// locateApkSBOM returns the path to the SBOM in the given filesystem, using the
+// given Package's name and version. It returns an empty string if the SBOM is
+// not found.
 func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
@@ -209,51 +224,53 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
 	if path == "" {
+		// The SBOM does not exist.
+		// (So just ignore that the package was specified to the SPDX Generate method?)
 		return nil
 	}
 
-	internalDoc, err := sx.ParseInternalSBOM(opts, path)
+	apkSBOMDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
 		// TODO: Log error parsing apk SBOM
 		return nil
 	}
 
 	// Cycle the top level elements...
-	elementIDs := map[string]struct{}{}
-	for _, elementID := range internalDoc.DocumentDescribes {
-		elementIDs[elementID] = struct{}{}
+	idsDescribedByAPKSBOM := map[string]struct{}{}
+	for _, elementID := range apkSBOMDoc.DocumentDescribes {
+		idsDescribedByAPKSBOM[elementID] = struct{}{}
 	}
 
 	// ... searching for a 1st level package
 	targetElementIDs := map[string]struct{}{}
-	for _, pkg := range internalDoc.Packages {
+	for _, pkg := range apkSBOMDoc.Packages {
 		// that matches the name
 		if p.Name != pkg.Name {
 			continue
 		}
 
-		if _, ok := elementIDs[pkg.ID]; !ok {
+		if _, ok := idsDescribedByAPKSBOM[pkg.ID]; !ok {
 			continue
 		}
 
 		targetElementIDs[pkg.ID] = struct{}{}
-		if len(targetElementIDs) == len(elementIDs) {
+		if len(targetElementIDs) == len(idsDescribedByAPKSBOM) {
 			// Exit early if we found them all.
 			break
 		}
 	}
 
 	// Copy the targetElementIDs
-	todo := make(map[string]struct{}, len(internalDoc.Relationships))
+	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
 	for id := range targetElementIDs {
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo); err != nil {
+	if err := copySBOMElements(apkSBOMDoc, doc, todo); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
-	if err := mergeLicensingInfos(internalDoc, doc); err != nil {
+	if err := mergeLicensingInfos(apkSBOMDoc, doc); err != nil {
 		return fmt.Errorf("merging LicensingInfos: %w", err)
 	}
 

@@ -15,6 +15,7 @@
 package spdx
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -58,13 +59,24 @@ var testOpts = &options.Options{
 	},
 }
 
+// TODO: clean this up and make consistent with the other test cases
+func TestGenerate(t *testing.T) {
+	dir := t.TempDir()
+	fsys := apkfs.NewMemFS()
+	sx := New(fsys)
+	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
+	err := sx.Generate(testOpts, path)
+	require.NoError(t, err)
+	require.FileExists(t, path)
+}
+
 func TestSPDX_Generate(t *testing.T) {
 	tests := []struct {
 		name string
 		opts *options.Options
 	}{
 		{
-			name: "custom license",
+			name: "custom-license",
 			opts: &options.Options{
 				OS: options.OSInfo{
 					Name:    "unknown",
@@ -75,19 +87,15 @@ func TestSPDX_Generate(t *testing.T) {
 				Packages: []*apk.InstalledPackage{
 					{
 						Package: apk.Package{
-							Name:        "font-ubuntu",
-							Version:     "0.869-r1",
-							Arch:        "x86_64",
-							Description: "Ubuntu font family",
-							License:     "LicenseRef-ubuntu-font",
-							Origin:      "font-ubuntu",
+							Name:    "font-ubuntu",
+							Version: "0.869-r1",
 						},
 					},
 				},
 			},
 		},
 		{
-			name: "no supplier",
+			name: "no-supplier",
 			opts: &options.Options{
 				OS: options.OSInfo{
 					Name:    "Apko Images, Plc",
@@ -98,12 +106,33 @@ func TestSPDX_Generate(t *testing.T) {
 				Packages: []*apk.InstalledPackage{
 					{
 						Package: apk.Package{
-							Name:        "libattr1",
-							Version:     "2.5.1-r2",
-							Arch:        "x86_64",
-							Description: "library for managing filesystem extended attributes",
-							License:     "GPL-2.0-or-later",
-							Origin:      "attr",
+							Name:    "libattr1",
+							Version: "2.5.1-r2",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "package-deduplicating",
+			opts: &options.Options{
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Package: apk.Package{
+							Name:    "logstash-8",
+							Version: "8.15.3-r4",
+						},
+					},
+					{
+						Package: apk.Package{
+							Name:    "logstash-8-compat",
+							Version: "8.15.3-r4",
 						},
 					},
 				},
@@ -113,47 +142,58 @@ func TestSPDX_Generate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pkgName := tt.opts.Packages[0].Name
-			apkSBOMPath := filepath.Join("testdata", "apk_sboms", fmt.Sprintf("%s.spdx.json", pkgName))
-			apkSBOMBytes, err := os.ReadFile(apkSBOMPath)
-			require.NoError(t, err)
-
 			fsys := apkfs.NewMemFS()
 			sbomDir := path.Join("var", "lib", "db", "sbom")
-			err = fsys.MkdirAll(sbomDir, 0750)
+			err := fsys.MkdirAll(sbomDir, 0750)
 			require.NoError(t, err)
 
-			sbomDestPath := path.Join(sbomDir, fmt.Sprintf("%s.spdx.json", pkgName))
-			err = fsys.WriteFile(sbomDestPath, apkSBOMBytes, 0644)
-			require.NoError(t, err)
+			for _, apkPkg := range tt.opts.Packages {
+				apkSBOMName := fmt.Sprintf("%s-%s.spdx.json", apkPkg.Name, apkPkg.Version)
+				apkSBOMTestdataPath := filepath.Join("testdata", "apk_sboms", apkSBOMName)
+				apkSBOMBytes, err := os.ReadFile(apkSBOMTestdataPath)
+				require.NoError(t, err)
+
+				sbomDestPath := path.Join(sbomDir, apkSBOMName)
+				err = fsys.WriteFile(sbomDestPath, apkSBOMBytes, 0644)
+				require.NoError(t, err)
+			}
 
 			sx := New(fsys)
-			imageSBOMDestPath := filepath.Join(t.TempDir(), pkgName+"."+sx.Ext())
+			imageSBOMName := fmt.Sprintf("%s.spdx.json", tt.name)
+			imageSBOMDestPath := filepath.Join(t.TempDir(), imageSBOMName)
 			err = sx.Generate(tt.opts, imageSBOMDestPath)
 			require.NoError(t, err)
 
 			actual, err := os.ReadFile(imageSBOMDestPath)
 			require.NoError(t, err)
 
-			expectedImageSBOMPath := filepath.Join("testdata", "expected_image_sboms", fmt.Sprintf("%s.spdx.json", pkgName))
+			expectedImageSBOMPath := filepath.Join("testdata", "expected_image_sboms", imageSBOMName)
 			expected, err := os.ReadFile(expectedImageSBOMPath)
 			require.NoError(t, err)
 
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Errorf("Unexpected image SBOM (-want, +got): \n%s", diff)
-			}
+			t.Run("goldenfile diff", func(t *testing.T) {
+				if diff := cmp.Diff(expected, actual); diff != "" {
+					t.Errorf("Unexpected image SBOM (-want, +got): \n%s", diff)
+				}
+			})
+
+			t.Run("unique SPDX IDs", func(t *testing.T) {
+				doc := new(Document)
+				err := json.Unmarshal(actual, doc)
+				if err != nil {
+					t.Fatalf("unmarshalling SBOM: %v", err)
+				}
+
+				ids := make(map[string]struct{})
+				for _, p := range doc.Packages {
+					if _, ok := ids[p.ID]; ok {
+						t.Errorf("duplicate SPDX ID found: %s", p.ID)
+					}
+					ids[p.ID] = struct{}{}
+				}
+			})
 		})
 	}
-}
-
-func TestGenerate(t *testing.T) {
-	dir := t.TempDir()
-	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(testOpts, path)
-	require.NoError(t, err)
-	require.FileExists(t, path)
 }
 
 func TestReproducible(t *testing.T) {
