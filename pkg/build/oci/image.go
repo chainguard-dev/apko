@@ -39,8 +39,14 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
 	log := clog.FromContext(ctx)
+
+	// Create a copy to avoid modifying the original ImageConfiguration.
+	ic := &types.ImageConfiguration{}
+	if err := oic.MergeInto(ic); err != nil {
+		return nil, err
+	}
 
 	mediaType, err := layer.MediaType()
 	if err != nil {
