@@ -289,7 +289,7 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 		// also really wants to do a HEAD request in order to do etag-based caching itself. To avoid the double HEAD,
 		// I'm stuffing the etag into the If-None-Match header, which isn't exactly correct semantics but it rhymes.
 		// The alternative is to rewrite everything, which I don't have time to do right now, so it is what it is.
-		req.Header.Set("If-None-Match", etag)
+		req.Header.Set("I-Cant-Believe-Its-Not-If-None-Match", etag)
 	}
 
 	if opts.auth == nil {
