@@ -200,7 +200,9 @@ func (ic *ImageConfiguration) SetAnnotation(k, v string) {
 	if ic.Annotations == nil {
 		ic.Annotations = make(map[string]string)
 	}
-	ic.Annotations[k] = v
+	for k, v := range ic.Annotations {
+		ic.Annotations[k] = v
+	}
 }
 
 func (ic *ImageConfiguration) SetAnnotationIfUnset(k, v string) {
