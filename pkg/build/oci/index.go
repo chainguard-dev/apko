@@ -46,39 +46,21 @@ func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[ty
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndex")
 	defer span.End()
 
-	return generateIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, created)
-}
-
-// GenerateDockerIndex generates a docker multi-arch manifest from the given imgs. The index type
-// will be "application/vnd.docker.distribution.manifest.list.v2+json".
-// The index is stored in memory.
-func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
-	return generateIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, created)
-}
-
-// generateIndexWithMediaType generates an index or docker manifest list from the given imgs. The index type
-// is provided by the `mediaType` parameter.
-func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
 	// If annotations are set and we're using the OCI mediaType, set annotations on the index.
-	annotations := map[string]string{}
-	if mediaType == ggcrtypes.OCIImageIndex {
-		annotations = ic.Annotations
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		if ic.VCSUrl != "" {
-			if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
-				annotations["org.opencontainers.image.source"] = url
-				annotations["org.opencontainers.image.revision"] = hash
-			}
+	annotations := map[string]string{
+		"created": created.Format(time.RFC3339),
+	}
+	if ic.VCSUrl != "" {
+		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
+			annotations["org.opencontainers.image.source"] = url
+			annotations["org.opencontainers.image.revision"] = hash
 		}
 	}
-	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 
 	idx := signed.ImageIndex(
 		mutate.IndexMediaType(
 			mutate.Annotations(empty.Index, annotations).(v1.ImageIndex),
-			mediaType),
+			ggcrtypes.OCIImageIndex),
 	)
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
