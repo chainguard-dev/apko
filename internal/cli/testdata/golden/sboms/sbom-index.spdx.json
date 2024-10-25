@@ -1,6 +1,6 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "sbom-sha256:d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
+  "name": "sbom-sha256:8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
     "created": "1970-01-01T00:00:00Z",
@@ -13,13 +13,13 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-sha256-d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227"
+    "SPDXRef-Package-sha256-8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-sha256-d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
-      "name": "sha256:d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
-      "versionInfo": "sha256:d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
+      "SPDXID": "SPDXRef-Package-sha256-8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
+      "name": "sha256:8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
+      "versionInfo": "sha256:8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
       "filesAnalyzed": false,
       "description": "Multi-arch image index",
       "downloadLocation": "NOASSERTION",
@@ -29,13 +29,13 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227"
+          "checksumValue": "8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39"
         }
       ],
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/golden@sha256%3Ad558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227?mediaType=application%2Fvnd.oci.image.index.v1%2Bjson",
+          "referenceLocator": "pkg:oci/golden@sha256%3A8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39?mediaType=application%2Fvnd.oci.image.index.v1%2Bjson",
           "referenceType": "purl"
         }
       ]
@@ -87,12 +87,12 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-sha256-d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
+      "spdxElementId": "SPDXRef-Package-sha256-8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
       "relationshipType": "VARIANT_OF",
       "relatedSpdxElement": "SPDXRef-Package-sha256-a87baa16c787394589606e2519134a8e23d9323f475cc3e1a6f63731e8579675"
     },
     {
-      "spdxElementId": "SPDXRef-Package-sha256-d558b9114f2eaf11b1a3d9720cdcff3b12f087e741377d04f93bd5dc53f36227",
+      "spdxElementId": "SPDXRef-Package-sha256-8ee3652bfeecfcf3548eac1f0f1bfdf04ba0849e37979f83ffd5edc87d83ca39",
       "relationshipType": "VARIANT_OF",
       "relatedSpdxElement": "SPDXRef-Package-sha256-f5e87ab7f4eba7d7a649cd3fcb969b4fcb9c72784c9cbe7ed3f0f60e84933972"
     }
