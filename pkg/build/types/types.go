@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"sync"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -175,7 +176,9 @@ type ImageConfiguration struct {
 	// Optional: The link to version control system for this container's source code
 	VCSUrl string `json:"vcs-url,omitempty" yaml:"vcs-url,omitempty"`
 	// Optional: Annotations to apply to the images manifests
-	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	annotationMu sync.Mutex
+
 	// Optional: Path to a local file containing additional image configuration
 	//
 	// The included configuration is deep merged with the parent configuration
@@ -189,6 +192,36 @@ type ImageConfiguration struct {
 	// when the image requires special volume configuration at runtime for
 	// supported container runtimes.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+}
+
+func (ic *ImageConfiguration) SetAnnotation(k, v string) {
+	ic.annotationMu.Lock()
+	defer ic.annotationMu.Unlock()
+	if ic.Annotations == nil {
+		ic.Annotations = make(map[string]string)
+	}
+	ic.Annotations[k] = v
+}
+
+func (ic *ImageConfiguration) SetAnnotationIfUnset(k, v string) {
+	ic.annotationMu.Lock()
+	defer ic.annotationMu.Unlock()
+	if ic.Annotations == nil {
+		ic.Annotations = make(map[string]string)
+	}
+	if _, ok := ic.Annotations[k]; !ok {
+		ic.Annotations[k] = v
+	}
+}
+
+func (ic *ImageConfiguration) GetAnnotations() map[string]string {
+	ic.annotationMu.Lock()
+	defer ic.annotationMu.Unlock()
+	cp := make(map[string]string, len(ic.Annotations))
+	for k, v := range ic.Annotations {
+		cp[k] = v
+	}
+	return cp
 }
 
 // Architecture represents a CPU architecture for the container image.

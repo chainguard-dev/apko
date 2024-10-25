@@ -60,23 +60,20 @@ func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs 
 // is provided by the `mediaType` parameter.
 func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
 	// If annotations are set and we're using the OCI mediaType, set annotations on the index.
-	annCopy := make(map[string]string, len(ic.Annotations))
+	annotations := ic.GetAnnotations()
 	if mediaType == ggcrtypes.OCIImageIndex {
-		for k, v := range ic.Annotations {
-			annCopy[k] = v
-		}
 		if ic.VCSUrl != "" {
 			if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
-				annCopy["org.opencontainers.image.source"] = url
-				annCopy["org.opencontainers.image.revision"] = hash
+				annotations["org.opencontainers.image.source"] = url
+				annotations["org.opencontainers.image.revision"] = hash
 			}
 		}
-		annCopy["org.opencontainers.image.created"] = created.Format(time.RFC3339)
+		annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 	}
 
 	idx := signed.ImageIndex(
 		mutate.IndexMediaType(
-			mutate.Annotations(empty.Index, annCopy).(v1.ImageIndex),
+			mutate.Annotations(empty.Index, annotations).(v1.ImageIndex),
 			mediaType),
 	)
 	archs := make([]types.Architecture, 0, len(imgs))

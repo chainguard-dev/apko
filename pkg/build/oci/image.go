@@ -89,10 +89,7 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
 	}
 
-	annotations := ic.Annotations
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
+	annotations := ic.GetAnnotations()
 	if ic.VCSUrl != "" {
 		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
 			annotations["org.opencontainers.image.source"] = url

@@ -133,14 +133,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 		}
 	}
 	target.Paths = append(ic.Paths, target.Paths...)
-	if target.Annotations == nil && ic.Annotations != nil {
-		target.Annotations = ic.Annotations
-	} else {
-		for k, v := range ic.Annotations {
-			if _, ok := target.Annotations[k]; !ok {
-				target.Annotations[k] = v
-			}
-		}
+
+	for k, v := range ic.GetAnnotations() {
+		target.SetAnnotationIfUnset(k, v)
 	}
 
 	// Update the contents.
@@ -267,7 +262,7 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 	}
 	if len(ic.Annotations) > 0 {
 		log.Infof("    annotations:")
-		for k, v := range ic.Annotations {
+		for k, v := range ic.GetAnnotations() {
 			log.Infof("      %s: %s", k, v)
 		}
 	}
