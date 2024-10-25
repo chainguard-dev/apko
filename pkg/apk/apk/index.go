@@ -61,6 +61,7 @@ type indexCache struct {
 	// For remote indexes.
 	onces     sync.Map
 	urlToEtag map[string]string
+	etagMu    sync.Mutex // guards urlToEtag
 
 	// For local indexes.
 	sync.Mutex
@@ -149,23 +150,24 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		key := fmt.Sprintf("%s@%s", u, etag)
 
 		once, _ := i.onces.LoadOrStore(key, &sync.Once{})
-		var mu sync.Mutex
 		once.(*sync.Once).Do(func() {
-			mu.Lock()
-			defer mu.Unlock()
-
 			// If we've seen this URL before, delete any references to old indexes so we can GC them.
+			// Lock reads/writes to the map, without blocking the fetchAndParse goroutine.
+			i.etagMu.Lock()
 			prev, ok := i.urlToEtag[u]
 			if ok {
 				prevKey := fmt.Sprintf("%s@%s", u, prev)
 				i.forget(prevKey)
 			}
+			i.etagMu.Unlock()
 
 			idx, err := fetchAndParse(etag)
 			i.store(key, idx, err)
 
 			// Record the current etag for this URL so we can GC it later.
+			i.etagMu.Lock()
 			i.urlToEtag[u] = etag
+			i.etagMu.Unlock()
 		})
 
 		return i.load(key)
