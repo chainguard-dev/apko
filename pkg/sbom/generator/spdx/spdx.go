@@ -566,7 +566,7 @@ type Package struct {
 	LicenseConcluded string                   `json:"licenseConcluded,omitempty"`
 	LicenseDeclared  string                   `json:"licenseDeclared,omitempty"`
 	Description      string                   `json:"description,omitempty"`
-	DownloadLocation string                   `json:"downloadLocation,omitempty"`
+	DownloadLocation string                   `json:"downloadLocation"`
 	Originator       string                   `json:"originator,omitempty"`
 	Supplier         string                   `json:"supplier,omitempty"`
 	SourceInfo       string                   `json:"sourceInfo,omitempty"`
