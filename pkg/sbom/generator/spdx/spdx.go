@@ -449,6 +449,10 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 
 // apkPackage returns a SPDX package describing an apk
 func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Package {
+	url := pkg.URL
+	if url == "" {
+		url = NOASSERTION
+	}
 	return Package{
 		ID: stringToIdentifier(fmt.Sprintf(
 			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
@@ -459,7 +463,7 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Pac
 		FilesAnalyzed:    false,
 		LicenseConcluded: pkg.License,
 		Description:      pkg.Description,
-		DownloadLocation: pkg.URL,
+		DownloadLocation: url,
 		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
 		SourceInfo:       "Package info from apk database",
 		Checksums: []Checksum{
@@ -562,7 +566,7 @@ type Package struct {
 	LicenseConcluded string                   `json:"licenseConcluded,omitempty"`
 	LicenseDeclared  string                   `json:"licenseDeclared,omitempty"`
 	Description      string                   `json:"description,omitempty"`
-	DownloadLocation string                   `json:"downloadLocation,omitempty"`
+	DownloadLocation string                   `json:"downloadLocation"`
 	Originator       string                   `json:"originator,omitempty"`
 	Supplier         string                   `json:"supplier,omitempty"`
 	SourceInfo       string                   `json:"sourceInfo,omitempty"`
