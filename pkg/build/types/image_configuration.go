@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"hash"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -124,7 +126,7 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 		return err
 	}
 	if target.Environment == nil && ic.Environment != nil {
-		target.Environment = ic.Environment
+		target.Environment = maps.Clone(ic.Environment)
 	} else {
 		for k, v := range ic.Environment {
 			if _, ok := target.Environment[k]; !ok {
@@ -132,9 +134,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 			}
 		}
 	}
-	target.Paths = append(ic.Paths, target.Paths...)
+	target.Paths = slices.Concat(ic.Paths, target.Paths)
 	if target.Annotations == nil && ic.Annotations != nil {
-		target.Annotations = ic.Annotations
+		target.Annotations = maps.Clone(ic.Annotations)
 	} else {
 		for k, v := range ic.Annotations {
 			if _, ok := target.Annotations[k]; !ok {
@@ -151,16 +153,16 @@ func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 	if target.RunAs == "" {
 		target.RunAs = a.RunAs
 	}
-	target.Users = append(a.Users, target.Users...)
-	target.Groups = append(a.Groups, target.Groups...)
+	target.Users = slices.Concat(a.Users, target.Users)
+	target.Groups = slices.Concat(a.Groups, target.Groups)
 	return nil
 }
 
 func (i *ImageContents) MergeInto(target *ImageContents) error {
-	target.Keyring = append(i.Keyring, target.Keyring...)
-	target.BuildRepositories = append(i.BuildRepositories, target.BuildRepositories...)
-	target.RuntimeRepositories = append(i.RuntimeRepositories, target.RuntimeRepositories...)
-	target.Packages = append(i.Packages, target.Packages...)
+	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
+	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
+	target.RuntimeRepositories = slices.Concat(i.RuntimeRepositories, target.RuntimeRepositories)
+	target.Packages = slices.Concat(i.Packages, target.Packages)
 	return nil
 }
 
