@@ -48,11 +48,6 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 		return nil, err
 	}
 
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		return nil, fmt.Errorf("accessing layer MediaType: %w", err)
-	}
-	imageType := humanReadableImageType(mediaType)
 	log.Debug("building image from layer")
 
 	digest, err := layer.Digest()
@@ -65,8 +60,8 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 		return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
 	}
 
-	log.Infof("%s layer digest: %v", imageType, digest)
-	log.Infof("%s layer diffID: %v", imageType, diffid)
+	log.Infof("layer digest: %v", digest)
+	log.Infof("layer diffID: %v", diffid)
 
 	adds := make([]mutate.Addendum, 0, 1)
 	adds = append(adds, mutate.Addendum{
@@ -79,14 +74,12 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 		},
 	})
 
-	if mediaType == ggcrtypes.OCILayer {
-		// If building an OCI layer, then we should assume OCI manifest and config too
-		baseImage = mutate.MediaType(baseImage, ggcrtypes.OCIManifestSchema1)
-		baseImage = mutate.ConfigMediaType(baseImage, ggcrtypes.OCIConfigJSON)
-	}
+	// If building an OCI layer, then we should assume OCI manifest and config too
+	baseImage = mutate.MediaType(baseImage, ggcrtypes.OCIManifestSchema1)
+	baseImage = mutate.ConfigMediaType(baseImage, ggcrtypes.OCIConfigJSON)
 	v1Image, err := mutate.Append(baseImage, adds...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
+		return nil, fmt.Errorf("unable to append layer to empty image: %w", err)
 	}
 
 	annotations := ic.Annotations
@@ -101,13 +94,11 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 	}
 	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 
-	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
-		v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
-	}
+	v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get %s config file: %w", imageType, err)
+		return nil, fmt.Errorf("unable to get config file: %w", err)
 	}
 
 	cfg = cfg.DeepCopy()
@@ -181,7 +172,7 @@ func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer
 
 	v1Image, err = mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to update %s config file: %w", imageType, err)
+		return nil, fmt.Errorf("unable to update config file: %w", err)
 	}
 
 	si := signed.Image(v1Image)

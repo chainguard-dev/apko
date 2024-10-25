@@ -91,7 +91,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:f09e60c2dabb44047225149ccc4a6cdffac23aabf50352931ddd618705e82f2d"
+	want := "sha256:80fafe63b2c370069deaabffd2d4505ffe7ef0b3a47032686c31dbcab5be25fd"
 	require.Equal(t, want, digest.String())
 
 	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
@@ -109,7 +109,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:194bbad4bd7a37e206126b24d63fd0146434b1abbad9afa567fab364c0d5e608"
+	swant := "sha256:6d7ae8bf9f5f7a34553cda2dccb8a270db21770de545e87d14c27c992daf9b02"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()

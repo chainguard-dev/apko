@@ -28,7 +28,6 @@ import (
 	osr "github.com/dominodatalab/os-release"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
 	khash "sigs.k8s.io/release-utils/hash"
@@ -63,7 +62,6 @@ func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types
 	sopt.ImageInfo.SourceDateEpoch = bde
 	sopt.Formats = o.SBOMFormats
 	sopt.ImageInfo.VCSUrl = ic.VCSUrl
-	sopt.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
 
 	sopt.OutputDir = o.TempDir()
 	if o.SBOMPath != "" {
@@ -193,8 +191,6 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 		return nil, errors.New("getting index hash")
 	}
 	s.ImageInfo.IndexDigest = h
-
-	s.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
 
 	// Make sure we have a determinstic for iterating over imgs.
 	archs := make([]types.Architecture, 0, len(imgs))
