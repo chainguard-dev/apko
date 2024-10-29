@@ -145,6 +145,8 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 		}
 	}
 
+	target.Volumes = slices.Concat(ic.Volumes, target.Volumes)
+
 	// Update the contents.
 	return ic.Contents.MergeInto(&target.Contents)
 }

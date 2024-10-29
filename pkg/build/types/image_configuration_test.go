@@ -78,6 +78,9 @@ func TestMergeInto(t *testing.T) {
 				"org.extra": "foo",
 				"org.blah":  "foo",
 			},
+			Volumes: []string{
+				"volume1",
+			},
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
@@ -101,6 +104,9 @@ func TestMergeInto(t *testing.T) {
 			Annotations: map[string]string{
 				"org.extra": "foo",
 				"org.blah":  "foo",
+			},
+			Volumes: []string{
+				"volume1",
 			},
 		},
 	}, {
