@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,16 +41,23 @@ func MultiAuthenticator(auths ...Authenticator) Authenticator { return multiAuth
 type multiAuthenticator []Authenticator
 
 func (m multiAuthenticator) AddAuth(ctx context.Context, req *http.Request) error {
+	var merr error
 	for _, a := range m {
 		if _, _, ok := req.BasicAuth(); ok {
 			// The request has auth, so we can stop here.
 			return nil
 		}
 		if err := a.AddAuth(ctx, req); err != nil {
-			return err
+			merr = errors.Join(merr, err)
+			continue
 		}
 	}
-	return nil
+
+	// One last check at the end to see if we added auth, else return the aggregated error.
+	if _, _, ok := req.BasicAuth(); ok {
+		return nil
+	}
+	return merr
 }
 
 // EnvAuth adds HTTP basic auth to the request if the request URL matches the
