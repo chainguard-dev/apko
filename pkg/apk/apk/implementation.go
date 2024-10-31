@@ -996,6 +996,26 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	}
 	exp.TarFile = tarDst
 
+	if err := exp.TarFS.Close(); err != nil {
+		return nil, fmt.Errorf("closing tarfs: %w", err)
+	}
+
+	// Re-initialize the tarfs with the renamed file.
+	// TODO: Split out the tarfs Index creation from the FS.
+	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
+	data, err := exp.PackageData()
+	if err != nil {
+		return nil, err
+	}
+	info, err := data.Stat()
+	if err != nil {
+		return nil, err
+	}
+	exp.TarFS, err = tarfs.New(data, info.Size())
+	if err != nil {
+		return nil, err
+	}
+
 	return exp, nil
 }
 
