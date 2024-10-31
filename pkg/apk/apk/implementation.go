@@ -518,7 +518,7 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	// TODO: Consider making this configurable option.
 	jobs := runtime.GOMAXPROCS(0)
 
-	g, gctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	g.SetLimit(jobs + 1)
 
 	resolved := make([]*APKResolved, len(allpkgs))
@@ -535,11 +535,11 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 		i, pkg := i, pkg
 
 		g.Go(func() error {
-			r, err := a.FetchPackage(gctx, pkg)
+			r, err := a.FetchPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("fetching %s: %w", pkg.Name, err)
 			}
-			res, err := ResolveApk(gctx, r)
+			res, err := ResolveApk(ctx, r)
 			if err != nil {
 				return fmt.Errorf("resolving %s: %w", pkg.Name, err)
 			}
@@ -554,10 +554,20 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	}
 
 	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("installing packages: %w", err)
+		return nil, fmt.Errorf("calculating world: %w", withCause(ctx, err))
 	}
 
 	return resolved, nil
+}
+
+// Sometimes we get an opaque error about context cancellation, and it's unclear what caused it.
+// If we get something useful from ctx via context.Cause, we'll annotate err with it.
+func withCause(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return fmt.Errorf("%w: %w", err, cause)
+	}
+
+	return err
 }
 
 func (a *APK) ResolveAndCalculateWorld(ctx context.Context) ([]*APKResolved, error) {
@@ -625,7 +635,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	// TODO: Consider making this configurable option.
 	jobs := runtime.GOMAXPROCS(0)
 
-	g, gctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	g.SetLimit(jobs + 1)
 
 	expanded := make([]*expandapk.APKExpanded, len(allpkgs))
@@ -648,8 +658,8 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	g.Go(func() error {
 		for i, ch := range done {
 			select {
-			case <-gctx.Done():
-				return gctx.Err()
+			case <-ctx.Done():
+				return ctx.Err()
 			case <-ch:
 				exp := expanded[i]
 				pkg := allpkgs[i]
@@ -670,7 +680,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				}
 				infos[i] = pkgInfo
 
-				installedFiles, err := a.installPackage(gctx, pkgInfo, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, pkgInfo, exp, sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
@@ -688,7 +698,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		i, pkg := i, pkg
 
 		g.Go(func() error {
-			exp, err := a.expandPackage(gctx, pkg)
+			exp, err := a.expandPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg, err)
 			}
@@ -701,7 +711,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	}
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("installing packages: %w", err)
+		return fmt.Errorf("installing packages: %w", withCause(ctx, err))
 	}
 
 	// update the installed file
