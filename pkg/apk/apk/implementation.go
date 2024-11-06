@@ -965,8 +965,8 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	ctlHex := hex.EncodeToString(exp.ControlHash)
 	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
 
-	if err := os.Rename(exp.ControlFile, ctlDst); err != nil {
-		return nil, fmt.Errorf("renaming control file: %w", err)
+	if err := rename(exp.ControlFile, ctlDst); err != nil {
+		return nil, err
 	}
 
 	exp.ControlFile = ctlDst
@@ -974,8 +974,8 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	if exp.SignatureFile != "" {
 		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
 
-		if err := os.Rename(exp.SignatureFile, sigDst); err != nil {
-			return nil, fmt.Errorf("renaming control file: %w", err)
+		if err := rename(exp.SignatureFile, sigDst); err != nil {
+			return nil, err
 		}
 
 		exp.SignatureFile = sigDst
@@ -984,21 +984,23 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	datHex := hex.EncodeToString(exp.PackageHash)
 	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
 
-	if err := os.Rename(exp.PackageFile, datDst); err != nil {
-		return nil, fmt.Errorf("renaming control file: %w", err)
+	if err := rename(exp.PackageFile, datDst); err != nil {
+		return nil, err
 	}
 
 	exp.PackageFile = datDst
 
-	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
-	if err := os.Rename(exp.TarFile, tarDst); err != nil {
-		return nil, fmt.Errorf("renaming control file: %w", err)
-	}
-	exp.TarFile = tarDst
-
 	if err := exp.TarFS.Close(); err != nil {
 		return nil, fmt.Errorf("closing tarfs: %w", err)
 	}
+
+	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
+
+	if err := rename(exp.TarFile, tarDst); err != nil {
+		return nil, err
+	}
+
+	exp.TarFile = tarDst
 
 	// Re-initialize the tarfs with the renamed file.
 	// TODO: Split out the tarfs Index creation from the FS.
@@ -1371,4 +1373,32 @@ func packageRefs(pkgs []*RepositoryPackage) []string {
 		names[i] = fmt.Sprintf("%s (%s) %s", pkg.Name, pkg.Version, pkg.URL())
 	}
 	return names
+}
+
+func rename(src, dst string) error {
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("renaming %s: %w", src, err)
+	}
+
+	// This feels dumb but I have a hunch that it's necessary when renaming
+	// a file on gcsfuse. We seem to get a "file not found" error when reading
+	// something immediately after renaming it.
+	if err := flush(dst); err != nil {
+		return fmt.Errorf("flushing %s: %w", dst, err)
+	}
+
+	return nil
+}
+
+func flush(filename string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		return err
+	}
+
+	return f.Close()
 }
