@@ -92,6 +92,11 @@ func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 				return err
 			}
 			cacheDir = filepath.Join(cacheDir, "dev.chainguard.go-apk")
+		} else {
+			cacheDir, err = filepath.Abs(cacheDir)
+			if err != nil {
+				return err
+			}
 		}
 		o.cache = &cache{
 			dir:     cacheDir,
