@@ -344,8 +344,10 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 		return "", fmt.Errorf("wrapped client is nil")
 	}
 	resp, err := t.wrapped.Do(request)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return "", err
+	} else if resp.StatusCode != 200 {
+		return "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
 	}
 
 	// Determine the file we will caching stuff in based on the URL/response
