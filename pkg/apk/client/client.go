@@ -37,6 +37,11 @@ func New(httpClient *http.Client) *Client {
 
 // GetRemoteIndex retrieves the index of APK packages from the specified remote
 // repository.
+//
+// `apkRepo` is the URL of the repository including the protocol, e.g.
+// "https://packages.wolfi.dev/os".
+//
+// `arch` is the architecture of the index, e.g. "x86_64" or "aarch64".
 func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*apk.APKIndex, error) {
 	indexURL := apk.IndexURL(apkRepo, arch)
 

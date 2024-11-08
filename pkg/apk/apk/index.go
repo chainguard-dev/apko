@@ -202,7 +202,12 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 	}
 }
 
-// IndexURL full URL to the index file for the given repo and arch
+// IndexURL returns the full URL to the index file for the given repo and arch.
+//
+// `repo` is the URL of the repository including the protocol, e.g.
+// "https://packages.wolfi.dev/os".
+//
+// `arch` is the architecture of the index, e.g. "x86_64" or "aarch64".
 func IndexURL(repo, arch string) string {
 	return fmt.Sprintf("%s/%s/%s", repo, arch, indexFilename)
 }
