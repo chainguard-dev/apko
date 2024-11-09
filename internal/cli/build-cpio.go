@@ -34,6 +34,10 @@ func buildCPIO() *cobra.Command {
 	var buildDate string
 	var buildArch string
 	var sbomPath string
+	var extraKeys []string
+	var extraBuildRepos []string
+	var extraRuntimeRepos []string
+	var extraPackages []string
 
 	cmd := &cobra.Command{
 		Use:     "build-cpio",
@@ -45,6 +49,10 @@ func buildCPIO() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return BuildCPIOCmd(cmd.Context(), args[1],
 				build.WithConfig(args[0], []string{}),
+				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
+				build.WithExtraPackages(extraPackages),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
@@ -55,6 +63,10 @@ func buildCPIO() *cobra.Command {
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
+	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 
 	return cmd
 }
