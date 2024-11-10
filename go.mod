@@ -31,7 +31,7 @@ require (
 	golang.org/x/sync v0.9.0
 	golang.org/x/sys v0.26.0
 	golang.org/x/time v0.7.0
-	google.golang.org/api v0.204.0
+	google.golang.org/api v0.205.0
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.31.2
@@ -40,7 +40,7 @@ require (
 
 require (
 	chainguard.dev/go-grpc-kit v0.17.6 // indirect
-	cloud.google.com/go/auth v0.10.0 // indirect
+	cloud.google.com/go/auth v0.10.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.5 // indirect
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	dario.cat/mergo v1.0.1 // indirect
