@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/hashicorp/go-retryablehttp"
+
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
-	"github.com/hashicorp/go-retryablehttp"
 )
 
 const (
