@@ -8,6 +8,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 const (
@@ -32,7 +33,9 @@ func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Client{httpClient: httpClient}
+	rc := retryablehttp.NewClient()
+	rc.HTTPClient = httpClient
+	return &Client{httpClient: rc.StandardClient()}
 }
 
 // GetRemoteIndex retrieves the index of APK packages from the specified remote
