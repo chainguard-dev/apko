@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
@@ -24,6 +26,10 @@ const (
 // Client is a client for interacting with an APK package repository.
 type Client struct {
 	httpClient *http.Client
+
+	// map of package name to latest package with that name.
+	latestMap map[string]*apk.Package
+	once      sync.Once
 }
 
 // New creates a new Client, suitable for accessing remote APK indexes and
@@ -42,7 +48,7 @@ func New(httpClient *http.Client) *Client {
 // "https://packages.wolfi.dev/os".
 //
 // `arch` is the architecture of the index, e.g. "x86_64" or "aarch64".
-func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*apk.APKIndex, error) {
+func (c *Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*apk.APKIndex, error) {
 	indexURL := apk.IndexURL(apkRepo, arch)
 
 	u, err := url.Parse(indexURL)
@@ -68,4 +74,40 @@ func (c Client) GetRemoteIndex(ctx context.Context, apkRepo, arch string) (*apk.
 	}
 
 	return apk.IndexFromArchive(resp.Body)
+}
+
+func (c *Client) LatestPackage(idx *apk.APKIndex, name string) *apk.Package {
+	c.once.Do(func() { c.latestMap = onlyLatest(idx.Packages) })
+	return c.latestMap[name]
+}
+
+func onlyLatest(packages []*apk.Package) map[string]*apk.Package {
+	highest := map[string]*apk.Package{}
+	for _, pkg := range packages {
+		got, err := apk.ParseVersion(pkg.Version)
+		if err != nil {
+			// TODO: We should really fail here.
+			log.Printf("parsing %q: %v", pkg.Filename(), err)
+			continue
+		}
+
+		have, ok := highest[pkg.Name]
+		if !ok {
+			highest[pkg.Name] = pkg
+			continue
+		}
+
+		// TODO: We re-parse this for no reason.
+		parsed, err := apk.ParseVersion(have.Version)
+		if err != nil {
+			// TODO: We should really fail here.
+			log.Printf("parsing %q: %v", have.Version, err)
+			continue
+		}
+
+		if apk.CompareVersions(got, parsed) > 0 {
+			highest[pkg.Name] = pkg
+		}
+	}
+	return highest
 }

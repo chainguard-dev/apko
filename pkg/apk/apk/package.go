@@ -114,8 +114,12 @@ type Package struct {
 }
 
 func (p *Package) String() string {
+	if p == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("%s (ver:%s arch:%s)", p.Name, p.Version, p.Arch)
 }
+
 func (p *Package) PackageName() string { return p.Name }
 
 // Filename returns the package filename as it's named in a repository.
