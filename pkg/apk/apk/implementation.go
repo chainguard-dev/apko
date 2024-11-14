@@ -523,14 +523,7 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 
 	resolved := make([]*APKResolved, len(allpkgs))
 
-	// A slice of pseudo-promises that get closed when expanded[i] is ready.
-	done := make([]chan struct{}, len(allpkgs))
-	for i := range allpkgs {
-		done[i] = make(chan struct{})
-	}
-
-	// Meanwhile, concurrently fetch and expand all our APKs.
-	// We signal they are ready to be installed by closing done[i].
+	// concurrently fetch and expand all our APKs.
 	for i, pkg := range allpkgs {
 		i, pkg := i, pkg
 
@@ -546,8 +539,6 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 
 			res.Package = pkg
 			resolved[i] = res
-
-			close(done[i])
 
 			return nil
 		})
@@ -664,6 +655,10 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				exp := expanded[i]
 				pkg := allpkgs[i]
 
+				if exp == nil {
+					return fmt.Errorf("expansion of %s failed", pkg)
+				}
+
 				isInstalled, err := a.isInstalledPackage(pkg.PackageName())
 				if err != nil {
 					return fmt.Errorf("error checking if package %s is installed: %w", pkg, err)
@@ -698,13 +693,13 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		i, pkg := i, pkg
 
 		g.Go(func() error {
+			defer func() { close(done[i]) }()
 			exp, err := a.expandPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg, err)
 			}
 
 			expanded[i] = exp
-			close(done[i])
 
 			return nil
 		})
