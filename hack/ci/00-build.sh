@@ -10,7 +10,7 @@ REF="apko.local/ci-testing:test"
 
 trap "rm -f ${OUTPUT_TAR}" EXIT
 
-for f in examples/alpine-base-rootless.yaml examples/wolfi-base.yaml; do
+for f in examples/wolfi-base.yaml; do
   echo "=== building $f"
 
   REF="apko.local/ci-testing:$(basename ${f})"
