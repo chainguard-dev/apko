@@ -203,6 +203,9 @@ type PkgResolver struct {
 	indexes      []NamedIndex
 	nameMap      map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
+
+	// Short-circuit providers we have already selected.
+	selected map[string]*RepositoryPackage
 }
 
 // Clone returns a copy of PkgResolver.
@@ -211,6 +214,7 @@ func (p *PkgResolver) Clone() *PkgResolver {
 		indexes:      p.indexes,
 		nameMap:      maps.Clone(p.nameMap),
 		installIfMap: maps.Clone(p.installIfMap),
+		selected:     map[string]*RepositoryPackage{},
 	}
 }
 
@@ -234,7 +238,8 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		installIfMap = map[string][]*repositoryPackage{}
 	)
 	p := &PkgResolver{
-		indexes: indexes,
+		indexes:  indexes,
+		selected: map[string]*RepositoryPackage{},
 	}
 
 	// create a map of every package by name and version to its RepositoryPackage
@@ -383,6 +388,29 @@ func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*Reposi
 	}
 }
 
+func (p *PkgResolver) pick(pkg *RepositoryPackage) error {
+	if conflict, ok := p.selected[pkg.Name]; ok {
+		// Trying to re-select the same thing is fine actually.
+		if conflict == pkg {
+			return nil
+		}
+
+		return fmt.Errorf("selecting package %s conflicts with %s on %q", pkg.Filename(), conflict.Filename(), pkg.Name)
+	}
+
+	p.selected[pkg.Name] = pkg
+
+	for _, prov := range pkg.Provides {
+		constraint := cachedResolvePackageNameVersionPin(prov)
+		if conflict, ok := p.selected[constraint.name]; ok {
+			return fmt.Errorf("selecting package %s conflicts with %s on %q", pkg.Filename(), conflict.Filename(), constraint.name)
+		}
+		p.selected[constraint.name] = pkg
+	}
+
+	return nil
+}
+
 func (p *PkgResolver) disqualify(dq map[*RepositoryPackage]string, pkg *RepositoryPackage, reason string) {
 	dq[pkg] = reason
 
@@ -452,7 +480,7 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
 func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, allArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackageWithDependencies")
+	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
 	defer span.End()
 
 	// Tracks all the packages we have disqualified and the reason we disqualified them.
@@ -494,10 +522,11 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 
 	// now get the dependencies for each package
 	for _, pkgName := range packages {
-		pkg, deps, confs, err := p.GetPackageWithDependencies(pkgName, dependenciesMap, dq)
+		pkg, deps, confs, err := p.GetPackageWithDependencies(ctx, pkgName, dependenciesMap, dq)
 		if err != nil {
 			return toInstall, nil, &ConstraintError{pkgName, err}
 		}
+
 		for _, dep := range deps {
 			if _, ok := installTracked[dep.Name]; !ok {
 				toInstall = append(toInstall, dep)
@@ -527,7 +556,7 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 // Requires the existing set because the logic for resolving dependencies between competing
 // options may depend on whether or not one already is installed.
 // Must not modify the existing map directly.
-func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
+func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
 	parents := make(map[string]bool)
 	localExisting := make(map[string]*RepositoryPackage, len(existing))
 	existingOrigins := map[string]bool{}
@@ -544,10 +573,11 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 	}
 
 	pin := cachedResolvePackageNameVersionPin(pkgName).pin
-	deps, conflicts, err := p.getPackageDependencies(pkg, pin, true, parents, localExisting, existingOrigins, dq)
+	deps, conflicts, err := p.getPackageDependencies(ctx, pkg, pin, parents, localExisting, existingOrigins, dq)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	// eliminate duplication in dependencies
 	added := make(map[string]*RepositoryPackage, len(deps))
 	dependencies := make([]*RepositoryPackage, 0, len(deps))
@@ -672,7 +702,10 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin string, allowSelfFulfill bool, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, context.Cause(ctx)
+	}
 	// check if the package we are checking is one of our parents, avoid cyclical graphs
 	if _, ok := parents[pkg.Name]; ok {
 		return nil, nil, nil
@@ -715,7 +748,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 				continue
 			}
 
-			if allowSelfFulfill && pkg.Name == name {
+			if pkg.Name == name {
 				var (
 					actualVersion, requiredVersion Version
 					err1, err2                     error
@@ -731,6 +764,30 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 						continue
 					}
 				}
+			}
+
+			if picked, ok := p.selected[name]; ok {
+				if version == "" {
+					// If we don't care which version, and we've already selected something, fantastic.
+					continue
+				}
+
+				actualVersion, err := cachedParseVersion(picked.Version)
+				if err != nil {
+					return nil, nil, err
+				}
+				requiredVersion, err := cachedParseVersion(version)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				// We do care which version and they match.
+				if compare.satisfies(actualVersion, requiredVersion) {
+					continue
+				}
+
+				// We already selected something to satisfy "name" and it does not match the "version" we need now.
+				return nil, nil, fmt.Errorf("we already selected %q=%q which conflicts with %q=%q", picked.Name, picked.Version, name, version)
 			}
 
 			// first see if it is a name of a package
@@ -793,7 +850,12 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 			childParents[k] = true
 		}
 		childParents[pkg.Name] = true
-		subDeps, confs, err := p.getPackageDependencies(depPkg, allowPin, true, childParents, existing, existingOrigins, dq)
+
+		if err := p.pick(pkg); err != nil {
+			return nil, nil, err
+		}
+
+		subDeps, confs, err := p.getPackageDependencies(ctx, depPkg, allowPin, childParents, existing, existingOrigins, dq)
 		if err != nil {
 			return nil, nil, &DepError{pkg, err}
 		}

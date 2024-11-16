@@ -16,7 +16,7 @@ docker rm -f "${REGISTRY_CONTAINER_NAME}"
 docker run --name "${REGISTRY_CONTAINER_NAME}" \
   -d -p ${PORT}:5000 "${REGISTRY_BASE_IMAGE}"
 
-for f in examples/alpine-base-rootless.yaml examples/wolfi-base.yaml; do
+for f in examples/wolfi-base.yaml; do
   echo "=== building $f"
 
   REF="localhost:${PORT}/ci-testing:$(basename ${f})"

@@ -11,3 +11,6 @@ environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
 
 cmd: /bin/sh -l
+
+archs:
+  - amd64

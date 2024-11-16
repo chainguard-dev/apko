@@ -1,8 +1,10 @@
 contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://packages.wolfi.dev/os
   packages:
-    - alpine-baselayout
+    - wolfi-baselayout
     - nginx
 
 entrypoint:
@@ -32,7 +34,7 @@ paths:
     permissions: 0o755
   - path: /etc/nginx/http.d/default.conf
     type: hardlink
-    source: /usr/share/nginx/http-default_server.conf
+    source: /etc/nginx/nginx.conf.default
     uid: 10000
     gid: 10000
     permissions: 0o644
@@ -41,3 +43,6 @@ work-dir: /usr/share/nginx
 
 annotations:
   foo: bar
+
+archs:
+  - amd64

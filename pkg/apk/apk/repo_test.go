@@ -127,7 +127,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
 		})
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
@@ -136,7 +136,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true},
 		})
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
@@ -148,7 +148,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{fail: true},
 		})
-		_, err := a.GetRepositoryIndexes(context.TODO(), false)
+		_, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.Error(t, err, "should fail when no cache and no network")
 	})
 	t.Run("we can fetch, but do not cache indices without etag", func(t *testing.T) {
@@ -160,7 +160,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
 		})
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 
@@ -188,7 +188,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 				},
 			},
 		})
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// check that the contents are the same
@@ -226,7 +226,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
 		})
 		// Use the client to fill the cache.
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// Capture the initial index.
@@ -237,7 +237,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
 		})
-		indexes, err = a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// Capture the resulting index.
@@ -258,7 +258,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
 		})
 		// Use the client to fill the cache.
-		indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// Capture the initial index.
@@ -271,7 +271,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}},
 		})
 
-		indexes, err = a.GetRepositoryIndexes(context.TODO(), false)
+		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// Capture the resulting index.
@@ -296,7 +296,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 						headers:      map[string][]string{http.CanonicalHeaderKey("etag"): {fmt.Sprint(i)}},
 					},
 				})
-				indexes, err := a.GetRepositoryIndexes(context.TODO(), false)
+				indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 				require.NoErrorf(t, err, "unable to get indexes")
 				require.Greater(t, len(indexes), 0, "no indexes found")
 				return nil
@@ -593,7 +593,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		_, index := testGetPackagesAndIndex()
 
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
-		_, pkgs, _, err := resolver.GetPackageWithDependencies("package1", nil, map[*RepositoryPackage]string{})
+		_, pkgs, _, err := resolver.GetPackageWithDependencies(context.Background(), "package1", nil, map[*RepositoryPackage]string{})
 		require.NoErrorf(t, err, "unable to get dependencies")
 
 		actual := make([]string, 0, len(pkgs))
@@ -608,7 +608,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		_, index := testGetPackagesAndIndex()
 
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
-		_, pkgs, _, err := resolver.GetPackageWithDependencies("package3", nil, map[*RepositoryPackage]string{})
+		_, pkgs, _, err := resolver.GetPackageWithDependencies(context.Background(), "package3", nil, map[*RepositoryPackage]string{})
 		require.NoErrorf(t, err, "unable to get dependencies")
 
 		actual := make([]string, 0, len(pkgs))
@@ -617,34 +617,6 @@ func TestGetPackageDependencies(t *testing.T) {
 		}
 		require.True(t, reflect.DeepEqual(expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, expected)
 	})
-	t.Run("self-fulfill", func(t *testing.T) {
-		_, index := testGetPackagesAndIndex()
-
-		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
-		pkg6, err := resolver.ResolvePackage("package6", map[*RepositoryPackage]string{})
-		require.NoErrorf(t, err, "unable to resolve package6")
-		require.GreaterOrEqual(t, len(pkg6), 1, "package6 should have at least one match")
-		tests := []struct {
-			name     string
-			expected []string
-			allow    bool
-		}{
-			{"allowed", []string{"package5"}, true},
-			{"not allowed", []string{"package6", "package5"}, false},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				deps, _, err := resolver.getPackageDependencies(pkg6[0], "", tt.allow, nil, nil, nil, map[*RepositoryPackage]string{})
-				require.NoErrorf(t, err, "unable to get dependencies")
-
-				actual := make([]string, 0, len(deps))
-				for _, p := range deps {
-					actual = append(actual, p.Name)
-				}
-				require.True(t, reflect.DeepEqual(tt.expected, actual), "dependencies mismatch:\nactual %v\nexpect %v", actual, tt.expected)
-			})
-		}
-	})
 	t.Run("existing dependency", func(t *testing.T) {
 		origPkgs, index := testGetPackagesAndIndex()
 		resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes(index))
@@ -652,7 +624,7 @@ func TestGetPackageDependencies(t *testing.T) {
 		// start with regular resolution, just to compare
 		expectedName := "package5"
 		expectedVersion := "2.0.0" // highest version
-		_, pkgs, _, err := resolver.GetPackageWithDependencies("package9", nil, map[*RepositoryPackage]string{})
+		_, pkgs, _, err := resolver.GetPackageWithDependencies(context.Background(), "package9", nil, map[*RepositoryPackage]string{})
 		require.NoErrorf(t, err, "unable to get dependencies")
 		require.Len(t, pkgs, 1, "package9 should have one dependency, %s", expectedName)
 		require.Equal(t, expectedName, pkgs[0].Name)
@@ -668,7 +640,7 @@ func TestGetPackageDependencies(t *testing.T) {
 				break
 			}
 		}
-		_, pkgs, _, err = resolver.GetPackageWithDependencies("package9", existingPkgs, map[*RepositoryPackage]string{})
+		_, pkgs, _, err = resolver.GetPackageWithDependencies(context.Background(), "package9", existingPkgs, map[*RepositoryPackage]string{})
 		require.NoErrorf(t, err, "unable to get dependencies")
 		require.Len(t, pkgs, 1, "package9 should have one dependency, %s", expectedName)
 		require.Equal(t, expectedName, pkgs[0].Name)

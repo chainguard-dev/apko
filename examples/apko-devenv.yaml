@@ -32,3 +32,6 @@ contents:
     - docker-cli
 entrypoint:
   command: /bin/sh -l
+
+archs:
+  - amd64
