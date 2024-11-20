@@ -214,10 +214,6 @@ func (ic *ImageConfiguration) Validate() error {
 		if g.GroupName == "" {
 			return fmt.Errorf("configured group %v has no configured group name", g)
 		}
-
-		if g.GID == 0 {
-			return fmt.Errorf("configured group %v has GID 0", g)
-		}
 	}
 	return nil
 }
