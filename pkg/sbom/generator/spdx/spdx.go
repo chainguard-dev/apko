@@ -344,7 +344,7 @@ func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
 		for _, targetinfo := range targetDoc.LicensingInfos {
 			if targetinfo.LicenseID == sourceinfo.LicenseID {
 				if targetinfo.ExtractedText != sourceinfo.ExtractedText {
-					return fmt.Errorf("source & target LicenseID %s differ in Text", targetinfo.LicenseID)
+					return fmt.Errorf("source & target LicenseID %s differ in Text; perhaps multiple versions of the package have different contents of files provided in license-path", targetinfo.LicenseID)
 				}
 				found = true
 				break
