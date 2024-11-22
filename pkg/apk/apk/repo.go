@@ -355,31 +355,37 @@ func (p *PkgResolver) conflictingVersion(constraint parsedConstraint, conflict *
 }
 
 // Disqualify anything that conflicts with the given pkg.
-func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*RepositoryPackage]string) {
-	for _, prov := range pkg.Provides {
-		constraint := cachedResolvePackageNameVersionPin(prov)
-		providers, ok := p.nameMap[constraint.name]
-		if !ok {
+func (p *PkgResolver) disqualifyConflict(pkg *RepositoryPackage, prov string, dq map[*RepositoryPackage]string) {
+	constraint := cachedResolvePackageNameVersionPin(prov)
+	providers, ok := p.nameMap[constraint.name]
+	if !ok {
+		return
+	}
+
+	for _, conflict := range providers {
+		if conflict.RepositoryPackage == pkg {
 			continue
 		}
 
-		for _, conflict := range providers {
-			if conflict.RepositoryPackage == pkg {
-				continue
-			}
-
-			if _, dqed := dq[conflict.RepositoryPackage]; dqed {
-				// Already disqualified, don't bother generating reason.
-				continue
-			}
-
-			if !p.conflictingVersion(constraint, conflict) {
-				// The conflicting package provides the given name but the version is the same, so no conflict.
-				continue
-			}
-
-			p.disqualify(dq, conflict.RepositoryPackage, pkg.Filename()+" already provides "+constraint.name)
+		if _, dqed := dq[conflict.RepositoryPackage]; dqed {
+			// Already disqualified, don't bother generating reason.
+			continue
 		}
+
+		if !p.conflictingVersion(constraint, conflict) {
+			// The conflicting package provides the given name but the version is the same, so no conflict.
+			continue
+		}
+
+		p.disqualify(dq, conflict.RepositoryPackage, pkg.Filename()+" already provides "+constraint.name)
+	}
+}
+
+func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*RepositoryPackage]string) {
+	p.disqualifyConflict(pkg, pkg.Name+"="+pkg.Version, dq)
+
+	for _, prov := range pkg.Provides {
+		p.disqualifyConflict(pkg, prov, dq)
 	}
 }
 
