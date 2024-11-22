@@ -36,3 +36,6 @@ paths:
     uid: 10000
     gid: 10000
     permissions: 0o644
+
+archs:
+  - amd64
