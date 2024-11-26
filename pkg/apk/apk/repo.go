@@ -540,13 +540,13 @@ func (p *PkgResolver) GetPackageWithDependencies(pkgName string, existing map[st
 
 	pkg, err := p.resolvePackage(pkgName, dq)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, &ConstraintError{pkgName, err}
 	}
 
 	pin := cachedResolvePackageNameVersionPin(pkgName).pin
 	deps, conflicts, err := p.getPackageDependencies(pkg, pin, true, parents, localExisting, existingOrigins, dq)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, &DepError{pkg, err}
 	}
 	// eliminate duplication in dependencies
 	added := make(map[string]*RepositoryPackage, len(deps))
@@ -605,14 +605,14 @@ func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]s
 	name, version, compare, pin := constraint.name, constraint.version, constraint.dep, constraint.pin
 	pkgsWithVersions, ok := p.nameMap[name]
 	if !ok {
-		return nil, fmt.Errorf("could not find package that provides %s in indexes", pkgName)
+		return nil, fmt.Errorf("nothing provides %q", name)
 	}
 
 	// pkgsWithVersions contains a map of all versions of the package
 	// get the one that most matches what was requested
 	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin))
 	if len(packages) == 0 {
-		return nil, maybedqerror(pkgName, pkgsWithVersions, dq)
+		return nil, maybedqerror(pkgsWithVersions, dq)
 	}
 	p.sortPackages(packages, nil, name, nil, nil, pin)
 	pkgs := make([]*RepositoryPackage, 0, len(packages))
@@ -632,14 +632,14 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 
 	pkgsWithVersions, ok := p.nameMap[name]
 	if !ok {
-		return nil, fmt.Errorf("could not find package, alias or a package that provides %s in indexes", pkgName)
+		return nil, fmt.Errorf("nothing provides %q", name)
 	}
 
 	// pkgsWithVersions contains a map of all versions of the package
 	// get the one that most matches what was requested
 	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin))
 	if len(packages) == 0 {
-		return nil, maybedqerror(pkgName, pkgsWithVersions, dq)
+		return nil, maybedqerror(pkgsWithVersions, dq)
 	}
 	return p.bestPackage(packages, nil, name, nil, nil, pin).RepositoryPackage, nil
 }
@@ -688,7 +688,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 	constraints := slices.Clone(pkg.Dependencies)
 
 	if err := p.constrain(constraints, dq); err != nil {
-		return nil, nil, fmt.Errorf("constraining deps for %q: %w", pkg.Filename(), err)
+		return nil, nil, fmt.Errorf("constraining deps: %w", err)
 	}
 
 	for len(constraints) != 0 {
@@ -736,7 +736,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 			// first see if it is a name of a package
 			depPkgWithVersions, ok := p.nameMap[name]
 			if !ok {
-				return nil, nil, fmt.Errorf("could not find package either named %s or that provides %s for %s", dep, dep, pkg.Name)
+				return nil, nil, &ConstraintError{dep, fmt.Errorf("nothing provides %q", name)}
 			}
 			// pkgsWithVersions contains a map of all versions of the package
 			// get the one that most matches what was requested
@@ -747,7 +747,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 				withInstalledPackage(existing[name]),
 			)
 			if len(pkgs) == 0 {
-				return nil, nil, &DepError{pkg, maybedqerror(dep, depPkgWithVersions, dq)}
+				return nil, nil, &ConstraintError{dep, maybedqerror(depPkgWithVersions, dq)}
 			}
 			options[dep] = pkgs
 		}
@@ -779,7 +779,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 
 		best := p.bestPackage(pkgs, nil, name, existing, existingOrigins, "")
 		if best == nil {
-			return nil, nil, fmt.Errorf("could not find package for %q", name)
+			return nil, nil, &ConstraintError{name, fmt.Errorf("could not find package for %q", name)}
 		}
 
 		depPkg := best.RepositoryPackage
@@ -795,7 +795,7 @@ func (p *PkgResolver) getPackageDependencies(pkg *RepositoryPackage, allowPin st
 		childParents[pkg.Name] = true
 		subDeps, confs, err := p.getPackageDependencies(depPkg, allowPin, true, childParents, existing, existingOrigins, dq)
 		if err != nil {
-			return nil, nil, &DepError{pkg, err}
+			return nil, nil, &ConstraintError{name, &DepError{depPkg, err}}
 		}
 		// first add the children, then the parent (depth-first)
 		dependencies = append(dependencies, subDeps...)
@@ -1025,7 +1025,7 @@ func (e *DisqualifiedError) Unwrap() error {
 	return e.Wrapped
 }
 
-func maybedqerror(constraint string, pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) error {
+func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) error {
 	errs := make([]error, 0, len(pkgs))
 	for _, pkg := range pkgs {
 		reason, ok := dq[pkg.RepositoryPackage]
@@ -1035,10 +1035,10 @@ func maybedqerror(constraint string, pkgs []*repositoryPackage, dq map[*Reposito
 	}
 
 	if len(errs) != 0 {
-		return &ConstraintError{constraint, errors.Join(errs...)}
+		return errors.Join(errs...)
 	}
 
-	return fmt.Errorf("could not find constraint %q in indexes", constraint)
+	return errors.New("not in indexes")
 }
 
 func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
