@@ -845,7 +845,10 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 	if err := auth.AddAuth(ctx, discoveryRequest); err != nil {
 		return nil, err
 	}
-	discoveryResponse, err := client.Do(discoveryRequest)
+
+	rc := retryablehttp.NewClient()
+	rc.HTTPClient = client
+	discoveryResponse, err := rc.StandardClient().Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
