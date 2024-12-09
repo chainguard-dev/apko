@@ -227,6 +227,47 @@ func TestSetRepositories_Empty(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestInitKeyringCache(t *testing.T) {
+	cacheDir := t.TempDir()
+
+	u, _ := url.Parse("https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub")
+	mainkeyPath, err := cachePathFromURL(cacheDir, *u)
+	require.NoError(t, err)
+	u, _ = url.Parse("https://alpinelinux.org/keys/pseudosubkey/alpine-devel%40lists.alpinelinux.org-deadbeef.rsa.pub")
+	subkeyPath, err := cachePathFromURL(cacheDir, *u)
+	require.NoError(t, err)
+
+	err = os.MkdirAll(filepath.Dir(mainkeyPath), 0o755)
+	require.NoError(t, err)
+	err = os.MkdirAll(filepath.Dir(subkeyPath), 0o755)
+	require.NoError(t, err)
+
+	os.WriteFile(subkeyPath, []byte(testDemoKey), 0o644)  //nolint:gosec
+	os.WriteFile(mainkeyPath, []byte(testDemoKey), 0o644) //nolint:gosec
+
+	src := apkfs.NewMemFS()
+	a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithCache(cacheDir, true, nil))
+	require.NoError(t, err)
+
+	// Add a remote key and a nested remote key
+	keyfiles := []string{
+		"https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
+		"https://alpinelinux.org/keys/pseudosubkey/alpine-devel%40lists.alpinelinux.org-deadbeef.rsa.pub",
+	}
+	// ensure we send things from local
+	a.SetClient(&http.Client{
+		Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
+	})
+
+	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	// InitKeyring should have copied the local key and remote key to the right place
+	fi, err := src.ReadDir(DefaultKeyRingPath)
+	// should be no error reading them
+	require.NoError(t, err)
+	// should be 2 keys
+	require.Len(t, fi, 2)
+}
+
 func TestInitKeyring(t *testing.T) {
 	src := apkfs.NewMemFS()
 	a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
