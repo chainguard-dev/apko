@@ -27,15 +27,17 @@ func TestUnify(t *testing.T) {
 		name        string
 		originals   []string
 		inputs      []resolved
-		want        []string
+		want        map[string][]string
 		wantMissing map[string][]string
 		wantDiag    error
 	}{{
 		name: "empty",
+		want: map[string][]string{"index": {}},
 	}, {
 		name:      "simple single arch",
 		originals: []string{"foo", "bar", "baz"},
 		inputs: []resolved{{
+			arch:     "amd64",
 			packages: sets.New("foo", "bar", "baz"),
 			versions: map[string]string{
 				"foo": "1.2.3",
@@ -43,15 +45,23 @@ func TestUnify(t *testing.T) {
 				"baz": "0.0.1",
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
 		},
 	}, {
 		name:      "locked versions",
 		originals: []string{"foo=1.2.3", "bar=2.4.6", "baz=0.0.1"},
 		inputs: []resolved{{
+			arch:     "amd64",
 			packages: sets.New("foo", "bar", "baz"),
 			versions: map[string]string{
 				"foo": "1.2.3",
@@ -59,15 +69,23 @@ func TestUnify(t *testing.T) {
 				"baz": "0.0.1",
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
 		},
 	}, {
 		name:      "transitive dependency",
 		originals: []string{"foo", "bar", "baz"},
 		inputs: []resolved{{
+			arch:     "amd64",
 			packages: sets.New("foo", "bar", "baz", "bonus"),
 			versions: map[string]string{
 				"foo":   "1.2.3",
@@ -76,11 +94,19 @@ func TestUnify(t *testing.T) {
 				"bonus": "5.4.3",
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"bonus=5.4.3",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
 		},
 	}, {
 		name:      "multiple matching architectures",
@@ -112,11 +138,25 @@ func TestUnify(t *testing.T) {
 				"bar": sets.New("def", "ogg"),
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"bonus=5.4.3",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
+			"arm64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
 		},
 	}, {
 		name:      "mismatched transitive dependency",
@@ -140,10 +180,24 @@ func TestUnify(t *testing.T) {
 				"bonus": "5.4.3-r1",
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3-r0",
+				"foo=1.2.3",
+			},
+			"arm64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"bonus=5.4.3-r1",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
 		},
 		wantMissing: map[string][]string{
 			"amd64": {"bonus"},
@@ -175,10 +229,22 @@ func TestUnify(t *testing.T) {
 				"bonus": sets.New("bar"),
 			},
 		}},
-		want: []string{
-			"baz=0.0.1",
-			"bonus=5.4.3",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
+			"arm64": {
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
+			"index": {
+				"baz=0.0.1",
+				"bonus=5.4.3",
+				"foo=1.2.3",
+			},
 		},
 	}, {
 		name:      "mismatched direct dependency",
@@ -202,7 +268,7 @@ func TestUnify(t *testing.T) {
 				"bonus": "5.4.3",
 			},
 		}},
-		wantDiag: errors.New("unable to lock packages to a consistent version: map[bar:[ (amd64) 2.4.6-r1 (arm64)]]"),
+		wantDiag: errors.New("unable to lock packages to a consistent version: map[bar:[2.4.6-r0 (amd64) 2.4.6-r1 (arm64)]]"),
 	}, {
 		name:      "mismatched direct dependency (with constraint)",
 		originals: []string{"foo", "bar>2.4.6", "baz"},
@@ -231,7 +297,7 @@ func TestUnify(t *testing.T) {
 		// 	"bonus=5.4.3",
 		// 	"foo=1.2.3",
 		// },
-		wantDiag: errors.New("unable to lock packages to a consistent version: map[bar:[ (amd64) 2.4.6-r1 (arm64)]]"),
+		wantDiag: errors.New("unable to lock packages to a consistent version: map[bar:[2.4.6-r0 (amd64) 2.4.6-r1 (arm64)]]"),
 	}, {
 		name:      "single-architecture resolved dependency",
 		originals: []string{"foo", "bar", "baz"},
@@ -254,10 +320,24 @@ func TestUnify(t *testing.T) {
 				"arm-energy-efficient-as-f-arithmetic": "9.8.7",
 			},
 		}},
-		want: []string{
-			"bar=2.4.6",
-			"baz=0.0.1",
-			"foo=1.2.3",
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+				"intel-fast-as-f-math=5.4.3",
+			},
+			"arm64": {
+				"arm-energy-efficient-as-f-arithmetic=9.8.7",
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
 		},
 		wantMissing: map[string][]string{
 			"amd64": {"intel-fast-as-f-math"},

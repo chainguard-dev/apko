@@ -17,6 +17,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"sort"
@@ -27,13 +28,19 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
-func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (*types.ImageConfiguration, map[string][]string, error) {
+// LockImageConfiguration returns a map of locked image configurations for each architecture,
+// plus an entry for the "index" pseudo-architecture that represents the intersection of packages
+// across all the real architecture configs. It also returns a map of missing packages for each
+// architecture that could not be locked. Using the "index" architecture is equivalent to what
+// this used to return prior to supporting per-arch locked configs.
+func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[string]*types.ImageConfiguration, map[string][]string, error) {
 	mc, err := NewMultiArch(ctx, ic.Archs, append(opts, WithImageConfiguration(ic))...)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	archs := make([]resolved, 0, len(ic.Archs))
+	ics := make(map[string]*types.ImageConfiguration, len(ic.Archs)+1)
 
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
@@ -72,14 +79,30 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		archs = append(archs, r)
 	}
 
-	l, missing, err := unify(ic.Contents.Packages, archs)
+	pls, missing, err := unify(ic.Contents.Packages, archs)
 	if err != nil {
 		return nil, missing, err
 	}
 
-	// Set the locked package list.
-	ic.Contents.Packages = l
-	return &ic, missing, nil
+	// Set the locked package lists.
+	for arch, pl := range pls {
+		// Create a defensive copy of "ic".
+		copied := types.ImageConfiguration{}
+		if err := ic.MergeInto(&copied); err != nil {
+			return nil, nil, err
+		}
+
+		copied.Contents.Packages = pl
+
+		if arch != "index" {
+			// Overwrite single-arch configs with their specific arch.
+			copied.Archs = []types.Architecture{types.ParseArchitecture(arch)}
+		}
+
+		ics[arch] = &copied
+	}
+
+	return ics, missing, nil
 }
 
 type resolved struct {
@@ -89,14 +112,22 @@ type resolved struct {
 	provided map[string]sets.Set[string]
 }
 
-func unify(originals []string, inputs []resolved) ([]string, map[string][]string, error) {
+// unify returns (locked packages (per arch), missing packages (per arch), error)
+func unify(originals []string, inputs []resolved) (map[string][]string, map[string][]string, error) {
 	if len(originals) == 0 {
-		return nil, nil, nil
+		// If there are no original packages, then we can't really do anything.
+		// This used to return nil but multi-arch unification assumes we always
+		// have an "index" entry, even if it's empty, so we return this now.
+		// Mostly this is to satisfy some tests that have no package inputs.
+		return map[string][]string{"index": {}}, nil, nil
 	}
 	originalPackages := resolved{
 		packages: make(sets.Set[string], len(originals)),
 		versions: make(map[string]string, len(originals)),
 	}
+
+	byArch := map[string][]string{}
+
 	for _, orig := range originals {
 		name := orig
 		// The function we want from go-apk is private, but these are all the
@@ -114,7 +145,7 @@ func unify(originals []string, inputs []resolved) ([]string, map[string][]string
 	// architectures.
 	acc := resolved{
 		packages: inputs[0].packages.Clone(),
-		versions: inputs[0].versions,
+		versions: maps.Clone(inputs[0].versions),
 		provided: inputs[0].provided,
 	}
 	for _, next := range inputs[1:] {
@@ -207,6 +238,18 @@ func unify(originals []string, inputs []resolved) ([]string, map[string][]string
 		pl = append(pl, fmt.Sprintf("%s=%s", pkg, acc.versions[pkg]))
 	}
 
+	// "index" is a sentinel value for the intersectino of all architectures.
+	// This is a reference to the OCI image index we'll be producing with it.
+	byArch["index"] = pl
+
+	for _, input := range inputs {
+		pl := make([]string, 0, len(input.packages))
+		for _, pkg := range sets.List(input.packages) {
+			pl = append(pl, fmt.Sprintf("%s=%s", pkg, input.versions[pkg]))
+		}
+		byArch[input.arch] = pl
+	}
+
 	// If a particular architecture is missing additional packages from the
 	// locked set that it produced, than warn about those as well.
 	missingByArch := make(map[string][]string, len(inputs))
@@ -217,10 +260,10 @@ func unify(originals []string, inputs []resolved) ([]string, map[string][]string
 		}
 	}
 	if len(missingByArch) > 0 {
-		return pl, missingByArch, nil
+		return byArch, missingByArch, nil
 	}
 
-	return pl, nil, nil
+	return byArch, nil, nil
 }
 
 // Copied from go-apk's version.go
