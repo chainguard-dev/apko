@@ -154,6 +154,13 @@ func (a *APK) updateScriptsTar(pkg *Package, controlTarGz io.Reader, sourceDateE
 			continue
 		}
 
+		// Ignore files that aren't executable.
+		// This is mostly to ignore .melange.yaml files in the control section,
+		// but apk itself has hardcoded list of scripts that we might want to do too.
+		if header.FileInfo().Mode().Perm()&0555 != 0555 {
+			continue
+		}
+
 		origName := header.Name
 		header.Name = fmt.Sprintf("%s-%s.Q1%s%s", pkg.Name, pkg.Version, base64.StdEncoding.EncodeToString(pkg.Checksum), origName)
 

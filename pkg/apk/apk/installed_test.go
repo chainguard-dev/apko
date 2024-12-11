@@ -149,7 +149,6 @@ func TestUpdateScriptsTar(t *testing.T) {
 		".post-install": []byte("echo 'post install'"),
 		".pre-upgrade":  []byte("echo 'pre upgrade'"),
 		".post-upgrade": []byte("echo 'post upgrade'"),
-		".PKGINFO":      []byte(pkginfo),
 	}
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -157,11 +156,18 @@ func TestUpdateScriptsTar(t *testing.T) {
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
-			Mode: 0o644,
+			Mode: 0o755,
 			Size: int64(len(content)),
 		})
 		_, _ = tw.Write(content)
 	}
+
+	_ = tw.WriteHeader(&tar.Header{
+		Name: ".PKGINFO",
+		Mode: 0o644,
+		Size: int64(len([]byte(pkginfo))),
+	})
+	_, _ = tw.Write([]byte(pkginfo))
 	tw.Close()
 	gw.Close()
 
