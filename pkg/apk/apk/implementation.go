@@ -135,6 +135,7 @@ var baseDirectories = []directory{
 	{"/dev", 0o755},
 	{"/etc", 0o755},
 	{"/lib", 0o755},
+	{"/opt", 0o755},
 	{"/proc", 0o555},
 	{"/var", 0o755},
 }
