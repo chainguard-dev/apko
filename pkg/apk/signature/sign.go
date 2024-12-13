@@ -55,24 +55,24 @@ func SignIndex(ctx context.Context, signingKey string, indexFile string) error {
 	//
 	// Done:
 	// Step 0) apk-tools supports RSA256 since 2017
-	// This PR:
 	// Step 1) Upgrade all deployments of melange/go-apk with verification support for RSA256
-	// Follow-up:
-	// Step 2) Turn off RSA signatures & turn on RSA256 signatures
-	//
-	// Enable both (incorrectly ordered dual-signed) only for local testing
-	sigs := []struct {
-		filename   string
-		digestType crypto.Hash
-	}{
-		{
-			"RSA",
-			crypto.SHA1,
-		},
-		// {
-		// 	"RSA256",
-		// 	crypto.SHA256,
-		// },
+	// This PR:
+	// Step 2) Turn on RSA256 signatures, with RSA escape hatch
+	// Next:
+	// Step 3) Remove RSA escape hatch
+
+	filename := "RSA256"
+	digestType := crypto.SHA256
+
+	if digest, ok := os.LookupEnv("SIGNING_DIGEST"); ok {
+		switch digest {
+		case "SHA256":
+		case "SHA1":
+			filename = "RSA"
+			digestType = crypto.SHA1
+		default:
+			return fmt.Errorf("unsupported SIGNING_DIGEST")
+		}
 	}
 
 	indexData, err := os.ReadFile(indexFile)
@@ -81,22 +81,20 @@ func SignIndex(ctx context.Context, signingKey string, indexFile string) error {
 	}
 
 	sigFS := memfs.New()
-	for _, sig := range sigs {
-		indexDigest, err := HashData(indexData, sig.digestType)
-		if err != nil {
-			return err
-		}
+	indexDigest, err := HashData(indexData, digestType)
+	if err != nil {
+		return err
+	}
 
-		sigData, err := RSASignDigest(indexDigest, sig.digestType, signingKey, "")
-		if err != nil {
-			return fmt.Errorf("unable to sign index: %w", err)
-		}
+	sigData, err := RSASignDigest(indexDigest, digestType, signingKey, "")
+	if err != nil {
+		return fmt.Errorf("unable to sign index: %w", err)
+	}
 
-		log.Infof("appending signature %s to index %s", sig.filename, indexFile)
+	log.Infof("appending signature %s to index %s", filename, indexFile)
 
-		if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.%s.%s.pub", sig.filename, filepath.Base(signingKey)), sigData, 0644); err != nil {
-			return fmt.Errorf("unable to append signature: %w", err)
-		}
+	if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.%s.%s.pub", filename, filepath.Base(signingKey)), sigData, 0644); err != nil {
+		return fmt.Errorf("unable to append signature: %w", err)
 	}
 
 	// prepare control.tar.gz
