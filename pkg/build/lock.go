@@ -237,6 +237,10 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 	for _, pkg := range sets.List(acc.packages) {
 		pl = append(pl, fmt.Sprintf("%s=%s", pkg, acc.versions[pkg]))
 	}
+	// Sort the package list explicitly with the `=` included.
+	// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
+	// due to the presence or absence of the `=` character.
+	sort.Strings(pl)
 
 	// "index" is a sentinel value for the intersectino of all architectures.
 	// This is a reference to the OCI image index we'll be producing with it.
@@ -247,6 +251,10 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 		for _, pkg := range sets.List(input.packages) {
 			pl = append(pl, fmt.Sprintf("%s=%s", pkg, input.versions[pkg]))
 		}
+		// Sort the package list explicitly with the `=` included.
+		// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
+		// due to the presence or absence of the `=` character.
+		sort.Strings(pl)
 		byArch[input.arch] = pl
 	}
 
