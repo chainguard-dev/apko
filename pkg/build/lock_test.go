@@ -343,6 +343,29 @@ func TestUnify(t *testing.T) {
 			"amd64": {"intel-fast-as-f-math"},
 			"arm64": {"arm-energy-efficient-as-f-arithmetic"},
 		},
+	}, {
+		name:      "sorting with dashes",
+		originals: []string{"foo", "foo-bar"},
+		inputs: []resolved{{
+			arch:     "amd64",
+			packages: sets.New("foo", "foo-bar"),
+			versions: map[string]string{
+				"foo":     "1.2.3",
+				"foo-bar": "2.4.6",
+			},
+		}},
+		want: map[string][]string{
+			"amd64": {
+				// This comes first because '-' sorts before '='.
+				"foo-bar=2.4.6",
+				"foo=1.2.3",
+			},
+			"index": {
+				// This comes first because '-' sorts before '='.
+				"foo-bar=2.4.6",
+				"foo=1.2.3",
+			},
+		},
 	}}
 
 	for _, test := range tests {
