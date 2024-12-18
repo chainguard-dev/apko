@@ -38,6 +38,9 @@ func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEn
 }
 
 func userToUserEntry(user types.User) passwd.UserEntry {
+	if user.GID == 0 {
+		user.GID = user.UID
+	}
 	if user.Shell == "" {
 		user.Shell = "/bin/sh"
 	}
