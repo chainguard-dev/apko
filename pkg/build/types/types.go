@@ -29,12 +29,14 @@ type User struct {
 	// Required: The user ID
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
-	GID uint32 `json:"gid,omitempty"`
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// Optional: The user's shell
 	Shell string `json:"shell,omitempty"`
 	// Optional: The user's home directory
 	HomeDir string `json:"homedir,omitempty"`
 }
+
+type GID *uint32
 
 type Group struct {
 	// Required: The name of the group
