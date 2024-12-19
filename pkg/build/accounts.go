@@ -44,10 +44,15 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	if user.HomeDir == "" {
 		user.HomeDir = "/home/" + user.UserName
 	}
+	// Default the GID to the UID if not provided
+	gid := user.UID
+	if user.GID != nil {
+		gid = uint32(*user.GID)
+	}
 	return passwd.UserEntry{
 		UserName: user.UserName,
 		UID:      user.UID,
-		GID:      user.GID,
+		GID:      gid,
 		HomeDir:  user.HomeDir,
 		Password: "x",
 		Info:     "Account created by apko",

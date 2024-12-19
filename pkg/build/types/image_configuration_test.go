@@ -11,6 +11,13 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
+var (
+	gid1000  = uint32(1000)
+	gid1001  = uint32(1001)
+	gid1000T = types.GID(&gid1000)
+	gid1001T = types.GID(&gid1001)
+)
+
 func TestOverlayWithEmptyContents(t *testing.T) {
 	ctx := context.Background()
 
@@ -152,7 +159,7 @@ func TestMergeInto(t *testing.T) {
 				Users: []types.User{{
 					UserName: "foo",
 					UID:      1000,
-					GID:      1000,
+					GID:      gid1000T,
 					HomeDir:  "/home/foo",
 				}},
 			},
@@ -174,7 +181,7 @@ func TestMergeInto(t *testing.T) {
 				Users: []types.User{{
 					UserName: "bar",
 					UID:      1001,
-					GID:      1001,
+					GID:      gid1001T,
 					HomeDir:  "/home/bar",
 				}},
 			},
@@ -200,12 +207,12 @@ func TestMergeInto(t *testing.T) {
 				Users: []types.User{{
 					UserName: "foo",
 					UID:      1000,
-					GID:      1000,
+					GID:      gid1000T,
 					HomeDir:  "/home/foo",
 				}, {
 					UserName: "bar",
 					UID:      1001,
-					GID:      1001,
+					GID:      gid1001T,
 					HomeDir:  "/home/bar",
 				}},
 			},
