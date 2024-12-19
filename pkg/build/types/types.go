@@ -29,7 +29,7 @@ type User struct {
 	// Required: The user ID
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
-	GID GID `json:"gid,omitempty"`
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// Optional: The user's shell
 	Shell string `json:"shell,omitempty"`
 	// Optional: The user's home directory

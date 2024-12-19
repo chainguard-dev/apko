@@ -15,9 +15,12 @@
 package types
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseArchitectures(t *testing.T) {
@@ -89,5 +92,164 @@ func TestOCIPlatform(t *testing.T) {
 			got := Architecture(c.in)
 			require.Equal(t, c.want, got.ToOCIPlatform().Architecture)
 		})
+	}
+}
+
+var (
+	id0     = uint32(0)
+	id0T    = GID(&id0)
+	id1234  = uint32(1234)
+	id1235  = uint32(1235)
+	id1235T = GID(&id1235)
+)
+
+// Ensure unmarshalling YAML into an ImageConfiguration
+// does not result in unexpected GID=0
+func Test_YAML_Unmarshalling_UID_GID_mapping(t *testing.T) {
+	for _, test := range []struct {
+		desc        string
+		expectedUID uint32
+		expectedGID GID
+		rawYAML     string
+	}{
+		{
+			desc:        "Unique GID gets propogated",
+			expectedUID: id1234,
+			expectedGID: id1235T,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+      gid: 1235
+`,
+		},
+		{
+			desc:        "Nil GID is treated as nil (not 0)",
+			expectedUID: id1234,
+			expectedGID: nil,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+`,
+		},
+		{
+			desc:        "Able to set GID to 0",
+			expectedUID: id1234,
+			expectedGID: id0T,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+      gid: 0
+`,
+		},
+		{
+			// TODO: This may be unintentional but matches historical behavior
+			desc:        "Missing UID and GID means UID is 0 and GID is nil",
+			expectedUID: 0,
+			expectedGID: nil,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+`,
+		},
+	} {
+		var ic ImageConfiguration
+		if err := yaml.Unmarshal([]byte(test.rawYAML), &ic); err != nil {
+			t.Errorf("%s: unable to unmarshall: %v", test.desc, err)
+			continue
+		}
+		if numUsers := len(ic.Accounts.Users); numUsers != 1 {
+			t.Errorf("%s: expected 1 user, got %d", test.desc, numUsers)
+			continue
+		}
+		user := ic.Accounts.Users[0]
+		if test.expectedUID != user.UID {
+			t.Errorf("%s: expected UID %d got UID %d", test.desc, test.expectedUID, user.UID)
+		}
+		if diff := cmp.Diff(test.expectedGID, user.GID); diff != "" {
+			t.Errorf("%s: diff in GID: (-want, +got) = %s", test.desc, diff)
+		}
+	}
+}
+
+// Ensure marshalling YAML from a User
+// does not result in unexpected GID=0
+func Test_YAML_Marshalling_UID_GID_mapping(t *testing.T) {
+	for _, test := range []struct {
+		desc         string
+		user         User
+		expectedYAML string
+	}{
+		{
+			desc: "Unique UID and GID",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+				GID:      id1235T,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+gid: 1235
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			desc: "Nil GID gets omitted",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			desc: "Able to set GID to 0",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+				GID:      id0T,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+gid: 0
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			// TODO: This may be unintentional but matches historical behavior
+			desc: "Missing UID and GID means UID is 0 and GID gets omitted",
+			user: User{
+				UserName: "testing",
+			},
+			expectedYAML: `
+username: testing
+uid: 0
+shell: ""
+homedir: ""
+`,
+		},
+	} {
+		b, err := yaml.Marshal(test.user)
+		if err != nil {
+			t.Errorf("%s: unable to marshall: %v", test.desc, err)
+			continue
+		}
+		if diff := cmp.Diff(strings.TrimPrefix(test.expectedYAML, "\n"), string(b)); diff != "" {
+			t.Errorf("%s: diff in marshalled user YAML: (-want, +got) = %s", test.desc, diff)
+		}
 	}
 }
