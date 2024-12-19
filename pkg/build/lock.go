@@ -137,7 +137,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 		if idx := strings.IndexAny(orig, "=<>~"); idx >= 0 {
 			name = orig[:idx]
 		}
-		originalPackages.packages.Insert(name)
+		originalPackages.packages.Insert(strings.TrimSuffix(name, "@local"))
 		originalPackages.versions[name] = strings.TrimPrefix(orig, name)
 	}
 
