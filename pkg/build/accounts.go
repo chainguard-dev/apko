@@ -47,7 +47,7 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	// Default the GID to the UID if not provided
 	gid := user.UID
 	if user.GID != nil {
-		gid = uint32(*user.GID)
+		gid = *user.GID
 	}
 	return passwd.UserEntry{
 		UserName: user.UserName,
