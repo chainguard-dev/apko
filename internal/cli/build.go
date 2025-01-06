@@ -189,6 +189,10 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		return nil, nil, err
 	}
 
+	if ic.Contents.BaseImage != nil && o.Lockfile == "" {
+		return nil, nil, fmt.Errorf("building with base image is supported only with a lockfile")
+	}
+
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
@@ -202,7 +206,6 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		ic.Archs = types.AllArchs
 	}
 	// save the final set we will build
-	archs = ic.Archs
 	log.Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// Probe the VCS URL if it is not set and we are asked to do so.
@@ -239,15 +242,8 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	multiArchBDE := o.SourceDateEpoch
 
 	configs, _, err := build.LockImageConfiguration(ctx, *ic, opts...)
-	mc, err := build.NewMultiArch(ctx, archs, opts...)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, bc := range mc.Contexts {
-		if bc.ImageConfiguration().Contents.BaseImage != nil && o.Lockfile == "" {
-			return nil, nil, fmt.Errorf("building with base image is supported only with a lockfile")
-		}
+		return nil, nil, fmt.Errorf("locking config: %w", err)
 	}
 
 	for arch, ic := range configs {
