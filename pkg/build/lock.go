@@ -137,6 +137,10 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 		if idx := strings.IndexAny(orig, "=<>~"); idx >= 0 {
 			name = orig[:idx]
 		}
+		// If we're using a pinned repo (foo@local), strip that as well.
+		if idx := strings.Index(orig, "@"); idx >= 0 {
+			name = orig[:idx]
+		}
 		originalPackages.packages.Insert(name)
 		originalPackages.versions[name] = strings.TrimPrefix(orig, name)
 	}
