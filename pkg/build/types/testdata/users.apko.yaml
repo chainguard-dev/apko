@@ -12,6 +12,5 @@ accounts:
       uid: 2
       homedir: "/not/home"
       username: "something-else"
-    - gid: 2
-      uid: 3
+    - uid: 3
       username: "user"
