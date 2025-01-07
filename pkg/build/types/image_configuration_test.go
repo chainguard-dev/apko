@@ -60,6 +60,9 @@ func TestUserContents(t *testing.T) {
 
 	require.Equal(t, "/not/home", ic.Accounts.Users[0].HomeDir)
 	require.Equal(t, "/home/user", ic.Accounts.Users[1].HomeDir)
+
+	// Ensure this does not cause panic when users[1].gid is empty (defaulting to 0)
+	ic.Summarize(ctx)
 }
 
 func TestMergeInto(t *testing.T) {

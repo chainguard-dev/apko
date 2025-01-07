@@ -258,7 +258,7 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 		log.Infof("    runas:  %s", ic.Accounts.RunAs)
 		log.Infof("    users:")
 		for _, u := range ic.Accounts.Users {
-			log.Infof("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
+			log.Infof("      - uid=%d(%s) gid=%d", u.UID, u.UserName, gidToInt(u.GID))
 		}
 		log.Infof("    groups:")
 		for _, g := range ic.Accounts.Groups {
@@ -271,4 +271,11 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 			log.Infof("      %s: %s", k, v)
 		}
 	}
+}
+
+func gidToInt(gid GID) uint32 {
+	if gid == nil {
+		return 0
+	}
+	return *gid
 }
