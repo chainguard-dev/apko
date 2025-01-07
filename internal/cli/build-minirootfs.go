@@ -34,6 +34,10 @@ func buildMinirootFS() *cobra.Command {
 	var buildArch string
 	var sbomPath string
 	var ignoreSignatures bool
+	var extraKeys []string
+	var extraBuildRepos []string
+	var extraRuntimeRepos []string
+	var extraPackages []string
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -44,6 +48,10 @@ func buildMinirootFS() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return BuildMinirootFSCmd(cmd.Context(),
 				build.WithConfig(args[0], []string{}),
+				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
+				build.WithExtraPackages(extraPackages),
 				build.WithTarball(args[1]),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
@@ -57,6 +65,10 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 
 	return cmd
 }
