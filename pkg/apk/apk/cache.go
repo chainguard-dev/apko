@@ -16,6 +16,7 @@ package apk
 
 import (
 	"context"
+	"encoding/base32"
 	"fmt"
 	"io"
 	"net/http"
@@ -331,6 +332,11 @@ func etagFromResponse(resp *http.Response) (string, bool) {
 	}
 	// When we get etags, they appear to be quoted.
 	etag := strings.Trim(remoteEtag[0], `"`)
+
+	// To ensure these things are safe filenames, base32 encode them.
+	// (Avoiding base64 due to case sensitive filesystems.)
+	etag = base32.StdEncoding.EncodeToString([]byte(etag))
+
 	return etag, etag != ""
 }
 

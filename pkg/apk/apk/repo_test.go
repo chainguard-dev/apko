@@ -16,6 +16,7 @@ package apk
 
 import (
 	"context"
+	"encoding/base32"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -192,7 +193,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// check that the contents are the same
-		index1, err := os.ReadFile(filepath.Join(repoDir, "APKINDEX", "an-etag.tar.gz"))
+		index1, err := os.ReadFile(filepath.Join(repoDir, "APKINDEX", base32.StdEncoding.EncodeToString([]byte("an-etag"))+".tar.gz"))
 		require.NoError(t, err, "unable to read cache index file")
 		index2, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, indexFilename))
 		require.NoError(t, err, "unable to read previous index file")
