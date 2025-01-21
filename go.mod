@@ -6,7 +6,6 @@ require (
 	chainguard.dev/sdk v0.1.29
 	github.com/chainguard-dev/clog v1.5.1
 	github.com/charmbracelet/log v0.4.0
-	github.com/dominodatalab/os-release v0.0.0-20190522011736-bcdb4a3e3c2f
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.20.3

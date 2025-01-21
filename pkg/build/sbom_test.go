@@ -25,7 +25,8 @@ import (
 )
 
 func TestReadReleaseData(t *testing.T) {
-	osinfoData := `ID=wolfi
+	osinfoData := `# This is a comment that should be ignored.
+ID=wolfi
 NAME="Wolfi"
 PRETTY_NAME="Wolfi"
 VERSION_ID="2022, 20230914"
@@ -51,4 +52,15 @@ func TestReadReleaseData_EmptyDefaults(t *testing.T) {
 	require.Equal(t, "apko-generated image", info.Name)
 	require.Equal(t, "unknown", info.VersionID)
 	require.Equal(t, "", info.PrettyName)
+}
+
+func TestBadReleaseData(t *testing.T) {
+	osinfoData := `hello, world! this is not a valid os-release file
+`
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll(filepath.Dir("/etc/os-release"), os.FileMode(0o644)))
+	require.NoError(t, fsys.WriteFile("/etc/os-release", []byte(osinfoData), os.FileMode(0o644)))
+	// Bad data in file should err.
+	_, err := readReleaseData(fsys)
+	require.Error(t, err)
 }
