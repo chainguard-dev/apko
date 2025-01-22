@@ -280,4 +280,11 @@ func TestMultipleKeys(t *testing.T) {
 		require.Nil(t, err)
 		assert.Greater(len(apkIndex.Signature), 0, "Signature missing")
 	}
+	// Now, test the case where we have no matching key
+	_, err = parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
+		map[string][]byte{
+			"unused-key": []byte("unused-key-data"),
+		},
+		"aarch64", indexBytes, &indexOpts{})
+	require.NotNil(t, err)
 }
