@@ -32,7 +32,6 @@ import (
 	"time"
 
 	"github.com/chainguard-dev/clog"
-	"github.com/charmbracelet/log"
 	"github.com/klauspost/compress/gzip"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
@@ -429,7 +428,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 				verified = true
 				break
 			} else {
-				log.Warnf("failed to verify signature for keyfile %s: %v", sig.KeyID, err)
+				clog.FromContext(ctx).Warnf("failed to verify signature for keyfile %s: %v", sig.KeyID, err)
 			}
 		}
 		if !verified {
