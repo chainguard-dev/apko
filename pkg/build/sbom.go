@@ -15,17 +15,17 @@
 package build
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
-	osr "github.com/dominodatalab/os-release"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
@@ -151,13 +151,20 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	return sboms, nil
 }
 
+type ReleaseData struct {
+	ID         string
+	Name       string
+	PrettyName string
+	VersionID  string
+}
+
 // readReleaseData reads the information from /etc/os-release
 //
 // If no os-release file is found, it returns a Data struct with ID set to "unknown".
-func readReleaseData(fsys fs.FS) (*osr.Data, error) {
+func readReleaseData(fsys fs.FS) (*ReleaseData, error) {
 	f, err := fsys.Open("/etc/os-release")
 	if errors.Is(err, fs.ErrNotExist) {
-		return &osr.Data{
+		return &ReleaseData{
 			ID:        "unknown",
 			Name:      "apko-generated image",
 			VersionID: "unknown",
@@ -166,12 +173,38 @@ func readReleaseData(fsys fs.FS) (*osr.Data, error) {
 		return nil, fmt.Errorf("opening os-release: %w", err)
 	}
 	defer f.Close()
-	osReleaseData, err := io.ReadAll(f)
-	if err != nil {
+
+	scanner := bufio.NewScanner(f)
+
+	kv := map[string]string{}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid os-release line: %q", line)
+		}
+
+		kv[before] = strings.Trim(after, "\"")
+	}
+
+	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading os-release: %w", err)
 	}
 
-	return osr.Parse(string(osReleaseData)), nil
+	return &ReleaseData{
+		ID:         kv["ID"],
+		Name:       kv["NAME"],
+		PrettyName: kv["PRETTY_NAME"],
+		VersionID:  kv["VERSION_ID"],
+	}, nil
 }
 
 func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
