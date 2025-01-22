@@ -3,6 +3,7 @@ package apk
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -237,4 +238,53 @@ k:9001
 
 	require.Len(t, pkg.Provides, 0, "Expected no provides")
 	require.Len(t, pkg.Dependencies, 0, "Expected no dependencies")
+}
+
+func TestMultipleKeys(t *testing.T) {
+	assert := assert.New(t)
+	// read all the keys from testdata/signing/keys
+	folder := "testdata/signing/keys"
+	// get all the files in the folder
+	files, _ := os.ReadDir(folder)
+	keys := make(map[string][]byte)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		// read the file
+		keyFile, err := os.Open(fmt.Sprintf("%s/%s", folder, file.Name()))
+		require.Nil(t, err)
+		// parse the key
+		key, err := os.ReadFile(keyFile.Name())
+		require.Nil(t, err)
+		keys[file.Name()] = key
+	}
+	// read the index file into []byte
+	indexBytes, err := os.ReadFile("testdata/signing/APKINDEX.tar.gz")
+	require.Nil(t, err)
+
+	ctx := context.Background()
+	// There are 2^N-1 combinations of keys, where N is the number of keys
+	// We will test all of them
+	for comb := 1; comb < (1 << len(keys)); comb++ {
+		// get the keys to use
+		usedKeys := make(map[string][]byte)
+		for i := 0; i < len(keys); i++ {
+			if (comb & (1 << i)) != 0 {
+				usedKeys[files[i].Name()] = keys[files[i].Name()]
+			}
+		}
+		// parse the index
+		apkIndex, err := parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
+			usedKeys, "aarch64", indexBytes, &indexOpts{})
+		require.Nil(t, err)
+		assert.Greater(len(apkIndex.Signature), 0, "Signature missing")
+	}
+	// Now, test the case where we have no matching key
+	_, err = parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
+		map[string][]byte{
+			"unused-key": []byte("unused-key-data"),
+		},
+		"aarch64", indexBytes, &indexOpts{})
+	require.NotNil(t, err)
 }

@@ -44,6 +44,12 @@ import (
 
 var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
 
+type Signature struct {
+	KeyID           string
+	Signature       []byte
+	DigestAlgorithm crypto.Hash
+}
+
 // This is terrible but simpler than plumbing around a cache for now.
 // We just hold the parsed index in memory rather than re-parsing it every time,
 // which requires gunzipping, which is (somewhat) expensive.
@@ -332,9 +338,11 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
 	_, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
 	defer span.End()
-
 	// validate the signature
 	if shouldCheckSignatureForIndex(u, arch, opts) {
+		if len(keys) == 0 {
+			return nil, fmt.Errorf("no keys provided to verify signature")
+		}
 		buf := bytes.NewReader(b)
 		gzipReader, err := gzip.NewReader(buf)
 		if err != nil {
@@ -348,14 +356,12 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 
 		tarReader := tar.NewReader(gzipReader)
 
-		var keyfile string
-		var signature []byte
-		var indexDigestType crypto.Hash
+		sigs := make([]Signature, 0, len(keys))
 		for {
 			// read the signature(s)
 			signatureFile, err := tarReader.Next()
 			// found everything, end of stream
-			if len(keyfile) > 0 && errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			// oops something went wrong
@@ -366,29 +372,40 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			if len(matches) != 3 {
 				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
 			}
-			// It is lucky that golang only iterates over sorted file names, and that
-			// lexically latest is the strongest hash
+			keyfile := matches[2]
+			if _, ok := keys[keyfile]; !ok {
+				// Ignore this signature if we don't have the key
+				continue
+			}
+			var digestAlgorithm crypto.Hash
 			switch signatureType := matches[1]; signatureType {
 			case "DSA":
 				// Obsolete
 				continue
 			case "RSA":
 				// Current legacy compat
-				indexDigestType = crypto.SHA1
+				digestAlgorithm = crypto.SHA1
 			case "RSA256":
 				// Current best practice
-				indexDigestType = crypto.SHA256
+				digestAlgorithm = crypto.SHA256
 			case "RSA512":
 				// Too big, too slow, not compiled in
 				continue
 			default:
 				return nil, fmt.Errorf("unknown signature format: %s", signatureType)
 			}
-			keyfile = matches[2]
-			signature, err = io.ReadAll(tarReader)
+			signature, err := io.ReadAll(tarReader)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
 			}
+			sigs = append(sigs, Signature{
+				KeyID:           keyfile,
+				Signature:       signature,
+				DigestAlgorithm: digestAlgorithm,
+			})
+		}
+		if len(sigs) == 0 {
+			return nil, fmt.Errorf("no signature with known key found in repository index")
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
@@ -396,31 +413,26 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		unreadBytes := buf.Len()
 		readBytes := allBytes - unreadBytes
 		indexData := b[readBytes:]
-		indexDigest, err := sign.HashData(indexData, indexDigestType)
-		if err != nil {
-			return nil, err
-		}
-		// now we can check the signature
-		if keys == nil {
-			return nil, fmt.Errorf("no keys provided to verify signature")
-		}
-		var verified bool
-		keyData, ok := keys[keyfile]
-		if ok {
-			if err := sign.RSAVerifyDigest(indexDigest, indexDigestType, signature, keyData); err != nil {
-				verified = false
-			}
-		}
-		if !verified {
-			for _, keyData := range keys {
-				if err := sign.RSAVerifyDigest(indexDigest, indexDigestType, signature, keyData); err == nil {
-					verified = true
-					break
+		indexDigest := make(map[crypto.Hash][]byte, len(keys))
+		verified := false
+		for _, sig := range sigs {
+			// compute the digest if not already done
+			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
+				digest, err := sign.HashData(indexData, sig.DigestAlgorithm)
+				if err != nil {
+					return nil, fmt.Errorf("failed to compute digest: %w", err)
 				}
+				indexDigest[sig.DigestAlgorithm] = digest
+			}
+			if err := sign.RSAVerifyDigest(indexDigest[sig.DigestAlgorithm], sig.DigestAlgorithm, sig.Signature, keys[sig.KeyID]); err == nil {
+				verified = true
+				break
+			} else {
+				clog.FromContext(ctx).Warnf("failed to verify signature for keyfile %s: %v", sig.KeyID, err)
 			}
 		}
 		if !verified {
-			return nil, fmt.Errorf("no key found to verify signature for keyfile %s; tried all other keys as well", keyfile)
+			return nil, errors.New("signature verification failed for repository index, for all provided keys")
 		}
 	}
 	// with a valid signature, convert it to an ApkIndex
