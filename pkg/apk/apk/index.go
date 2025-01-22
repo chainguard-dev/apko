@@ -421,7 +421,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
 				digest, err := sign.HashData(indexData, sig.DigestAlgorithm)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to compute digest: %w", err)
 				}
 				indexDigest[sig.DigestAlgorithm] = digest
 			}
