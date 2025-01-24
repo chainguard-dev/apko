@@ -343,12 +343,6 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		if len(keys) == 0 {
 			return nil, fmt.Errorf("no keys provided to verify signature")
 		}
-		// check that they key name aren't paths or URLs
-		for keyName := range keys {
-			if strings.Contains(keyName, "/") {
-				return nil, fmt.Errorf("invalid keyname %q", keyName)
-			}
-		}
 		buf := bytes.NewReader(b)
 		gzipReader, err := gzip.NewReader(buf)
 		if err != nil {
