@@ -135,6 +135,10 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return nil, err
 		}
 
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+		}
+
 		fetchAndParse := func(etag string) (NamedIndex, error) {
 			b, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
