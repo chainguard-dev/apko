@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -35,6 +37,7 @@ func New(httpClient *http.Client) *Client {
 		httpClient = http.DefaultClient
 	}
 	rc := retryablehttp.NewClient()
+	rc.Logger = log.New(io.Discard, "", 0) // Don't log requests at all.
 	rc.HTTPClient = httpClient
 	return &Client{httpClient: rc.StandardClient()}
 }
