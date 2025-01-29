@@ -466,6 +466,14 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Pac
 		DownloadLocation: url,
 		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
 		SourceInfo:       "Package info from apk database",
+		// This is APKv2 APKINDEX SHA1 file checksum
+		// https://wiki.alpinelinux.org/wiki/Apk_spec#Package_Checksum_Field
+		// This is the only meaningful and signed checksum
+		// right now. This can be upgrade to SHA256 when
+		// switching to the v3 index format. Whilst SPDX
+		// supports other checksums, there is currently no
+		// other checksum that one can verify in APKINDEX or
+		// query with apk-tools
 		Checksums: []Checksum{
 			{
 				Algorithm: "SHA1",
@@ -709,6 +717,8 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 	checksums := []Checksum{}
 	packageName := vcsURL
 	if url, commitHash, found := strings.Cut(vcsURL, "@"); found {
+		// This is git commit hash, currently defined as SHA1
+		// SHA256 is only experimental in gitlab
 		checksums = append(checksums, Checksum{
 			Algorithm: "SHA1",
 			Value:     commitHash,
