@@ -15,9 +15,12 @@
 package apk
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/hashicorp/go-cleanhttp"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -33,6 +36,7 @@ type opts struct {
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	ignoreSignatures   bool
+	transport          http.RoundTripper
 }
 
 type Option func(*opts) error
@@ -130,10 +134,21 @@ func WithAuthenticator(a auth.Authenticator) Option {
 	}
 }
 
+// WithTransport allows explicitly setting the inner HTTP transport.
+func WithTransport(t http.RoundTripper) Option {
+	return func(o *opts) error {
+		if t != nil {
+			o.transport = t
+		}
+		return nil
+	}
+}
+
 func defaultOpts() *opts {
 	return &opts{
 		arch:              ArchToAPK(runtime.GOARCH),
 		ignoreMknodErrors: false,
 		auth:              auth.DefaultAuthenticators,
+		transport:         cleanhttp.DefaultPooledTransport(),
 	}
 }

@@ -17,6 +17,7 @@ package options
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"runtime"
 	"time"
@@ -55,6 +56,7 @@ type Options struct {
 	Auth                    auth.Authenticator `json:"-"`
 	IncludePaths            []string           `json:"includePaths,omitempty"`
 	IgnoreSignatures        bool               `json:"ignoreSignatures,omitempty"`
+	Transport               http.RoundTripper  `json:"-"`
 }
 
 type Auth struct{ User, Pass string }
