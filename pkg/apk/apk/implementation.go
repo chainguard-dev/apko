@@ -96,6 +96,8 @@ func New(options ...Option) (*APK, error) {
 	}
 
 	client := retryablehttp.NewClient()
+
+	client.HTTPClient = &http.Client{Transport: opt.transport}
 	client.Logger = clog.FromContext(context.Background())
 
 	return &APK{

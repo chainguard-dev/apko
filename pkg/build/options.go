@@ -19,6 +19,7 @@ import (
 	sha2562 "crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"time"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -226,6 +227,14 @@ func WithAuthenticator(a auth.Authenticator) Option {
 func WithIgnoreSignatures(ignore bool) Option {
 	return func(bc *Context) error {
 		bc.o.IgnoreSignatures = ignore
+		return nil
+	}
+}
+
+// WithTransport allows explicitly setting the inner HTTP transport.
+func WithTransport(t http.RoundTripper) Option {
+	return func(bc *Context) error {
+		bc.o.Transport = t
 		return nil
 	}
 }
