@@ -35,7 +35,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.32.1
-	sigs.k8s.io/release-utils v0.9.0
+	sigs.k8s.io/release-utils v0.11.0
 )
 
 require (
