@@ -1,10 +1,13 @@
 contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    - /home/smoser/src/wolfi/os/local-melange.rsa.pub
   repositories:
     - https://packages.wolfi.dev/os
+    - /home/smoser/src/wolfi/os/packages
   packages:
     - wolfi-base
+    - usrmerge-baselayout
 
 cmd: /bin/sh -l
 

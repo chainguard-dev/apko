@@ -626,6 +626,18 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 }
 
 func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) error {
+
+	// if usrMerge is in the list, make it first
+	const usrMerge = "usrmerge-baselayout"
+	for i, p := range allpkgs {
+		if p.PackageName() == usrMerge {
+			m := append([]InstallablePackage{p}, allpkgs[0:i]...)
+			m = append(m, allpkgs[i+1:]...)
+			allpkgs = m
+			break
+		}
+	}
+
 	// TODO: Consider making this configurable option.
 	jobs := runtime.GOMAXPROCS(0)
 
