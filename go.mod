@@ -3,7 +3,7 @@ module chainguard.dev/apko
 go 1.23.4
 
 require (
-	chainguard.dev/sdk v0.1.29
+	chainguard.dev/sdk v0.1.31
 	github.com/chainguard-dev/clog v1.5.1
 	github.com/charmbracelet/log v0.4.0
 	github.com/go-git/go-git/v5 v5.13.1
