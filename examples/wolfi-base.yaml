@@ -7,6 +7,7 @@ contents:
     - https://apk.cgr.dev/wolfi-presubmit/3bc259540e57442184d2bcd0dc091f190eaefea8
   packages:
     - wolfi-base
+    - bash-binsh
     - usrmerge-baselayout
 
 cmd: /bin/sh -l

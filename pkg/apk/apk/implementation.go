@@ -626,7 +626,6 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 }
 
 func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) error {
-
 	// if usrMerge is in the list, make it first
 	const usrMerge = "usrmerge-baselayout"
 	for i, p := range allpkgs {
