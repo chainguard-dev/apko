@@ -56,9 +56,7 @@ func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.
 		if err != nil {
 			return name.Digest{}, err
 		}
-		if strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
-			log.Warnf("skipping local domain tagging %s as %s", localSrcTag.Name(), localDstTag.Name())
-		} else {
+		if !strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
 			log.Infof("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
 			if err := daemon.Tag(localSrcTag, localDstTag, daemon.WithContext(ctx)); err != nil {
 				return name.Digest{}, err

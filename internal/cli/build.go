@@ -206,7 +206,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		ic.Archs = types.AllArchs
 	}
 	// save the final set we will build
-	log.Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Debugf("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// Probe the VCS URL if it is not set and we are asked to do so.
 	if o.WithVCS && ic.VCSUrl == "" {

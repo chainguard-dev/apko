@@ -44,7 +44,7 @@ func WithConfig(configFile string, includePaths []string) Option {
 
 		var ic types.ImageConfiguration
 		hasher := sha2562.New()
-		if err := ic.Load(ctx, configFile, includePaths, hasher); err != nil {
+		if err := ic.Load(ctx, configFile, includePaths, hasher); err != nil { //nolint:staticcheck
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
