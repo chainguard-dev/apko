@@ -7,6 +7,8 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   # Build a single-arch nginx image for each arch.
   build-nginx-on-all-arches:
