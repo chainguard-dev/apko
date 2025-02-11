@@ -225,8 +225,6 @@ var (
 
 // AllArchs contains the standard set of supported architectures, which are
 // used by `apko publish` when no architectures are specified.
-//
-// Deprecated: This will be removed in a future release.
 var AllArchs = []Architecture{
 	_386,
 	amd64,
