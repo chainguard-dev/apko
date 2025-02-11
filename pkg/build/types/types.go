@@ -181,6 +181,8 @@ type ImageConfiguration struct {
 	// Optional: Path to a local file containing additional image configuration
 	//
 	// The included configuration is deep merged with the parent configuration
+	//
+	// Deprecated: This will be removed in a future release.
 	Include string `json:"include,omitempty" yaml:"include,omitempty"`
 
 	// Optional: A list of volumes to configure
@@ -223,6 +225,8 @@ var (
 
 // AllArchs contains the standard set of supported architectures, which are
 // used by `apko publish` when no architectures are specified.
+//
+// Deprecated: This will be removed in a future release.
 var AllArchs = []Architecture{
 	_386,
 	amd64,

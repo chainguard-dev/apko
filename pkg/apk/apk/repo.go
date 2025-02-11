@@ -105,7 +105,7 @@ func (a *APK) SetRepositories(ctx context.Context, repos []string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "SetRepositories")
 	defer span.End()
 
-	clog.InfoContextf(ctx, "setting apk repositories: %v", repos)
+	clog.DebugContextf(ctx, "setting apk repositories: %v", repos)
 
 	if len(repos) == 0 {
 		return fmt.Errorf("must provide at least one repository")
