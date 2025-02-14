@@ -793,7 +793,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				}
 
 				// We already selected something to satisfy "name" and it does not match the "version" we need now.
-				return nil, nil, fmt.Errorf("we already selected %q=%q which conflicts with %q=%q", picked.Name, picked.Version, name, version)
+				return nil, nil, fmt.Errorf("we already selected \"%s=%s\" which conflicts with %q", picked.Name, picked.Version, dep)
 			}
 
 			// first see if it is a name of a package
