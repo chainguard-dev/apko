@@ -46,54 +46,25 @@ func SignIndex(ctx context.Context, signingKey string, indexFile string) error {
 
 	log.Infof("signing index %s with key %s", indexFile, signingKey)
 
-	// Unfortunately apk-tools checks signatures until the first one passes, and skips the rest.
-	// And golang sorts its reads & writes in lexical order only. Thus indexes will be
-	// validated with SHA1 only by apk-tools whilst RSA (SHA1) signature is present.
-	//
-	// An incremental WriteTargz would allow to write out strongest hash first. Or a MergeFS
-	// implementation the maintains relative order.
-	//
-	// Done:
-	// Step 0) apk-tools supports RSA256 since 2017
-	// Step 1) Upgrade all deployments of melange/go-apk with verification support for RSA256
-	// This PR:
-	// Step 2) Turn on RSA256 signatures, with RSA escape hatch
-	// Next:
-	// Step 3) Remove RSA escape hatch
-
-	filename := "RSA256"
-	digestType := crypto.SHA256
-
-	if digest, ok := os.LookupEnv("SIGNING_DIGEST"); ok {
-		switch digest {
-		case "SHA256":
-		case "SHA1":
-			filename = "RSA"
-			digestType = crypto.SHA1
-		default:
-			return fmt.Errorf("unsupported SIGNING_DIGEST")
-		}
-	}
-
 	indexData, err := os.ReadFile(indexFile)
 	if err != nil {
 		return fmt.Errorf("unable to read index for signing: %w", err)
 	}
 
 	sigFS := memfs.New()
-	indexDigest, err := HashData(indexData, digestType)
+	indexDigest, err := HashData(indexData, crypto.SHA256)
 	if err != nil {
 		return err
 	}
 
-	sigData, err := RSASignDigest(indexDigest, digestType, signingKey, "")
+	sigData, err := RSASignDigest(indexDigest, crypto.SHA256, signingKey, "")
 	if err != nil {
 		return fmt.Errorf("unable to sign index: %w", err)
 	}
 
-	log.Infof("appending signature %s to index %s", filename, indexFile)
+	log.Infof("appending signature RSA256 to index %s", indexFile)
 
-	if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.%s.%s.pub", filename, filepath.Base(signingKey)), sigData, 0644); err != nil {
+	if err := sigFS.WriteFile(fmt.Sprintf(".SIGN.RSA256.%s.pub", filepath.Base(signingKey)), sigData, 0644); err != nil {
 		return fmt.Errorf("unable to append signature: %w", err)
 	}
 

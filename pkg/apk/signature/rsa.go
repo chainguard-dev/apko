@@ -21,11 +21,15 @@ var (
 	errDigestLength = errors.New("digest has unexpected length")
 	errNoPassphrase = errors.New("key is encrypted but no passphrase was provided")
 	errNoRSAKey     = errors.New("key is not an RSA key")
+	errWeakDigest   = errors.New("creating sha1 signatures not supported")
 )
 
 // RSASignDigest signs the provided message digest. The key file must
 // be in the PEM format and can either be encrypted or not.
 func RSASignDigest(digest []byte, digestType crypto.Hash, keyFile, passphrase string) ([]byte, error) {
+	if digestType == crypto.SHA1 {
+		return nil, errWeakDigest
+	}
 	if len(digest) != digestType.Size() {
 		return nil, errDigestLength
 	}
