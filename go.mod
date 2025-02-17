@@ -19,7 +19,7 @@ require (
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
 	github.com/sigstore/cosign/v2 v2.4.2
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
 	github.com/u-root/u-root v0.14.0
