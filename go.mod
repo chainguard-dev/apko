@@ -17,7 +17,7 @@ require (
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.3
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
-	github.com/sigstore/cosign/v2 v2.4.2
+	github.com/sigstore/cosign/v2 v2.4.3
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
@@ -132,7 +132,7 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/protobuf-specs v0.4.0 // indirect
 	github.com/sigstore/rekor v1.3.9 // indirect
-	github.com/sigstore/sigstore v1.8.12 // indirect
+	github.com/sigstore/sigstore v1.8.15 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
