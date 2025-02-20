@@ -930,7 +930,16 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 }
 
 func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
-	return DiscoverKeys(ctx, a.client, a.auth, repository)
+	client := a.client
+	if a.cache != nil {
+		client = a.cache.client(client, false)
+
+		return a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
+			return DiscoverKeys(ctx, client, a.auth, repository)
+		})
+	}
+
+	return DiscoverKeys(ctx, client, a.auth, repository)
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.
