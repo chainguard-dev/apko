@@ -1,10 +1,4 @@
 linters-settings:
-  depguard:
-    include-go-root: true
-    packages:
-      - io/ioutil
-    packages-with-error-message:
-      - io/ioutil: 'ioutil was deprecated in 1.16 (https://go.dev/doc/go1.16#ioutil)'
   forbidigo:
     forbid:
       - ^print.*$
@@ -39,8 +33,6 @@ linters:
   - unparam
   - unused
   - whitespace
-output:
-  uniq-by-line: false
 issues:
   exclude-rules:
   - path: _test\.go
