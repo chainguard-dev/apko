@@ -7,7 +7,7 @@ require (
 	github.com/chainguard-dev/clog v1.6.1
 	github.com/charmbracelet/log v0.4.0
 	github.com/go-git/go-git/v5 v5.13.2
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.3
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-cleanhttp v0.5.2
