@@ -34,13 +34,22 @@ import (
 // architecture that could not be locked. Using the "index" architecture is equivalent to what
 // this used to return prior to supporting per-arch locked configs.
 func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[string]*types.ImageConfiguration, map[string][]string, error) {
-	mc, err := NewMultiArch(ctx, ic.Archs, append(opts, WithImageConfiguration(ic))...)
+	o, input, err := NewOptions(append(opts, WithImageConfiguration(ic))...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	archs := make([]resolved, 0, len(ic.Archs))
-	ics := make(map[string]*types.ImageConfiguration, len(ic.Archs)+1)
+	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
+	input.Contents.RuntimeRepositories = sets.List(sets.New(input.Contents.RuntimeRepositories...).Insert(o.ExtraRuntimeRepos...))
+	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
+
+	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	archs := make([]resolved, 0, len(input.Archs))
+	ics := make(map[string]*types.ImageConfiguration, len(input.Archs)+1)
 
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
@@ -79,16 +88,16 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		archs = append(archs, r)
 	}
 
-	pls, missing, err := unify(ic.Contents.Packages, archs)
+	pls, missing, err := unify(input.Contents.Packages, archs)
 	if err != nil {
 		return nil, missing, err
 	}
 
 	// Set the locked package lists.
 	for arch, pl := range pls {
-		// Create a defensive copy of "ic".
+		// Create a defensive copy of "input".
 		copied := types.ImageConfiguration{}
-		if err := ic.MergeInto(&copied); err != nil {
+		if err := input.MergeInto(&copied); err != nil {
 			return nil, nil, err
 		}
 
