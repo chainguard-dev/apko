@@ -170,7 +170,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			n := dot.NewNode(pkg)
 			out.AddNode(n)
 			out.AddEdge(dot.NewEdge(file, n))
-			if before, _, ok := strings.Cut(pkg, "~"); ok {
+			if before, _, ok := strings.Cut(pkg, "="); ok {
+				p := dot.NewNode(before)
+				out.AddNode(p)
+				out.AddEdge(dot.NewEdge(n, p))
+
+				deps[before] = struct{}{}
+			} else if before, _, ok := strings.Cut(pkg, "~"); ok {
 				p := dot.NewNode(before)
 				out.AddNode(p)
 				out.AddEdge(dot.NewEdge(n, p))
@@ -194,7 +200,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			out.AddNode(n)
 
 			for _, dep := range dmap[pkg.Name] {
-				if before, _, ok := strings.Cut(dep, "~"); ok {
+				if before, _, ok := strings.Cut(dep, "="); ok {
+					dep = before
+				} else if before, _, ok := strings.Cut(dep, "~"); ok {
 					dep = before
 				}
 				d := dot.NewNode(dep)
