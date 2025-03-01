@@ -579,6 +579,7 @@ type Package struct {
 	Supplier         string                   `json:"supplier,omitempty"`
 	SourceInfo       string                   `json:"sourceInfo,omitempty"`
 	CopyrightText    string                   `json:"copyrightText,omitempty"`
+	AttributionText  string                   `json:"attributionText,omitempty"`
 	PrimaryPurpose   string                   `json:"primaryPackagePurpose,omitempty"`
 	Checksums        []Checksum               `json:"checksums,omitempty"`
 	ExternalRefs     []ExternalRef            `json:"externalRefs,omitempty"`
