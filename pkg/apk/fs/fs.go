@@ -45,6 +45,7 @@ type FullFS interface {
 	GetXattr(path string, attr string) ([]byte, error)
 	RemoveXattr(path string, attr string) error
 	ListXattrs(path string) (map[string][]byte, error)
+	Sub(path string) (FullFS, error)
 }
 
 // File is an interface for a file. It includes Read, Write, Close.
