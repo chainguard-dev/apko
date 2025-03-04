@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	chainguard.dev/sdk v0.1.31
-	github.com/chainguard-dev/clog v1.6.1
+	github.com/chainguard-dev/clog v1.7.0
 	github.com/charmbracelet/log v0.4.0
 	github.com/go-git/go-git/v5 v5.14.0
 	github.com/google/go-cmp v0.7.0
