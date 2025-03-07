@@ -175,13 +175,12 @@ func (m *multiReadCloser) Close() error {
 }
 
 func (a *APKExpanded) Close() error {
-	errs := []error{}
-
-	if a.tempDir != "" {
-		errs = append(errs, os.RemoveAll(a.tempDir))
-	}
-
-	return errors.Join(errs...)
+	// We cant' remove the tempDir because our cached files are advertised
+	// by symlinks pointing into them.
+	//
+	// This is not a big deal because the temp files if not referred by
+	// a symlink will be cleaned up anyway.
+	return nil
 }
 
 // An implementation of io.Writer designed specifically for use in the expandApk() method.

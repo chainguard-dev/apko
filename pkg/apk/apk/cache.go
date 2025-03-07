@@ -28,6 +28,8 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/singleflight"
+
+	"chainguard.dev/apko/pkg/paths"
 )
 
 type Cache struct {
@@ -385,10 +387,9 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 
 	// Now that we have the file has been written, rename to atomically populate
 	// the cache
-	if err := os.Rename(tmp.Name(), cacheFile); err != nil {
-		return "", fmt.Errorf("unable to populate cache: %w", err)
+	if err := paths.AdvertiseCachedFile(tmp.Name(), cacheFile); err != nil {
+		return "", err
 	}
-
 	return cacheFile, nil
 }
 
