@@ -1307,10 +1307,14 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	log := clog.FromContext(ctx)
 	log.Infof("installing %s (%s)", pkg.Name, pkg.Version)
 
+	// We don't want to call `defer expanded.Close()` to to remove tempDir because our
+	// cached files are advertised by symlinks pointing into them.
+	//
+	// This is not a big deal because the temp files if not referred by
+	// a symlink will be cleaned up anyway.
+
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "installPackage", trace.WithAttributes(attribute.String("package", pkg.Name)))
 	defer span.End()
-
-	defer expanded.Close()
 
 	var (
 		err            error
