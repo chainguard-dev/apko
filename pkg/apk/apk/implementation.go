@@ -53,6 +53,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/apk/internal/tarfs"
+	"chainguard.dev/apko/pkg/paths"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -967,7 +968,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	ctlHex := hex.EncodeToString(exp.ControlHash)
 	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
 
-	if err := rename(exp.ControlFile, ctlDst); err != nil {
+	if err := paths.AdvertiseCachedFile(exp.ControlFile, ctlDst); err != nil {
 		return nil, err
 	}
 
@@ -976,7 +977,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	if exp.SignatureFile != "" {
 		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
 
-		if err := rename(exp.SignatureFile, sigDst); err != nil {
+		if err := paths.AdvertiseCachedFile(exp.SignatureFile, sigDst); err != nil {
 			return nil, err
 		}
 
@@ -986,7 +987,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 	datHex := hex.EncodeToString(exp.PackageHash)
 	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
 
-	if err := rename(exp.PackageFile, datDst); err != nil {
+	if err := paths.AdvertiseCachedFile(exp.PackageFile, datDst); err != nil {
 		return nil, err
 	}
 
@@ -998,7 +999,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 
 	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
 
-	if err := rename(exp.TarFile, tarDst); err != nil {
+	if err := paths.AdvertiseCachedFile(exp.TarFile, tarDst); err != nil {
 		return nil, err
 	}
 
@@ -1306,10 +1307,14 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	log := clog.FromContext(ctx)
 	log.Infof("installing %s (%s)", pkg.Name, pkg.Version)
 
+	// We don't want to call `defer expanded.Close()` to to remove tempDir because our
+	// cached files are advertised by symlinks pointing into them.
+	//
+	// This is not a big deal because the temp files if not referred by
+	// a symlink will be cleaned up anyway.
+
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "installPackage", trace.WithAttributes(attribute.String("package", pkg.Name)))
 	defer span.End()
-
-	defer expanded.Close()
 
 	var (
 		err            error
@@ -1375,32 +1380,4 @@ func packageRefs(pkgs []*RepositoryPackage) []string {
 		names[i] = fmt.Sprintf("%s (%s) %s", pkg.Name, pkg.Version, pkg.URL())
 	}
 	return names
-}
-
-func rename(src, dst string) error {
-	if err := os.Rename(src, dst); err != nil {
-		return fmt.Errorf("renaming %s: %w", src, err)
-	}
-
-	// This feels dumb but I have a hunch that it's necessary when renaming
-	// a file on gcsfuse. We seem to get a "file not found" error when reading
-	// something immediately after renaming it.
-	if err := flush(dst); err != nil {
-		return fmt.Errorf("flushing %s: %w", dst, err)
-	}
-
-	return nil
-}
-
-func flush(filename string) error {
-	f, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-
-	if err := f.Sync(); err != nil {
-		return err
-	}
-
-	return f.Close()
 }
