@@ -3,8 +3,12 @@ contents:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
   repositories:
     - https://packages.wolfi.dev/os
+    # https://github.com/wolfi-dev/os/pull/41575
+    - https://apk.cgr.dev/wolfi-presubmit/3bc259540e57442184d2bcd0dc091f190eaefea8
   packages:
     - wolfi-base
+    - bash-binsh
+    - usrmerge-baselayout
 
 cmd: /bin/sh -l
 
