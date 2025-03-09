@@ -547,6 +547,9 @@ func (f *dirFS) RemoveXattr(path string, attr string) error {
 func (f *dirFS) ListXattrs(path string) (map[string][]byte, error) {
 	return f.overrides.ListXattrs(path)
 }
+func (f *dirFS) Sub(path string) (FullFS, error) {
+	return f.overrides.Sub(path)
+}
 
 // sanitize ensures that we never go beyond the root of the filesystem
 func (f *dirFS) sanitizePath(p string) (v string, err error) {

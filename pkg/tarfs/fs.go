@@ -801,6 +801,27 @@ func (m *memFS) ListXattrs(path string) (map[string][]byte, error) {
 	return ret, nil
 }
 
+func (m *memFS) Sub(path string) (apkfs.FullFS, error) {
+	cleanPath := filepath.Clean(path)
+
+	if cleanPath == "." {
+		return m, nil
+	}
+
+	info, err := m.Stat(cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("not a directory")
+	}
+
+	return &apkfs.SubFS{
+		FS:   m,
+		Root: cleanPath,
+	}, nil
+}
+
 type memFile struct {
 	node     *node
 	fs       *memFS
