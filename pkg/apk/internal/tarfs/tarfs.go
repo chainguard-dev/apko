@@ -24,8 +24,21 @@ import (
 	"io/fs"
 	"path"
 	"slices"
+	"sync"
 	"time"
 )
+
+var readerPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewReaderSize(nil, 1<<20)
+	},
+}
+
+func pooledBufioReader(r io.Reader) *bufio.Reader {
+	br := readerPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	return br
+}
 
 type Entry struct {
 	Header tar.Header
@@ -204,7 +217,11 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 
 	// TODO: Consider caching this across builds.
 	r := io.NewSectionReader(ra, 0, size)
-	cr := &countReader{bufio.NewReaderSize(r, 1<<20), 0}
+
+	br := pooledBufioReader(r)
+	defer readerPool.Put(br)
+
+	cr := &countReader{br, 0}
 	tr := tar.NewReader(cr)
 	for {
 		hdr, err := tr.Next()
