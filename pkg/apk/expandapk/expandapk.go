@@ -28,6 +28,40 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+var slicePool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 1<<20)
+	},
+}
+
+func pooledSlice() []byte {
+	return slicePool.Get().([]byte)
+}
+
+var readerPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewReaderSize(nil, 1<<20)
+	},
+}
+
+func pooledBufioReader(r io.Reader) *bufio.Reader {
+	br := readerPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	return br
+}
+
+var writerPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewWriterSize(nil, 1<<20)
+	},
+}
+
+func pooledBufioWriter(w io.Writer) *bufio.Writer {
+	bw := writerPool.Get().(*bufio.Writer)
+	bw.Reset(w)
+	return bw
+}
+
 // APKExpanded contains information about and reference to an expanded APK package.
 // Close() deletes all temporary files and directories created during the expansion process.
 type APKExpanded struct {
@@ -66,8 +100,6 @@ type APKExpanded struct {
 	controlData []byte
 }
 
-const meg = 1 << 20
-
 func (a *APKExpanded) ControlData() ([]byte, error) {
 	a.Lock()
 	defer a.Unlock()
@@ -100,12 +132,6 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 		return nil, fmt.Errorf("opening package data file: %w", err)
 	}
 
-	// Use min(1MB, a.Size) bufio to avoid GC pressure for small packages.
-	bufSize := meg
-	if total := int(a.Size); total != 0 && total < bufSize {
-		bufSize = total
-	}
-
 	// Handle old caches without the uncompressed file.
 	f, err := os.Open(a.PackageFile)
 	if err != nil {
@@ -113,7 +139,9 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 	}
 	defer f.Close()
 
-	br := bufio.NewReaderSize(f, bufSize)
+	br := pooledBufioReader(f)
+	defer readerPool.Put(br)
+
 	zr, err := gzip.NewReader(br)
 	if err != nil {
 		return nil, fmt.Errorf("parsing %q: %w", a.PackageFile, err)
@@ -124,7 +152,9 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 		return nil, fmt.Errorf("opening tar file %q: %w", a.TarFile, err)
 	}
 
-	buf := make([]byte, bufSize)
+	buf := pooledSlice()
+	defer slicePool.Put(buf)
+
 	if _, err := io.CopyBuffer(uf, zr, buf); err != nil {
 		return nil, fmt.Errorf("decompressing %q: %w", a.PackageFile, err)
 	}
@@ -390,7 +420,9 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 			if err != nil {
 				return nil, fmt.Errorf("opening tar file: %w", err)
 			}
-			bw := bufio.NewWriterSize(tarfile, 1<<20)
+			bw := pooledBufioWriter(tarfile)
+			defer writerPool.Put(bw)
+
 			tr := io.TeeReader(gzi, bw)
 
 			if err := checkSums(ctx, tr); err != nil {

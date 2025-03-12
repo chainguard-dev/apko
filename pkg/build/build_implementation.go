@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	gzip "github.com/klauspost/pgzip"
 	"github.com/sigstore/cosign/v2/pkg/oci"
@@ -48,12 +49,33 @@ import (
 // concurrent builds on giant machines, and uses only 1 core on tiny machines.
 var pgzipThreads = min(runtime.GOMAXPROCS(0), 8)
 
-func min(l, r int) int {
-	if l < r {
-		return l
-	}
+var pgzipPool = sync.Pool{
+	New: func() interface{} {
+		zw := gzip.NewWriter(nil)
+		if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+			// This should never happen.
+			panic(fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err))
+		}
+		return zw
+	},
+}
 
-	return r
+func pooledGzipWriter(w io.Writer) *gzip.Writer {
+	zw := pgzipPool.Get().(*gzip.Writer)
+	zw.Reset(w)
+	return zw
+}
+
+var bufioPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewWriterSize(nil, 1<<22)
+	},
+}
+
+func pooledBufioWriter(w io.Writer) *bufio.Writer {
+	bw := bufioPool.Get().(*bufio.Writer)
+	bw.Reset(w)
+	return bw
 }
 
 // BuildTarball takes the fully populated working directory and saves it to
@@ -85,11 +107,11 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 
 	digest := sha256.New()
 
-	buf := bufio.NewWriterSize(outfile, 1<<22)
-	gzw := gzip.NewWriter(io.MultiWriter(digest, buf))
-	if err := gzw.SetConcurrency(1<<20, pgzipThreads); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err)
-	}
+	buf := pooledBufioWriter(outfile)
+	defer bufioPool.Put(buf)
+
+	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+	defer pgzipPool.Put(gzw)
 
 	diffid := sha256.New()
 
