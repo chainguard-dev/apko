@@ -148,11 +148,8 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 			fullPerm := os.ModeDir | perm
 			err = f.overrides.Mkdir(path, fullPerm)
 		case fs.ModeSymlink:
-			var target string
-			target, err = os.Readlink(filepath.Join(dir, path))
-			if err != nil {
-				err = f.overrides.Symlink(target, path)
-			}
+			target, _ := os.Readlink(filepath.Join(dir, path))
+			err = f.overrides.Symlink(target, path)
 		case fs.ModeCharDevice:
 			var dev int
 			sys := fi.Sys()
