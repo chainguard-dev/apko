@@ -150,7 +150,7 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 		case fs.ModeSymlink:
 			var target string
 			target, err = os.Readlink(filepath.Join(dir, path))
-			if err != nil {
+			if err == nil {
 				err = f.overrides.Symlink(target, path)
 			}
 		case fs.ModeCharDevice:
