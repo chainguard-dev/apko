@@ -35,17 +35,6 @@ import (
 	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
-func lock() *cobra.Command {
-	return lockInternal("lock", "lock.json", "")
-}
-
-func resolve() *cobra.Command {
-	return lockInternal(
-		"resolve",
-		"resolved.json",
-		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
-}
-
 func RemoveLabel(s string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("input is empty")
@@ -62,40 +51,42 @@ func RemoveLabel(s string) (string, error) {
 	return s, nil
 }
 
-func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
+func lock() *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
 	var extraRuntimeRepos []string
 	var archstrs []string
 	var output string
 	var includePaths []string
+	var cacheDir string
 
 	cmd := &cobra.Command{
-		Use: cmdName,
-		// hidden for now until we get some feedback on it.
-		Hidden:     true,
-		Example:    fmt.Sprintf(`apko %v <config.yaml>`, cmdName),
-		Args:       cobra.MinimumNArgs(1),
-		Deprecated: deprecated,
+		Use:     "lock",
+		Example: "apko lock <config.yaml>",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if output == "" {
-				output = fmt.Sprintf("%s."+extension, strings.TrimSuffix(args[0], filepath.Ext(args[0])))
-			}
-
 			archs := types.ParseArchitectures(archstrs)
 
-			return LockCmd(
-				cmd.Context(),
-				output,
-				archs,
-				[]build.Option{
-					build.WithConfig(args[0], includePaths),
-					build.WithExtraKeys(extraKeys),
-					build.WithExtraBuildRepos(extraBuildRepos),
-					build.WithExtraRuntimeRepos(extraRuntimeRepos),
-					build.WithIncludePaths(includePaths),
-				},
-			)
+			opts := []build.Option{
+				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRuntimeRepos(extraRuntimeRepos),
+				build.WithIncludePaths(includePaths),
+				build.WithCache(cacheDir, false, apk.NewCache(true)),
+			}
+			if len(args) > 0 {
+				opts = append(opts, build.WithConfig(args[0], includePaths))
+				if output == "" {
+					output = fmt.Sprintf("%s.lock.json", strings.TrimSuffix(args[0], filepath.Ext(args[0])))
+				}
+			} else {
+				opts = append(opts, build.WithImageConfiguration(types.ImageConfiguration{}))
+				if output == "" {
+					output = "apko.lock.json"
+				}
+			}
+
+			return LockCmd(cmd.Context(), output, archs, opts)
 		},
 	}
 
@@ -105,6 +96,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 
 	return cmd
 }

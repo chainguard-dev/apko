@@ -60,7 +60,6 @@ func New() *cobra.Command {
 	cmd.AddCommand(showPackages())
 	cmd.AddCommand(dotcmd())
 	cmd.AddCommand(lock())
-	cmd.AddCommand(resolve())
 	cmd.AddCommand(installKeys())
 	cmd.AddCommand(version.Version())
 
