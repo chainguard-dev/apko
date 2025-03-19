@@ -32,3 +32,27 @@ func (f FileExistsError) Is(target error) bool {
 	var targetError FileExistsError
 	return errors.As(target, &targetError)
 }
+
+// FileConflictError is returned when a file has conflicting origins.
+//
+// Generally, this is a user Config error. However, since this can happen
+// both during Config resolution, and building - it is hard for users using
+// chainguard.dev/apko as a library to flag this to the user as a user error.
+//
+// To help with that, we create this structure error.
+type FileConflictError struct {
+	// The full path of the file that has conflicting origins.
+	Path string
+
+	// The origins of the file, as a map from the package name to the origin
+	Origins map[string]string
+}
+
+func (f FileConflictError) Error() string {
+	return fmt.Sprintf("packages %v has conflicting file: %q", f.Origins, f.Path)
+}
+
+func (f FileConflictError) Is(target error) bool {
+	var targetError FileConflictError
+	return errors.As(target, &targetError)
+}

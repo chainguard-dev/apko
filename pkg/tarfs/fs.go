@@ -512,7 +512,13 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 
 	// At this point we know the files conflict, but it's okay if this file replaces that one.
 	if !sameOrigin && !replaces {
-		return false, fmt.Errorf("conflicting file %q in %q has different origin %q != %q in %q", name, got.pkg.Name, got.pkg.Origin, want.pkg.Origin, want.pkg.Name)
+		return false, apk.FileConflictError{
+			Path: name,
+			Origins: map[string]string{
+				got.pkg.Name:  got.pkg.Origin,
+				want.pkg.Name: want.pkg.Origin,
+			},
+		}
 	}
 
 	anode := &node{
