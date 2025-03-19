@@ -141,7 +141,13 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 		// Otherwise, we can only overwrite the file if it's in the same origin or if it replaces the existing package.
 		_, isReplaced := replaceMap[pk.Name]
 		if pk.Origin != pkg.Origin && !isReplaced {
-			return false, fmt.Errorf("unable to install file over existing one, different contents: %s", header.Name)
+			return false, FileConflictError{
+				Path: header.Name,
+				Origins: map[string]string{
+					pk.Name:  pk.Origin,
+					pkg.Name: pkg.Origin,
+				},
+			}
 		}
 
 		if err := a.writeOneFile(header, r, true); err != nil {
