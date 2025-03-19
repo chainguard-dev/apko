@@ -49,7 +49,7 @@ type FileConflictError struct {
 }
 
 func (f FileConflictError) Error() string {
-	return fmt.Sprintf("file %s has conflicting origins: %v", f.Path, f.Origins)
+	return fmt.Sprintf("packages %v has conflicting file: %q", f.Origins, f.Path)
 }
 
 func (f FileConflictError) Is(target error) bool {
