@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -544,9 +545,63 @@ func (f *dirFS) GetXattr(path string, attr string) ([]byte, error) {
 func (f *dirFS) RemoveXattr(path string, attr string) error {
 	return f.overrides.RemoveXattr(path, attr)
 }
+
 func (f *dirFS) ListXattrs(path string) (map[string][]byte, error) {
-	return f.overrides.ListXattrs(path)
+	fullPath := filepath.Join(f.base, path)
+	xattrMap := make(map[string][]byte)
+
+	// Try reading in-memory xattrs first (for QEMU)
+	memXattrs, err := f.overrides.ListXattrs(path)
+	if err == nil {
+		xattrMap = maps.Clone(memXattrs)
+	}
+
+	// Try reading on-disk xattars (bind mounts)
+	size, err := unix.Listxattr(fullPath, nil)
+	if err != nil {
+		return xattrMap, nil
+	}
+
+	if size > 0 {
+		buf := make([]byte, size)
+		read, err := unix.Listxattr(fullPath, buf)
+		if err != nil {
+			return xattrMap, nil
+		}
+
+		xs := stringsFromByteSlice(buf[:read])
+		for _, x := range xs {
+			s, err := unix.Getxattr(fullPath, x, nil)
+			if err != nil {
+				continue
+			}
+
+			v := make([]byte, s)
+			_, err = unix.Getxattr(fullPath, x, v)
+			if err != nil {
+				continue
+			}
+
+			// Add xattrs that were not alredy populated from memory
+			if _, exists := xattrMap[x]; !exists {
+				xattrMap[x] = v
+			}
+		}
+	}
+	return xattrMap, nil
 }
+func stringsFromByteSlice(buf []byte) []string {
+	var result []string
+	off := 0
+	for i, b := range buf {
+		if b == 0 {
+			result = append(result, string(buf[off:i]))
+			off = i + 1
+		}
+	}
+	return result
+}
+
 func (f *dirFS) Sub(path string) (FullFS, error) {
 	return f.overrides.Sub(path)
 }
