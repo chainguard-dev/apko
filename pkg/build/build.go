@@ -129,6 +129,27 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	return bc.ImageLayoutToLayer(ctx)
 }
 
+// BuildLayers is like BuildLayer but has the potential to return multiple layers.
+func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
+	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
+	defer span.End()
+
+	// build image filesystem
+	if err := bc.BuildImage(ctx); err != nil {
+		return nil, err
+	}
+	if err := bc.postBuildSetApk(ctx); err != nil {
+		return nil, err
+	}
+
+	_, layer, err := bc.ImageLayoutToLayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return []v1.Layer{layer}, nil
+}
+
 // ImageLayoutToLayer given an already built-out
 // image in an fs from BuildImage(), create
 // an OCI image layer tgz.

@@ -263,7 +263,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 			if err != nil {
 				return fmt.Errorf("new build for arch %s: %w", arch, err)
 			}
-			_, layer, err := bc.BuildLayer(ctx)
+			layers, err := bc.BuildLayers(ctx)
 			if err != nil {
 				return fmt.Errorf("building %q layer: %w", arch, err)
 			}
@@ -280,7 +280,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
 
-			img, err := oci.BuildImageFromLayer(ctx, bc.BaseImage(), layer, bc.ImageConfiguration(), bde, bc.Arch())
+			img, err := oci.BuildImageFromLayers(ctx, bc.BaseImage(), layers, bc.ImageConfiguration(), bde, bc.Arch())
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
 			}
