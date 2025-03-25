@@ -389,3 +389,7 @@ func (bc *Context) Arch() types.Architecture {
 func (bc *Context) WantSBOM() bool {
 	return len(bc.o.SBOMFormats) != 0
 }
+
+func (bc *Context) APK() *apk.APK {
+	return bc.apk
+}
