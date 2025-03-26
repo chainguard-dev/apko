@@ -112,7 +112,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 	cfg.Architecture = platform.Architecture
 	cfg.Variant = platform.Variant
 	cfg.Created = v1.Time{Time: created}
-	cfg.Config.Labels = make(map[string]string)
+	cfg.Config.Labels = annotations
 	cfg.OS = "linux"
 	cfg.Config.Labels = annotations
 
