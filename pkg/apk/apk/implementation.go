@@ -137,10 +137,10 @@ var baseDirectories = []directory{
 	{"/tmp", 0o777 | fs.ModeSticky},
 	{"/dev", 0o755},
 	{"/etc", 0o755},
-	{"/lib", 0o755},
 	{"/opt", 0o755},
 	{"/proc", 0o555},
 	{"/var", 0o755},
+	{"/usr", 0o755},
 }
 
 // directories is a list of directories to create relative to the root. It will not do MkdirAll, so you
@@ -148,7 +148,6 @@ var baseDirectories = []directory{
 // It assumes that the following directories already exist:
 //
 //		/var
-//		/lib
 //		/tmp
 //		/dev
 //		/etc
@@ -156,8 +155,9 @@ var baseDirectories = []directory{
 var initDirectories = []directory{
 	{"/etc/apk", 0o755},
 	{"/etc/apk/keys", 0o755},
-	{"/lib/apk", 0o755},
-	{"/lib/apk/db", 0o755},
+	{"/usr/lib", 0o755},
+	{"/usr/lib/apk", 0o755},
+	{"/usr/lib/apk/db", 0o755},
 	{"/var/cache", 0o755},
 	{"/var/cache/apk", 0o755},
 	{"/var/cache/misc", 0o755},
@@ -168,9 +168,9 @@ var initDirectories = []directory{
 var initFiles = []file{
 	{"/etc/apk/world", 0o644, []byte("\n")},
 	{"/etc/apk/repositories", 0o644, []byte("\n")},
-	{"/lib/apk/db/lock", 0o600, nil},
-	{"/lib/apk/db/triggers", 0o644, nil},
-	{"/lib/apk/db/installed", 0o644, nil},
+	{"/usr/lib/apk/db/lock", 0o600, nil},
+	{"/usr/lib/apk/db/triggers", 0o644, nil},
+	{"/usr/lib/apk/db/installed", 0o644, nil},
 }
 
 // deviceFiles is a list of files to create relative to the root.
@@ -605,8 +605,8 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 	//     a. Check if it is installed, if so, skip
 	//     b. Get the .apk file
 	//     c. Install the .apk file
-	//     d. Update /lib/apk/db/scripts.tar
-	//     d. Update /lib/apk/db/triggers
+	//     d. Update /usr/lib/apk/db/scripts.tar
+	//     d. Update /usr/lib/apk/db/triggers
 	//     e. Update the installed file
 	for _, pkg := range conflicts {
 		isInstalled, err := a.isInstalledPackage(pkg)
