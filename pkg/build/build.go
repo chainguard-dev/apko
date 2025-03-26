@@ -88,11 +88,29 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 	return bde, nil
 }
 
+func (bc *Context) insertUsrMerge() {
+	const usrMerge = "usrmerge-baselayout"
+	found := false
+	for _, p := range bc.ic.Contents.Packages {
+		if p == usrMerge {
+			found = true
+			break
+		}
+	}
+	if found {
+		return
+	}
+	bc.ic.Contents.Packages = append(bc.ic.Contents.Packages, usrMerge)
+	return
+}
+
 func (bc *Context) BuildImage(ctx context.Context) error {
 	log := clog.FromContext(ctx)
 
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildImage")
 	defer span.End()
+
+	bc.insertUsrMerge()
 
 	if err := bc.buildImage(ctx); err != nil {
 		log.Debugf("buildImage failed: %v", err)
