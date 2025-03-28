@@ -91,7 +91,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:df086c6b126032e9ed1b4aa6fecdb6988b45d86d9c1e8d2eb81dea647f4c7a7f"
+	want := "sha256:1548ecc2e94d2f0a4d2eed0f2cba08dfc88a85a638b9a7f32cb94389912bbc06"
 	require.Equal(t, want, digest.String())
 
 	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
@@ -109,7 +109,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the SBOM.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:d1faff2316aa480d1400e6c86af431402cee84f980b97a06f096bdab9a52075f"
+	swant := "sha256:d14e5551ce72431e88ad3ff760206d5675119384104c9db2b828917ba8677948"
 	require.Equal(t, swant, got)
 
 	im, err := idx.IndexManifest()
@@ -118,8 +118,8 @@ func TestPublish(t *testing.T) {
 	// We also want to check the children SBOMs because the index SBOM does not have
 	// references to the children SBOMs, just the children!
 	wantBoms := []string{
-		"sha256:c483478580314a253c2170b32de7686d1664ec936be3a4df51ef2bba92c46261",
-		"sha256:18d9c631ac5656d52d2595bc80195ad1c68c517db8bded1ec229f775ee682d98",
+		"sha256:9b630474fd02c54bbeded3fb4e0b697514c4e4bb4857b51428667a88cd619948",
+		"sha256:2b14e0cdcff79466699abcde5d576cebbfdda951d4a9388d94a27b515bbbed58",
 	}
 
 	for i, m := range im.Manifests {
@@ -145,6 +145,7 @@ func TestPublish(t *testing.T) {
 
 type sentinel struct {
 	rt http.RoundTripper
+
 }
 
 func (s *sentinel) RoundTrip(in *http.Request) (*http.Response, error) {

@@ -9,6 +9,13 @@ contents:
 entrypoint:
   command: /bin/sh -l
 
+paths:
+  - path: /run/nginx
+    type: directory
+    uid: 10000
+    gid: 10000
+    permissions: 0o755
+
 archs:
 - x86_64
 - aarch64
