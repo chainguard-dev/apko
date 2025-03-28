@@ -120,6 +120,9 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 		if err := m.MkdirAll(hdr.Name, hdr.FileInfo().Mode().Perm()); err != nil {
 			return false, fmt.Errorf("error creating directory %s: %w", hdr.Name, err)
 		}
+		if err := m.Chtimes(hdr.Name, hdr.AccessTime, hdr.ModTime); err != nil {
+			return false, fmt.Errorf("error chtime on directory %s: %w", hdr.Name, err)
+		}
 
 		for k, v := range hdr.PAXRecords {
 			if !strings.HasPrefix(k, xattrTarPAXRecordsPrefix) {
@@ -604,6 +607,7 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		minor:     unix.Minor(uint64(dev)),
 		xattrs:    map[string][]byte{},
 		hardlinks: map[string]*tar.Header{},
+		modTime:   anode.modTime,
 	}
 
 	return nil
@@ -679,6 +683,7 @@ func (m *memFS) Symlink(oldname, newname string) error {
 		linkTarget: oldname,
 		xattrs:     map[string][]byte{},
 		hardlinks:  map[string]*tar.Header{},
+		modTime:    anode.modTime,
 	}
 	return nil
 }
