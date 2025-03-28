@@ -24,9 +24,9 @@ import (
 
 	"github.com/chainguard-dev/clog"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func buildMinirootFS() *cobra.Command {
@@ -81,8 +81,7 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
-	bc, err := build.New(ctx, fs, opts...)
+	bc, err := build.New(ctx, tarfs.New(), opts...)
 	if err != nil {
 		return err
 	}
