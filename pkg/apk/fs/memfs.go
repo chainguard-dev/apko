@@ -326,11 +326,12 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		return os.ErrExist
 	}
 	anode.children[base] = &node{
-		name:   base,
-		mode:   fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
-		major:  unix.Major(uint64(dev)),
-		minor:  unix.Minor(uint64(dev)),
-		xattrs: map[string][]byte{},
+		name:    base,
+		mode:    fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
+		major:   unix.Major(uint64(dev)),
+		minor:   unix.Minor(uint64(dev)),
+		xattrs:  map[string][]byte{},
+		modTime: anode.modTime,
 	}
 
 	return nil
@@ -405,6 +406,7 @@ func (m *memFS) Symlink(oldname, newname string) error {
 		mode:       0o777 | os.ModeSymlink,
 		linkTarget: oldname,
 		xattrs:     map[string][]byte{},
+		modTime:    anode.modTime,
 	}
 	return nil
 }

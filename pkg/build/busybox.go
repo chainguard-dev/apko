@@ -53,7 +53,8 @@ var busyboxLinks map[string][]string
 
 func installBusyboxLinks(fsys apkfs.FullFS, installed []*apk.InstalledPackage) error {
 	// does busybox exist? if not, do not bother with symlinks
-	if _, err := fsys.Stat(busybox); err != nil {
+	busyboxInfo, err := fsys.Stat(busybox)
+	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -116,6 +117,10 @@ func installBusyboxLinks(fsys apkfs.FullFS, installed []*apk.InstalledPackage) e
 		if err := fsys.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
+		if err := fsys.Chtimes(dir, busyboxInfo.ModTime(), busyboxInfo.ModTime()); err != nil {
+			return fmt.Errorf("error chtimes on %s: %w", dir, err)
+		}
+
 		if err := fsys.Symlink(busybox, link); err != nil {
 			// sometimes the list generates links twice, so do not error on that
 			if errors.Is(err, os.ErrExist) {
