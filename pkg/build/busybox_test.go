@@ -40,10 +40,10 @@ func TestInstallBusyboxSymlinks(t *testing.T) {
 		require.NoError(t, err)
 		err = fsys.WriteFile("/bin/busybox", []byte("busybox"), 0755)
 		require.NoError(t, err)
-		err = fsys.MkdirAll("/lib/apk/db", 0755)
+		err = fsys.MkdirAll("/usr/lib/apk/db", 0755)
 		require.NoError(t, err)
 		pkgLines := apk.PackageToInstalled(pkg)
-		err = fsys.WriteFile("/lib/apk/db/installed", []byte(strings.Join(pkgLines, "\n")+"\n\n"), 0755)
+		err = fsys.WriteFile("/usr/lib/apk/db/installed", []byte(strings.Join(pkgLines, "\n")+"\n\n"), 0755)
 		require.NoError(t, err)
 	}
 	installed := []*apk.InstalledPackage{{
