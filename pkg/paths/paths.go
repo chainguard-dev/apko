@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 )
 
 func ResolvePath(p string, includePaths []string) (string, error) {
@@ -41,6 +42,11 @@ func ResolvePath(p string, includePaths []string) (string, error) {
 // and we can safely move on. We will also perform a best-effort attempt to clean up the
 // unadvertised file at `src`.
 func AdvertiseCachedFile(src, dst string) error {
+	// Prefer relative symlinks
+	rel, err := filepath.Rel(filepath.Dir(dst), src)
+	if err != nil {
+		rel = src
+	}
 	// Check if the destination already exists.
 	if _, err := os.Stat(dst); err == nil {
 		// Since `src` is unadvertised, it is safe to remove it. Ideally we want this to succeeds,
@@ -50,14 +56,14 @@ func AdvertiseCachedFile(src, dst string) error {
 		return nil
 	}
 	// Create the symlink.
-	if err := os.Symlink(src, dst); err != nil {
+	if err := os.Symlink(rel, dst); err != nil {
 		// Ignore already exists errors. We don't even want to do clean up here even when
 		// the symlink is pointing somewhere elese, to avoid relying too much on file system
 		// remantics/eventual consistency, etc.
 		if errors.Is(err, os.ErrExist) {
 			return nil
 		}
-		return fmt.Errorf("linking (cached) %s to %s: %w", src, dst, err)
+		return fmt.Errorf("linking (cached) %s to %s: %w", rel, dst, err)
 	}
 	return nil
 }

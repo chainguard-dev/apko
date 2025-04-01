@@ -15,6 +15,7 @@ package paths
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -48,9 +49,13 @@ func TestAdvertiseCachedFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		// check the symlink
+		rel1, err := filepath.Rel(filepath.Dir(dst), src1)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if l, err := os.Readlink(dst); err != nil {
 			t.Fatal(err)
-		} else if l != src1 {
+		} else if l != rel1 {
 			t.Fatalf("symlink should stay in tact: %s != %s", l, src2)
 		}
 
