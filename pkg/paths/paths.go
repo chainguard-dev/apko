@@ -42,7 +42,7 @@ func ResolvePath(p string, includePaths []string) (string, error) {
 // and we can safely move on. We will also perform a best-effort attempt to clean up the
 // unadvertised file at `src`.
 func AdvertiseCachedFile(src, dst string) error {
-	// Preffer relative symlinks
+	// Prefer relative symlinks
 	rel, err := filepath.Rel(filepath.Dir(dst), src)
 	if err != nil {
 		rel = src
