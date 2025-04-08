@@ -905,7 +905,10 @@ func (f *memFile) ReadAt(p []byte, off int64) (n int, err error) {
 		return 0, fs.ErrClosed
 	}
 	if f.rc != nil {
-		// tarfs-backed files don't support ReadAt.
+		if ra, ok := f.rc.(io.ReaderAt); ok {
+			return ra.ReadAt(p, off)
+		}
+		// This would be a surprise!
 		return 0, fs.ErrInvalid
 	}
 	if off >= int64(len(f.node.data)) {
