@@ -787,6 +787,32 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 					return nil, nil, err
 				}
 
+				// See if any virtual packages of packages we've already
+				// selected satisfy this contraint.
+				satisfiedByProvide := false
+				for _, provide := range picked.Provides {
+					prostraint := cachedResolvePackageNameVersionPin(provide)
+					pname, pversion, pcompare := prostraint.name, prostraint.version, prostraint.dep
+					if pname != name {
+						continue
+					}
+					if pversion == "" {
+						satisfiedByProvide = true
+						break
+					}
+					prover, err := cachedParseVersion(pversion)
+					if err != nil {
+						return nil, nil, err
+					}
+					if pcompare.satisfies(prover, requiredVersion) {
+						satisfiedByProvide = true
+						break
+					}
+				}
+				if satisfiedByProvide {
+					continue
+				}
+
 				// We do care which version and they match.
 				if compare.satisfies(actualVersion, requiredVersion) {
 					continue
