@@ -119,6 +119,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.WorkDir == "" {
 		target.WorkDir = ic.WorkDir
 	}
+	if target.Layering == nil {
+		target.Layering = ic.Layering
+	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
 	}

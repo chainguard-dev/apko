@@ -171,7 +171,7 @@ func TestInstallAPKFiles(t *testing.T) {
 				{overwriteFilename, 0o755, false, finalContent, nil},
 			})
 
-			err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.Error(t, err, "some double-write error")
 
 			actual, err := src.ReadFile(overwriteFilename)
@@ -200,7 +200,7 @@ func TestInstallAPKFiles(t *testing.T) {
 				{overwriteFilename, 0755, false, finalContent, nil},
 			})
 
-			err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
 
 			actual, err := src.ReadFile(overwriteFilename)
@@ -229,7 +229,7 @@ func TestInstallAPKFiles(t *testing.T) {
 				{overwriteFilename, 0o755, false, finalContent, nil},
 			})
 
-			err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
 
 			actual, err := src.ReadFile(overwriteFilename)
@@ -257,7 +257,7 @@ func TestInstallAPKFiles(t *testing.T) {
 				{overwriteFilename, 0o755, false, originalContent, nil},
 			})
 
-			err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
 
 			actual, err := src.ReadFile(overwriteFilename)
@@ -286,7 +286,7 @@ func TestInstallAPKFiles(t *testing.T) {
 				{overwriteFilename, 0755, false, finalContent, nil},
 			})
 
-			err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
 
 			actual, err := src.ReadFile(overwriteFilename)
