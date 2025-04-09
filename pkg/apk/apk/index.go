@@ -428,11 +428,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		for _, sig := range sigs {
 			// compute the digest if not already done
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
-				digest, err := sign.HashData(indexData, sig.DigestAlgorithm)
-				if err != nil {
-					return nil, fmt.Errorf("failed to compute digest: %w", err)
+				h := sig.DigestAlgorithm.New()
+				if n, err := h.Write(indexData); err != nil || n != len(indexData) {
+					return nil, fmt.Errorf("unable to hash data: %w", err)
 				}
-				indexDigest[sig.DigestAlgorithm] = digest
+				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
 			}
 			if err := sign.RSAVerifyDigest(indexDigest[sig.DigestAlgorithm], sig.DigestAlgorithm, sig.Signature, keys[sig.KeyID]); err == nil {
 				verified = true

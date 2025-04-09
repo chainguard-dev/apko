@@ -28,9 +28,8 @@ func TestWriteTar(t *testing.T) {
 	require.NoError(t, err, "error setting xattr on %s", dir)
 	err = m.SetXattr(file, "user.file", []byte("bar"))
 	require.NoError(t, err, "error setting xattr on %s", file)
-	ctx := Context{}
 	tw := tar.NewWriter(&buf)
-	err = ctx.writeTar(context.TODO(), tw, m, nil, nil)
+	err = writeTar(context.TODO(), tw, m, nil, nil)
 	require.NoError(t, err, "error writing tar")
 	err = tw.Close()
 	require.NoError(t, err, "error closing tar writer")
