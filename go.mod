@@ -16,7 +16,6 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.3
-	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
 	github.com/sigstore/cosign/v2 v2.4.3
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.9.1
