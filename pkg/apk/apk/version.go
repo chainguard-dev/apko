@@ -349,16 +349,27 @@ func (v versionDependency) satisfies(actualVersion, requiredVersion Version) boo
 	}
 }
 
-type parsedConstraint struct {
-	name    string
+type ParsedConstraint struct {
+	Name    string
 	version string
 	dep     versionDependency
 	pin     string
 }
 
+func (p ParsedConstraint) SatisfiedBy(v Version) (bool, error) {
+	if p.version == "" {
+		return true, nil
+	}
+	pv, err := cachedParseVersion(p.version)
+	if err != nil {
+		return false, err
+	}
+	return p.dep.satisfies(v, pv), nil
+}
+
 var endsWithReleaseStr = regexp.MustCompile(`-r\d+$`)
 
-func resolvePackageNameVersionPin(pkgName string) parsedConstraint {
+func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 	// Due to https://github.com/chainguard-dev/melange/pull/1871,
 	// we have to treat shared library depends/provides
 	// differently.
@@ -380,14 +391,14 @@ func resolvePackageNameVersionPin(pkgName string) parsedConstraint {
 
 	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
 	if len(parts) == 0 || len(parts[0]) < 2 {
-		return parsedConstraint{
-			name: pkgName,
+		return ParsedConstraint{
+			Name: pkgName,
 			dep:  versionAny,
 		}
 	}
 	// layout: [full match, name, =version, =|>|<, version, @pin, pin]
-	p := parsedConstraint{
-		name:    parts[0][1],
+	p := ParsedConstraint{
+		Name:    parts[0][1],
 		version: parts[0][4],
 		pin:     parts[0][6],
 		dep:     versionAny,

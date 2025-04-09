@@ -30,7 +30,24 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
-func TestBuildLayer(t *testing.T) {
+func TestBuildLayers(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	layers, err := bc.BuildLayers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, layers, 2)
 }
 
 func TestBuildImage(t *testing.T) {
