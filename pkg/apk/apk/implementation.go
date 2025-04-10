@@ -829,7 +829,7 @@ type Key struct {
 }
 
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
-func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string, offline bool) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
@@ -850,10 +850,17 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, err
 	}
 
-	rc := retryablehttp.NewClient()
-	rc.HTTPClient = client
-	rc.Logger = clog.FromContext(ctx)
-	discoveryResponse, err := rc.StandardClient().Do(discoveryRequest)
+	var nc *http.Client
+	if !offline {
+		rc := retryablehttp.NewClient()
+		rc.HTTPClient = client
+		rc.Logger = clog.FromContext(ctx)
+		nc = rc.StandardClient()
+	} else {
+		nc = client
+	}
+
+	discoveryResponse, err := nc.Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -935,11 +942,11 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 		client = a.cache.client(client, false)
 
 		return a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
-			return DiscoverKeys(ctx, client, a.auth, repository)
+			return DiscoverKeys(ctx, client, a.auth, repository, a.cache.offline)
 		})
 	}
 
-	return DiscoverKeys(ctx, client, a.auth, repository)
+	return DiscoverKeys(ctx, client, a.auth, repository, false)
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.
