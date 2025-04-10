@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
@@ -1052,6 +1053,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 	}
 	exp.ControlFile = ctl
 	exp.ControlHash = checksum
+	exp.ControlSize = cf.Size()
 
 	control, err := exp.ControlData()
 	if err != nil {
@@ -1071,6 +1073,13 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureFile = sig
 		exp.Signed = true
 		exp.Size += sf.Size()
+		exp.SignatureSize = sf.Size()
+		signatureData, err := os.ReadFile(sig)
+		if err != nil {
+			return nil, err
+		}
+		signatureHash := sha1.Sum(signatureData)
+		exp.SignatureHash = signatureHash[:]
 	}
 
 	f, err := os.Open(ctl)
@@ -1090,6 +1099,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		return nil, err
 	}
 	exp.PackageFile = dat
+	exp.PackageSize = df.Size()
 	exp.Size += df.Size()
 
 	exp.PackageHash, err = hex.DecodeString(datahash)

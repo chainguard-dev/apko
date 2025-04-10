@@ -496,9 +496,10 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 		ControlFile: gzipStreams[controlDataIndex],
 		ControlHash: hashes[controlDataIndex],
 		ControlSize: sizes[controlDataIndex],
+
 		PackageFile: gzipStreams[packageIndex],
 		PackageHash: hashes[packageIndex],
-		PackageSize: sizes[controlDataIndex],
+		PackageSize: sizes[packageIndex],
 	}
 	if signed {
 		expanded.SignatureFile = gzipStreams[signatureIndex]
