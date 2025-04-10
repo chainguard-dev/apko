@@ -1078,7 +1078,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		if err != nil {
 			return nil, err
 		}
-		signatureHash := sha1.Sum(signatureData)
+		signatureHash := sha1.Sum(signatureData) //nolint:gosec // this is what apk tools is using
 		exp.SignatureHash = signatureHash[:]
 	}
 
