@@ -1211,7 +1211,7 @@ func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expand
 	return a.cachePackage(ctx, pkg, exp, cacheDir)
 }
 
-func packageAsURI(pkg InstallablePackage) (uri.URI, error) {
+func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
@@ -1221,7 +1221,7 @@ func packageAsURI(pkg InstallablePackage) (uri.URI, error) {
 	return uri.New(u), nil
 }
 
-func packageAsURL(pkg InstallablePackage) (*url.URL, error) {
+func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
 	asURI, err := packageAsURI(pkg)
 	if err != nil {
 		return nil, err
@@ -1230,7 +1230,7 @@ func packageAsURL(pkg InstallablePackage) (*url.URL, error) {
 	return url.Parse(string(asURI))
 }
 
-func (a *APK) FetchPackage(ctx context.Context, pkg InstallablePackage) (io.ReadCloser, error) {
+func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
 	log := clog.FromContext(ctx)
 	log.Debugf("fetching %s", pkg)
 
