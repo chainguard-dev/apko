@@ -95,14 +95,10 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
-	if bc.baseimg == nil && len(m.Layers) != 1 {
-		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
-	}
-
 	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
 	log.Debug("Generating image SBOM")
 
-	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
+	s.ImageInfo.Layers = m.Layers
 
 	info, err := readReleaseData(bc.fs)
 	if err != nil {

@@ -68,8 +68,8 @@ type ImageInfo struct {
 	Tag             string
 	Name            string
 	Repository      string
-	LayerDigest     string
 	ImageDigest     string
+	Layers          []v1.Descriptor
 	VCSUrl          string
 	IndexMediaType  ggcrtypes.MediaType
 	ImageMediaType  ggcrtypes.MediaType
@@ -149,16 +149,9 @@ func (pq PurlQualifiers) String() string {
 
 // LayerPurlQualifiers reurns the qualifiers for the purl, they are based
 // on the image with the corresponding mediatype
-func (o *Options) LayerPurlQualifiers() (qualifiers PurlQualifiers) {
+func (o *Options) LayerPurlQualifiers(layer v1.Descriptor) (qualifiers PurlQualifiers) {
 	qualifiers = o.ImagePurlQualifiers()
-	switch o.ImageInfo.ImageMediaType {
-	case ggcrtypes.OCIManifestSchema1:
-		qualifiers["mediaType"] = string(ggcrtypes.OCILayer)
-	case ggcrtypes.DockerManifestSchema2:
-		qualifiers["mediaType"] = string(ggcrtypes.DockerLayer)
-	default:
-		qualifiers["mediaType"] = ""
-	}
+	qualifiers["mediaType"] = string(layer.MediaType)
 	return qualifiers
 }
 

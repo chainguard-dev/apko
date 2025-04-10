@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/release-utils/command"
 
@@ -34,6 +35,9 @@ import (
 
 // TODO: clean this up and make consistent with the other test cases
 var testOpts = &options.Options{
+	ImageInfo: options.ImageInfo{
+		Layers: []v1.Descriptor{{}},
+	},
 	OS: options.OSInfo{
 		Name:    "unknown",
 		ID:      "unknown",
@@ -78,6 +82,9 @@ func TestSPDX_Generate(t *testing.T) {
 		{
 			name: "custom-license",
 			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
 				OS: options.OSInfo{
 					Name:    "unknown",
 					ID:      "unknown",
@@ -97,6 +104,9 @@ func TestSPDX_Generate(t *testing.T) {
 		{
 			name: "no-supplier",
 			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
 				OS: options.OSInfo{
 					Name:    "Apko Images, Plc",
 					ID:      "apko-images",
@@ -116,6 +126,9 @@ func TestSPDX_Generate(t *testing.T) {
 		{
 			name: "package-deduplicating",
 			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
 				OS: options.OSInfo{
 					Name:    "unknown",
 					ID:      "unknown",
