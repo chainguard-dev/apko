@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/log"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
@@ -71,13 +72,21 @@ func stringToIdentifier(in string) (out string) {
 	})
 }
 
+// Returns ":" otherwise :(
+func hashToString(h v1.Hash) string {
+	if h == (v1.Hash{}) {
+		return ""
+	}
+	return h.String()
+}
+
 // Generate writes an SPDX SBOM in path
 func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	// The default document name makes no attempt to avoid
 	// clashes. Ensuring a unique name requires a digest
 	documentName := "sbom"
-	if opts.ImageInfo.LayerDigest != "" {
-		documentName += "-" + opts.ImageInfo.LayerDigest
+	if hash := hashToString(opts.ImageInfo.Layers[0].Digest); hash != "" {
+		documentName += "-" + hash
 	}
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
@@ -97,21 +106,32 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		Relationships:  []Relationship{},
 		LicensingInfos: []LicensingInfo{},
 	}
+
 	var imagePackage *Package
-	layerPackage := sx.layerPackage(opts)
-
-	doc.DocumentDescribes = []string{layerPackage.ID}
-
 	if opts.ImageInfo.ImageDigest != "" {
 		imagePackage = sx.imagePackage(opts)
-		doc.DocumentDescribes = []string{imagePackage.ID}
 		doc.Packages = append(doc.Packages, *imagePackage)
+	}
+
+	for _, layer := range opts.ImageInfo.Layers {
+		layerPackage := sx.layerPackage(opts, layer)
+
 		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: imagePackage.ID,
-			Type:    "CONTAINS",
-			Related: layerPackage.ID,
-		})
+		if imagePackage != nil {
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: imagePackage.ID,
+				Type:    "CONTAINS",
+				Related: layerPackage.ID,
+			})
+		} else {
+			doc.DocumentDescribes = []string{layerPackage.ID}
+		}
+
+		doc.Packages = append(doc.Packages, *layerPackage)
+	}
+
+	if imagePackage != nil {
+		doc.DocumentDescribes = []string{imagePackage.ID}
 	}
 
 	if opts.ImageInfo.VCSUrl != "" {
@@ -120,14 +140,26 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 	}
 
-	doc.Packages = append(doc.Packages, *layerPackage)
-
 	for _, pkg := range opts.Packages {
 		// add the package
 		p := sx.apkPackage(opts, pkg)
-		// Add the layer to the ID to avoid clashes
+
+		nonce := "thismakestestspass"
+
+		// Add the image ID to the package ID to avoid clashes.
+		// NB: imagePackage.ID here is actually not important.
+		// The important thing is that p.ID is different from the package ID we
+		// would find in the corresponding APK SBOM. The ProcessInternalApkSBOM
+		// logic does a "JOIN" against the APK SBOM and replaces references to
+		// this ID with references to the APK's SBOM's Package ID, which means
+		// that logic falls over if they match. Removing imagePackage.ID makes
+		// them match, so we have to have _something_. You could replace
+		// imagePackage.ID with a UUID or "" and this would still be correct.
+		if imagePackage != nil {
+			nonce = imagePackage.ID
+		}
 		p.ID = stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
+			"SPDXRef-Package-%s-%s-%s", nonce, pkg.Name, pkg.Version,
 		))
 
 		doc.Packages = append(doc.Packages, p)
@@ -495,8 +527,8 @@ func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Pac
 }
 
 // LayerPackage returns a package describing the layer
-func (sx *SPDX) layerPackage(opts *options.Options) *Package {
-	layerPackageName := opts.ImageInfo.LayerDigest
+func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Package {
+	layerPackageName := hashToString(layer.Digest)
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	return &Package{
@@ -514,9 +546,9 @@ func (sx *SPDX) layerPackage(opts *options.Options) *Package {
 				Category: ExtRefPackageManager,
 				Type:     ExtRefTypePurl,
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
+					purl.TypeOCI, "", opts.ImagePurlName(), hashToString(layer.Digest),
 					nil, "",
-				).String() + "?" + opts.LayerPurlQualifiers().String(),
+				).String() + "?" + opts.LayerPurlQualifiers(layer).String(),
 			},
 		},
 	}
