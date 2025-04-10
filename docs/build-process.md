@@ -32,7 +32,6 @@ As described above, after everything is setup, the actual build occurs inside th
 The build is in [`build.Context.BuildLayer()`](../pkg/build/build.go#L80-109), which consists of:
 
 1. `Context.BuildImage()`: building the image
-1. `Context.BuildTarball()`: build the tarball for the layer
 1. `Context.GenerateSBOM()` optionally generate the SBoM
 
 The actual building of the image via `BuildImage()` just wraps [`buildImage()`](../pkg/build/build_implementation.go#L195-247).

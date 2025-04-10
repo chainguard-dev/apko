@@ -34,11 +34,10 @@ const xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 
 // writeTar writes a tarball to the provided io.Writer from the provided fs.FS.
 // The etc/passwd and etc/group file provide username and group name mappings for the tar.
-func writeTar(ctx context.Context, dst io.Writer, fsys apkfs.FullFS) error { //nolint:gocyclo
+func writeTar(ctx context.Context, tw *tar.Writer, fsys apkfs.FullFS) error { //nolint:gocyclo
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "writeTar")
 	defer span.End()
 
-	tw := tar.NewWriter(dst)
 	buf := make([]byte, 1<<20)
 
 	for f, err := range walkFS(ctx, fsys) {
