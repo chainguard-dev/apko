@@ -1,0 +1,108 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom-sha256:c171a414f18315b6d9300fe04f1163a9db3556ebfff2bf39863356c05802eb09",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "1970-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (v0.25.6-0.20250325212559-c59ae004a9f4)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-sha256-893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-sha256-893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389",
+      "name": "sha256:893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389",
+      "versionInfo": "sha256:893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389",
+      "filesAnalyzed": false,
+      "description": "apko container image",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Replaces",
+      "primaryPackagePurpose": "CONTAINER",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/top_image@sha256%3A893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sha256-c171a414f18315b6d9300fe04f1163a9db3556ebfff2bf39863356c05802eb09",
+      "name": "sha256:c171a414f18315b6d9300fe04f1163a9db3556ebfff2bf39863356c05802eb09",
+      "versionInfo": "1.0.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Replaces",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/top_image@sha256%3Ac171a414f18315b6d9300fe04f1163a9db3556ebfff2bf39863356c05802eb09?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.layer.v1.tar%2Bgzip\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-replayout-1.0.0-r0",
+      "name": "replayout",
+      "versionInfo": "1.0.0-r0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Unknown",
+      "supplier": "Organization: Unknown",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/unknown/replayout@1.0.0-r0?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-replayout.melange.yaml-cdbd5e1a86bb189d6e9034c7ec2a1d5e519b523b",
+      "name": "replayout.melange.yaml",
+      "versionInfo": "cdbd5e1a86bb189d6e9034c7ec2a1d5e519b523b",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Unknown",
+      "supplier": "Organization: Unknown",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:github/https%3A/%2Funknown%2Funknown%2Funknown@cdbd5e1a86bb189d6e9034c7ec2a1d5e519b523b#replayout.melange.yaml",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-893d834bb3e07c663a14605789c7dd5a08675413f7e3c4510d54e84747312389",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-sha256-c171a414f18315b6d9300fe04f1163a9db3556ebfff2bf39863356c05802eb09"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
+      "relationshipType": "DESCRIBED_BY",
+      "relatedSpdxElement": "SPDXRef-Package-replayout.melange.yaml-cdbd5e1a86bb189d6e9034c7ec2a1d5e519b523b"
+    }
+  ]
+}
