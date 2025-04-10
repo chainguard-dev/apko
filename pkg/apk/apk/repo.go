@@ -796,9 +796,10 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 					if pname != name {
 						continue
 					}
+					// If this virtual package is unversioned, it can't
+					// satisfy a versioned constraint
 					if pversion == "" {
-						satisfiedByProvide = true
-						break
+						continue
 					}
 					prover, err := cachedParseVersion(pversion)
 					if err != nil {
