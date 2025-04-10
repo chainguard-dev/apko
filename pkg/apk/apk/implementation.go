@@ -19,7 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
