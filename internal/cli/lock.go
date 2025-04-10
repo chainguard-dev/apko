@@ -69,6 +69,9 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	var archstrs []string
 	var output string
 	var includePaths []string
+	var ignoreSignatures bool
+	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use: cmdName,
@@ -94,6 +97,8 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 					build.WithExtraBuildRepos(extraBuildRepos),
 					build.WithExtraRuntimeRepos(extraRuntimeRepos),
 					build.WithIncludePaths(includePaths),
+					build.WithIgnoreSignatures(ignoreSignatures),
+					build.WithCache(cacheDir, offline, apk.NewCache(true))
 				},
 			)
 		},
@@ -105,6 +110,9 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	return cmd
 }
@@ -118,6 +126,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	defer os.RemoveAll(wd)
 
 	o, ic, err := build.NewOptions(opts...)
+
 	if err != nil {
 		return err
 	}

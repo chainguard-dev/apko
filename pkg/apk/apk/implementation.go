@@ -532,18 +532,12 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 		i, pkg := i, pkg
 
 		g.Go(func() error {
-			r, err := a.FetchPackage(ctx, pkg)
-			if err != nil {
-				return fmt.Errorf("fetching %s: %w", pkg.Name, err)
-			}
-			res, err := ResolveApk(ctx, r)
-			if err != nil {
-				return fmt.Errorf("resolving %s: %w", pkg.Name, err)
-			}
+			expanded, err := a.expandPackage(ctx, pkg)
 
-			res.Package = pkg
-			resolved[i] = res
-
+			if err != nil {
+				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
+			}
+			resolved[i] = NewAPKResolved(pkg, expanded)
 			return nil
 		})
 	}
