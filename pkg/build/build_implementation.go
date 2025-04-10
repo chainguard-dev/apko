@@ -34,7 +34,6 @@ import (
 	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
-	"chainguard.dev/apko/pkg/apk/tarball"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -110,7 +109,7 @@ func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Ha
 
 	diffid := sha256.New()
 
-	if err := tarball.WriteTar(ctx, io.MultiWriter(diffid, gzw), bc.fs); err != nil {
+	if err := writeTar(ctx, io.MultiWriter(diffid, gzw), bc.fs); err != nil {
 		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
 	}
 	if err := gzw.Close(); err != nil {
