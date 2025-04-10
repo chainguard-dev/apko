@@ -15,21 +15,23 @@
 package build
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/sigstore/cosign/v2/pkg/oci"
-	"go.opentelemetry.io/otel"
 
 	"github.com/chainguard-dev/clog"
 
@@ -77,56 +79,75 @@ func pooledBufioWriter(w io.Writer) *bufio.Writer {
 	return bw
 }
 
-// BuildTarball takes the fully populated working directory and saves it to
-// an OCI image layer tar.gz file.
-func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Hash, int64, error) {
-	log := clog.FromContext(ctx)
+// layerWriter allows lazily writing files to a tarball instead
+// of doing everything in one pass, this is necessary for multi-layer
+// images where we are writing to multiple layers at the same time.
+type layerWriter struct {
+	w        *tar.Writer
+	finalize func() (*layer, error)
+}
 
-	ctx, span := otel.Tracer("apko").Start(ctx, "BuildTarball")
-	defer span.End()
-
-	var outfile *os.File
-	var err error
-
-	if bc.o.TarballPath != "" {
-		outfile, err = os.Create(bc.o.TarballPath)
-	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
-	}
-	if err != nil {
-		return "", nil, nil, 0, fmt.Errorf("opening the build context tarball path failed: %w", err)
-	}
-	bc.o.TarballPath = outfile.Name()
-	defer outfile.Close()
-
+// newLayerWriter wraps a file with a gzipping tar writer that computes
+// everything we need to know to implement a v1.Layer, which it will
+// produce when finalize() is called.
+func newLayerWriter(out *os.File) *layerWriter {
 	digest := sha256.New()
 
-	buf := pooledBufioWriter(outfile)
-	defer bufioPool.Put(buf)
+	buf := pooledBufioWriter(out)
 
 	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
-	defer pgzipPool.Put(gzw)
 
 	diffid := sha256.New()
 
-	if err := writeTar(ctx, io.MultiWriter(diffid, gzw), bc.fs); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
-	}
-	if err := gzw.Close(); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("closing gzip writer: %w", err)
-	}
+	w := tar.NewWriter(io.MultiWriter(diffid, gzw))
 
-	if err := buf.Flush(); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("flushing %s: %w", outfile.Name(), err)
-	}
+	// Just capturing everything in a closure here is more straightforward
+	// to read (as a translation from what used to implement this) than
+	// adding a bunch of fields to layerWriter.
+	return &layerWriter{
+		w: w,
+		finalize: func() (*layer, error) {
+			defer pgzipPool.Put(gzw)
+			defer bufioPool.Put(buf)
 
-	stat, err := outfile.Stat()
-	if err != nil {
-		return "", nil, nil, 0, fmt.Errorf("stat(%q): %w", outfile.Name(), err)
-	}
+			if err := w.Close(); err != nil {
+				return nil, fmt.Errorf("closing tar writer: %w", err)
+			}
 
-	log.Infof("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), diffid, digest, stat.Size(), nil
+			if err := gzw.Close(); err != nil {
+				return nil, fmt.Errorf("closing gzip writer: %w", err)
+			}
+
+			if err := buf.Flush(); err != nil {
+				return nil, fmt.Errorf("flushing %s: %w", out.Name(), err)
+			}
+
+			stat, err := out.Stat()
+			if err != nil {
+				return nil, fmt.Errorf("statting %s: %w", out.Name(), err)
+			}
+
+			h := v1.Hash{
+				Algorithm: "sha256",
+				Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+			}
+
+			l := &layer{
+				filename: out.Name(),
+				desc: &v1.Descriptor{
+					Digest:    h,
+					Size:      stat.Size(),
+					MediaType: v1types.OCILayer,
+				},
+				diffid: &v1.Hash{
+					Algorithm: "sha256",
+					Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
+				},
+			}
+
+			return l, nil
+		},
+	}
 }
 
 func (bc *Context) buildImage(ctx context.Context) error {

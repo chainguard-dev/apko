@@ -17,11 +17,11 @@ package build
 import (
 	"compress/gzip"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -161,31 +161,34 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, err
 	}
 
-	layerTarGZ, diffid, digest, size, err := bc.BuildTarball(ctx)
-	// build layer tarball
+	var (
+		outfile *os.File
+		err     error
+	)
+
+	if bc.o.TarballPath != "" {
+		outfile, err = os.Create(bc.o.TarballPath)
+	} else {
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+	}
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("creating tarball file: %w", err)
+	}
+	bc.o.TarballPath = outfile.Name()
+	defer outfile.Close()
+
+	lw := newLayerWriter(outfile)
+
+	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
+		return "", nil, fmt.Errorf("generating tarball: %w", err)
 	}
 
-	h := v1.Hash{
-		Algorithm: "sha256",
-		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	l, err := lw.finalize()
+	if err != nil {
+		return "", nil, fmt.Errorf("finalizing layer: %w", err)
 	}
 
-	l := &layer{
-		filename: layerTarGZ,
-		desc: &v1.Descriptor{
-			Digest:    h,
-			Size:      size,
-			MediaType: v1types.OCILayer,
-		},
-		diffid: &v1.Hash{
-			Algorithm: "sha256",
-			Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
-		},
-	}
-
-	return layerTarGZ, l, nil
+	return outfile.Name(), l, nil
 }
 
 func (bc *Context) checkPaths(ctx context.Context) error {
