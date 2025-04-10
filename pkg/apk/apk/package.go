@@ -60,6 +60,40 @@ func PackageToInstalled(pkg *Package) (out []string) {
 	return
 }
 
+// LocatablePackage represents a minimal set of information needed to locate a
+// package for retrieval over a network.
+type LocatablePackage interface {
+	URL() string
+}
+
+// FetchablePackage represents a minimal set of information needed to fetch a package.
+type FetchablePackage interface {
+	URL() string
+	PackageName() string
+}
+
+type fetchablePackage struct {
+	pkgName string
+	url     string
+}
+
+func (f fetchablePackage) URL() string {
+	return f.url
+}
+
+func (f fetchablePackage) PackageName() string {
+	return f.pkgName
+}
+
+// NewFetchablePackage creates and returns a minimal implementation of
+// FetchablePackage.
+func NewFetchablePackage(pkgName, url string) FetchablePackage {
+	return &fetchablePackage{
+		pkgName: pkgName,
+		url:     url,
+	}
+}
+
 // InstallablePackage represents a minimal set of information needed to install a package within an Image.
 type InstallablePackage interface {
 	URL() string
