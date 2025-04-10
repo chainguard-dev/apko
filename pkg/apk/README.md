@@ -9,7 +9,6 @@ Also includes supporting utilities for working with filesystems, including:
 read-write, chmod/chown, devices, and symlinks capabilities
 * an implementation of that FS in memory, i.e. a memfs
 * an implementation of that FS on top of a directory, which uses the memfs for features the underlying disk does not support
-* tarball features
 
 Documentation is available at [https://pkg.go.dev/chainguard.dev/apko/pkg/apk](https://pkg.go.dev/chainguard.dev/apko/pkg/apk).
 
@@ -58,11 +57,6 @@ It also provides two implementations of that interface:
 
 * `memfs` is an in-memory implementation of `FullFS`. It is fully functional, but remember that it uses memory, so loading very large files into it will hit limits.
 * `rwosfs` is an on-disk implementation of `FullFS`. It is fully functional, including capabilities that may not exist on the underlying filesystem, like symlinks, devices, chown/chmod and case-sensitivity. The metadata for every file on disk also is in-memory, enabling those additional capabilities. Contents are not stored in memory.
-
-### Tarball
-
-`chainguard.dev/apko/pkg/apk/tarball` provides a utility to write an [fs.FS](https://pkg.go.dev/io/fs#FS) to a tarball. It is implemented on a `tarball.Context`, which lets
-you provide overrides for timestamps, UID/GID, and other features.
 
 ### apk
 

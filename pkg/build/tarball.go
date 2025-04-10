@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tarball
+package build
 
 import (
 	"archive/tar"
@@ -31,7 +31,26 @@ import (
 
 const xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 
-func writeTar(ctx context.Context, tw *tar.Writer, fsys apkfs.FullFS, users, groups map[int]string) error { //nolint:gocyclo
+// writeTar writes a tarball to the provided io.Writer from the provided fs.FS.
+// The etc/passwd and etc/group file provide username and group name mappings for the tar.
+func writeTar(ctx context.Context, dst io.Writer, fsys apkfs.FullFS) error { //nolint:gocyclo
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "WriteTar")
+	defer span.End()
+
+	tw := tar.NewWriter(dst)
+
+	// get the uname and gname maps
+	usersFile, _ := passwd.ReadUserFile(fsys, "etc/passwd")
+	groupsFile, _ := passwd.ReadGroupFile(fsys, "etc/group")
+	users := map[int]string{}
+	groups := map[int]string{}
+	for _, u := range usersFile.Entries {
+		users[int(u.UID)] = u.UserName
+	}
+	for _, g := range groupsFile.Entries {
+		groups[int(g.GID)] = g.GroupName
+	}
+
 	buf := make([]byte, 1<<20)
 
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
@@ -122,7 +141,6 @@ func writeTar(ctx context.Context, tw *tar.Writer, fsys apkfs.FullFS, users, gro
 			if err != nil {
 				return err
 			}
-
 			defer data.Close()
 
 			if _, err := io.CopyBuffer(tw, data, buf); err != nil {
@@ -132,34 +150,11 @@ func writeTar(ctx context.Context, tw *tar.Writer, fsys apkfs.FullFS, users, gro
 
 		return nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("writing tar archive: %w", err)
 	}
 
-	return nil
-}
-
-// WriteTar writes a tarball to the provided io.Writer from the provided fs.FS.
-// The etc/passwd and etc/group file provide username and group name mappings for the tar.
-func WriteTar(ctx context.Context, dst io.Writer, src apkfs.FullFS) error {
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "WriteTar")
-	defer span.End()
-
-	tw := tar.NewWriter(dst)
-	defer tw.Close()
-
-	// get the uname and gname maps
-	usersFile, _ := passwd.ReadUserFile(src, "etc/passwd")
-	groupsFile, _ := passwd.ReadGroupFile(src, "etc/group")
-	users := map[int]string{}
-	groups := map[int]string{}
-	for _, u := range usersFile.Entries {
-		users[int(u.UID)] = u.UserName
-	}
-	for _, g := range groupsFile.Entries {
-		groups[int(g.GID)] = g.GroupName
-	}
-	if err := writeTar(ctx, tw, src, users, groups); err != nil {
-		return fmt.Errorf("writing TAR archive failed: %w", err)
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("closing tar writer: %w", err)
 	}
 
 	return nil
