@@ -870,6 +870,39 @@ func TestSameProvidedVersion(t *testing.T) {
 	}
 }
 
+// If a package has a provides with a different version than the real
+// package (here libcurl-openssl4=8.12.1-r1 provides libcurl-abi=8.12.1),
+// both should be allowed in the same DAG
+func TestDepWithProvidesOfDiffVersion(t *testing.T) {
+	providers := map[string][]string{
+		"libcurl-openssl4=8.12.1-r1": {
+			"libcurl-abi=8.12.1", "so:libcurl.so.4=4",
+		},
+	}
+	dependers := map[string][]string{
+		"foo=1":                      {}, // an extra dep level needed to trigger bug
+		"libcurl-openssl4=8.12.1-r1": {"foo"},
+		"curl=8.12.1-r1":             {"libcurl-abi=8.12.1", "so:libcurl.so.4"},
+		"curl-dev=8.12.1-r1":         {"so:libcurl.so.4"},
+	}
+
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"curl-dev", "curl"}, nil)
+	require.NoError(t, err)
+
+	wantPkgs := []string{
+		"foo-1.apk",
+		"libcurl-openssl4-8.12.1-r1.apk",
+		"curl-dev-8.12.1-r1.apk",
+		"curl-8.12.1-r1.apk",
+	}
+
+	require.Len(t, pkgs, len(wantPkgs))
+	for i, pkg := range pkgs {
+		require.Equal(t, pkg.Filename(), wantPkgs[i])
+	}
+}
+
 func TestHigherProvidedVersion(t *testing.T) {
 	providers := map[string][]string{
 		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1=1.1"},
