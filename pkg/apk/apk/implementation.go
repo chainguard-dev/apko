@@ -581,7 +581,7 @@ func (a *APK) ResolveAndCalculateWorld(ctx context.Context) ([]*APKResolved, err
 }
 
 // FixateWorld force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
-func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error {
+func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]*Package, error) {
 	log := clog.FromContext(ctx)
 	/*
 		equivalent of: "apk fix --arch arch --root root"
@@ -598,7 +598,7 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 	// 1. Get the apkIndexes for each repository for the target arch
 	allpkgs, conflicts, err := a.ResolveWorld(ctx)
 	if err != nil {
-		return fmt.Errorf("error getting package dependencies: %w", err)
+		return nil, fmt.Errorf("error getting package dependencies: %w", err)
 	}
 
 	// 3. For each name on the list:
@@ -611,10 +611,10 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 	for _, pkg := range conflicts {
 		isInstalled, err := a.isInstalledPackage(pkg)
 		if err != nil {
-			return fmt.Errorf("error checking if package %s is installed: %w", pkg, err)
+			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkg, err)
 		}
 		if isInstalled {
-			return fmt.Errorf("cannot install due to conflict with %s", pkg)
+			return nil, fmt.Errorf("cannot install due to conflict with %s", pkg)
 		}
 	}
 	// Cast []*RepositoryPackage into []InstallablePackage.
@@ -626,7 +626,7 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) error
 	return a.InstallPackages(ctx, sourceDateEpoch, allInstPkgs)
 }
 
-func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) error {
+func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) ([]*Package, error) {
 	// TODO: Consider making this configurable option.
 	jobs := runtime.GOMAXPROCS(0)
 
@@ -710,7 +710,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	}
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("installing packages: %w", withCause(ctx, err))
+		return nil, fmt.Errorf("installing packages: %w", withCause(ctx, err))
 	}
 
 	// update the installed file
@@ -737,11 +737,11 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		})
 
 		if err := a.AddInstalledPackage(pkg, files); err != nil {
-			return fmt.Errorf("unable to update installed file for pkg %s: %w", pkg.Name, err)
+			return nil, fmt.Errorf("unable to update installed file for pkg %s: %w", pkg.Name, err)
 		}
 	}
 
-	return nil
+	return infos, nil
 }
 
 type NoKeysFoundError struct {

@@ -193,6 +193,9 @@ type ImageConfiguration struct {
 	// when the image requires special volume configuration at runtime for
 	// supported container runtimes.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+
+	// Experimental: Optional: Configuration to control layering of the OCI image.
+	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty" apko:"experimental"`
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -406,4 +409,9 @@ type SBOM struct {
 	Path   string
 	Format string
 	Digest v1.Hash
+}
+
+type Layering struct {
+	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
+	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
 }

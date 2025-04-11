@@ -130,6 +130,10 @@
           },
           "type": "array",
           "description": "Optional: A list of volumes to configure\n\nThis is _not_ the same as Paths, but refers to the OCI spec \"volumes\"\nfield used by some container runtimes (docker) to create volumes at\nruntime. For most use cases, this is not needed, but consider using this\nwhen the image requires special volume configuration at runtime for\nsupported container runtimes."
+        },
+        "layering": {
+          "$ref": "#/$defs/Layering",
+          "description": "Experimental: Optional: Configuration to control layering of the OCI image."
         }
       },
       "additionalProperties": false,
@@ -192,6 +196,18 @@
             "type": "string"
           },
           "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Layering": {
+      "properties": {
+        "strategy": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,

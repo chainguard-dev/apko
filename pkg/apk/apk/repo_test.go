@@ -987,12 +987,12 @@ func makeResolver(provs, deps map[string][]string) *PkgResolver {
 	packages := make(map[string]*Package, max(len(provs), len(deps)))
 
 	for pkgver := range provs {
-		parsed := resolvePackageNameVersionPin(pkgver)
-		packages[pkgver] = &Package{Name: parsed.name, Version: parsed.version}
+		parsed := ResolvePackageNameVersionPin(pkgver)
+		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.version}
 	}
 	for pkgver := range deps {
-		parsed := resolvePackageNameVersionPin(pkgver)
-		packages[pkgver] = &Package{Name: parsed.name, Version: parsed.version}
+		parsed := ResolvePackageNameVersionPin(pkgver)
+		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.version}
 	}
 
 	for pkgver, pkgProvs := range provs {
