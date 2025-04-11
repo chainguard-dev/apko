@@ -356,7 +356,26 @@ type parsedConstraint struct {
 	pin     string
 }
 
+var onlyDigitsRegexp = regexp.MustCompile(`^\d+$`)
+
 func resolvePackageNameVersionPin(pkgName string) parsedConstraint {
+	// Due to https://github.com/chainguard-dev/melange/pull/1871,
+	// we have to treat shared library depends/provides
+	// differently.
+	//
+	// If a shared library's depends/provides has an explicitly
+	// version, and if the version is a digit, then we disconsider
+	// it.  We only care if the version string contains non-digit
+	// characters, as that indicates that it has a proper
+	// versioned depends/provides containing the package version
+	// (which will always have the `-r` substring).
+	if strings.HasPrefix(pkgName, "so:") {
+		onlyPkgName, pkgVersion, found := strings.Cut(pkgName, "=")
+		if found && onlyDigitsRegexp.MatchString(pkgVersion) {
+			pkgName = onlyPkgName
+		}
+	}
+
 	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
 	if len(parts) == 0 || len(parts[0]) < 2 {
 		return parsedConstraint{
