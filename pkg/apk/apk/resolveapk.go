@@ -74,3 +74,15 @@ func ResolveApk(ctx context.Context, source io.Reader) (*APKResolved, error) {
 
 	return resolved, nil
 }
+
+func NewAPKResolved(pkg *RepositoryPackage, expanded *expandapk.APKExpanded) *APKResolved {
+	return &APKResolved{
+		Package:       pkg,
+		ControlSize:   int(expanded.ControlSize),
+		ControlHash:   expanded.ControlHash,
+		SignatureHash: expanded.SignatureHash,
+		SignatureSize: int(expanded.SignatureSize),
+		DataHash:      expanded.PackageHash,
+		DataSize:      int(expanded.PackageSize),
+	}
+}
