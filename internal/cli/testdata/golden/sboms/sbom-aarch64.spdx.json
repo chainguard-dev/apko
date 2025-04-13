@@ -13,13 +13,13 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-sha256-2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7"
+    "SPDXRef-Package-sha256-f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-sha256-2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7",
-      "name": "sha256:2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7",
-      "versionInfo": "sha256:2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7",
+      "SPDXID": "SPDXRef-Package-sha256-f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b",
+      "name": "sha256:f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b",
+      "versionInfo": "sha256:f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b",
       "filesAnalyzed": false,
       "description": "apko container image",
       "downloadLocation": "NOASSERTION",
@@ -28,13 +28,13 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7"
+          "checksumValue": "f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b"
         }
       ],
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/golden@sha256%3A2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7?arch=arm64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceLocator": "pkg:oci/golden@sha256%3Af01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b?arch=arm64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
           "referenceType": "purl"
         }
       ]
@@ -96,7 +96,7 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-sha256-2daa2a0b7c784bbda06b9a342d2b70e72d4f213642f488250fdb62ccd65a4ba7",
+      "spdxElementId": "SPDXRef-Package-sha256-f01f5d7403958377a306ba0295cfd092e58d5e4bca12c0245df51d1a6cace72b",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-sha256-fab53f6bbeb155d8f33acb6e7a1d961317ffb6352fc775b133b1af8656a6d0bb"
     }
