@@ -850,10 +850,7 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, err
 	}
 
-	rc := retryablehttp.NewClient()
-	rc.HTTPClient = client
-	rc.Logger = clog.FromContext(ctx)
-	discoveryResponse, err := rc.StandardClient().Do(discoveryRequest)
+	discoveryResponse, err := client.Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -933,6 +930,13 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 	client := a.client
 	if a.cache != nil {
 		client = a.cache.client(client, false)
+
+		if !a.cache.offline {
+			rc := retryablehttp.NewClient()
+			rc.HTTPClient = client
+			rc.Logger = clog.FromContext(ctx)
+			client = rc.StandardClient()
+		}
 
 		return a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
 			return DiscoverKeys(ctx, client, a.auth, repository)
