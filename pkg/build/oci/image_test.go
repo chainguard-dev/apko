@@ -58,7 +58,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
-					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
 				Labels: map[string]string{
@@ -87,7 +87,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
-					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
 				Labels: map[string]string{
@@ -100,7 +100,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 		cfg: types.ImageConfiguration{
 			Environment: map[string]string{
 				"FOO":  "bar",
-				"PATH": "/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"PATH": "/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 			},
 		},
 		want: &v1.ConfigFile{
@@ -117,7 +117,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
-					"PATH=/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
 				Labels: map[string]string{

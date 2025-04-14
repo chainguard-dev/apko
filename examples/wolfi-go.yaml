@@ -9,7 +9,7 @@ contents:
     - go
 
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin:/root/go/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin:/root/go/bin
 
 archs:
 - x86_64

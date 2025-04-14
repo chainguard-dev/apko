@@ -56,7 +56,7 @@ entrypoint:
 
 # optional environment configuration
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 ```
 We can build this with apko from any environment with apk tooling:
 

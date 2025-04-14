@@ -21,7 +21,7 @@ entrypoint:
 
 # optional environment configuration
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 ```
 
 Running `apko build` on this file will produce a tar file containing an Alpine base container image.
@@ -68,7 +68,7 @@ accounts:
 
 # optional environment configuration
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 
 # optional path mutations
 paths:

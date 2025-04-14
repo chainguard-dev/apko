@@ -159,7 +159,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		env = map[string]string{}
 	}
 	for k, v := range map[string]string{
-		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	} {
 		if _, found := env[k]; !found {
