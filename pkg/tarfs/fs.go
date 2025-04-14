@@ -1033,3 +1033,12 @@ func (m *memFileInfo) Sys() any {
 
 	return th
 }
+
+// This is a bit janky, but we need a way to know who owns this.
+func (m *memFileInfo) Package() *apk.Package {
+	if m.node.te == nil {
+		return nil
+	}
+
+	return m.node.te.pkg
+}

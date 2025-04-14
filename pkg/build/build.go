@@ -94,7 +94,7 @@ func (bc *Context) BuildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildImage")
 	defer span.End()
 
-	if err := bc.buildImage(ctx); err != nil {
+	if _, err := bc.buildImage(ctx); err != nil {
 		log.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ic)
 		if err2 != nil {
@@ -134,20 +134,16 @@ func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
 	defer span.End()
 
-	// build image filesystem
-	if err := bc.BuildImage(ctx); err != nil {
-		return nil, err
-	}
-	if err := bc.postBuildSetApk(ctx); err != nil {
-		return nil, err
+	if bc.ic.Layering == nil {
+		_, layer, err := bc.BuildLayer(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return []v1.Layer{layer}, nil
 	}
 
-	_, layer, err := bc.ImageLayoutToLayer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return []v1.Layer{layer}, nil
+	return bc.buildLayers(ctx)
 }
 
 // ImageLayoutToLayer given an already built-out

@@ -52,6 +52,12 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		return nil, err
 	}
 
+	comment := "This is an apko single-layer image"
+	if len(layers) > 1 {
+		// TODO: Consider plumbing per-layer info here?
+		comment = ""
+	}
+
 	adds := make([]mutate.Addendum, 0, len(layers))
 	for _, layer := range layers {
 		digest, err := layer.Digest()
@@ -71,9 +77,9 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 			Layer: layer,
 			History: v1.History{
 				Author:    "apko",
-				Comment:   "This is an apko single-layer image", // TODO: Update this once we confirm no other changes.
+				Comment:   comment,
 				CreatedBy: "apko",
-				Created:   v1.Time{Time: created},
+				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
 			},
 		})
 	}

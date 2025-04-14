@@ -1,0 +1,18 @@
+contents:
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - replayout
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64
+
+layering:
+  strategy: origin
+  budget: 2
