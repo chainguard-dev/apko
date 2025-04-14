@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
@@ -532,18 +533,12 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 		i, pkg := i, pkg
 
 		g.Go(func() error {
-			r, err := a.FetchPackage(ctx, pkg)
-			if err != nil {
-				return fmt.Errorf("fetching %s: %w", pkg.Name, err)
-			}
-			res, err := ResolveApk(ctx, r)
-			if err != nil {
-				return fmt.Errorf("resolving %s: %w", pkg.Name, err)
-			}
+			expanded, err := a.expandPackage(ctx, pkg)
 
-			res.Package = pkg
-			resolved[i] = res
-
+			if err != nil {
+				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
+			}
+			resolved[i] = NewAPKResolved(pkg, expanded)
 			return nil
 		})
 	}
@@ -1062,6 +1057,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 	}
 	exp.ControlFile = ctl
 	exp.ControlHash = checksum
+	exp.ControlSize = cf.Size()
 
 	control, err := exp.ControlData()
 	if err != nil {
@@ -1081,6 +1077,13 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureFile = sig
 		exp.Signed = true
 		exp.Size += sf.Size()
+		exp.SignatureSize = sf.Size()
+		signatureData, err := os.ReadFile(sig)
+		if err != nil {
+			return nil, err
+		}
+		signatureHash := sha1.Sum(signatureData) //nolint:gosec // this is what apk tools is using
+		exp.SignatureHash = signatureHash[:]
 	}
 
 	f, err := os.Open(ctl)
@@ -1100,6 +1103,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		return nil, err
 	}
 	exp.PackageFile = dat
+	exp.PackageSize = df.Size()
 	exp.Size += df.Size()
 
 	exp.PackageHash, err = hex.DecodeString(datahash)

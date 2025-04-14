@@ -93,8 +93,13 @@ type APKExpanded struct {
 	// Exposes TarFile as an indexed FS implementation.
 	TarFS *tarfs.FS
 
-	ControlHash []byte
-	PackageHash []byte
+	ControlHash   []byte
+	PackageHash   []byte
+	SignatureHash []byte
+
+	ControlSize   int64
+	PackageSize   int64
+	SignatureSize int64
 
 	sync.Mutex
 	controlData []byte
@@ -456,25 +461,33 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 
 	// Calculate the total size of the apk (combo of all streams)
 	totalSize := int64(0)
+	sizes := []int64{}
 	for _, s := range gzipStreams {
 		info, err := os.Stat(s)
 		if err != nil {
 			return nil, fmt.Errorf("expandApk error 18: %w", err)
 		}
 		totalSize += info.Size()
+		sizes = append(sizes, info.Size())
 	}
 
-	var signed bool
+	var signatureIndex int
 	var controlDataIndex int
+	var packageIndex int
+
 	switch numGzipStreams {
 	case 3:
-		signed = true
+		signatureIndex = 0
 		controlDataIndex = 1
+		packageIndex = 2
 	case 2:
+		signatureIndex = -1
 		controlDataIndex = 0
+		packageIndex = 1
 	default:
 		return nil, fmt.Errorf("invalid number of tar streams: %d", numGzipStreams)
 	}
+	signed := signatureIndex >= 0
 
 	expanded := APKExpanded{
 		tempDir:     dir,
@@ -482,11 +495,16 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 		Size:        totalSize,
 		ControlFile: gzipStreams[controlDataIndex],
 		ControlHash: hashes[controlDataIndex],
-		PackageFile: gzipStreams[controlDataIndex+1],
-		PackageHash: hashes[controlDataIndex+1],
+		ControlSize: sizes[controlDataIndex],
+
+		PackageFile: gzipStreams[packageIndex],
+		PackageHash: hashes[packageIndex],
+		PackageSize: sizes[packageIndex],
 	}
 	if signed {
-		expanded.SignatureFile = gzipStreams[0]
+		expanded.SignatureFile = gzipStreams[signatureIndex]
+		expanded.SignatureHash = hashes[signatureIndex]
+		expanded.SignatureSize = sizes[signatureIndex]
 	}
 
 	control, err := expanded.ControlData()
