@@ -356,7 +356,28 @@ type parsedConstraint struct {
 	pin     string
 }
 
+var endsWithReleaseStr = regexp.MustCompile(`-r\d+$`)
+
 func resolvePackageNameVersionPin(pkgName string) parsedConstraint {
+	// Due to https://github.com/chainguard-dev/melange/pull/1871,
+	// we have to treat shared library depends/provides
+	// differently.
+	//
+	// If a shared library's depends/provides has an explicitly
+	// version, and if the version does NOT end with a release
+	// substring (`-rN`), then we tweak its version to sort
+	// *after* the ones that end with `-rN`.
+	//
+	// We only care if the version string ends with a release
+	// substring (`-rN`), as that indicates that it has a proper
+	// versioned depends/provides containing the package version.
+	if strings.HasPrefix(pkgName, "so:") {
+		onlyPkgName, pkgVersion, found := strings.Cut(pkgName, "=")
+		if found && !endsWithReleaseStr.MatchString(pkgVersion) {
+			pkgName = onlyPkgName + "=0." + pkgVersion
+		}
+	}
+
 	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
 	if len(parts) == 0 || len(parts[0]) < 2 {
 		return parsedConstraint{
