@@ -206,7 +206,7 @@ func TestPublishLayering(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:e4854bdd74aca1534a30da899edef2ad46b9a7e088ceae2094d85a287a20891a"
+	want := "sha256:978f73eff8bf65c2551196c3d840e7e943522b1970d5bcfc905c9874e003cb60"
 	require.Equal(t, want, digest.String())
 
 	im, err := idx.IndexManifest()
