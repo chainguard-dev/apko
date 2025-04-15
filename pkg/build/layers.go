@@ -317,6 +317,21 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir
 				continue
 			}
 
+			// This is a little weird, but bear with me...
+			// Often, multiple packages (and thus layers) contain files in the same directory.
+			// The directories in each package likely have different timestamps.
+			// The overall image's filesystem will only have one directory entry, so there
+			// will be a "winner" timestamp that actually ends up in the image.
+			// Unfortunately, this means that we don't get great layer deduplication
+			// in a lot of situations, and the timestamp of some directories in any given
+			// layer are influenced by the timestamp of directories in _other_ layers.
+			// Since timestamps almost never have an observable effect on the image behavior,
+			// and the "real" timestamp will end up in the "top" layer anyway and overwrite
+			// the directory metadata for these package-ful layers, we can improve deduplication
+			// without having any real effect on the image by overwriting this directory's
+			// timestamp with the timestamp of the "f" file we're about to write to this layer.
+			todo.header.ModTime = f.header.ModTime
+
 			if err := w.w.WriteHeader(todo.header); err != nil {
 				return nil, fmt.Errorf("writing header %s: %w", todo.header.Name, err)
 			}
