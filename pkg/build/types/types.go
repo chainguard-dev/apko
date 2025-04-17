@@ -182,7 +182,6 @@ type ImageConfiguration struct {
 	//
 	// The included configuration is deep merged with the parent configuration
 	//
-	// Deprecated: This will be removed in a future release.
 	Include string `json:"include,omitempty" yaml:"include,omitempty"`
 
 	// Optional: A list of volumes to configure

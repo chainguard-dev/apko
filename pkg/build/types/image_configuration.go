@@ -182,8 +182,6 @@ func (ic *ImageConfiguration) readLocal(imageconfigPath string, includePaths []s
 // Load - loads an image configuration given a configuration file path.
 // Populates configHasher with the configuration data loaded from the imageConfigPath and the other referenced files.
 // You can pass any dummy hasher (like fnv.New32()), if you don't care about the hash of the configuration.
-//
-// Deprecated: This will be removed in a future release.
 func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string, includePaths []string, configHasher hash.Hash) error {
 	data, err := ic.readLocal(imageConfigPath, includePaths)
 	if err != nil {
