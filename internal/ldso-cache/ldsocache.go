@@ -315,9 +315,14 @@ func AddLDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry,
 		}
 	}
 
+	keys := make([]string, 0, len(entryMap))
+	for k := range entryMap {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
 	entries := make([]LDSOCacheEntry, 0, len(entryMap))
-	for _, entry := range entryMap {
-		entries = append(entries, entry)
+	for _, k := range keys {
+		entries = append(entries, entryMap[k])
 	}
 
 	return entries, nil
