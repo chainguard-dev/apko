@@ -27,12 +27,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/sigstore/cosign/v2/pkg/oci"
-
 	"github.com/chainguard-dev/clog"
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 
