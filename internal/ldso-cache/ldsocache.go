@@ -35,7 +35,6 @@ const debug = false
 const ldsoMagic = "glibc-ld.so.cache"
 const ldsoVersion = "1.1"
 const ldsoExtensionMagic = 0xEAA42174
-const cacheExtensionTagGenerator = uint32(1)
 
 const (
 	FLAG_ANY                    uint32 = 0xffff
@@ -127,27 +126,6 @@ func Debugf(format string, args ...any) {
 		return
 	}
 	log.Printf(format, args...)
-}
-
-func (hdr *LDSORawCacheHeader) describe() {
-	fmt.Printf("Header:\n")
-	fmt.Printf("  Magic [%s]\n", hdr.Magic)
-	fmt.Printf("  Version [%s]\n", hdr.Version)
-	fmt.Printf("  %d library entries.\n", hdr.NumLibs)
-	fmt.Printf("  String table is %d bytes long.\n", hdr.StrTableSize)
-}
-
-func (ehdr *LDSOCacheExtensionHeader) describe() {
-	fmt.Printf("Extension header:\n")
-	fmt.Printf("  %d entries.\n", ehdr.Count)
-}
-
-func (shdr *LDSOCacheExtensionSectionHeader) describe() {
-	fmt.Printf("Extension section header:\n")
-	fmt.Printf("  Tag [%d]\n", shdr.Tag)
-	fmt.Printf("  Flags [%x]\n", shdr.Flags)
-	fmt.Printf("  Offset [%d]\n", shdr.Offset)
-	fmt.Printf("  Size [%d]\n", shdr.Size)
 }
 
 // accepts a library name and returns its name and a version
