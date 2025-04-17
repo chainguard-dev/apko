@@ -252,6 +252,9 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 			return nil, fmt.Errorf("failed generating ldsocache")
 		}
 		lsc, err := bc.fs.Create("etc/ld.so.cache")
+		if err != nil {
+			return nil, fmt.Errorf("unable to create /etc/ld.so.cache")
+		}
 		err = cacheFile.Write(lsc)
 		if err != nil {
 			return nil, fmt.Errorf("unable to write /etc/ld.so.cache")
