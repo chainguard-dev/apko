@@ -249,12 +249,12 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 			bc.fs, libdirs,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Failed generating ldsocache")
+			return nil, fmt.Errorf("failed generating ldsocache")
 		}
 		lsc, err := bc.fs.Create("etc/ld.so.cache")
 		err = cacheFile.Write(lsc)
 		if err != nil {
-			return nil, fmt.Errorf("Unable to write /etc/ld.so.cache")
+			return nil, fmt.Errorf("unable to write /etc/ld.so.cache")
 		}
 	} else {
 		log.Debug("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update")
