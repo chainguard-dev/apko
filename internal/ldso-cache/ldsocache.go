@@ -373,11 +373,7 @@ func LoadCacheFile(path string) (*LDSOCacheFile, error) {
 			HWCapNeeded:     rawlib.HWCapNeeded,
 		}
 
-		name, err := extractShlibName(strtable, rawlib.Value-uint32(pos))
-		if err != nil {
-			return nil, err
-		}
-
+		name := extractShlibName(strtable, rawlib.Value-uint32(pos))
 		entry.Name = name
 
 		entries = append(entries, entry)
@@ -446,15 +442,15 @@ func LoadCacheFile(path string) (*LDSOCacheFile, error) {
 }
 
 // extractShlibName extracts a shared library from the string table.
-func extractShlibName(strtable []byte, startIdx uint32) (string, error) {
+func extractShlibName(strtable []byte, startIdx uint32) string {
 	subset := strtable[startIdx:]
 	terminatorPos := bytes.IndexByte(subset, 0x0)
 
 	if terminatorPos == -1 {
-		return string(subset), nil
+		return string(subset)
 	}
 
-	return string(subset[:terminatorPos]), nil
+	return string(subset[:terminatorPos])
 }
 
 func (cf *LDSOCacheFile) Write(w io.Writer) error {
