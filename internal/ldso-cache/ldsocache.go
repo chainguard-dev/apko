@@ -174,7 +174,7 @@ func ParseLibFilename(realname string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid library name: %s", realname)
 	}
 	name = realname[:idx]
-	ver = realname[idx + len(".so."):]
+	ver = realname[idx+len(".so."):]
 
 	return name, ver, nil
 }
@@ -202,7 +202,7 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 		realname := dirent.Name()
 		fullpath := filepath.Join(libdir, realname)
 		mode := dirent.Type()
-		isLink := (mode & fs.ModeSymlink != 0)
+		isLink := (mode&fs.ModeSymlink != 0)
 
 		if isLink {
 			// Stat follows symlinks
@@ -295,10 +295,10 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 			}
 			entryMap[realname] = LDSOCacheEntry{
 				// fullpath is relative to "/"
-				Name: filepath.Join("/", fullpath),
-				Flags: flags,
+				Name:             filepath.Join("/", fullpath),
+				Flags:            flags,
 				OSVersion_Needed: 0,
-				HWCap_Needed: 0,
+				HWCap_Needed:     0,
 			}
 		}
 	}
@@ -335,7 +335,7 @@ func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error)
 	}
 
 	header := LDSORawCacheHeader{
-		Magic: [17]byte([]byte(ldsoMagic)),
+		Magic:   [17]byte([]byte(ldsoMagic)),
 		Version: [3]byte([]byte(ldsoVersion)),
 		NumLibs: (uint32)(len(entries)),
 	}
@@ -496,11 +496,11 @@ func (cf *LDSOCacheFile) Write(w io.Writer) error {
 		stringTable = append(stringTable, entry...)
 
 		lrcEntry := LDSORawCacheEntry{
-			Flags: lib.Flags,
-			Key: cursor + uint32(len(filepath.Dir(lib.Name))+1),
-			Value: cursor,
+			Flags:            lib.Flags,
+			Key:              cursor + uint32(len(filepath.Dir(lib.Name))+1),
+			Value:            cursor,
 			OSVersion_Needed: lib.OSVersion_Needed,
-			HWCap_Needed: lib.HWCap_Needed,
+			HWCap_Needed:     lib.HWCap_Needed,
 		}
 
 		lrcEntries = append(lrcEntries, lrcEntry)
@@ -526,7 +526,7 @@ func (cf *LDSOCacheFile) Write(w io.Writer) error {
 	pos := buf.Len()
 	alignedPos := (pos & ^(0x10 - 1)) + 0x10
 
-	pad := make([]byte, alignedPos - pos)
+	pad := make([]byte, alignedPos-pos)
 	if _, err := buf.Write(pad); err != nil {
 		return err
 	}
