@@ -519,7 +519,7 @@ func (cf *LDSOCacheFile) Write(w io.Writer) error {
 	}
 
 	pos := buf.Len()
-	alignedPos := (pos & -16) + 8
+	alignedPos := (pos & ^(0x10 - 1)) + 0x10
 
 	pad := make([]byte, alignedPos - pos)
 	if _, err := buf.Write(pad); err != nil {
