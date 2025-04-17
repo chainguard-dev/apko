@@ -37,30 +37,30 @@ const ldsoVersion = "1.1"
 const ldsoExtensionMagic = 0xEAA42174
 
 const (
-	FLAG_ANY                    uint32 = 0xffff
-	FLAG_TYPE_MASK              uint32 = 0x00ff
-	FLAG_LIBC4                  uint32 = 0x0000
-	FLAG_ELF                    uint32 = 0x0001
-	FLAG_ELF_LIBC5              uint32 = 0x0002
-	FLAG_ELF_LIBC6              uint32 = 0x0003
-	FLAG_REQUIRED_MASK          uint32 = 0xff00
-	FLAG_SPARC_LIB64            uint32 = 0x0100
-	FLAG_X8664_LIB64            uint32 = 0x0300
-	FLAG_S390_LIB64             uint32 = 0x0400
-	FLAG_POWERPC_LIB64          uint32 = 0x0500
-	FLAG_MIPS64_LIBN32          uint32 = 0x0600
-	FLAG_MIPS64_LIBN64          uint32 = 0x0700
-	FLAG_X8664_LIBX32           uint32 = 0x0800
-	FLAG_ARM_LIBHF              uint32 = 0x0900
-	FLAG_AARCH64_LIB64          uint32 = 0x0a00
-	FLAG_ARM_LIBSF              uint32 = 0x0b00
-	FLAG_MIPS_LIB32_NAN2008     uint32 = 0x0c00
-	FLAG_MIPS64_LIBN32_NAN2008  uint32 = 0x0d00
-	FLAG_MIPS64_LIBN64_NAN2008  uint32 = 0x0e00
-	FLAG_RISCV_FLOAT_ABI_SOFT   uint32 = 0x0f00
-	FLAG_RISCV_FLOAT_ABI_DOUBLE uint32 = 0x1000
-	FLAG_LARCH_FLOAT_ABI_SOFT   uint32 = 0x1100
-	FLAG_LARCH_FLOAT_ABI_DOUBLE uint32 = 0x1200
+	Flag_ANY                    uint32 = 0xffff
+	Flag_TYPE_MASK              uint32 = 0x00ff
+	Flag_LIBC4                  uint32 = 0x0000
+	Flag_ELF                    uint32 = 0x0001
+	Flag_ELF_LIBC5              uint32 = 0x0002
+	Flag_ELF_LIBC6              uint32 = 0x0003
+	Flag_REQUIRED_MASK          uint32 = 0xff00
+	Flag_SPARC_LIB64            uint32 = 0x0100
+	Flag_X8664_LIB64            uint32 = 0x0300
+	Flag_S390_LIB64             uint32 = 0x0400
+	Flag_POWERPC_LIB64          uint32 = 0x0500
+	Flag_MIPS64_LIBN32          uint32 = 0x0600
+	Flag_MIPS64_LIBN64          uint32 = 0x0700
+	Flag_X8664_LIBX32           uint32 = 0x0800
+	Flag_ARM_LIBHF              uint32 = 0x0900
+	Flag_AARCH64_LIB64          uint32 = 0x0a00
+	Flag_ARM_LIBSF              uint32 = 0x0b00
+	Flag_MIPS_LIB32_NAN2008     uint32 = 0x0c00
+	Flag_MIPS64_LIBN32_NAN2008  uint32 = 0x0d00
+	Flag_MIPS64_LIBN64_NAN2008  uint32 = 0x0e00
+	Flag_RISCV_FLOAT_ABI_SOFT   uint32 = 0x0f00
+	Flag_RISCV_FLOAT_ABI_DOUBLE uint32 = 0x1000
+	Flag_LARCH_FLOAT_ABI_SOFT   uint32 = 0x1100
+	Flag_LARCH_FLOAT_ABI_DOUBLE uint32 = 0x1200
 )
 
 type LDSORawCacheHeader struct {
@@ -227,18 +227,18 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 			continue
 		}
 		flags := uint32(0)
-		flags |= FLAG_ELF
+		flags |= Flag_ELF
 		// FIXME: Shouldn't just assert this
-		flags |= FLAG_ELF_LIBC6
+		flags |= Flag_ELF_LIBC6
 		sonames, err := elflibf.DynString(elf.DT_SONAME)
 		if err != nil {
 			continue
 		}
 		switch elflibf.FileHeader.Machine {
 		case elf.EM_X86_64:
-			flags |= FLAG_X8664_LIB64
+			flags |= Flag_X8664_LIB64
 		case elf.EM_AARCH64:
-			flags |= FLAG_AARCH64_LIB64
+			flags |= Flag_AARCH64_LIB64
 		// FIXME: Add other architectures
 		default:
 			return fmt.Errorf("unknown machine type")
