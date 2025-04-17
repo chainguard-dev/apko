@@ -556,7 +556,7 @@ func ParseLDSOConf(fsys fs.FS, ldsoconf string) ([]string, error) {
 		Debugf("Warning: Could not read config file %s\n", ldsoconf)
 		return nil, err
 	}
-	var libpaths []string
+	libpaths := []string{}
 
 	lines := strings.Split(string(contents), "\n")
 	for _, line := range lines {
