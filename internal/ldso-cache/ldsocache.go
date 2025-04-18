@@ -24,7 +24,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -330,14 +329,7 @@ func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error)
 // LoadCacheFile attempts to load a cache file from disk.  When
 // successful, it returns an LDSOCacheFile pointer which contains
 // all relevant information from the cache file.
-func LoadCacheFile(path string) (*LDSOCacheFile, error) {
-	bindata, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	r := bytes.NewReader(bindata)
-
+func LoadCacheFile(r io.ReadSeeker) (*LDSOCacheFile, error) {
 	// TODO(kaniini): Use binary.BigEndian for BE targets.
 	header := LDSORawCacheHeader{}
 	if err := binary.Read(r, binary.LittleEndian, &header); err != nil {
