@@ -434,10 +434,11 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 	// Now that symlinks are used to advertise cached files,
 	// CreateTemp permissions are no longer suitable default,
 	// update to world readable, group/user writable.
-	err = tmp.Chmod(os.FileMode(0664))
-	if err != nil {
-		return "", fmt.Errorf("unable to chmod temporary cache file: %w", err)
-	}
+	// Ignore error, since some filesystem types don't support this,
+	// and if this fails this should surface in other ways
+	// (e.g. permission denied trying to read the file).
+	_ = tmp.Chmod(os.FileMode(0664))
+
 	if err := func() error {
 		defer tmp.Close()
 		defer resp.Body.Close()
