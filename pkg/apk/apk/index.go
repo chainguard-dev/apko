@@ -262,7 +262,7 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 			if err != nil {
 				redacted := redact(IndexURL(repoURL, arch))
 				if errors.Is(err, fs.ErrNotExist) {
-					// This can happen for locaqql repos, just log and continue.
+					// This can happen for local repos, just log and continue.
 					clog.WarnContextf(ctx, "getting local index %s: %v", redacted, err)
 					return nil
 				}
