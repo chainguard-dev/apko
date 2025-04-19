@@ -241,7 +241,6 @@ k:9001
 }
 
 func TestMultipleKeys(t *testing.T) {
-	assert := assert.New(t)
 	// read all the keys from testdata/signing/keys
 	folder := "testdata/signing/keys"
 	// get all the files in the folder
@@ -264,27 +263,50 @@ func TestMultipleKeys(t *testing.T) {
 	require.Nil(t, err)
 
 	ctx := context.Background()
-	// There are 2^N-1 combinations of keys, where N is the number of keys
-	// We will test all of them
-	for comb := 1; comb < (1 << len(keys)); comb++ {
-		// get the keys to use
+
+	t.Run("subsetsOfKeys", func(t *testing.T) {
+		assert := assert.New(t)
+		// There are 2^N-1 combinations of keys, where N is the number of keys
+		// We will test all of them
+		for comb := 1; comb < (1 << len(keys)); comb++ {
+			// get the keys to use
+			usedKeys := make(map[string][]byte)
+			for i := 0; i < len(keys); i++ {
+				if (comb & (1 << i)) != 0 {
+					usedKeys[files[i].Name()] = keys[files[i].Name()]
+				}
+			}
+			// parse the index
+			apkIndex, err := parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
+				usedKeys, "aarch64", indexBytes, &indexOpts{})
+			require.Nil(t, err)
+			assert.Greater(len(apkIndex.Signature), 0, "Signature missing")
+		}
+	})
+
+	t.Run("missingKeys", func(t *testing.T) {
+		assert := assert.New(t)
+		// Now, test the case where we have no matching key
+		_, err = parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
+			map[string][]byte{
+				"unused-key": []byte("unused-key-data"),
+			},
+			"aarch64", indexBytes, &indexOpts{})
+		assert.NotNil(err)
+	})
+
+	t.Run("artifactoryKeys", func(t *testing.T) {
+		assert := assert.New(t)
+		// Now, we test a key with .rsa.pub suffix (in case they for downloaded from service that does not support
+		// extensions).
 		usedKeys := make(map[string][]byte)
 		for i := 0; i < len(keys); i++ {
-			if (comb & (1 << i)) != 0 {
-				usedKeys[files[i].Name()] = keys[files[i].Name()]
-			}
+			usedKeys[strings.TrimPrefix(files[i].Name(), ".rsa.pub")] = keys[files[i].Name()]
 		}
 		// parse the index
 		apkIndex, err := parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
 			usedKeys, "aarch64", indexBytes, &indexOpts{})
 		require.Nil(t, err)
 		assert.Greater(len(apkIndex.Signature), 0, "Signature missing")
-	}
-	// Now, test the case where we have no matching key
-	_, err = parseRepositoryIndex(ctx, "testdata/signing/APKINDEX.tar.gz",
-		map[string][]byte{
-			"unused-key": []byte("unused-key-data"),
-		},
-		"aarch64", indexBytes, &indexOpts{})
-	require.NotNil(t, err)
+	})
 }
