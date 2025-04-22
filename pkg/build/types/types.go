@@ -194,8 +194,8 @@ type ImageConfiguration struct {
 	// supported container runtimes.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 
-	// Experimental: Optional: Configuration to control layering of the OCI image.
-	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty" apko:"experimental"`
+	// Optional: Configuration to control layering of the OCI image.
+	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
