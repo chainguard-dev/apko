@@ -288,11 +288,11 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	if bc.ic.Contents.BaseImage != nil {
 		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("baseImage path %s: %w", bc.ic.Contents.BaseImage.Image, err)
 		}
 		apkindexPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.APKIndex, bc.o.IncludePaths)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("baseImage apk path %s: %w", bc.ic.Contents.BaseImage.Image, err)
 		}
 		baseImg, err := baseimg.New(imgPath, apkindexPath, bc.Arch(), bc.o.TempDir())
 		if err != nil {

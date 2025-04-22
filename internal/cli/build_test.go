@@ -105,6 +105,8 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildWithBase(t *testing.T) {
+	// top_image golden file can be regenerated using ./internal/cli/testdata/regenerate_golden_top_image.sh script.
+
 	// TODO(sfc-gh-mhazy) Check sboms after base image support is reflected in them.
 
 	ctx := context.Background()
