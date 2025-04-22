@@ -133,7 +133,7 @@
         },
         "layering": {
           "$ref": "#/$defs/Layering",
-          "description": "Experimental: Optional: Configuration to control layering of the OCI image."
+          "description": "Optional: Configuration to control layering of the OCI image."
         }
       },
       "additionalProperties": false,
