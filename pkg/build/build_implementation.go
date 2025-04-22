@@ -28,13 +28,13 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/sigstore/cosign/v2/pkg/oci"
 
-	"github.com/chainguard-dev/clog"
-
+	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
@@ -234,6 +234,32 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 	// add necessary character devices
 	if err := installCharDevices(bc.fs); err != nil {
 		return nil, err
+	}
+
+	if _, err := bc.fs.Stat("etc/ld.so.conf"); err == nil {
+		log.Debug("updating /etc/ld.so.cache")
+		libdirs := []string{"/lib"}
+		dirs, err := ldsocache.ParseLDSOConf(bc.fs, "etc/ld.so.conf")
+		if err != nil {
+			return nil, err
+		}
+		libdirs = append(libdirs, dirs...)
+		cacheFile, err := ldsocache.BuildCacheFileForDirs(
+			bc.fs, libdirs,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed generating ldsocache")
+		}
+		lsc, err := bc.fs.Create("etc/ld.so.cache")
+		if err != nil {
+			return nil, fmt.Errorf("unable to create /etc/ld.so.cache")
+		}
+		err = cacheFile.Write(lsc)
+		if err != nil {
+			return nil, fmt.Errorf("unable to write /etc/ld.so.cache")
+		}
+	} else {
+		log.Debug("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update")
 	}
 
 	log.Debug("finished building filesystem")
