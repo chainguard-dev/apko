@@ -105,8 +105,6 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildWithBase(t *testing.T) {
-	t.Skip("we can't easily update the golden image, so this test is disabled for now")
-
 	// TODO(sfc-gh-mhazy) Check sboms after base image support is reflected in them.
 
 	ctx := context.Background()

@@ -168,6 +168,9 @@ func (i *ImageContents) MergeInto(target *ImageContents) error {
 	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
 	target.RuntimeRepositories = slices.Concat(i.RuntimeRepositories, target.RuntimeRepositories)
 	target.Packages = slices.Concat(i.Packages, target.Packages)
+	if target.BaseImage == nil {
+		target.BaseImage = i.BaseImage
+	}
 	return nil
 }
 
