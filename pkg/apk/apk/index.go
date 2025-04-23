@@ -23,10 +23,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +37,6 @@ import (
 	"github.com/klauspost/compress/gzip"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/apk/auth"
@@ -367,6 +368,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		tarReader := tar.NewReader(gzipReader)
 
 		sigs := make([]Signature, 0, len(keys))
+
 		for {
 			// read the signature(s)
 			signatureFile, err := tarReader.Next()
@@ -383,7 +385,17 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
 			}
 			keyfile := matches[2]
-			if _, ok := keys[keyfile]; !ok {
+
+			trimmedKeyFile := strings.TrimSuffix(keyfile, ".rsa.pub")
+			if _, ok := keys[keyfile]; ok {
+				// We found a matching key
+			} else if _, ok := keys[trimmedKeyFile]; ok {
+				// When we download keys from proxy servers - like artifactory, we ignore the 'content-disposition' header
+				// (that would be difficult to cache as well), and the header is responsible for providing key name with
+				// proper extension. Here we accept matching keys without proper extension.
+				keyfile = trimmedKeyFile
+			} else {
+				clog.FromContext(ctx).Warnf("skipping signature %s due to missing keyfile: %s", signatureFile.Name, keyfile)
 				// Ignore this signature if we don't have the key
 				continue
 			}
@@ -415,7 +427,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			})
 		}
 		if len(sigs) == 0 {
-			return nil, fmt.Errorf("no signature with known key found in repository index")
+			return nil, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
