@@ -943,7 +943,7 @@ func TestResolverPackageNameVersionPin(t *testing.T) {
 		t.Run(tt.input, func(t *testing.T) {
 			constraint := ResolvePackageNameVersionPin(tt.input)
 			require.Equal(t, tt.name, constraint.Name)
-			require.Equal(t, tt.version, constraint.version)
+			require.Equal(t, tt.version, constraint.Version)
 			require.Equal(t, tt.dep, constraint.dep)
 			require.Equal(t, tt.pin, constraint.pin)
 		})

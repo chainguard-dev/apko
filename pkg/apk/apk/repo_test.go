@@ -988,11 +988,11 @@ func makeResolver(provs, deps map[string][]string) *PkgResolver {
 
 	for pkgver := range provs {
 		parsed := ResolvePackageNameVersionPin(pkgver)
-		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.version}
+		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.Version}
 	}
 	for pkgver := range deps {
 		parsed := ResolvePackageNameVersionPin(pkgver)
-		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.version}
+		packages[pkgver] = &Package{Name: parsed.Name, Version: parsed.Version}
 	}
 
 	for pkgver, pkgProvs := range provs {
