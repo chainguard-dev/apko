@@ -351,16 +351,16 @@ func (v versionDependency) satisfies(actualVersion, requiredVersion Version) boo
 
 type ParsedConstraint struct {
 	Name    string
-	version string
+	Version string
 	dep     versionDependency
 	pin     string
 }
 
 func (p ParsedConstraint) SatisfiedBy(v Version) (bool, error) {
-	if p.version == "" {
+	if p.Version == "" {
 		return true, nil
 	}
-	pv, err := cachedParseVersion(p.version)
+	pv, err := cachedParseVersion(p.Version)
 	if err != nil {
 		return false, err
 	}
@@ -399,7 +399,7 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 	// layout: [full match, name, =version, =|>|<, version, @pin, pin]
 	p := ParsedConstraint{
 		Name:    parts[0][1],
-		version: parts[0][4],
+		Version: parts[0][4],
 		pin:     parts[0][6],
 		dep:     versionAny,
 	}
@@ -511,7 +511,7 @@ func filterPackages(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string,
 		}
 
 		for _, prov := range pkg.Provides {
-			version := cachedResolvePackageNameVersionPin(prov).version
+			version := cachedResolvePackageNameVersionPin(prov).Version
 			if version == "" {
 				continue
 			}
