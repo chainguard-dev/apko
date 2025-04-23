@@ -105,7 +105,7 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildWithBase(t *testing.T) {
-	t.Skip("we can't easily update the golden image, so this test is disabled for now")
+	// top_image golden file can be regenerated using ./internal/cli/testdata/regenerate_golden_top_image.sh script.
 
 	// TODO(sfc-gh-mhazy) Check sboms after base image support is reflected in them.
 
