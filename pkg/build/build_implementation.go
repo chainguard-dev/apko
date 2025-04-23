@@ -36,6 +36,7 @@ import (
 
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -236,35 +237,40 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		return nil, err
 	}
 
-	if _, err := bc.fs.Stat("etc/ld.so.conf"); err == nil {
-		log.Debug("updating /etc/ld.so.cache")
-		libdirs := []string{"/lib"}
-		dirs, err := ldsocache.ParseLDSOConf(bc.fs, "etc/ld.so.conf")
-		if err != nil {
-			return nil, err
-		}
-		libdirs = append(libdirs, dirs...)
-		cacheFile, err := ldsocache.BuildCacheFileForDirs(
-			bc.fs, libdirs,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed generating ldsocache")
-		}
-		lsc, err := bc.fs.Create("etc/ld.so.cache")
-		if err != nil {
-			return nil, fmt.Errorf("unable to create /etc/ld.so.cache")
-		}
-		err = cacheFile.Write(lsc)
-		if err != nil {
-			return nil, fmt.Errorf("unable to write /etc/ld.so.cache")
-		}
-	} else {
-		log.Debug("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update")
+	if err := updateCache(ctx, bc.fs); err != nil {
+		return nil, err
 	}
 
 	log.Debug("finished building filesystem")
 
 	return pkgs, nil
+}
+
+func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
+	if _, err := fsys.Stat("etc/ld.so.conf"); err != nil {
+		clog.FromContext(ctx).Debugf("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update: %v", err)
+		return nil
+	}
+
+	libdirs := []string{"/lib"}
+	dirs, err := ldsocache.ParseLDSOConf(fsys, "etc/ld.so.conf")
+	if err != nil {
+		return fmt.Errorf("parsing /etc/ld.so.conf: %w", err)
+	}
+	libdirs = append(libdirs, dirs...)
+	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, libdirs)
+	if err != nil {
+		return fmt.Errorf("generating ldsocache: %w", err)
+	}
+	lsc, err := fsys.Create("etc/ld.so.cache")
+	if err != nil {
+		return fmt.Errorf("creating /etc/ld.so.cache: %w", err)
+	}
+	if err := cacheFile.Write(lsc); err != nil {
+		return fmt.Errorf("writing /etc/ld.so.cache: %w", err)
+	}
+
+	return nil
 }
 
 func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
