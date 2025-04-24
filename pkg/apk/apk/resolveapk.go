@@ -29,7 +29,7 @@ type APKResolved struct {
 }
 
 func ResolveApk(ctx context.Context, source io.Reader) (*APKResolved, error) {
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "ResolveApk")
+	_, span := otel.Tracer("go-apk").Start(ctx, "ResolveApk")
 	defer span.End()
 
 	resolved := &APKResolved{}

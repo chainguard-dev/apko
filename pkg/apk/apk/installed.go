@@ -406,7 +406,7 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 
 // sortTarHeaders sorts tar headers by name. It ensures that all file children
 // of a directory are listed immediately after the directory itself. This is to
-// support lib/apk/db/installed, which lists full paths for directories, but
+// support usr/lib/apk/db/installed, which lists full paths for directories, but
 // only the basename for the files, so the last directory entry before a file
 // must be the parent in which it sits.
 func sortTarHeaders(headers []tar.Header) []tar.Header {

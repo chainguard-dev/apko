@@ -7,7 +7,7 @@ which would require a runner environment and working out the paths, `apko` insta
 
 `apko` keeps an in-program list of symlinks for each supported version of busybox. At the end of the
 installation process, if it finds `/bin/busybox`, it then looks in the apk installed database at
-`/lib/apk/db/installed` and determines which version of busybox is installed. It simplifies that
+`/usr/lib/apk/db/installed` and determines which version of busybox is installed. It simplifies that
 version to the basic semver, e.g. v1.36.1-r3 becomes 1.36.1. It then finds that version in its
 own list of symlinks.
 

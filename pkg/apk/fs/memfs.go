@@ -153,6 +153,12 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 	return node.fileInfo(path), nil
 }
 
+// There is an issue with memfs.Lstat where it will always return a regular FileInfo mode (file, directory)
+// instead of a symlink. This is due to MemFS.Lstat handing back FileInfo whose Mode never has the ModeSymlink
+// bit set, even if the node is in fact a symlink. Therefore, checking if the mode on a symlink is indeed a
+// symlink will awlays fail. One possible fix is to detect whether the node is a symlink, and if so return a
+// wrapper around the real FileInfo that ORʼs in fs.ModeSymlink.
+
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
 	node, err := m.getNode(path)
 	if err != nil {
