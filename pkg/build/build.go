@@ -118,6 +118,11 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayer")
 	defer span.End()
 
+	// Check if a non-empty layering strategy is supplied
+	if bc.ic.Layering != nil && !(bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
+		return "", nil, fmt.Errorf("cannot use BuildLayer with a layering strategy, use BuildLayers instead")
+	}
+
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
 		return "", nil, err
@@ -134,7 +139,10 @@ func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
 	defer span.End()
 
-	if bc.ic.Layering == nil {
+	// Use the legacy (single-layer) strategy when:
+	// 1. Layering is nil (original behavior)
+	// 2. Layering is empty (i.e., layering: {})
+	if bc.ic.Layering == nil || (bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
 		_, layer, err := bc.BuildLayer(ctx)
 		if err != nil {
 			return nil, err
