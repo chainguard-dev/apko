@@ -19,9 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 func uniqify[T comparable](s []T) []T {
