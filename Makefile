@@ -89,7 +89,7 @@ ko-resolve:  ## Build the image generate the Task YAML
 ##########
 
 .PHONY: generate
-generate: ## Generates jsonschema for melange types.
+generate: ## Generates jsonschema for apko types.
 	go generate ./...
 
 ##########

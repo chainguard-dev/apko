@@ -24,16 +24,13 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/sigstore/cosign/v2/pkg/oci"
-	ociremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
-	"github.com/sigstore/cosign/v2/pkg/oci/walk"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/chainguard-dev/clog"
 )
 
-func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.Reference, error) {
+func LoadImage(ctx context.Context, image v1.Image, tags []string) (name.Reference, error) {
 	log := clog.FromContext(ctx)
 	hash, err := image.Digest()
 	if err != nil {
@@ -66,18 +63,15 @@ func LoadImage(ctx context.Context, image oci.SignedImage, tags []string) (name.
 	return localSrcTag, nil
 }
 
-// PublishIndex given an oci.SignedImageIndex, publish it to a registry.
+// PublishIndex given an v1.ImageIndex, publish it to a registry.
 // `local` causes it to publish to the local docker daemon instead of the registry.
 // Note that docker, when provided with a multi-architecture index, will load just the image inside for the provided
 // platform, defaulting to the one on which the docker daemon is running.
 // PublishIndex will determine that platform and use it to publish the updated index.
-func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
+func PublishIndex(ctx context.Context, idx v1.ImageIndex, tags []string, remoteOpts ...remote.Option) (name.Digest, error) {
 	log := clog.FromContext(ctx)
 
-	// TODO(jason): Also set annotations on the index. ggcr's
-	// pkg/v1/mutate.Annotations will drop the interface methods from
-	// oci.SignedImageIndex, so we may need to reimplement
-	// mutate.Annotations in ocimutate to keep it for now.
+	// TODO(jason): Also set annotations on the index.
 
 	ref, err := name.ParseReference(tags[0])
 	if err != nil {
@@ -93,7 +87,7 @@ func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string, 
 
 	toPublish := tags
 
-	g, ctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	for _, tag := range toPublish {
 		log.Infof("publishing index tag %v", tag)
 
@@ -101,17 +95,6 @@ func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string, 
 		if err != nil {
 			return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
 		}
-
-		// Write any attached SBOMs/signatures (recursively)
-		g.Go(func() error {
-			wp := writePeripherals(ctx, ref, remoteOpts...)
-			return walk.SignedEntity(ctx, idx, func(ctx context.Context, se oci.SignedEntity) error {
-				g.Go(func() error {
-					return wp(ctx, se)
-				})
-				return nil
-			})
-		})
 
 		g.Go(func() error {
 			return remote.WriteIndex(ref, idx, remoteOpts...)
@@ -127,7 +110,7 @@ func PublishIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string, 
 // If attempting to save locally, pick the native architecture
 // and use that cached image for local tags
 // Ported from https://github.com/ko-build/ko/blob/main/pkg/publish/daemon.go#L92-L168
-func LoadIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string) (name.Reference, error) {
+func LoadIndex(ctx context.Context, idx v1.ImageIndex, tags []string) (name.Reference, error) {
 	log := clog.FromContext(ctx)
 	im, err := idx.IndexManifest()
 	if err != nil {
@@ -154,7 +137,7 @@ func LoadIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string) (na
 		}
 		useManifest = manifest
 	}
-	img, err := idx.SignedImage(useManifest.Digest)
+	img, err := idx.Image(useManifest.Digest)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("reading child image %q", useManifest.Digest.String())
 	}
@@ -165,9 +148,9 @@ func LoadIndex(ctx context.Context, idx oci.SignedImageIndex, tags []string) (na
 
 // PublishImagesFromIndex publishes all images from an index to a remote registry.
 // The only difference between this and PublishIndex is that PublishIndex pushes out all blobs and referenced manifests
-// from within the index. This adds pushing the referenced SignedImage artifacts along with appropriate tags.
-func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, repo name.Repository, remoteOpts ...remote.Option) ([]name.Digest, error) {
-	ctx, span := otel.Tracer("apko").Start(ctx, "PublishImagesFromIndex")
+// from within the index. This adds pushing the referenced Image artifacts along with appropriate tags.
+func PublishImagesFromIndex(ctx context.Context, idx v1.ImageIndex, repo name.Repository, remoteOpts ...remote.Option) ([]name.Digest, error) {
+	_, span := otel.Tracer("apko").Start(ctx, "PublishImagesFromIndex")
 	defer span.End()
 
 	manifest, err := idx.IndexManifest()
@@ -177,7 +160,7 @@ func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, repo 
 
 	digests := make([]name.Digest, len(manifest.Manifests))
 
-	g, ctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	for i, m := range manifest.Manifests {
 		i, m := i, m
 
@@ -185,81 +168,16 @@ func PublishImagesFromIndex(ctx context.Context, idx oci.SignedImageIndex, repo 
 		digests[i] = dig
 
 		g.Go(func() error {
-			img, err := idx.SignedImage(m.Digest)
+			img, err := idx.Image(m.Digest)
 			if err != nil {
 				return fmt.Errorf("failed to get image for %v from index: %w", m, err)
 			}
 
-			g.Go(func() error {
-				// Write any attached SBOMs/signatures.
-				wp := writePeripherals(ctx, dig, remoteOpts...)
-				return wp(ctx, img)
-			})
-
-			g.Go(func() error {
-				return remote.Write(dig, img, remoteOpts...)
-			})
-
-			return nil
+			return remote.Write(dig, img, remoteOpts...)
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	return digests, nil
-}
-
-// writePeripherals returns a function to write any attached SBOMs/signatures.
-// Its output is meant to be passed to walk.SignedEntity().
-func writePeripherals(ctx context.Context, tag name.Reference, opt ...remote.Option) walk.Fn {
-	log := clog.FromContext(ctx)
-	ociOpts := []ociremote.Option{ociremote.WithRemoteOptions(opt...)}
-
-	// Respect COSIGN_REPOSITORY
-	targetRepoOverride, err := ociremote.GetEnvTargetRepository()
-	if err != nil {
-		return func(ctx context.Context, se oci.SignedEntity) error { return err }
-	}
-	if (targetRepoOverride != name.Repository{}) {
-		ociOpts = append(ociOpts, ociremote.WithTargetRepository(targetRepoOverride))
-	}
-
-	return func(ctx context.Context, se oci.SignedEntity) error {
-		h, err := se.(interface{ Digest() (v1.Hash, error) }).Digest()
-		if err != nil {
-			return err
-		}
-
-		// TODO(mattmoor): We should have a WriteSBOM helper upstream.
-		digest := tag.Context().Digest(h.String()) // Don't *get* the tag, we know the digest
-		ref, err := ociremote.SBOMTag(digest, ociOpts...)
-		if err != nil {
-			return err
-		}
-
-		f, err := se.Attachment("sbom")
-		if err != nil {
-			// Some levels (e.g. the index) may not have an SBOM,
-			// just like some levels may not have signatures/attestations.
-			return nil
-		}
-
-		if err := remote.Write(ref, f, opt...); err != nil {
-			return fmt.Errorf("writing sbom: %w", err)
-		}
-
-		// TODO(mattmoor): Don't enable this until we start signing or it
-		// will publish empty signatures!
-		// if err := ociremote.WriteSignatures(tag.Context(), se, ociOpts...); err != nil {
-		// 	return err
-		// }
-
-		// TODO(mattmoor): Are there any attestations we want to write?
-		// if err := ociremote.WriteAttestations(tag.Context(), se, ociOpts...); err != nil {
-		// 	return err
-		// }
-		log.Infof("Published SBOM %v", ref)
-
-		return nil
-	}
 }

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -29,9 +30,6 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/shlex"
-	"github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sigstore/cosign/v2/pkg/oci/signed"
-	"golang.org/x/exp/maps"
 
 	"github.com/chainguard-dev/clog"
 
@@ -39,11 +37,11 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
 	return BuildImageFromLayers(ctx, baseImage, []v1.Layer{layer}, oic, created, arch)
 }
 
-func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (oci.SignedImage, error) {
+func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
 	log := clog.FromContext(ctx)
 
 	// Create a copy to avoid modifying the original ImageConfiguration.
@@ -181,13 +179,12 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		cfg.Config.StopSignal = ic.StopSignal
 	}
 
-	v1Image, err = mutate.ConfigFile(v1Image, cfg)
+	img, err := mutate.ConfigFile(v1Image, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to update oci config file: %w", err)
 	}
 
-	si := signed.Image(v1Image)
-	return si, nil
+	return img, nil
 }
 
 func BuildImageTarballFromLayer(ctx context.Context, imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, opts options.Options) error {
