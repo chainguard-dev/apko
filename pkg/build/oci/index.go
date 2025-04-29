@@ -29,11 +29,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/sigstore/cosign/v2/pkg/oci"
-	ocimutate "github.com/sigstore/cosign/v2/pkg/oci/mutate"
-	"github.com/sigstore/cosign/v2/pkg/oci/signed"
 	"go.opentelemetry.io/otel"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -42,7 +39,7 @@ import (
 // GenerateIndex generates an OCI image index from the given imgs. The index type
 // will be "application/vnd.oci.image.index.v1+json".
 // The index is stored in memory.
-func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
+func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]v1.Image, created time.Time) (name.Digest, v1.ImageIndex, error) {
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndex")
 	defer span.End()
 
@@ -52,13 +49,13 @@ func GenerateIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[ty
 // GenerateDockerIndex generates a docker multi-arch manifest from the given imgs. The index type
 // will be "application/vnd.docker.distribution.manifest.list.v2+json".
 // The index is stored in memory.
-func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
+func GenerateDockerIndex(ctx context.Context, ic types.ImageConfiguration, imgs map[types.Architecture]v1.Image, created time.Time) (name.Digest, v1.ImageIndex, error) {
 	return generateIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, created)
 }
 
 // generateIndexWithMediaType generates an index or docker manifest list from the given imgs. The index type
 // is provided by the `mediaType` parameter.
-func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, created time.Time) (name.Digest, oci.SignedImageIndex, error) {
+func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageConfiguration, imgs map[types.Architecture]v1.Image, created time.Time) (name.Digest, v1.ImageIndex, error) {
 	// If annotations are set and we're using the OCI mediaType, set annotations on the index.
 	annCopy := make(map[string]string, len(ic.Annotations))
 	if mediaType == ggcrtypes.OCIImageIndex {
@@ -74,11 +71,9 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 		annCopy["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 	}
 
-	idx := signed.ImageIndex(
-		mutate.IndexMediaType(
-			mutate.Annotations(empty.Index, annCopy).(v1.ImageIndex),
-			mediaType),
-	)
+	idx := mutate.IndexMediaType(
+		mutate.Annotations(empty.Index, annCopy).(v1.ImageIndex),
+		mediaType)
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
@@ -103,7 +98,7 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 			return name.Digest{}, nil, fmt.Errorf("failed to compute size: %w", err)
 		}
 
-		idx = ocimutate.AppendManifests(idx, ocimutate.IndexAddendum{
+		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
 				MediaType: mt,
@@ -123,9 +118,9 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 
 // BuildIndex builds a self-contained tar.gz file containing the index and its individual images for all architectures.
 // Returns the digest and the path to the combined tar.gz.
-func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string) (name.Digest, error) {
+func BuildIndex(outfile string, idx v1.ImageIndex, tags []string) (name.Digest, error) {
 	tagsToImages := make(map[name.Tag]v1.Image)
-	var imgs = make([]oci.SignedImage, 0)
+	var imgs = make([]v1.Image, 0)
 	manifest, err := idx.IndexManifest()
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("failed to get index manifest: %w", err)
@@ -141,7 +136,7 @@ func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string) (name.D
 	}
 	for _, m := range manifest.Manifests {
 		arch := m.Platform.Architecture
-		img, err := idx.SignedImage(m.Digest)
+		img, err := idx.Image(m.Digest)
 		if err != nil {
 			return name.Digest{}, fmt.Errorf("failed to get image for manifest %s: %w", m.Digest, err)
 		}
@@ -168,7 +163,7 @@ func BuildIndex(outfile string, idx oci.SignedImageIndex, tags []string) (name.D
 	if err != nil {
 		return name.Digest{}, err
 	}
-	if err := v1tar.MultiWrite(tagsToImages, f); err != nil {
+	if err := tarball.MultiWrite(tagsToImages, f); err != nil {
 		return name.Digest{}, fmt.Errorf("failed to write index to tgz: %w", err)
 	}
 

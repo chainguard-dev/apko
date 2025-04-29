@@ -22,7 +22,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -93,49 +92,6 @@ func TestPublish(t *testing.T) {
 	// Sometimes, this is intentional, and we need to change this and bump the version.
 	want := "sha256:d560dbda76a5ebd8912e1ca149cd3ee6440d5c05c0d278c0159abf1ac3b31b2e"
 	require.Equal(t, want, digest.String())
-
-	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
-	sref, err := name.ParseReference(sdst)
-	require.NoError(t, err)
-
-	img, err := remote.Image(sref, ropt...)
-	require.NoError(t, err)
-
-	m, err := img.Manifest()
-	require.NoError(t, err)
-
-	// https://github.com/sigstore/cosign/issues/3120
-	got := m.Layers[0].Digest.String()
-
-	// This test will fail if we ever make a change in apko that changes the SBOM.
-	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:37eb4a91f379b6af66e54c5e7a4c7abf7e6cd9f60e845eb281abbdca6fc41c2c"
-	require.Equal(t, swant, got)
-
-	im, err := idx.IndexManifest()
-	require.NoError(t, err)
-
-	// We also want to check the children SBOMs because the index SBOM does not have
-	// references to the children SBOMs, just the children!
-	wantBoms := []string{
-		"sha256:beecfa84788ff5dbb05bce3554699fd0d2a5831f2a4cad5fcd56455d3531b2a8",
-		"sha256:8db959d01870f2d64d8ad84817368ae56e28b3c266d41e70c379620946b73688",
-	}
-
-	for i, m := range im.Manifests {
-		childBom := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(m.Digest.String(), ":", "-"))
-		childRef, err := name.ParseReference(childBom)
-		require.NoError(t, err)
-
-		img, err := remote.Image(childRef, ropt...)
-		require.NoError(t, err)
-
-		m, err := img.Manifest()
-		require.NoError(t, err)
-
-		got := m.Layers[0].Digest.String()
-		require.Equal(t, wantBoms[i], got)
-	}
 
 	// Check that the sbomPath is not empty.
 	sboms, err := os.ReadDir(sbomPath)

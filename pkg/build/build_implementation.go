@@ -32,7 +32,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	gzip "github.com/klauspost/pgzip"
-	"github.com/sigstore/cosign/v2/pkg/oci"
 
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -292,7 +291,7 @@ func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func WriteIndex(ctx context.Context, o *options.Options, idx oci.SignedImageIndex) (string, error) {
+func WriteIndex(ctx context.Context, o *options.Options, idx v1.ImageIndex) (string, error) {
 	log := clog.FromContext(ctx)
 	outfile := filepath.Join(o.TempDir(), "index.json")
 
