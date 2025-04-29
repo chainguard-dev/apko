@@ -45,7 +45,7 @@ import (
 )
 
 // Context contains all of the information necessary to build an
-// OCI image. Includes the configurationfor the build,
+// OCI image. Includes the configuration for the build,
 // the path to the config file, the executor for root jails and
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
