@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chainguard-dev/clog"
+	"golang.org/x/oauth2"
 	"golang.org/x/time/rate"
 )
 
@@ -126,5 +127,30 @@ func (s staticAuth) AddAuth(_ context.Context, req *http.Request) error {
 	if req.Host == s.domain {
 		req.SetBasicAuth(s.user, s.pass)
 	}
+	return nil
+}
+
+// NewTokenSourceAuth creates a new Authenticator that uses the given
+// oauth2.TokenSource to get a token and adds it to the request as HTTP basic
+// auth.
+func NewTokenSourceAuth(domain string, user string, ts oauth2.TokenSource) Authenticator {
+	return &tokenSourceAuth{domain: domain, user: user, ts: ts}
+}
+
+type tokenSourceAuth struct {
+	domain string
+	user   string
+	ts     oauth2.TokenSource
+}
+
+func (t *tokenSourceAuth) AddAuth(_ context.Context, req *http.Request) error {
+	if req.Host != t.domain {
+		return nil
+	}
+	tok, err := t.ts.Token()
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(t.user, tok.AccessToken)
 	return nil
 }
