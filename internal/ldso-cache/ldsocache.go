@@ -128,10 +128,36 @@ type LDSOCacheFile struct {
 	Extensions []LDSOCacheExtensionSection
 }
 
+type elfInfo struct {
+	Machine elf.Machine
+	Sonames []string
+}
+
+func getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
+	info := elfInfo{}
+
+	elflibf, err := elf.NewFile(libfReaderAt)
+	if err != nil {
+		return info, err
+	}
+	// FIXME: do we need to check for the ELF magic bytes?
+	if elflibf.FileHeader.Type != elf.ET_DYN {
+		return info, fmt.Errorf("not a dynamic object")
+	}
+	sonames, err := elflibf.DynString(elf.DT_SONAME)
+	if err != nil {
+		return info, err
+	}
+	info = elfInfo{
+		Machine: elflibf.FileHeader.Machine,
+		Sonames: sonames,
+	}
+	return info, nil
+}
+
 type libInfo struct {
-	path    string
-	machine elf.Machine
-	sonames []string
+	path string
+	elf  elfInfo
 }
 
 func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
@@ -171,34 +197,24 @@ func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
 		}
 		libfReaderAt = bytes.NewReader(buf)
 	}
-	elflibf, err := elf.NewFile(libfReaderAt)
+	ei, err := getElfInfo(libfReaderAt)
 	if err != nil {
 		return li, err
 	}
-	// FIXME: do we need to check for the ELF magic bytes?
-	if elflibf.FileHeader.Type != elf.ET_DYN {
-		return li, fmt.Errorf("%s: not a dynamic object", fullpath)
-	}
-	sonames, err := elflibf.DynString(elf.DT_SONAME)
-	if err != nil {
-		return li, err
-	}
-
 	// ldconfig will add an entry for a .so file even if it has
 	// no SONAME. Observed with libR.so on Ubuntu.
-	if len(sonames) == 0 && strings.HasSuffix(realname, ".so") {
+	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
 		debugf("DEBUG: %s has no SONAME, using filename as an SONAME\n", realname)
-		sonames = append(sonames, realname)
+		ei.Sonames = append(ei.Sonames, realname)
 	}
-	if len(sonames) == 0 && strings.HasSuffix(realname, ".so") {
+	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
 		debugf("DEBUG: %s has no DT_SONAME, using %s as an SONAME\n", realname, realname)
-		sonames = append(sonames, realname)
+		ei.Sonames = append(ei.Sonames, realname)
 	}
 
 	li = libInfo{
-		path:    fullpath,
-		machine: elflibf.FileHeader.Machine,
-		sonames: sonames,
+		path: fullpath,
+		elf:  ei,
 	}
 
 	return li, nil
@@ -263,17 +279,17 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 		flags |= FlagELF
 		// FIXME: Shouldn't just assert this
 		flags |= FlagELFLIBC6
-		switch li.machine {
+		switch li.elf.Machine {
 		case elf.EM_X86_64:
 			flags |= FlagX8664LIB64
 		case elf.EM_AARCH64:
 			flags |= FlagAARCH64LIB64
 		// FIXME: Add other architectures
 		default:
-			return fmt.Errorf("%s: unknown machine type", li.path)
+			return fmt.Errorf("%s: unknown machine type %v", li.path, li.elf.Machine)
 		}
 
-		for _, soname := range li.sonames {
+		for _, soname := range li.elf.Sonames {
 			fname, _, err := ParseLibFilename(soname)
 			if err != nil {
 				continue
