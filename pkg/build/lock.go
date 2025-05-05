@@ -52,7 +52,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
 	// reproduced exactly.
-	pls := map[string][]string{}
+	var pls map[string][]string
 	missing := map[string][]string{}
 	if o.Lockfile == "" {
 		archs, err := resolvePackageList(ctx, mc)
