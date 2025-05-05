@@ -174,6 +174,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		err  error
 	)
 	if bc.o.Lockfile != "" {
+		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load lock-file: %w", err)
