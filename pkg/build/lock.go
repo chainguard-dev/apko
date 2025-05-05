@@ -15,7 +15,6 @@
 package build
 
 import (
-	pkglock "chainguard.dev/apko/pkg/lock"
 	"context"
 	"fmt"
 	"maps"
@@ -27,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"chainguard.dev/apko/pkg/build/types"
+	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
 // LockImageConfiguration returns a map of locked image configurations for each architecture,
