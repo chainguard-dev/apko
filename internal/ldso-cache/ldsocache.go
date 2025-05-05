@@ -256,21 +256,23 @@ func ParseLibFilename(realname string) (string, string, error) {
 
 // Scan `libdir` for shared libraries. Adds a new entry into `entryMap` for
 // any that don't already have an entry there.
-func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LDSOCacheEntry) error {
+func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error) {
 	var err error
+	entryMap := map[string]LDSOCacheEntry{}
+
 	// fs.FS wants all file paths to be relative
 	if filepath.IsAbs(libdir) {
 		libdir, err = filepath.Rel("/", libdir)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	dirents, err := fs.ReadDir(fsys, libdir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 
 	for _, dirent := range dirents {
@@ -291,7 +293,7 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 			flags |= FlagAARCH64LIB64
 		// FIXME: Add other architectures
 		default:
-			return fmt.Errorf("%s: unknown machine type %v", li.path, li.elf.Machine)
+			return nil, fmt.Errorf("%s: unknown machine type %v", li.path, li.elf.Machine)
 		}
 
 		for _, soname := range li.elf.Sonames {
@@ -318,18 +320,6 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 			}
 		}
 	}
-	return nil
-}
-
-func AddLDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, error) {
-	entryMap := map[string]LDSOCacheEntry{}
-
-	for _, libdir := range libdirs {
-		err := AddLDSOCacheEntriesForDir(fsys, libdir, entryMap)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	keys := make([]string, 0, len(entryMap))
 	for k := range entryMap {
@@ -344,8 +334,22 @@ func AddLDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry,
 	return entries, nil
 }
 
+func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, error) {
+	all_entries := []LDSOCacheEntry{}
+
+	for _, libdir := range libdirs {
+		entries, err := ldsoCacheEntriesForDir(fsys, libdir)
+		if err != nil {
+			return nil, err
+		}
+		all_entries = append(all_entries, entries...)
+	}
+
+	return all_entries, nil
+}
+
 func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error) {
-	entries, err := AddLDSOCacheEntriesForDirs(fsys, libdirs)
+	entries, err := LDSOCacheEntriesForDirs(fsys, libdirs)
 	if err != nil {
 		return nil, err
 	}

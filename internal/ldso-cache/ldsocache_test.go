@@ -155,6 +155,8 @@ func Test_GenerateCacheFile(t *testing.T) {
 		"/lib64",
 		"/usr/lib",
 		"/usr/lib64",
+		"/usr/local/sdk-v1/lib",
+		"/usr/local/sdk-v2/lib",
 	}
 	require.ElementsMatch(t, expectedLibDirs, libdirs)
 	cacheFile, err := BuildCacheFileForDirs(root, libdirs)
@@ -172,6 +174,8 @@ func Test_GenerateCacheFile(t *testing.T) {
 	f.Close()
 	expectedLibs := []string{
 		"/lib/libfoo.so.1",
+		"/usr/local/lib/sdk-v1/libsdk.so.1",
+		"/usr/local/lib/sdk-v2/libsdk.so.1",
 	}
 	expectedLibLen := len(expectedLibs)
 	require.Equalf(t, uint32(expectedLibLen), cacheFile.Header.NumLibs, "there should be %d libraries in this cache file", expectedLibLen)
