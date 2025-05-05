@@ -3,6 +3,7 @@ package ldsocache
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -180,4 +181,9 @@ func Test_GenerateCacheFile(t *testing.T) {
 	}
 	expectedLibLen := len(expectedLibs)
 	require.Equalf(t, uint32(expectedLibLen), cacheFile.Header.NumLibs, "there should be %d libraries in this cache file", expectedLibLen)
+	for i := 1; i < int(cacheFile.Header.NumLibs); i++ {
+		prev := filepath.Base(cacheFile.Entries[i-1].Name)
+		cur := filepath.Base(cacheFile.Entries[i].Name)
+		require.GreaterOrEqual(t, prev, cur)
+	}
 }

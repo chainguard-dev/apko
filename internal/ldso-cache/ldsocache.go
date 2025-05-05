@@ -26,6 +26,7 @@ import (
 	"log"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"unsafe"
 )
@@ -325,7 +326,6 @@ func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error)
 	for k := range entryMap {
 		keys = append(keys, k)
 	}
-	slices.Sort(keys)
 	entries := make([]LDSOCacheEntry, 0, len(entryMap))
 	for _, k := range keys {
 		entries = append(entries, entryMap[k])
@@ -344,6 +344,12 @@ func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, er
 		}
 		all_entries = append(all_entries, entries...)
 	}
+
+	// ld expects entries to be reverse-sorted by name. Otherwise
+	// it may report "No such file or directory"
+	sort.Slice(all_entries, func(i, j int) bool {
+		return all_entries[j].Name < all_entries[i].Name
+	})
 
 	return all_entries, nil
 }
