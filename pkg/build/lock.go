@@ -95,7 +95,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 			return nil, missing, err
 		}
 	} else {
-		l, err := pkg_lock.FromFile(o.Lockfile
+		l, err := pkg_lock.FromFile(o.Lockfile)
 		if err != nil {
 			return nil, nil, err
 		}
