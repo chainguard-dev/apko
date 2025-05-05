@@ -15,7 +15,7 @@
 package build
 
 import (
-	pkg_lock "chainguard.dev/apko/pkg/lock"
+	pkglock "chainguard.dev/apko/pkg/lock"
 	"context"
 	"fmt"
 	"maps"
@@ -64,7 +64,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 			return nil, missing, err
 		}
 	} else {
-		l, err := pkg_lock.FromFile(o.Lockfile)
+		l, err := pkglock.FromFile(o.Lockfile)
 		if err != nil {
 			return nil, nil, err
 		}
