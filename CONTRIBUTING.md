@@ -60,7 +60,7 @@ about your experience in the development shell and any ideas you may have!
 
 Before submitting a pull request, make sure tests and lints do not complain. 
 Make sure you have go 1.18 and
-[golangci-lint](https://golangci-lint.run/usage/install/) installed and try
+[golangci-lint](https://golangci-lint.run/welcome/install/) installed and try
 running the linter and tests:
 
 ```
