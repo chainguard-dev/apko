@@ -49,46 +49,15 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		return nil, nil, err
 	}
 
-	archs := make([]resolved, 0, len(input.Archs))
-	ics := make(map[string]*types.ImageConfiguration, len(input.Archs)+1)
-
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
 	// reproduced exactly.
 	pls := map[string][]string{}
 	missing := map[string][]string{}
 	if o.Lockfile == "" {
-		toInstalls, err := mc.BuildPackageLists(ctx)
+		archs, err := resolvePackageList(ctx, mc)
 		if err != nil {
 			return nil, nil, err
-		}
-		for arch, pkgs := range toInstalls {
-			r := resolved{
-				// ParseArchitecture normalizes the architecture into the
-				// canonical OCI form (amd64, not x86_64)
-				arch:     types.ParseArchitecture(arch.ToAPK()).String(),
-				packages: make(sets.Set[string], len(pkgs)),
-				versions: make(map[string]string, len(pkgs)),
-				provided: make(map[string]sets.Set[string], len(pkgs)),
-			}
-			for _, pkg := range pkgs {
-				r.packages.Insert(pkg.Name)
-				r.versions[pkg.Name] = pkg.Version
-
-				for _, prov := range pkg.Provides {
-					parts := packageNameRegex.FindAllStringSubmatch(prov, -1)
-					if len(parts) == 0 || len(parts[0]) < 2 {
-						continue
-					}
-					ps, ok := r.provided[pkg.Name]
-					if !ok {
-						ps = sets.New[string]()
-					}
-					ps.Insert(parts[0][1])
-					r.provided[pkg.Name] = ps
-				}
-			}
-			archs = append(archs, r)
 		}
 		pls, missing, err = unify(input.Contents.Packages, archs)
 		if err != nil {
@@ -99,17 +68,15 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		if err != nil {
 			return nil, nil, err
 		}
-		// TODO: Verify whether the config matches the lockfile by checksum.
-		// TODO: Share more logic with build_implementation.go ?
-		for _, p := range l.Contents.Packages {
-			_, ok := pls[p.Architecture]
-			if !ok {
-				pls[p.Architecture] = []string{}
+		for _, bc := range mc.Contexts {
+			if err := bc.VerifyLockfileConsistency(ctx, l.Config); err != nil {
+				return nil, nil, err
 			}
-			pls[p.Architecture] = append(pls[p.Architecture], fmt.Sprintf("%s=%s", p.Name, p.Version))
 		}
+		pls = l.Arch2LockedPackages()
 	}
 
+	ics := make(map[string]*types.ImageConfiguration, len(mc.Contexts)+1)
 	// Set the locked package lists.
 	for arch, pl := range pls {
 		// Create a defensive copy of "input".
@@ -129,6 +96,44 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 	}
 
 	return ics, missing, nil
+}
+
+func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, error) {
+	archs := make([]resolved, 0, len(mc.Contexts))
+
+	toInstalls, err := mc.BuildPackageLists(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for arch, pkgs := range toInstalls {
+		r := resolved{
+			// ParseArchitecture normalizes the architecture into the
+			// canonical OCI form (amd64, not x86_64)
+			arch:     types.ParseArchitecture(arch.ToAPK()).String(),
+			packages: make(sets.Set[string], len(pkgs)),
+			versions: make(map[string]string, len(pkgs)),
+			provided: make(map[string]sets.Set[string], len(pkgs)),
+		}
+		for _, pkg := range pkgs {
+			r.packages.Insert(pkg.Name)
+			r.versions[pkg.Name] = pkg.Version
+
+			for _, prov := range pkg.Provides {
+				parts := packageNameRegex.FindAllStringSubmatch(prov, -1)
+				if len(parts) == 0 || len(parts[0]) < 2 {
+					continue
+				}
+				ps, ok := r.provided[pkg.Name]
+				if !ok {
+					ps = sets.New[string]()
+				}
+				ps.Insert(parts[0][1])
+				r.provided[pkg.Name] = ps
+			}
+		}
+		archs = append(archs, r)
+	}
+	return archs, nil
 }
 
 type resolved struct {

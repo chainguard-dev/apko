@@ -179,12 +179,9 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load lock-file: %w", err)
 		}
-		if lock.Config == nil {
-			log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
-		} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lock.Config.DeepChecksum {
-			return nil, fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
-				"(maybe regenerate the lock file)",
-				bc.o.Lockfile, bc.o.ImageConfigFile)
+		err = bc.VerifyLockfileConsistency(ctx, lock.Config)
+		if err != nil {
+			return nil, err
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
@@ -244,6 +241,18 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 	log.Debug("finished building filesystem")
 
 	return pkgs, nil
+}
+
+func (bc *Context) VerifyLockfileConsistency(ctx context.Context, lockConfig *lock.Config) error {
+	log := clog.FromContext(ctx)
+	if lockConfig == nil {
+		log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
+	} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lockConfig.DeepChecksum {
+		return fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
+			"(maybe regenerate the lock file)",
+			bc.o.Lockfile, bc.o.ImageConfigFile)
+	}
+	return nil
 }
 
 func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
@@ -310,6 +319,11 @@ func WriteIndex(ctx context.Context, o *options.Options, idx v1.ImageIndex) (str
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.RepositoryPackage, conflicts []string, err error) {
 	log := clog.FromContext(ctx)
+
+	if bc.o.Lockfile != "" {
+		return nil, nil, fmt.Errorf("assertion: cannot ResolveWorld if LockFile:%s is given", bc.o.Lockfile)
+	}
+
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
