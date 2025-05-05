@@ -32,7 +32,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk"
 )
 
-// PackageToInstalled takes a Package and returns it as the string representation of lines in a /lib/apk/db/installed file.
+// PackageToInstalled takes a Package and returns it as the string representation of lines in a /usr/lib/apk/db/installed file.
 func PackageToInstalled(pkg *Package) (out []string) {
 	out = append(out, fmt.Sprintf("P:%s", pkg.Name))
 	out = append(out, fmt.Sprintf("V:%s", pkg.Version))
