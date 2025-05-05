@@ -324,6 +324,7 @@ const (
 	versionGreaterEqual
 	versionLessEqual
 	versionTilde
+	versionInvalid
 )
 
 func (v versionDependency) satisfies(actualVersion, requiredVersion Version) bool {
@@ -349,11 +350,13 @@ func (v versionDependency) satisfies(actualVersion, requiredVersion Version) boo
 	}
 }
 
+// ParsedConstraint represents a parsed version constraint, including any error.
 type ParsedConstraint struct {
 	Name    string
 	Version string
 	dep     versionDependency
 	pin     string
+	Err     error
 }
 
 func (p ParsedConstraint) SatisfiedBy(v Version) (bool, error) {
@@ -406,7 +409,11 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 
 	matcher := parts[0][3]
 	if matcher != "" {
-		// we have an equal
+		if strings.Contains(matcher, "!") {
+			p.dep = versionInvalid
+			p.Err = fmt.Errorf("unsupported or invalid version operator: %q", matcher)
+			return p
+		}
 		switch matcher {
 		case "=":
 			p.dep = versionEqual
@@ -421,7 +428,8 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 		case "~":
 			p.dep = versionTilde
 		default:
-			p.dep = versionAny
+			p.dep = versionInvalid
+			p.Err = fmt.Errorf("unsupported or invalid version operator: %q", matcher)
 		}
 	}
 	return p
