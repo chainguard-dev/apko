@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"chainguard.dev/apko/pkg/build/types"
+	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
 // LockImageConfiguration returns a map of locked image configurations for each architecture,
@@ -48,17 +49,62 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		return nil, nil, err
 	}
 
-	archs := make([]resolved, 0, len(input.Archs))
-	ics := make(map[string]*types.ImageConfiguration, len(input.Archs)+1)
-
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
 	// reproduced exactly.
-	toInstalls, err := mc.BuildPackageLists(ctx)
-	if err != nil {
-		return nil, nil, err
+	var pls map[string][]string
+	missing := map[string][]string{}
+	if o.Lockfile == "" {
+		archs, err := resolvePackageList(ctx, mc)
+		if err != nil {
+			return nil, nil, err
+		}
+		pls, missing, err = unify(input.Contents.Packages, archs)
+		if err != nil {
+			return nil, missing, err
+		}
+	} else {
+		l, err := pkglock.FromFile(o.Lockfile)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, bc := range mc.Contexts {
+			if err := bc.VerifyLockfileConsistency(ctx, l.Config); err != nil {
+				return nil, nil, err
+			}
+		}
+		pls = l.Arch2LockedPackages()
 	}
 
+	ics := make(map[string]*types.ImageConfiguration, len(mc.Contexts)+1)
+	// Set the locked package lists.
+	for arch, pl := range pls {
+		// Create a defensive copy of "input".
+		copied := types.ImageConfiguration{}
+		if err := input.MergeInto(&copied); err != nil {
+			return nil, nil, err
+		}
+
+		copied.Contents.Packages = pl
+
+		if arch != "index" {
+			// Overwrite single-arch configs with their specific arch.
+			copied.Archs = []types.Architecture{types.ParseArchitecture(arch)}
+		}
+
+		ics[arch] = &copied
+	}
+
+	return ics, missing, nil
+}
+
+func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, error) {
+	archs := make([]resolved, 0, len(mc.Contexts))
+
+	toInstalls, err := mc.BuildPackageLists(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for arch, pkgs := range toInstalls {
 		r := resolved{
 			// ParseArchitecture normalizes the architecture into the
@@ -87,31 +133,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		}
 		archs = append(archs, r)
 	}
-
-	pls, missing, err := unify(input.Contents.Packages, archs)
-	if err != nil {
-		return nil, missing, err
-	}
-
-	// Set the locked package lists.
-	for arch, pl := range pls {
-		// Create a defensive copy of "input".
-		copied := types.ImageConfiguration{}
-		if err := input.MergeInto(&copied); err != nil {
-			return nil, nil, err
-		}
-
-		copied.Contents.Packages = pl
-
-		if arch != "index" {
-			// Overwrite single-arch configs with their specific arch.
-			copied.Archs = []types.Architecture{types.ParseArchitecture(arch)}
-		}
-
-		ics[arch] = &copied
-	}
-
-	return ics, missing, nil
+	return archs, nil
 }
 
 type resolved struct {

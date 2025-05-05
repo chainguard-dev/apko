@@ -78,3 +78,16 @@ func (lock Lock) SaveToFile(lockFile string) error {
 	// #nosec G306 -- apk world must be publicly readable
 	return os.WriteFile(lockFile, jsonb, os.ModePerm)
 }
+
+// Arch2LockedPackages returns map: for each arch -> list of {package_name}={version}.
+func (lock Lock) Arch2LockedPackages() map[string][]string {
+	lockedPackages := map[string][]string{}
+	for _, p := range lock.Contents.Packages {
+		_, ok := lockedPackages[p.Architecture]
+		if !ok {
+			lockedPackages[p.Architecture] = []string{}
+		}
+		lockedPackages[p.Architecture] = append(lockedPackages[p.Architecture], fmt.Sprintf("%s=%s", p.Name, p.Version))
+	}
+	return lockedPackages
+}
