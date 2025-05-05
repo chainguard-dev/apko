@@ -1,10 +1,12 @@
 package ldsocache
 
 import (
+	"io"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func Test_LoadCacheFile(t *testing.T) {
@@ -125,19 +127,52 @@ func Test_ParseLDSOConf_Glob(t *testing.T) {
 	require.Contains(t, dirs, "/b/libs")
 }
 
-func Test_GenerateCacheFile(t *testing.T) {
-	// This uses the host system, uncomment to run tests on your machine.
-	t.Skip()
+// Instead of real ELF binaries, our "libraries" are YAML files
+// that are used to populate an elfInfo structure.
+func mock_getElfInfo(r io.ReaderAt) (elfInfo, error) {
+	var info elfInfo
+	buf := make([]byte, 1024)
+	size, err := r.ReadAt(buf, 0)
+	if err != io.EOF {
+		return info, err
+	}
+	err = yaml.Unmarshal(buf[:size-1], &info)
+	if err != nil {
+		return info, err
+	}
+	return info, nil
+}
 
-	libdirs := []string{"/lib"}
-	root := os.DirFS("/")
-	dirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
+func Test_GenerateCacheFile(t *testing.T) {
+	getElfInfo = mock_getElfInfo
+	root := os.DirFS("testdata/libroot")
+	libdirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
 	require.NoError(t, err)
-	libdirs = append(libdirs, dirs...)
+	expectedLibDirs := []string{
+		"/usr/local/lib",
+		"/usr/local/lib64",
+		"/lib",
+		"/lib64",
+		"/usr/lib",
+		"/usr/lib64",
+	}
+	require.ElementsMatch(t, expectedLibDirs, libdirs)
 	cacheFile, err := BuildCacheFileForDirs(root, libdirs)
 	require.NoError(t, err)
-	lsc, err := os.Create("testdata/ld.so.cache-generated")
+	lsc, err := os.CreateTemp(t.TempDir(), "ld.so.cache-generated")
 	require.NoError(t, err)
 	err = cacheFile.Write(lsc)
 	require.NoError(t, err)
+	lsc.Close()
+
+	f, err := os.Open(lsc.Name())
+	require.NoError(t, err)
+	cacheFile, err = LoadCacheFile(f)
+	require.NoError(t, err)
+	f.Close()
+	expectedLibs := []string{
+		"/lib/libfoo.so.1",
+	}
+	expectedLibLen := len(expectedLibs)
+	require.Equalf(t, uint32(expectedLibLen), cacheFile.Header.NumLibs, "there should be %d libraries in this cache file", expectedLibLen)
 }

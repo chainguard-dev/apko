@@ -129,11 +129,11 @@ type LDSOCacheFile struct {
 }
 
 type elfInfo struct {
-	Machine elf.Machine
-	Sonames []string
+	Machine elf.Machine `yaml:"machine"`
+	Sonames []string    `yaml:"sonames"`
 }
 
-func getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
+func do_getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 	info := elfInfo{}
 
 	elflibf, err := elf.NewFile(libfReaderAt)
@@ -154,6 +154,11 @@ func getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 	}
 	return info, nil
 }
+
+var (
+	// allow mock implementations
+	getElfInfo = do_getElfInfo
+)
 
 type libInfo struct {
 	path string
