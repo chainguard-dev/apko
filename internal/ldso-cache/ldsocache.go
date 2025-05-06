@@ -348,7 +348,7 @@ func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, er
 	// ld expects entries to be reverse-sorted by name. Otherwise
 	// it may report "No such file or directory"
 	sort.Slice(all_entries, func(i, j int) bool {
-		return all_entries[j].Name < all_entries[i].Name
+		return filepath.Base(all_entries[j].Name) < filepath.Base(all_entries[i].Name)
 	})
 
 	return all_entries, nil
