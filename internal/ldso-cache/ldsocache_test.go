@@ -178,6 +178,8 @@ func Test_GenerateCacheFile(t *testing.T) {
 		"/lib/libnosoname.so",
 		"/usr/local/lib/sdk-v1/libsdk.so.1",
 		"/usr/local/lib/sdk-v2/libsdk.so.1",
+		"/usr/local/lib/sdk-v1/libsdk.so",
+		"/usr/local/lib/sdk-v2/libsdk.so",
 	}
 	expectedLibLen := len(expectedLibs)
 	require.Equalf(t, uint32(expectedLibLen), cacheFile.Header.NumLibs, "there should be %d libraries in this cache file", expectedLibLen)
