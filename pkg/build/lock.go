@@ -73,7 +73,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 				return nil, nil, err
 			}
 		}
-		pls = l.Arch2LockedPackages()
+		pls = l.Arch2LockedPackages(input.Archs)
 	}
 
 	ics := make(map[string]*types.ImageConfiguration, len(mc.Contexts)+1)
