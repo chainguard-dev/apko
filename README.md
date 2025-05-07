@@ -130,7 +130,7 @@ apko and melange, then use traditional tooling such as Dockerfiles for the final
 Tutorials and guides for apko can be found at the [Chainguard Academy](https://edu.chainguard.dev/open-source/apko/).
 
 For support, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko
-channel or [open an issue](https://github.com/chainguard-dev/apko/issue).
+channel or [open an issue](https://github.com/chainguard-dev/apko/issues).
 
 ## Related Work and Resources
 
