@@ -179,6 +179,8 @@ func Test_GenerateCacheFile(t *testing.T) {
 	expectedLibs := []string{
 		"/lib/libfoo.so.1",
 		"/lib/libnosoname.so",
+		"/lib64/libfoo.so.1",
+		"/lib64/libnosoname.so",
 		"/usr/local/lib/sdk-v1/libsdk.so.1",
 		"/usr/local/lib/sdk-v2/libsdk.so.1",
 		"/usr/local/lib/sdk-v1/libsdk.so",
