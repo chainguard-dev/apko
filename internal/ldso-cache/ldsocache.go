@@ -277,6 +277,11 @@ func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error)
 	}
 
 	for _, dirent := range dirents {
+		// Check that it has a valid library name
+		_, _, err := ParseLibFilename(dirent.Name())
+		if err != nil {
+			continue
+		}
 		li, err := getLibInfo(fsys, libdir, dirent)
 		if err != nil {
 			debugf("%s\n", err)
