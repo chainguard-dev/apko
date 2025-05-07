@@ -1,6 +1,8 @@
 contents:
   keyring:
     - ./testdata/melange.rsa.pub
+  build_repositories:
+    - ./packages
   repositories:
     - ./testdata/packages
   packages:
