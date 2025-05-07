@@ -137,6 +137,9 @@ func mock_getElfInfo(r io.ReaderAt) (elfInfo, error) {
 	if err != io.EOF {
 		return info, err
 	}
+	if size == 0 {
+		return info, err
+	}
 	err = yaml.Unmarshal(buf[:size-1], &info)
 	if err != nil {
 		return info, err
