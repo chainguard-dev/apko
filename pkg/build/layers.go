@@ -49,6 +49,18 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 		return nil, fmt.Errorf("building filesystem: %w", err)
 	}
 
+	// We don't pass around repositories cleanly between apko and the library
+	// formerly known as go-apk. Instead, we write stuff to bc.fs directly
+	// and the library formerly known as go-apk reads from bc.fs to know
+	// which repositories it can fetch packages from. We need to call this
+	// to overwrite etc/apk/repositories with _only_ runtime repositories
+	// and not runtime + build repositories.
+	//
+	// TODO: Clean this up when time permits.
+	if err := bc.postBuildSetApk(ctx); err != nil {
+		return nil, err
+	}
+
 	// Use our layering strategy to partition packages into a set of Budget groups.
 	groups, err := groupByOriginAndSize(pkgs, bc.ic.Layering.Budget)
 	if err != nil {

@@ -17,20 +17,25 @@ package cli_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
+	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
@@ -162,7 +167,7 @@ func TestPublishLayering(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:316b607c2d30e686d9170edcefa9bc07aae922e4c20c06cc85bd6e4c0ed85f25"
+	want := "sha256:d5fe88a41005bc378fc42d3066d4762b2c082e528cd2856e27f4e005031bfd35"
 	require.Equal(t, want, digest.String())
 
 	im, err := idx.IndexManifest()
@@ -176,5 +181,20 @@ func TestPublishLayering(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, 2, len(cm.Layers))
+
+		tr := mutate.Extract(child)
+		tmp, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		size, err := io.Copy(tmp, tr)
+		require.NoError(t, err)
+		fsys, err := tarfs.New(tmp, size)
+		require.NoError(t, err)
+
+		b, err := fs.ReadFile(fsys, "etc/apk/repositories")
+		require.NoError(t, err)
+
+		if strings.Contains(string(b), "./packages") {
+			t.Errorf("etc/apk/repositories contains build_repositories entry %q", "./packages")
+		}
 	}
 }

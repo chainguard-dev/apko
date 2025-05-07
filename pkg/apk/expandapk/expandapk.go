@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync"
 
-	"chainguard.dev/apko/pkg/apk/internal/tarfs"
+	"chainguard.dev/apko/internal/tarfs"
 	"github.com/klauspost/compress/gzip"
 
 	"go.opentelemetry.io/otel"
