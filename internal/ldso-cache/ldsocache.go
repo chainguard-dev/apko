@@ -331,6 +331,7 @@ func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error)
 	for k := range entryMap {
 		keys = append(keys, k)
 	}
+	slices.Sort(keys)
 	entries := make([]LDSOCacheEntry, 0, len(entryMap))
 	for _, k := range keys {
 		entries = append(entries, entryMap[k])
