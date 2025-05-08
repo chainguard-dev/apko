@@ -1,6 +1,7 @@
 package ldsocache
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -134,7 +135,7 @@ func mockGetElfInfo(r io.ReaderAt) (elfInfo, error) {
 	var info elfInfo
 	buf := make([]byte, 1024)
 	size, err := r.ReadAt(buf, 0)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		return info, err
 	}
 	if size == 0 {
