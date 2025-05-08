@@ -146,7 +146,7 @@ type resolved struct {
 
 // unify returns (locked packages (per arch), missing packages (per arch), error)
 func unify(originals []string, inputs []resolved) (map[string][]string, map[string][]string, error) {
-	if len(originals) == 0 {
+	if len(originals) == 0 || len(inputs) == 0 {
 		// If there are no original packages, then we can't really do anything.
 		// This used to return nil but multi-arch unification assumes we always
 		// have an "index" entry, even if it's empty, so we return this now.
