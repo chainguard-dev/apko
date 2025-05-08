@@ -134,7 +134,7 @@ type elfInfo struct {
 	Sonames []string    `yaml:"sonames"`
 }
 
-func do_getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
+func doGetElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 	info := elfInfo{}
 
 	elflibf, err := elf.NewFile(libfReaderAt)
@@ -158,7 +158,7 @@ func do_getElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 
 var (
 	// allow mock implementations
-	getElfInfo = do_getElfInfo
+	getElfInfo = doGetElfInfo
 )
 
 type libInfo struct {
@@ -341,23 +341,23 @@ func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error)
 }
 
 func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, error) {
-	all_entries := []LDSOCacheEntry{}
+	allEntries := []LDSOCacheEntry{}
 
 	for _, libdir := range libdirs {
 		entries, err := ldsoCacheEntriesForDir(fsys, libdir)
 		if err != nil {
 			return nil, err
 		}
-		all_entries = append(all_entries, entries...)
+		allEntries = append(allEntries, entries...)
 	}
 
 	// ld expects entries to be reverse-sorted by name. Otherwise
 	// it may report "No such file or directory"
-	sort.Slice(all_entries, func(i, j int) bool {
-		return filepath.Base(all_entries[j].Name) < filepath.Base(all_entries[i].Name)
+	sort.Slice(allEntries, func(i, j int) bool {
+		return filepath.Base(allEntries[j].Name) < filepath.Base(allEntries[i].Name)
 	})
 
-	return all_entries, nil
+	return allEntries, nil
 }
 
 func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error) {

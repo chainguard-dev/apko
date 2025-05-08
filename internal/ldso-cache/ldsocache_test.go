@@ -130,7 +130,7 @@ func Test_ParseLDSOConf_Glob(t *testing.T) {
 
 // Instead of real ELF binaries, our "libraries" are YAML files
 // that are used to populate an elfInfo structure.
-func mock_getElfInfo(r io.ReaderAt) (elfInfo, error) {
+func mockGetElfInfo(r io.ReaderAt) (elfInfo, error) {
 	var info elfInfo
 	buf := make([]byte, 1024)
 	size, err := r.ReadAt(buf, 0)
@@ -148,7 +148,7 @@ func mock_getElfInfo(r io.ReaderAt) (elfInfo, error) {
 }
 
 func Test_GenerateCacheFile(t *testing.T) {
-	getElfInfo = mock_getElfInfo
+	getElfInfo = mockGetElfInfo
 	root := os.DirFS("testdata/libroot")
 	libdirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
 	require.NoError(t, err)
