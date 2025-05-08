@@ -15,8 +15,9 @@
 package build
 
 import (
-	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -349,9 +350,64 @@ func (f *notAFile) Close() error {
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
 type layer struct {
-	filename string
-	diffid   *v1.Hash
-	desc     *v1.Descriptor
+	uncompressed string
+	compressed   string
+	diffid       *v1.Hash
+	desc         *v1.Descriptor
+}
+
+// TODO: Consider maintaining a cache of diffid to descriptor and deduping work.
+func (l *layer) compress() error {
+	if l.compressed != "" {
+		return nil
+	}
+
+	in, err := l.Uncompressed()
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(l.uncompressed + ".gz")
+	if err != nil {
+		return err
+	}
+
+	buf := pooledBufioWriter(out)
+	defer bufioPool.Put(buf)
+
+	digest := sha256.New()
+	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+	defer pgzipPool.Put(gzw)
+
+	if _, err := io.Copy(gzw, in); err != nil {
+		return err
+	}
+
+	if err := gzw.Close(); err != nil {
+		return fmt.Errorf("closing gzip writer: %w", err)
+	}
+
+	if err := buf.Flush(); err != nil {
+		return fmt.Errorf("flushing %s: %w", out.Name(), err)
+	}
+
+	stat, err := out.Stat()
+	if err != nil {
+		return fmt.Errorf("statting %s: %w", out.Name(), err)
+	}
+
+	h := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	}
+
+	l.desc.Digest = h
+	l.desc.Size = stat.Size()
+
+	l.compressed = l.uncompressed + ".gz"
+
+	return out.Close()
 }
 
 func (l *layer) DiffID() (v1.Hash, error) {
@@ -359,11 +415,17 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	if err := l.compress(); err != nil {
+		return v1.Hash{}, err
+	}
 	return l.desc.Digest, nil
 }
 
 func (l *layer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.filename)
+	if err := l.compress(); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(l.compressed)
 	if err != nil {
 		return nil, err
 	}
@@ -374,20 +436,13 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
-	rc, err := l.Compressed()
-	if err != nil {
-		return nil, err
-	}
-
-	// In practice, this won't be called, but this should work anyway.
-	zr, err := gzip.NewReader(rc)
-	if err != nil {
-		return nil, err
-	}
-	return zr, nil
+	return os.Open(l.uncompressed)
 }
 
 func (l *layer) Size() (int64, error) {
+	if err := l.compress(); err != nil {
+		return 0, err
+	}
 	return l.desc.Size, nil
 }
 
