@@ -1,4 +1,4 @@
-// Copyright 2023 Chainguard, Inc.
+// Copyright 2023, 2025 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"unsafe"
 )
@@ -129,6 +129,103 @@ type LDSOCacheFile struct {
 	Extensions []LDSOCacheExtensionSection
 }
 
+type elfInfo struct {
+	Machine elf.Machine `yaml:"machine"`
+	Sonames []string    `yaml:"sonames"`
+}
+
+func doGetElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
+	info := elfInfo{}
+
+	elflibf, err := elf.NewFile(libfReaderAt)
+	if err != nil {
+		return info, err
+	}
+	// FIXME: do we need to check for the ELF magic bytes?
+	if elflibf.FileHeader.Type != elf.ET_DYN {
+		return info, fmt.Errorf("not a dynamic object")
+	}
+	sonames, err := elflibf.DynString(elf.DT_SONAME)
+	if err != nil {
+		return info, err
+	}
+	info = elfInfo{
+		Machine: elflibf.FileHeader.Machine,
+		Sonames: sonames,
+	}
+	return info, nil
+}
+
+var (
+	// allow mock implementations
+	getElfInfo = doGetElfInfo
+)
+
+type libInfo struct {
+	path string
+	elf  elfInfo
+}
+
+func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
+	li := libInfo{}
+	realname := dirent.Name()
+	fullpath := filepath.Join(dir, realname)
+	mode := dirent.Type()
+	isLink := (mode&fs.ModeSymlink != 0)
+
+	if !(mode.IsRegular() || isLink) {
+		return li, fmt.Errorf("DEBUG: %s is neither a link nor a regular file", fullpath)
+	}
+	if isLink {
+		// Stat follows symlinks
+		info, err := fs.Stat(fsys, fullpath)
+		if err != nil {
+			return li, err
+		}
+		if !info.Mode().IsRegular() {
+			return li, fmt.Errorf("DEBUG: %s is not a link to a regular file", fullpath)
+		}
+	}
+
+	libf, err := fsys.Open(fullpath)
+	if err != nil {
+		return li, err
+	}
+	defer libf.Close()
+	var libfReaderAt io.ReaderAt
+	libfReaderAt, ok := libf.(io.ReaderAt)
+	if !ok {
+		// Ugly: Work around lack of ReaderAt support by
+		// reading the entire file into memory
+		buf, err := fs.ReadFile(fsys, fullpath)
+		if err != nil {
+			return li, err
+		}
+		libfReaderAt = bytes.NewReader(buf)
+	}
+	ei, err := getElfInfo(libfReaderAt)
+	if err != nil {
+		return li, err
+	}
+	// ldconfig will add an entry for a .so file even if it has
+	// no SONAME. Observed with libR.so on Ubuntu.
+	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
+		debugf("DEBUG: %s has no SONAME, using filename as an SONAME\n", realname)
+		ei.Sonames = append(ei.Sonames, realname)
+	}
+	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
+		debugf("DEBUG: %s has no DT_SONAME, using %s as an SONAME\n", realname, realname)
+		ei.Sonames = append(ei.Sonames, realname)
+	}
+
+	li = libInfo{
+		path: fullpath,
+		elf:  ei,
+	}
+
+	return li, nil
+}
+
 // accepts a library name and returns its name and a version
 // ex: "libfoo.so.1" -> "libfoo", "1"
 // ex: "libbar.so" -> "libbar", ""
@@ -160,109 +257,57 @@ func ParseLibFilename(realname string) (string, string, error) {
 
 // Scan `libdir` for shared libraries. Adds a new entry into `entryMap` for
 // any that don't already have an entry there.
-func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LDSOCacheEntry) error {
+func ldsoCacheEntriesForDir(fsys fs.FS, libdir string) ([]LDSOCacheEntry, error) {
 	var err error
+	entryMap := map[string]LDSOCacheEntry{}
+
 	// fs.FS wants all file paths to be relative
 	if filepath.IsAbs(libdir) {
 		libdir, err = filepath.Rel("/", libdir)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	dirents, err := fs.ReadDir(fsys, libdir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 
 	for _, dirent := range dirents {
-		realname := dirent.Name()
-		fullpath := filepath.Join(libdir, realname)
-		mode := dirent.Type()
-		isLink := (mode&fs.ModeSymlink != 0)
-
-		if isLink {
-			// Stat follows symlinks
-			info, err := fs.Stat(fsys, fullpath)
-			if err != nil {
-				debugf("Warning: Could not stat %s\n", fullpath)
-				continue
-			}
-			if !info.Mode().IsRegular() {
-				debugf("DEBUG: Skipping %s, not a link to a regular file\n", fullpath)
-				continue
-			}
+		// Check that it has a valid library name
+		_, _, err := ParseLibFilename(dirent.Name())
+		if err != nil {
+			continue
+		}
+		li, err := getLibInfo(fsys, libdir, dirent)
+		if err != nil {
+			debugf("%s\n", err)
+			continue
 		}
 
-		if !(mode.IsRegular() || isLink) {
-			continue
-		}
-		libf, err := fsys.Open(fullpath)
-		if err != nil {
-			debugf("Warning: could not open %s\n", fullpath)
-			continue
-		}
-		defer libf.Close()
-		var libfReaderAt io.ReaderAt
-		libfReaderAt, ok := libf.(io.ReaderAt)
-		if !ok {
-			// Ugly: Work around lack of ReaderAt support by
-			// reading the entire file into memory
-			buf, err := fs.ReadFile(fsys, fullpath)
-			if err != nil {
-				debugf("DEBUG: Unable to open %s\n", fullpath)
-				continue
-			}
-			libf.Close()
-			libfReaderAt = bytes.NewReader(buf)
-		}
-		elflibf, err := elf.NewFile(libfReaderAt)
-		if err != nil {
-			debugf("DEBUG: Unable to open %s as ELF\n", fullpath)
-			continue
-		}
-		// FIXME: do we need to check for the ELF magic bytes?
-		if elflibf.FileHeader.Type != elf.ET_DYN {
-			continue
-		}
 		flags := uint32(0)
 		flags |= FlagELF
 		// FIXME: Shouldn't just assert this
 		flags |= FlagELFLIBC6
-		sonames, err := elflibf.DynString(elf.DT_SONAME)
-		if err != nil {
-			continue
-		}
-		switch elflibf.FileHeader.Machine {
+		switch li.elf.Machine {
 		case elf.EM_X86_64:
 			flags |= FlagX8664LIB64
 		case elf.EM_AARCH64:
 			flags |= FlagAARCH64LIB64
 		// FIXME: Add other architectures
 		default:
-			return fmt.Errorf("unknown machine type")
-		}
-		libf.Close()
-
-		// ldconfig will add an entry for a .so file even if it has
-		// no SONAME. Observed with libR.so on Ubuntu.
-		if len(sonames) == 0 && strings.HasSuffix(realname, ".so") {
-			sonames = append(sonames, realname)
-			debugf("DEBUG: %s has no SONAME, using filename as an SONAME\n", realname)
+			return nil, fmt.Errorf("%s: unknown machine type %v", li.path, li.elf.Machine)
 		}
 
-		if len(sonames) == 0 && strings.HasSuffix(realname, ".so") {
-			sonames = append(sonames, realname)
-			debugf("DEBUG: %s has no DT_SONAME, using %s as an SONAME\n", realname, realname)
-		}
-
-		for _, soname := range sonames {
+		for _, soname := range li.elf.Sonames {
 			fname, _, err := ParseLibFilename(soname)
 			if err != nil {
 				continue
 			}
+			realname := dirent.Name()
 			linkname := fname + ".so"
 			if realname != soname && realname != linkname {
 				debugf("DEBUG: Skipping %s because it doesn't match soname %s or linkname %s\n", realname, soname, linkname)
@@ -274,23 +319,11 @@ func AddLDSOCacheEntriesForDir(fsys fs.FS, libdir string, entryMap map[string]LD
 			}
 			entryMap[realname] = LDSOCacheEntry{
 				// fullpath is relative to "/"
-				Name:            filepath.Join("/", fullpath),
+				Name:            filepath.Join("/", li.path),
 				Flags:           flags,
 				OSVersionNeeded: 0,
 				HWCapNeeded:     0,
 			}
-		}
-	}
-	return nil
-}
-
-func AddLDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, error) {
-	entryMap := map[string]LDSOCacheEntry{}
-
-	for _, libdir := range libdirs {
-		err := AddLDSOCacheEntriesForDir(fsys, libdir, entryMap)
-		if err != nil {
-			return nil, err
 		}
 	}
 
@@ -307,8 +340,28 @@ func AddLDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry,
 	return entries, nil
 }
 
+func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, error) {
+	allEntries := []LDSOCacheEntry{}
+
+	for _, libdir := range libdirs {
+		entries, err := ldsoCacheEntriesForDir(fsys, libdir)
+		if err != nil {
+			return nil, err
+		}
+		allEntries = append(allEntries, entries...)
+	}
+
+	// ld expects entries to be reverse-sorted by name. Otherwise
+	// it may report "No such file or directory"
+	sort.Slice(allEntries, func(i, j int) bool {
+		return filepath.Base(allEntries[j].Name) < filepath.Base(allEntries[i].Name)
+	})
+
+	return allEntries, nil
+}
+
 func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error) {
-	entries, err := AddLDSOCacheEntriesForDirs(fsys, libdirs)
+	entries, err := LDSOCacheEntriesForDirs(fsys, libdirs)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +383,7 @@ func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error)
 // LoadCacheFile attempts to load a cache file from disk.  When
 // successful, it returns an LDSOCacheFile pointer which contains
 // all relevant information from the cache file.
-func LoadCacheFile(path string) (*LDSOCacheFile, error) {
-	bindata, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	r := bytes.NewReader(bindata)
-
+func LoadCacheFile(r io.ReadSeeker) (*LDSOCacheFile, error) {
 	// TODO(kaniini): Use binary.BigEndian for BE targets.
 	header := LDSORawCacheHeader{}
 	if err := binary.Read(r, binary.LittleEndian, &header); err != nil {
