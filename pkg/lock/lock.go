@@ -83,22 +83,17 @@ func (lock Lock) SaveToFile(lockFile string) error {
 
 // Arch2LockedPackages returns map: for each arch -> list of {package_name}={version} in archs.
 func (lock Lock) Arch2LockedPackages(archs []types.Architecture) map[string][]string {
-	want := map[string]struct{}{}
-	for _, arch := range archs {
-		want[arch.String()] = struct{}{}
-	}
 	lockedPackages := map[string][]string{}
 	for _, p := range lock.Contents.Packages {
 		_, ok := lockedPackages[p.Architecture]
 		if !ok {
-			if _, ok := want[types.Architecture(p.Architecture).String()]; ok {
-				// Ignore architectures we aren't building.
-				continue
-			}
-
 			lockedPackages[p.Architecture] = []string{}
 		}
 		lockedPackages[p.Architecture] = append(lockedPackages[p.Architecture], fmt.Sprintf("%s=%s", p.Name, p.Version))
 	}
-	return lockedPackages
+	wantedPackages := map[string][]string{}
+	for _, arch := range archs {
+		wantedPackages[arch.String()] = lockedPackages[arch.String()]
+	}
+	return wantedPackages
 }
