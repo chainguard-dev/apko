@@ -1,15 +1,22 @@
 package ldsocache
 
 import (
+	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func Test_LoadCacheFile(t *testing.T) {
-	cacheFile, err := LoadCacheFile("testdata/ld.so.cache")
+	f, err := os.Open("testdata/ld.so.cache")
 	require.NoError(t, err)
+	cacheFile, err := LoadCacheFile(f)
+	require.NoError(t, err)
+	f.Close()
 	require.Equalf(t, uint32(65), cacheFile.Header.NumLibs, "there should be 65 libraries in this cache file")
 	require.Equalf(t, uint32(1421), cacheFile.Header.StrTableSize, "the string table should be 1421 bytes long")
 	require.Equalf(t, 1, len(cacheFile.Extensions), "there must be 1 extension")
@@ -20,8 +27,11 @@ func Test_LoadCacheFile(t *testing.T) {
 }
 
 func Test_WriteCacheFile(t *testing.T) {
-	cacheFile, err := LoadCacheFile("testdata/ld.so.cache")
+	f, err := os.Open("testdata/ld.so.cache")
 	require.NoError(t, err)
+	cacheFile, err := LoadCacheFile(f)
+	require.NoError(t, err)
+	f.Close()
 	out, err := os.CreateTemp(t.TempDir(), "ld.so.cache-new")
 	require.NoError(t, err)
 	err = cacheFile.Write(out)
@@ -119,19 +129,69 @@ func Test_ParseLDSOConf_Glob(t *testing.T) {
 	require.Contains(t, dirs, "/b/libs")
 }
 
-func Test_GenerateCacheFile(t *testing.T) {
-	// This uses the host system, uncomment to run tests on your machine.
-	t.Skip()
+// Instead of real ELF binaries, our "libraries" are YAML files
+// that are used to populate an elfInfo structure.
+func mockGetElfInfo(r io.ReaderAt) (elfInfo, error) {
+	var info elfInfo
+	buf := make([]byte, 1024)
+	size, err := r.ReadAt(buf, 0)
+	if !errors.Is(err, io.EOF) {
+		return info, err
+	}
+	if size == 0 {
+		return info, err
+	}
+	err = yaml.Unmarshal(buf[:size-1], &info)
+	if err != nil {
+		return info, err
+	}
+	return info, nil
+}
 
-	libdirs := []string{"/lib"}
-	root := os.DirFS("/")
-	dirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
+func Test_GenerateCacheFile(t *testing.T) {
+	getElfInfo = mockGetElfInfo
+	root := os.DirFS("testdata/libroot")
+	libdirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
 	require.NoError(t, err)
-	libdirs = append(libdirs, dirs...)
+	expectedLibDirs := []string{
+		"/usr/local/lib",
+		"/usr/local/lib64",
+		"/lib",
+		"/lib64",
+		"/usr/lib",
+		"/usr/lib64",
+		"/usr/local/sdk-v1/lib",
+		"/usr/local/sdk-v2/lib",
+	}
+	require.ElementsMatch(t, expectedLibDirs, libdirs)
 	cacheFile, err := BuildCacheFileForDirs(root, libdirs)
 	require.NoError(t, err)
-	lsc, err := os.Create("testdata/ld.so.cache-generated")
+	lsc, err := os.CreateTemp(t.TempDir(), "ld.so.cache-generated")
 	require.NoError(t, err)
 	err = cacheFile.Write(lsc)
 	require.NoError(t, err)
+	lsc.Close()
+
+	f, err := os.Open(lsc.Name())
+	require.NoError(t, err)
+	cacheFile, err = LoadCacheFile(f)
+	require.NoError(t, err)
+	f.Close()
+	expectedLibs := []string{
+		"/lib/libfoo.so.1",
+		"/lib/libnosoname.so",
+		"/lib64/libfoo.so.1",
+		"/lib64/libnosoname.so",
+		"/usr/local/lib/sdk-v1/libsdk.so.1",
+		"/usr/local/lib/sdk-v2/libsdk.so.1",
+		"/usr/local/lib/sdk-v1/libsdk.so",
+		"/usr/local/lib/sdk-v2/libsdk.so",
+	}
+	expectedLibLen := len(expectedLibs)
+	require.Equalf(t, uint32(expectedLibLen), cacheFile.Header.NumLibs, "there should be %d libraries in this cache file", expectedLibLen)
+	for i := 1; i < int(cacheFile.Header.NumLibs); i++ {
+		prev := filepath.Base(cacheFile.Entries[i-1].Name)
+		cur := filepath.Base(cacheFile.Entries[i].Name)
+		require.GreaterOrEqual(t, prev, cur)
+	}
 }
