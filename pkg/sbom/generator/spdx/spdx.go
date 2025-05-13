@@ -276,8 +276,8 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	// ... searching for a 1st level package
 	targetElementIDs := map[string]struct{}{}
 	for _, pkg := range apkSBOMDoc.Packages {
-		// that matches the name
-		if p.Name != pkg.Name {
+		// that matches the name and version
+		if p.Name != pkg.Name || p.Version != pkg.Version {
 			continue
 		}
 
@@ -306,16 +306,10 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 		return fmt.Errorf("merging LicensingInfos: %w", err)
 	}
 
-	// TODO: This loop seems very wrong.
 	for id := range targetElementIDs {
-		// Search for a package in the new SBOM describing the same thing
-		for _, pkg := range doc.Packages {
-			// TODO: Think if we need to match version too
-			if pkg.Name == p.Name {
-				replacePackage(doc, pkg.ID, id)
-				break
-			}
-		}
+		// Replace any instances of p.ID with the target elememts
+		// defined in the SBOM provided by the package.
+		replacePackage(doc, p.ID, id)
 	}
 
 	return nil

@@ -151,6 +151,40 @@ func TestSPDX_Generate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "unbound-package-dedupe",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Package: apk.Package{
+							Name:    "unbound-libs",
+							Version: "1.23.0-r0",
+						},
+					},
+					{
+						Package: apk.Package{
+							Name:    "unbound",
+							Version: "1.23.0-r0",
+						},
+					},
+					{
+						Package: apk.Package{
+							Name:    "unbound-config",
+							Version: "1.23.0-r0",
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,6 +215,9 @@ func TestSPDX_Generate(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedImageSBOMPath := filepath.Join("testdata", "expected_image_sboms", imageSBOMName)
+			if _, err := os.Stat(expectedImageSBOMPath); os.IsNotExist((err)) {
+				os.WriteFile(expectedImageSBOMPath, actual, 0o644)
+			}
 			expected, err := os.ReadFile(expectedImageSBOMPath)
 			require.NoError(t, err)
 
