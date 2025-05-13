@@ -215,9 +215,6 @@ func TestSPDX_Generate(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedImageSBOMPath := filepath.Join("testdata", "expected_image_sboms", imageSBOMName)
-			if _, err := os.Stat(expectedImageSBOMPath); os.IsNotExist((err)) {
-				os.WriteFile(expectedImageSBOMPath, actual, 0o644)
-			}
 			expected, err := os.ReadFile(expectedImageSBOMPath)
 			require.NoError(t, err)
 
