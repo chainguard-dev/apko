@@ -144,26 +144,6 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		// add the package
 		p := sx.apkPackage(opts, pkg)
 
-		nonce := "thismakestestspass"
-
-		// Add the image ID to the package ID to avoid clashes.
-		// NB: imagePackage.ID here is actually not important.
-		// The important thing is that p.ID is different from the package ID we
-		// would find in the corresponding APK SBOM. The ProcessInternalApkSBOM
-		// logic does a "JOIN" against the APK SBOM and replaces references to
-		// this ID with references to the APK's SBOM's Package ID, which means
-		// that logic falls over if they match. Removing imagePackage.ID makes
-		// them match, so we have to have _something_. You could replace
-		// imagePackage.ID with a UUID or "" and this would still be correct.
-		if imagePackage != nil {
-			nonce = imagePackage.ID
-		}
-		p.ID = stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s-%s", nonce, pkg.Name, pkg.Version,
-		))
-
-		doc.Packages = append(doc.Packages, p)
-
 		// Check to see if the apk contains an sbom describing itself
 		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
@@ -276,11 +256,6 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	// ... searching for a 1st level package
 	targetElementIDs := map[string]struct{}{}
 	for _, pkg := range apkSBOMDoc.Packages {
-		// that matches the name and version
-		if p.Name != pkg.Name || p.Version != pkg.Version {
-			continue
-		}
-
 		if _, ok := idsDescribedByAPKSBOM[pkg.ID]; !ok {
 			continue
 		}
@@ -304,12 +279,6 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 
 	if err := mergeLicensingInfos(apkSBOMDoc, doc); err != nil {
 		return fmt.Errorf("merging LicensingInfos: %w", err)
-	}
-
-	for id := range targetElementIDs {
-		// Replace any instances of p.ID with the target elememts
-		// defined in the SBOM provided by the package.
-		replacePackage(doc, p.ID, id)
 	}
 
 	return nil
