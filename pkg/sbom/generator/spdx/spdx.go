@@ -141,11 +141,8 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	for _, pkg := range opts.Packages {
-		// add the package
-		p := sx.apkPackage(opts, pkg)
-
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
+		if err := sx.ProcessInternalApkSBOM(opts, doc, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -172,12 +169,12 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 // locateApkSBOM returns the path to the SBOM in the given filesystem, using the
 // given Package's name and version. It returns an empty string if the SBOM is
 // not found.
-func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
+func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, re.ReplaceAllString(ipkg.Version, "")),
+		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, ipkg.Name),
 	} {
 		info, err := fsys.Stat(s)
 		if err != nil {
@@ -195,9 +192,9 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, p)
+	path, err := locateApkSBOM(sx.fs, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
