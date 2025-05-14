@@ -405,53 +405,6 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	}
 }
 
-// apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Package {
-	url := pkg.URL
-	if url == "" {
-		url = NOASSERTION
-	}
-	return Package{
-		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
-		)),
-		Name:             pkg.Name,
-		Version:          pkg.Version,
-		Supplier:         supplier(opts),
-		FilesAnalyzed:    false,
-		LicenseConcluded: pkg.License,
-		Description:      pkg.Description,
-		DownloadLocation: url,
-		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
-		SourceInfo:       "Package info from apk database",
-		// This is APKv2 APKINDEX SHA1 file checksum
-		// https://wiki.alpinelinux.org/wiki/Apk_spec#Package_Checksum_Field
-		// This is the only meaningful and signed checksum
-		// right now. This can be upgrade to SHA256 when
-		// switching to the v3 index format. Whilst SPDX
-		// supports other checksums, there is currently no
-		// other checksum that one can verify in APKINDEX or
-		// query with apk-tools
-		Checksums: []Checksum{
-			{
-				Algorithm: "SHA1",
-				Value:     fmt.Sprintf("%x", pkg.Checksum),
-			},
-		},
-		ExternalRefs: []ExternalRef{
-			{
-				Category: ExtRefPackageManager,
-				Locator: purl.NewPackageURL(
-					"apk", opts.OS.ID, pkg.Name, pkg.Version,
-					purl.QualifiersFromMap(
-						map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()},
-					), "").String(),
-				Type: ExtRefTypePurl,
-			},
-		},
-	}
-}
-
 // LayerPackage returns a package describing the layer
 func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Package {
 	layerPackageName := hashToString(layer.Digest)
