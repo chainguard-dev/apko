@@ -8,6 +8,9 @@ packages=(
   "libattr1-2.5.1-r2"
   "logstash-8-8.15.3-r4"
   "logstash-8-compat-8.15.3-r4"
+  "unbound-1.23.0-r0"
+  "unbound-libs-1.23.0-r0"
+  "unbound-config-1.23.0-r0"
 )
 
 # Base URL for downloading APKs

@@ -141,31 +141,8 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	for _, pkg := range opts.Packages {
-		// add the package
-		p := sx.apkPackage(opts, pkg)
-
-		nonce := "thismakestestspass"
-
-		// Add the image ID to the package ID to avoid clashes.
-		// NB: imagePackage.ID here is actually not important.
-		// The important thing is that p.ID is different from the package ID we
-		// would find in the corresponding APK SBOM. The ProcessInternalApkSBOM
-		// logic does a "JOIN" against the APK SBOM and replaces references to
-		// this ID with references to the APK's SBOM's Package ID, which means
-		// that logic falls over if they match. Removing imagePackage.ID makes
-		// them match, so we have to have _something_. You could replace
-		// imagePackage.ID with a UUID or "" and this would still be correct.
-		if imagePackage != nil {
-			nonce = imagePackage.ID
-		}
-		p.ID = stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s-%s", nonce, pkg.Name, pkg.Version,
-		))
-
-		doc.Packages = append(doc.Packages, p)
-
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
+		if err := sx.ProcessInternalApkSBOM(opts, doc, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -189,49 +166,15 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	return nil
 }
 
-// replacePackage replaces a package with ID originalID with newID
-func replacePackage(doc *Document, originalID, newID string) {
-	// First check if package is described at the top of the SBOM
-	for i := range doc.DocumentDescribes {
-		if doc.DocumentDescribes[i] == originalID {
-			doc.DocumentDescribes[i] = newID
-			break
-		}
-	}
-
-	// Now, look at all relationships and replace
-	for i := range doc.Relationships {
-		if doc.Relationships[i].Element == originalID {
-			doc.Relationships[i].Element = newID
-		}
-		if doc.Relationships[i].Related == originalID {
-			doc.Relationships[i].Related = newID
-		}
-	}
-
-	// Remove the old ID from the package list
-	newPackages := []Package{}
-	replaced := false
-	for _, r := range doc.Packages {
-		if r.ID != originalID {
-			newPackages = append(newPackages, r)
-			replaced = true
-		}
-	}
-	if replaced {
-		doc.Packages = newPackages
-	}
-}
-
 // locateApkSBOM returns the path to the SBOM in the given filesystem, using the
 // given Package's name and version. It returns an empty string if the SBOM is
 // not found.
-func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
+func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, re.ReplaceAllString(ipkg.Version, "")),
+		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, ipkg.Name),
 	} {
 		info, err := fsys.Stat(s)
 		if err != nil {
@@ -249,9 +192,9 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
+func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, p)
+	path, err := locateApkSBOM(sx.fs, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
@@ -276,11 +219,6 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 	// ... searching for a 1st level package
 	targetElementIDs := map[string]struct{}{}
 	for _, pkg := range apkSBOMDoc.Packages {
-		// that matches the name
-		if p.Name != pkg.Name {
-			continue
-		}
-
 		if _, ok := idsDescribedByAPKSBOM[pkg.ID]; !ok {
 			continue
 		}
@@ -304,18 +242,6 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *
 
 	if err := mergeLicensingInfos(apkSBOMDoc, doc); err != nil {
 		return fmt.Errorf("merging LicensingInfos: %w", err)
-	}
-
-	// TODO: This loop seems very wrong.
-	for id := range targetElementIDs {
-		// Search for a package in the new SBOM describing the same thing
-		for _, pkg := range doc.Packages {
-			// TODO: Think if we need to match version too
-			if pkg.Name == p.Name {
-				replacePackage(doc, pkg.ID, id)
-				break
-			}
-		}
 	}
 
 	return nil
@@ -474,53 +400,6 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.ImageDigest,
 					nil, "",
 				).String() + "?" + opts.ImagePurlQualifiers().String(),
-			},
-		},
-	}
-}
-
-// apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Package {
-	url := pkg.URL
-	if url == "" {
-		url = NOASSERTION
-	}
-	return Package{
-		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
-		)),
-		Name:             pkg.Name,
-		Version:          pkg.Version,
-		Supplier:         supplier(opts),
-		FilesAnalyzed:    false,
-		LicenseConcluded: pkg.License,
-		Description:      pkg.Description,
-		DownloadLocation: url,
-		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
-		SourceInfo:       "Package info from apk database",
-		// This is APKv2 APKINDEX SHA1 file checksum
-		// https://wiki.alpinelinux.org/wiki/Apk_spec#Package_Checksum_Field
-		// This is the only meaningful and signed checksum
-		// right now. This can be upgrade to SHA256 when
-		// switching to the v3 index format. Whilst SPDX
-		// supports other checksums, there is currently no
-		// other checksum that one can verify in APKINDEX or
-		// query with apk-tools
-		Checksums: []Checksum{
-			{
-				Algorithm: "SHA1",
-				Value:     fmt.Sprintf("%x", pkg.Checksum),
-			},
-		},
-		ExternalRefs: []ExternalRef{
-			{
-				Category: ExtRefPackageManager,
-				Locator: purl.NewPackageURL(
-					"apk", opts.OS.ID, pkg.Name, pkg.Version,
-					purl.QualifiersFromMap(
-						map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()},
-					), "").String(),
-				Type: ExtRefTypePurl,
 			},
 		},
 	}
