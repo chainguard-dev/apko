@@ -28,6 +28,9 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
@@ -69,6 +72,9 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
@@ -99,11 +105,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@7d40b853210d271a28ac2822827f965f6f1e78fa # main
+      - uses: chainguard-dev/actions/setup-registry@ec48ea414c0cb207549029d8fe35f8f01e563219 # v1.0.8
         with:
           port: 5000
 
@@ -138,11 +147,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@7d40b853210d271a28ac2822827f965f6f1e78fa # main
+      - uses: chainguard-dev/actions/setup-registry@ec48ea414c0cb207549029d8fe35f8f01e563219 # v1.0.8
         with:
           port: 5000
 
@@ -177,12 +189,15 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
       - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
-      - uses: chainguard-dev/actions/setup-registry@7d40b853210d271a28ac2822827f965f6f1e78fa # main
+      - uses: chainguard-dev/actions/setup-registry@ec48ea414c0cb207549029d8fe35f8f01e563219 # v1.0.8
         with:
           port: 5000
       - run: |
