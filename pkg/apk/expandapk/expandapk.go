@@ -258,7 +258,7 @@ var errExpandApkWriterMaxStreams = errors.New("expandApkWriter max streams reach
 func (w *expandApkWriter) Next() error {
 	if w.f != nil {
 		if err := w.CloseFile(); err != nil {
-			return fmt.Errorf("closing file before Next: %v", err)
+			return fmt.Errorf("closing file before Next: %w", err)
 		}
 	}
 
@@ -268,18 +268,18 @@ func (w *expandApkWriter) Next() error {
 	if w.streamId == 0 {
 		f, err := os.Open(w.f.Name())
 		if err != nil {
-			return fmt.Errorf("opening: %v", err)
+			return fmt.Errorf("opening: %w", err)
 		}
 		defer f.Close()
 		gzipRead, err := gzip.NewReader(f)
 		if err != nil {
-			return fmt.Errorf("creating gzip reader: %v", err)
+			return fmt.Errorf("creating gzip reader: %w", err)
 		}
 		defer gzipRead.Close()
 		tarRead := tar.NewReader(gzipRead)
 		hdr, err := tarRead.Next()
 		if err != nil {
-			return fmt.Errorf("reading tar header: %v", err)
+			return fmt.Errorf("reading tar header: %w", err)
 		}
 		if strings.HasPrefix(hdr.Name, ".SIGN.") {
 			w.maxStreams = 3
