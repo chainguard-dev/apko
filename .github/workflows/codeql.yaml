@@ -9,6 +9,9 @@ on:
 env:
   CODEQL_EXTRACTOR_GO_BUILD_TRACING: true
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
