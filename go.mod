@@ -1,6 +1,6 @@
 module chainguard.dev/apko
 
-go 1.23.4
+go 1.24.0
 
 require (
 	chainguard.dev/sdk v0.1.31
@@ -32,7 +32,7 @@ require (
 	google.golang.org/api v0.231.0
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.32.3
+	k8s.io/apimachinery v0.33.1
 	sigs.k8s.io/release-utils v0.11.1
 )
 
