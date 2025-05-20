@@ -324,11 +324,10 @@ const (
 	versionGreaterEqual
 	versionLessEqual
 	versionTilde
-	versionTildeFuzzy
 )
 
 func (v versionDependency) satisfies(actualVersion, requiredVersion Version) bool {
-	if v == versionTilde || v == versionTildeFuzzy {
+	if v == versionTilde {
 		return includesVersion(actualVersion, requiredVersion)
 	}
 	c := CompareVersions(actualVersion, requiredVersion)
@@ -422,7 +421,7 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 		case "~":
 			p.dep = versionTilde
 		case "=~":
-			p.dep = versionTildeFuzzy
+			p.dep = versionTilde
 		default:
 			p.dep = versionAny
 		}

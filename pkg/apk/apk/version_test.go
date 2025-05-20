@@ -901,12 +901,8 @@ func TestResolveVersion(t *testing.T) {
 		{"1.7.1-r2", versionTilde, "", nil, "", "no match"},
 		{"0.14", versionTilde, "", nil, "0.14.0-r3", "fits within"},
 		{"0.14.0", versionTilde, "", nil, "0.14.0-r3", "fits within"},
-		{"0.14", versionTildeFuzzy, "", nil, "0.14.0-r3", "fits within"},
-		{"0.14.0", versionTildeFuzzy, "", nil, "0.14.0-r3", "fits within"},
 		{"0.15", versionTilde, "", nil, "0.15.0-r0", "fits within"},
 		{"0.15.0", versionTilde, "", nil, "0.15.0-r0", "fits within"},
-		{"0.15", versionTildeFuzzy, "", nil, "0.15.0-r0", "fits within"},
-		{"0.15.0", versionTildeFuzzy, "", nil, "0.15.0-r0", "fits within"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
@@ -947,7 +943,7 @@ func TestResolverPackageNameVersionPin(t *testing.T) {
 		{"name>=1.2.3", "name", "1.2.3", versionGreaterEqual, ""},
 		{"name<=1.2.3", "name", "1.2.3", versionLessEqual, ""},
 		{"name~1.2.3", "name", "1.2.3", versionTilde, ""},
-		{"name=~1.2.3", "name", "1.2.3", versionTildeFuzzy, ""},
+		{"name=~1.2.3", "name", "1.2.3", versionTilde, ""},
 		{"name@edge=1.2.3", "name@edge=1.2.3", "", versionAny, ""}, // wrong order, so just returns the whole thing
 		{"name=1.2.3@community", "name", "1.2.3", versionEqual, "community"},
 		{"so:libfoo.so.6=6", "so:libfoo.so.6", "0.6", versionEqual, ""},
