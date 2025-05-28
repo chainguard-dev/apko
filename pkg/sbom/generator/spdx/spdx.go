@@ -629,7 +629,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 // addOperatingSystem adds a package describing the operating system
 func addOperatingSystem(doc *Document, opts *options.Options) {
 	osPackage := Package{
-		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(opts.OS.ID)),
+		ID:               fmt.Sprintf("SPDXRef-OperatingSystem-%s", stringToIdentifier(opts.OS.ID)),
 		Name:             opts.OS.ID,
 		Version:          opts.OS.Version,
 		Supplier:         supplier(opts),
@@ -640,11 +640,6 @@ func addOperatingSystem(doc *Document, opts *options.Options) {
 	}
 
 	doc.Packages = append(doc.Packages, osPackage)
-	// For now I do not think we need to add the OS package to the
-	// documentDescribes field as it is not a primary package, but
-	// the documentation of this field is not too clear about its
-	// full purpose.
-	// doc.DocumentDescribes = append(doc.DocumentDescribes, osPackage.ID)
 }
 
 // addSourcePackage creates a package describing the source code

@@ -33,7 +33,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-unknown",
+      "SPDXID": "SPDXRef-OperatingSystem-unknown",
       "name": "unknown",
       "versionInfo": "3.0",
       "filesAnalyzed": false,

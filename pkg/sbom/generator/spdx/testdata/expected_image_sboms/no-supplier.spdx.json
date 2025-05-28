@@ -33,7 +33,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-apko-images",
+      "SPDXID": "SPDXRef-OperatingSystem-apko-images",
       "name": "apko-images",
       "versionInfo": "3.0",
       "filesAnalyzed": false,
