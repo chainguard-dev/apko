@@ -33,6 +33,16 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-Package-unknown",
+      "name": "unknown",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: unknown",
+      "primaryPackagePurpose": "OPERATING-SYSTEM"
+    },
+    {
       "SPDXID": "SPDXRef-Package-unbound-libs-1.23.0-r0",
       "name": "unbound-libs",
       "versionInfo": "1.23.0-r0",

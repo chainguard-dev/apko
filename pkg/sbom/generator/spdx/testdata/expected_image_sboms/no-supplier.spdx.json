@@ -33,6 +33,16 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-Package-apko-images",
+      "name": "apko-images",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Apko Images, Plc",
+      "primaryPackagePurpose": "OPERATING-SYSTEM"
+    },
+    {
       "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",
       "name": "libattr1",
       "versionInfo": "2.5.1-r2",
