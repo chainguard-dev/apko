@@ -134,6 +134,9 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		doc.DocumentDescribes = []string{imagePackage.ID}
 	}
 
+	// Add the operating system package
+	addOperatingSystem(doc, opts)
+
 	if opts.ImageInfo.VCSUrl != "" {
 		if opts.ImageInfo.ImageDigest != "" {
 			addSourcePackage(opts.ImageInfo.VCSUrl, doc, imagePackage, opts)
@@ -621,6 +624,24 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	}
 
 	return nil
+}
+
+// addOperatingSystem adds a package describing the operating system
+func addOperatingSystem(doc *Document, opts *options.Options) {
+	// Add the operating system package
+	osPackage := Package{
+		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(opts.OS.Name)),
+		Name:             opts.OS.Name,
+		Version:          opts.OS.Version,
+		Supplier:         supplier(opts),
+		FilesAnalyzed:    false,
+		Description:      "Operating System",
+		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "OPERATING-SYSTEM",
+	}
+
+	doc.Packages = append(doc.Packages, osPackage)
+	doc.DocumentDescribes = append(doc.DocumentDescribes, osPackage.ID)
 }
 
 // addSourcePackage creates a package describing the source code
