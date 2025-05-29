@@ -135,7 +135,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	}
 
 	// Add the operating system package
-	addOperatingSystem(doc, opts)
+	AddOperatingSystem(doc, opts)
 
 	if opts.ImageInfo.VCSUrl != "" {
 		if opts.ImageInfo.ImageDigest != "" {
@@ -352,7 +352,7 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	return internalSBOM, nil
 }
 
-// renderDoc marshals a document to json and writes it to disk
+// renderDoc marshals a document to json and writes it to the disk/FS.
 func renderDoc(doc *Document, path string) error {
 	out, err := os.Create(path)
 	if err != nil {
@@ -626,10 +626,20 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	return nil
 }
 
-// addOperatingSystem adds a package describing the operating system
-func addOperatingSystem(doc *Document, opts *options.Options) {
+// AddOperatingSystem adds a package describing the operating system
+func AddOperatingSystem(doc *Document, opts *options.Options) {
+	uid := fmt.Sprintf("SPDXRef-OperatingSystem-%s", stringToIdentifier(opts.OS.ID))
+	// Check if the OS package is already present
+	for _, pkg := range doc.Packages {
+		if pkg.PrimaryPurpose == "OPERATING-SYSTEM" && pkg.ID == uid {
+			// If it is, we don't need to add it again
+			log.Debug("Operating system package already exists in SBOM, skipping addition", "ID", uid)
+			return
+		}
+	}
+	// If it is not present, create a new package for the operating system
 	osPackage := Package{
-		ID:               fmt.Sprintf("SPDXRef-OperatingSystem-%s", stringToIdentifier(opts.OS.ID)),
+		ID:               uid,
 		Name:             opts.OS.ID,
 		Version:          opts.OS.Version,
 		Supplier:         supplier(opts),

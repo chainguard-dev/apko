@@ -38,6 +38,8 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
+	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
 // pgzip's default is GOMAXPROCS(0)
@@ -236,6 +238,61 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 
 	if err := updateCache(ctx, bc.fs); err != nil {
 		return nil, err
+	}
+
+	// Modify the filesystem sboms to include an additional field in each sbom file, an additional package
+	// for the OS.
+	sbomDir := "/var/lib/db/sbom"
+	files, err := bc.fs.ReadDir(sbomDir)
+	if err == nil {
+		for _, file := range files {
+			if !file.IsDir() && filepath.Ext(file.Name()) == ".json" {
+				// Read the old sbom file
+				sbomFile, err := bc.fs.Open(filepath.Join(sbomDir, file.Name()))
+				if err != nil {
+					log.Warnf("failed to open sbom file %s: %v", file.Name(), err)
+					continue
+				}
+				defer sbomFile.Close()
+
+				var sbom spdx.Document
+				if err := json.NewDecoder(sbomFile).Decode(&sbom); err != nil {
+					log.Warnf("failed to decode sbom file %s: %v", file.Name(), err)
+					continue
+				}
+
+				info, err := readReleaseData(bc.fs)
+				if err != nil {
+					return nil, fmt.Errorf("reading release data: %w", err)
+				}
+
+				sopts := soptions.Options{}
+				sopts.OS = soptions.OSInfo{
+					Name:    info.Name,
+					ID:      info.ID,
+					Version: info.VersionID,
+				}
+
+				spdx.AddOperatingSystem(&sbom, &sopts)
+
+				// Write the modified sbom back to the filesystem
+				sbomOut, err := bc.fs.Create(filepath.Join(sbomDir, file.Name()))
+				if err != nil {
+					log.Warnf("failed to create sbom file %s: %v", file.Name(), err)
+					continue
+				}
+				defer sbomOut.Close()
+
+				enc := json.NewEncoder(sbomOut)
+				enc.SetIndent("", "  ")
+				enc.SetEscapeHTML(true)
+
+				if err := enc.Encode(&sbom); err != nil {
+					log.Warnf("failed to encode modified sbom file %s: %v", file.Name(), err)
+					continue
+				}
+			}
+		}
 	}
 
 	log.Debug("finished building filesystem")
