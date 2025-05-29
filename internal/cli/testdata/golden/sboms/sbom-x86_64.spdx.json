@@ -56,6 +56,16 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-OperatingSystem-replaces",
+      "name": "replaces",
+      "versionInfo": "1.0.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Replaces",
+      "primaryPackagePurpose": "OPERATING-SYSTEM"
+    },
+    {
       "SPDXID": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
       "name": "pretend-baselayout",
       "versionInfo": "1.0.0-r0",
