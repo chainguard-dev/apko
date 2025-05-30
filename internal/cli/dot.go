@@ -161,25 +161,41 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		if err := out.Set("rankdir", "LR"); err != nil {
 			panic(err)
 		}
-		out.SetType(dot.DIGRAPH)
+		if err := out.SetType(dot.DIGRAPH); err != nil {
+			panic(err)
+		}
 
 		file := dot.NewNode(configFile)
-		out.AddNode(file)
+		if _, err := out.AddNode(file); err != nil {
+			panic(err)
+		}
 
 		for _, pkg := range ic.Contents.Packages {
 			n := dot.NewNode(pkg)
-			out.AddNode(n)
-			out.AddEdge(dot.NewEdge(file, n))
+			if _, err := out.AddNode(n); err != nil {
+				panic(err)
+			}
+			if _, err := out.AddEdge(dot.NewEdge(file, n)); err != nil {
+				panic(err)
+			}
 			if before, _, ok := strings.Cut(pkg, "="); ok {
 				p := dot.NewNode(before)
-				out.AddNode(p)
-				out.AddEdge(dot.NewEdge(n, p))
+				if _, err := out.AddNode(p); err != nil {
+					panic(err)
+				}
+				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
+					panic(err)
+				}
 
 				deps[before] = struct{}{}
 			} else if before, _, ok := strings.Cut(pkg, "~"); ok {
 				p := dot.NewNode(before)
-				out.AddNode(p)
-				out.AddEdge(dot.NewEdge(n, p))
+				if _, err := out.AddNode(p); err != nil {
+					panic(err)
+				}
+				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
+					panic(err)
+				}
 
 				deps[before] = struct{}{}
 			} else {
@@ -197,7 +213,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 					panic(err)
 				}
 			}
-			out.AddNode(n)
+			if _, err := out.AddNode(n); err != nil {
+				panic(err)
+			}
 
 			for _, dep := range dmap[pkg.Name] {
 				if before, _, ok := strings.Cut(dep, "="); ok {
@@ -213,11 +231,15 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						}
 					}
 				}
-				out.AddNode(d)
+				if _, err := out.AddNode(d); err != nil {
+					panic(err)
+				}
 				if _, ok := edges[dep]; !ok || !span {
 					// This check is stupid but otherwise cycles render dumb.
 					if pkg.Name != dep {
-						out.AddEdge(dot.NewEdge(n, d))
+						if _, err := out.AddEdge(dot.NewEdge(n, d)); err != nil {
+							panic(err)
+						}
 						edges[dep] = struct{}{}
 					}
 				}
@@ -247,7 +269,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
 			}
-			out.AddNode(n)
+			if _, err := out.AddNode(n); err != nil {
+				panic(err)
+			}
 
 			for _, prov := range pmap[pkg.Name] {
 				if _, ok := deps[prov]; !ok {
@@ -257,9 +281,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							out.AddNode(p)
+							if _, err := out.AddNode(p); err != nil {
+								panic(err)
+							}
 
-							out.AddEdge(dot.NewEdge(p, n))
+							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+								panic(err)
+							}
 						}
 						continue
 					} else if before, _, ok := strings.Cut(prov, "~"); ok {
@@ -268,9 +296,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							out.AddNode(p)
+							if _, err := out.AddNode(p); err != nil {
+								panic(err)
+							}
 
-							out.AddEdge(dot.NewEdge(p, n))
+							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+								panic(err)
+							}
 						}
 						continue
 					} else {
@@ -278,9 +310,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 					}
 				}
 				p := dot.NewNode(prov)
-				out.AddNode(p)
+				if _, err := out.AddNode(p); err != nil {
+					panic(err)
+				}
 				if _, ok := edges[pkg.Name]; !ok || !span {
-					out.AddEdge(dot.NewEdge(p, n))
+					if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+						panic(err)
+					}
 					edges[pkg.Name] = struct{}{}
 				}
 			}
@@ -306,7 +342,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		if resolveErr != nil {
 			errorNode := dot.NewNode("❌ error")
 
-			out.AddNode(errorNode)
+			if _, err := out.AddNode(errorNode); err != nil {
+				panic(err)
+			}
 			walkErrors(out, resolveErr, errorNode)
 		}
 
@@ -421,14 +459,18 @@ func makeNode(out *dot.Graph, err error, parent *dot.Node) *dot.Node {
 	}
 
 	node := dot.NewNode(nodeName)
-	out.AddNode(node)
+	if _, err := out.AddNode(node); err != nil {
+		panic(err)
+	}
 	edge := dot.NewEdge(parent, node)
 	if label != "" {
 		if err := edge.Set("label", label); err != nil {
 			panic(err)
 		}
 	}
-	out.AddEdge(edge)
+	if _, err := out.AddEdge(edge); err != nil {
+		panic(err)
+	}
 
 	return node
 }
