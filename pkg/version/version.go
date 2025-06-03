@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package version exposes apko's module version information.
 package version
 
 import (
@@ -42,7 +43,7 @@ func ApkoVersion() string {
 				apkoVersion = d.Version
 			}
 			// In case the module is replaced, we want to report the replaced version, not the original.
-			if d.Replace.Path == modulePath {
+			if d.Replace != nil && d.Replace.Path == modulePath {
 				apkoVersion = d.Replace.Version
 				break
 			}
