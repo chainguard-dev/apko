@@ -22,6 +22,8 @@ import (
 var once sync.Once
 var apkoVersion = "unknown"
 
+const modulePath = "chainguard.dev/apko"
+
 // ApkoVersion returns the version of the apko module used in the current build.
 func ApkoVersion() string {
 	once.Do(func() {
@@ -29,12 +31,18 @@ func ApkoVersion() string {
 		if !ok {
 			return
 		}
+
+		// If apko itself (or its tests) calls version.ApkoVersion, we should report the version of the module.
+		if bi.Main.Path == modulePath {
+			apkoVersion = bi.Main.Version
+		}
+
 		for _, d := range bi.Deps {
-			if apkoVersion == "unknown" && d.Path == "chainguard.dev/apko" {
+			if apkoVersion == "unknown" && d.Path == modulePath {
 				apkoVersion = d.Version
 			}
 			// In case the module is replaced, we want to report the replaced version, not the original.
-			if d.Replace.Path == "chainguard.dev/apko" {
+			if d.Replace.Path == modulePath {
 				apkoVersion = d.Replace.Version
 				break
 			}
