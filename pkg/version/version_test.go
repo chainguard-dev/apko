@@ -14,11 +14,16 @@
 
 package version
 
-import "testing"
+import (
+	"runtime/debug"
+	"testing"
+)
 
 func TestApkoVersion(t *testing.T) {
 	v := ApkoVersion()
 	if v != "(devel)" {
-		t.Fatalf("ApkoVersion() returned %q, expected '(devel)'", v)
+		t.Errorf("ApkoVersion() returned %q, expected '(devel)'", v)
+		bi, ok := debug.ReadBuildInfo()
+		t.Errorf("debug.ReadBuildInfo() returned %+v, %v", bi, ok)
 	}
 }
