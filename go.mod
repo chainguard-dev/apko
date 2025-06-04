@@ -6,7 +6,7 @@ require (
 	chainguard.dev/sdk v0.1.31
 	github.com/chainguard-dev/clog v1.7.0
 	github.com/charmbracelet/log v0.4.2
-	github.com/go-git/go-git/v5 v5.16.0
+	github.com/go-git/go-git/v5 v5.16.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.4-0.20250225234217-098045d5e61f
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
