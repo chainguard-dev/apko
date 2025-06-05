@@ -91,6 +91,11 @@ archs:
 annotations:
   foo: bar
   bar: baz
+
+# optional layering strategy
+layering:
+  strategy: origin
+  budget: 10
 ```
 
 Details of each field can be found below.
@@ -241,3 +246,14 @@ Patches to improve the parsing to make it more flexible are welcome.
 ### Annotations
 
 `annotations` defines the set of annotations that should be applied to images and indexes.
+
+### Layering
+
+`layering` defines a strategy for splitting the filesystem contents into layers.
+
+It contains the following children:
+
+ - `strategy`: The strategy to employ (currently, only "origin" is valid).
+ - `budget`: The number of additional layers apko will use for layering.
+
+See [layering.md](layering.md) for more information.
