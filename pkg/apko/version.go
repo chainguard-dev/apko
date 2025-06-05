@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package version exposes apko's module version information.
-package version
+// Package apko exposes high level functions like apko's module version information.
+package apko
 
 import (
 	"runtime/debug"
@@ -25,15 +25,15 @@ var apkoVersion = "unknown"
 
 const modulePath = "chainguard.dev/apko"
 
-// ApkoVersion returns the version of the apko module used in the current build.
-func ApkoVersion() string {
+// Version returns the version of the apko module used in the current build.
+func Version() string {
 	once.Do(func() {
 		bi, ok := debug.ReadBuildInfo()
 		if !ok {
 			return
 		}
 
-		// If apko itself (or its tests) calls version.ApkoVersion, we should report the version of the module.
+		// If apko itself (or its tests) calls version.Version, we should report the version of the module.
 		if bi.Main.Path == modulePath {
 			apkoVersion = bi.Main.Version
 		}
