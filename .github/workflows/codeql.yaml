@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: ["main"]
 
-env:
-  CODEQL_EXTRACTOR_GO_BUILD_TRACING: true
-
 permissions: {}
 
 jobs:
