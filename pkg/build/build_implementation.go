@@ -92,15 +92,11 @@ type layerWriter struct {
 // everything we need to know to implement a v1.Layer, which it will
 // produce when finalize() is called.
 func newLayerWriter(out *os.File) *layerWriter {
-	digest := sha256.New()
+	diffid := sha256.New()
 
 	buf := pooledBufioWriter(out)
 
-	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
-
-	diffid := sha256.New()
-
-	w := tar.NewWriter(io.MultiWriter(diffid, gzw))
+	w := tar.NewWriter(io.MultiWriter(diffid, buf))
 
 	// Just capturing everything in a closure here is more straightforward
 	// to read (as a translation from what used to implement this) than
@@ -108,36 +104,19 @@ func newLayerWriter(out *os.File) *layerWriter {
 	return &layerWriter{
 		w: w,
 		finalize: func() (*layer, error) {
-			defer pgzipPool.Put(gzw)
 			defer bufioPool.Put(buf)
 
 			if err := w.Close(); err != nil {
 				return nil, fmt.Errorf("closing tar writer: %w", err)
 			}
 
-			if err := gzw.Close(); err != nil {
-				return nil, fmt.Errorf("closing gzip writer: %w", err)
-			}
-
 			if err := buf.Flush(); err != nil {
 				return nil, fmt.Errorf("flushing %s: %w", out.Name(), err)
 			}
 
-			stat, err := out.Stat()
-			if err != nil {
-				return nil, fmt.Errorf("statting %s: %w", out.Name(), err)
-			}
-
-			h := v1.Hash{
-				Algorithm: "sha256",
-				Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
-			}
-
 			l := &layer{
-				filename: out.Name(),
+				uncompressed: out.Name(),
 				desc: &v1.Descriptor{
-					Digest:    h,
-					Size:      stat.Size(),
 					MediaType: v1types.OCILayer,
 				},
 				diffid: &v1.Hash{
