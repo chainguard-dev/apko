@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skratchdot/open-golang/open"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/tmc/dot"
 	"golang.org/x/sync/errgroup"
@@ -354,7 +354,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		})
 
 		g.Go(func() error {
-			return open.Run(fmt.Sprintf("http://localhost:%d", l.Addr().(*net.TCPAddr).Port))
+			return browser.OpenURL(fmt.Sprintf("http://localhost:%d", l.Addr().(*net.TCPAddr).Port))
 		})
 
 		g.Go(func() error {
