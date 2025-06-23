@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"path/filepath"
@@ -99,7 +100,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 
 	s.ImageInfo.Layers = m.Layers
 
-	info, err := readReleaseData(bc.fs)
+	info, err := fetchFSReleaseData(bc.fs)
 	if err != nil {
 		return nil, fmt.Errorf("reading release data: %w", err)
 	}
@@ -153,10 +154,10 @@ type ReleaseData struct {
 	VersionID  string
 }
 
-// readReleaseData reads the information from /etc/os-release
+// fetchFSReleaseData is a helper that reads the information from /etc/os-release
 //
 // If no os-release file is found, it returns a Data struct with ID set to "unknown".
-func readReleaseData(fsys fs.FS) (*ReleaseData, error) {
+func fetchFSReleaseData(fsys fs.FS) (*ReleaseData, error) {
 	f, err := fsys.Open("/etc/os-release")
 	if errors.Is(err, fs.ErrNotExist) {
 		return &ReleaseData{
@@ -169,7 +170,12 @@ func readReleaseData(fsys fs.FS) (*ReleaseData, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return ParseReleaseData(f)
+}
+
+// ParseReleaseData reads the os-release data from the provided io.Reader
+func ParseReleaseData(osRelease io.Reader) (*ReleaseData, error) {
+	scanner := bufio.NewScanner(osRelease)
 
 	kv := map[string]string{}
 	for scanner.Scan() {
