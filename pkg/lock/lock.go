@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -83,17 +84,15 @@ func (lock Lock) SaveToFile(lockFile string) error {
 
 // Arch2LockedPackages returns map: for each arch -> list of {package_name}={version} in archs.
 func (lock Lock) Arch2LockedPackages(archs []types.Architecture) map[string][]string {
-	lockedPackages := map[string][]string{}
+	wantedPackages := make(map[string][]string, len(archs))
 	for _, p := range lock.Contents.Packages {
-		_, ok := lockedPackages[p.Architecture]
-		if !ok {
-			lockedPackages[p.Architecture] = []string{}
+		arch := types.ParseArchitecture(p.Architecture)
+		if slices.Contains(archs, arch) {
+			wantedPackages[arch.String()] = append(
+				wantedPackages[arch.String()],
+				fmt.Sprintf("%s=%s", p.Name, p.Version),
+			)
 		}
-		lockedPackages[p.Architecture] = append(lockedPackages[p.Architecture], fmt.Sprintf("%s=%s", p.Name, p.Version))
-	}
-	wantedPackages := map[string][]string{}
-	for _, arch := range archs {
-		wantedPackages[arch.String()] = lockedPackages[arch.String()]
 	}
 	return wantedPackages
 }
