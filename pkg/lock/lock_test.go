@@ -35,7 +35,7 @@ func TestArch2LockedPackages(t *testing.T) {
 		},
 	}
 
-	archs := []types.Architecture{types.Architecture("aarch64")}
+	archs := []types.Architecture{types.ParseArchitecture("arm64")}
 	if got, want := len(l.Arch2LockedPackages(archs)), 1; got != want {
 		t.Errorf("wanted %d arch, got %d", want, got)
 	}
