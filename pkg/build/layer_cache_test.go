@@ -33,7 +33,7 @@ func TestLayerCompressionCache(t *testing.T) {
 
 	// Create test content
 	testContent := []byte("test layer content for compression cache")
-	
+
 	// Calculate the diffID (hash of uncompressed content)
 	h := sha256.Sum256(testContent)
 	diffID := v1.Hash{
