@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -44,6 +45,10 @@ import (
 	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
 )
+
+// compressionCache stores descriptor information for already-compressed layers,
+// keyed by diffID. This avoids recompressing identical layers.
+var compressionCache sync.Map // map[string]*v1.Descriptor
 
 // Context contains all of the information necessary to build an
 // OCI image. Includes the configuration for the build,
@@ -356,7 +361,6 @@ type layer struct {
 	desc         *v1.Descriptor
 }
 
-// TODO: Consider maintaining a cache of diffid to descriptor and deduping work.
 func (l *layer) compress() error {
 	if l.compressed != "" {
 		return nil
@@ -405,6 +409,10 @@ func (l *layer) compress() error {
 	l.desc.Digest = h
 	l.desc.Size = stat.Size()
 
+	// Store in cache for future use
+	descCopy := *l.desc
+	compressionCache.Store(l.diffid.String(), &descCopy)
+
 	l.compressed = l.uncompressed + ".gz"
 
 	return out.Close()
@@ -415,6 +423,14 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Digest, nil
+	}
+
 	if err := l.compress(); err != nil {
 		return v1.Hash{}, err
 	}
@@ -440,6 +456,14 @@ func (l *layer) Uncompressed() (io.ReadCloser, error) {
 }
 
 func (l *layer) Size() (int64, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Size, nil
+	}
+
 	if err := l.compress(); err != nil {
 		return 0, err
 	}
