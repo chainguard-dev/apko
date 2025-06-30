@@ -168,7 +168,7 @@ func TestLayerCompressionCacheConsistency(t *testing.T) {
 
 	// Create multiple layers with same diffID and verify they all get same cached values
 	for i := 2; i <= 5; i++ {
-		file := filepath.Join(tmpDir, "consistent"+string(rune('0'+i))+".tar")
+		file := filepath.Join(tmpDir, "consistent"+strconv.Itoa(i)+".tar")
 		err := os.WriteFile(file, testContent, 0644)
 		require.NoError(t, err)
 
