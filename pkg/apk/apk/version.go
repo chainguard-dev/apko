@@ -270,12 +270,12 @@ func CompareVersions(actual, required Version) int {
 
 // includesVersion returns true if the actual version is a strict subset of the required version
 func includesVersion(actual, required Version) bool {
-	// if more required numbers than actual numbers, than require is more specific,
+	// if more required numbers than actual numbers, then require is more specific,
 	// so no match
 	if len(actual.numbers) < len(required.numbers) {
 		return false
 	}
-	for i := 0; i < len(required.numbers); i++ {
+	for i := range len(required.numbers) {
 		if actual.numbers[i] != required.numbers[i] {
 			return false
 		}
@@ -426,6 +426,8 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 		case "<=":
 			p.dep = versionLessEqual
 		case "~":
+			p.dep = versionTilde
+		case "=~":
 			p.dep = versionTilde
 		default:
 			p.dep = versionInvalid

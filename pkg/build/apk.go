@@ -83,7 +83,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 			basePkgs := bc.baseimg.InstalledPackages()
 			var basePkgsNames []string
 			for _, basePkg := range basePkgs {
-				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Package.Name, basePkg.Package.Version))
+				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Name, basePkg.Version))
 			}
 			packages = append(packages, basePkgsNames...)
 		}

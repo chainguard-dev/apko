@@ -24,7 +24,7 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
-func TestReadReleaseData(t *testing.T) {
+func TestFetchFSReleaseData(t *testing.T) {
 	osinfoData := `# This is a comment that should be ignored.
 ID=wolfi
 NAME="Wolfi"
@@ -35,8 +35,7 @@ HOME_URL="https://wolfi.dev"
 	fsys := apkfs.NewMemFS()
 	require.NoError(t, fsys.MkdirAll(filepath.Dir("/etc/os-release"), os.FileMode(0o644)))
 	require.NoError(t, fsys.WriteFile("/etc/os-release", []byte(osinfoData), os.FileMode(0o644)))
-	// Non existent file, should err
-	info, err := readReleaseData(fsys)
+	info, err := fetchFSReleaseData(fsys)
 	require.NoError(t, err)
 	require.Equal(t, "wolfi", info.ID, "id")
 	require.Equal(t, "Wolfi", info.Name, "name")
@@ -44,9 +43,9 @@ HOME_URL="https://wolfi.dev"
 	require.Equal(t, "Wolfi", info.PrettyName, "pretty name")
 }
 
-func TestReadReleaseData_EmptyDefaults(t *testing.T) {
+func TestFetchFSReleaseData_EmptyDefaults(t *testing.T) {
 	fsys := apkfs.NewMemFS()
-	info, err := readReleaseData(fsys)
+	info, err := fetchFSReleaseData(fsys)
 	require.NoError(t, err)
 	require.Equal(t, "unknown", info.ID)
 	require.Equal(t, "apko-generated image", info.Name)
@@ -54,13 +53,13 @@ func TestReadReleaseData_EmptyDefaults(t *testing.T) {
 	require.Equal(t, "", info.PrettyName)
 }
 
-func TestBadReleaseData(t *testing.T) {
+func TestBadFSReleaseData(t *testing.T) {
 	osinfoData := `hello, world! this is not a valid os-release file
 `
 	fsys := apkfs.NewMemFS()
 	require.NoError(t, fsys.MkdirAll(filepath.Dir("/etc/os-release"), os.FileMode(0o644)))
 	require.NoError(t, fsys.WriteFile("/etc/os-release", []byte(osinfoData), os.FileMode(0o644)))
 	// Bad data in file should err.
-	_, err := readReleaseData(fsys)
+	_, err := fetchFSReleaseData(fsys)
 	require.Error(t, err)
 }

@@ -33,6 +33,16 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-OperatingSystem-unknown",
+      "name": "unknown",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: unknown",
+      "primaryPackagePurpose": "OPERATING-SYSTEM"
+    },
+    {
       "SPDXID": "SPDXRef-Package-logstash-8-8.15.3-r4",
       "name": "logstash-8",
       "versionInfo": "8.15.3-r4",

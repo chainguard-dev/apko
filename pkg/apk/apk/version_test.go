@@ -833,6 +833,9 @@ func TestCompareVersion(t *testing.T) {
 		{"0.0_git20230331", less, "0.0_git20230508"},
 		{"2.0.0", less, "2.0.6-r0"},
 		{"6.4_p20231125-r0", greater, "6.4-r2"},
+		{"0.14.0-r3", less, "0.15.0-r0"},
+		{"0.14.0", less, "0.15.0"},
+		{"0.14", less, "0.15.0"},
 	}
 	for _, tt := range tests {
 		var exp string
@@ -868,6 +871,8 @@ func TestResolveVersion(t *testing.T) {
 		testNamedPackageFromVersionAndPin("1.7.1-r0", ""),
 		testNamedPackageFromVersionAndPin("1.7.1-r1", ""),
 		testNamedPackageFromVersionAndPin("2.0.6-r0", ""),
+		testNamedPackageFromVersionAndPin("0.14.0-r3", ""),
+		testNamedPackageFromVersionAndPin("0.15.0-r0", ""),
 		pinPackage,
 	}
 	tests := []struct {
@@ -894,6 +899,10 @@ func TestResolveVersion(t *testing.T) {
 		{"1.7", versionTilde, "", nil, "1.7.1-r1", "fits within"},
 		{"1.7.1", versionTilde, "", nil, "1.7.1-r1", "fits within"},
 		{"1.7.1-r2", versionTilde, "", nil, "", "no match"},
+		{"0.14", versionTilde, "", nil, "0.14.0-r3", "fits within"},
+		{"0.14.0", versionTilde, "", nil, "0.14.0-r3", "fits within"},
+		{"0.15", versionTilde, "", nil, "0.15.0-r0", "fits within"},
+		{"0.15.0", versionTilde, "", nil, "0.15.0-r0", "fits within"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
@@ -933,6 +942,8 @@ func TestResolverPackageNameVersionPin(t *testing.T) {
 		{"name<1.2.3", "name", "1.2.3", versionLess, ""},
 		{"name>=1.2.3", "name", "1.2.3", versionGreaterEqual, ""},
 		{"name<=1.2.3", "name", "1.2.3", versionLessEqual, ""},
+		{"name~1.2.3", "name", "1.2.3", versionTilde, ""},
+		{"name=~1.2.3", "name", "1.2.3", versionTilde, ""},
 		{"name@edge=1.2.3", "name@edge=1.2.3", "", versionAny, ""}, // wrong order, so just returns the whole thing
 		{"name=1.2.3@community", "name", "1.2.3", versionEqual, "community"},
 		{"so:libfoo.so.6=6", "so:libfoo.so.6", "0.6", versionEqual, ""},

@@ -15,8 +15,9 @@
 package build
 
 import (
-	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -44,8 +46,12 @@ import (
 	"chainguard.dev/apko/pkg/s6"
 )
 
+// compressionCache stores descriptor information for already-compressed layers,
+// keyed by diffID. This avoids recompressing identical layers.
+var compressionCache sync.Map // map[string]*v1.Descriptor
+
 // Context contains all of the information necessary to build an
-// OCI image. Includes the configurationfor the build,
+// OCI image. Includes the configuration for the build,
 // the path to the config file, the executor for root jails and
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
@@ -118,6 +124,11 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayer")
 	defer span.End()
 
+	// Check if a non-empty layering strategy is supplied
+	if bc.ic.Layering != nil && (bc.ic.Layering.Strategy != "" || bc.ic.Layering.Budget != 0) {
+		return "", nil, fmt.Errorf("cannot use BuildLayer with a layering strategy, use BuildLayers instead")
+	}
+
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
 		return "", nil, err
@@ -134,7 +145,10 @@ func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
 	defer span.End()
 
-	if bc.ic.Layering == nil {
+	// Use the legacy (single-layer) strategy when:
+	// 1. Layering is nil (original behavior)
+	// 2. Layering is empty (i.e., layering: {})
+	if bc.ic.Layering == nil || (bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
 		_, layer, err := bc.BuildLayer(ctx)
 		if err != nil {
 			return nil, err
@@ -341,9 +355,67 @@ func (f *notAFile) Close() error {
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
 type layer struct {
-	filename string
-	diffid   *v1.Hash
-	desc     *v1.Descriptor
+	uncompressed string
+	compressed   string
+	diffid       *v1.Hash
+	desc         *v1.Descriptor
+}
+
+func (l *layer) compress() error {
+	if l.compressed != "" {
+		return nil
+	}
+
+	in, err := l.Uncompressed()
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(l.uncompressed + ".gz")
+	if err != nil {
+		return err
+	}
+
+	buf := pooledBufioWriter(out)
+	defer bufioPool.Put(buf)
+
+	digest := sha256.New()
+	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+	defer pgzipPool.Put(gzw)
+
+	if _, err := io.Copy(gzw, in); err != nil {
+		return err
+	}
+
+	if err := gzw.Close(); err != nil {
+		return fmt.Errorf("closing gzip writer: %w", err)
+	}
+
+	if err := buf.Flush(); err != nil {
+		return fmt.Errorf("flushing %s: %w", out.Name(), err)
+	}
+
+	stat, err := out.Stat()
+	if err != nil {
+		return fmt.Errorf("statting %s: %w", out.Name(), err)
+	}
+
+	h := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	}
+
+	l.desc.Digest = h
+	l.desc.Size = stat.Size()
+
+	// Store in cache for future use
+	descCopy := *l.desc
+	compressionCache.Store(l.diffid.String(), &descCopy)
+
+	l.compressed = l.uncompressed + ".gz"
+
+	return out.Close()
 }
 
 func (l *layer) DiffID() (v1.Hash, error) {
@@ -351,11 +423,25 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Digest, nil
+	}
+
+	if err := l.compress(); err != nil {
+		return v1.Hash{}, err
+	}
 	return l.desc.Digest, nil
 }
 
 func (l *layer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.filename)
+	if err := l.compress(); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(l.compressed)
 	if err != nil {
 		return nil, err
 	}
@@ -366,20 +452,21 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
-	rc, err := l.Compressed()
-	if err != nil {
-		return nil, err
-	}
-
-	// In practice, this won't be called, but this should work anyway.
-	zr, err := gzip.NewReader(rc)
-	if err != nil {
-		return nil, err
-	}
-	return zr, nil
+	return os.Open(l.uncompressed)
 }
 
 func (l *layer) Size() (int64, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Size, nil
+	}
+
+	if err := l.compress(); err != nil {
+		return 0, err
+	}
 	return l.desc.Size, nil
 }
 

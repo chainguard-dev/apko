@@ -144,6 +144,171 @@ func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	require.GreaterOrEqual(t, len(ent), 1) // We should discover at least one key
 }
 
+func TestResolveApkDB(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// At this point, /lib should not exist in any form
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Stat("lib")
+		require.NoError(t, err, "error statting lib")
+		require.True(t, fi.IsDir(), "expected lib to be a directory, got %v", fi.Mode())
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.ReadFile("lib/apk/db/lock")
+		require.NoError(t, err, "error reading lib/apk/db/lock")
+	})
+
+	t.Run("existing lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create our /lib directory as if it already existed
+		err = src.Mkdir("lib", 0o755)
+		require.NoError(t, err)
+
+		// At this point, /lib should exist as a directory
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Stat("lib")
+		require.NoError(t, err, "error statting lib")
+		require.True(t, fi.IsDir(), "expected lib to be a directory, got %v", fi.Mode())
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.ReadFile("lib/apk/db/lock")
+		require.NoError(t, err, "error reading lib/apk/db/lock")
+	})
+
+	t.Run("existing lib apk", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create our /lib/apk directory as if it already existed- as in alpine
+		err = src.MkdirAll("lib/apk", 0o755)
+		require.NoError(t, err)
+
+		// At this point, /lib/apk should be a symlink
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Readlink("lib/apk")
+		require.NoError(t, err, "error reading lib/apk")
+		require.Equal(t, fi, "../usr/lib/apk", "expected lib to be a symlink, got %v", fi)
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.Stat("lib/apk/db/lock")
+		require.NoError(t, err, "error statting lib/apk/db/lock")
+	})
+
+	t.Run("existing lib apk dirs", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create our /lib/apk/exec directory as if it already existed- as in alpine
+		err = src.MkdirAll("lib/apk/exec", 0o755)
+		require.NoError(t, err)
+
+		// At this point, /lib/apk should be a symlink
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Readlink("lib/apk")
+		require.NoError(t, err, "error reading lib/apk")
+		require.Equal(t, fi, "../usr/lib/apk", "expected lib to be a symlink, got %v", fi)
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.Stat("lib/apk/db/lock")
+		require.NoError(t, err, "error statting lib/apk/db/lock")
+	})
+
+	t.Run("existing lib apk dir files", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create our /lib/apk/exec directory as if it already existed
+		err = src.MkdirAll("lib/apk/exec", 0o755)
+		require.NoError(t, err)
+		// Add a file to it
+		err = src.WriteFile("lib/apk/exec/file", []byte("file\n"), 0x644)
+		require.NoError(t, err)
+
+		// At this point, we should have bailed
+		err = apk.resolveApkDB(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("linked lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create our usrmerged symlink for /lib
+		err = src.Symlink("usr/lib", "lib")
+		require.NoError(t, err)
+
+		// At this point, /lib should be a symlink to /usr/lib
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Readlink("lib")
+		require.NoError(t, err, "error reading lib")
+		require.Equal(t, fi, "usr/lib", "expected lib to be a symlink, got %v", fi)
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.Stat("lib/apk/db/lock")
+		require.NoError(t, err, "error statting lib/apk/db/lock")
+	})
+
+	t.Run("linked lib apk", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Create /lib
+		err = src.Mkdir("lib", 0o755)
+		require.NoError(t, err)
+
+		// Create usr/lib/apk
+		err = src.MkdirAll("usr/lib/apk", 0o755)
+		require.NoError(t, err)
+
+		// Create our symlink for lib/apk
+		err = src.Symlink("../usr/lib/apk", "lib/apk")
+		require.NoError(t, err)
+
+		// At this point, /lib/apk should be a symlink to /usr/lib/apk
+		err = apk.resolveApkDB(ctx)
+		require.NoError(t, err)
+		fi, err := src.Readlink("lib/apk")
+		require.NoError(t, err, "error reading lib/apk")
+		require.Equal(t, fi, "../usr/lib/apk", "expected lib to be a symlink, got %v", fi)
+
+		// Check if the DB is indeed accessible from /lib
+		_, err = src.Stat("lib/apk/db/lock")
+		require.NoError(t, err, "error statting lib/apk/db/lock")
+	})
+}
+
 func TestSetWorld(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
@@ -294,8 +459,8 @@ func TestInitKeyring(t *testing.T) {
 
 		t.Run("good auth", func(t *testing.T) {
 			src := apkfs.NewMemFS()
-			err := src.MkdirAll("lib/apk/db", 0o755)
-			require.NoError(t, err, "unable to mkdir /lib/apk/db")
+			err := src.MkdirAll("usr/lib/apk/db", 0o755)
+			require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
 			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 			require.NoError(t, err, "unable to create APK")
@@ -309,8 +474,8 @@ func TestInitKeyring(t *testing.T) {
 
 		t.Run("bad auth", func(t *testing.T) {
 			src := apkfs.NewMemFS()
-			err := src.MkdirAll("lib/apk/db", 0o755)
-			require.NoError(t, err, "unable to mkdir /lib/apk/db")
+			err := src.MkdirAll("usr/lib/apk/db", 0o755)
+			require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
 			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 			require.NoError(t, err, "unable to create APK")
@@ -416,8 +581,8 @@ func TestFetchPackage(t *testing.T) {
 	)
 	prepLayout := func(t *testing.T, cache string) *APK {
 		src := apkfs.NewMemFS()
-		err := src.MkdirAll("lib/apk/db", 0o755)
-		require.NoError(t, err, "unable to mkdir /lib/apk/db")
+		err := src.MkdirAll("usr/lib/apk/db", 0o755)
+		require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
 		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
 		if cache != "" {
@@ -603,8 +768,8 @@ func TestAuth_good(t *testing.T) {
 	ctx := context.Background()
 
 	src := apkfs.NewMemFS()
-	err := src.MkdirAll("lib/apk/db", 0o755)
-	require.NoError(t, err, "unable to mkdir /lib/apk/db")
+	err := src.MkdirAll("usr/lib/apk/db", 0o755)
+	require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
 	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoError(t, err, "unable to create APK")
@@ -635,8 +800,8 @@ func TestAuth_bad(t *testing.T) {
 	ctx := context.Background()
 
 	src := apkfs.NewMemFS()
-	err := src.MkdirAll("lib/apk/db", 0o755)
-	require.NoError(t, err, "unable to mkdir /lib/apk/db")
+	err := src.MkdirAll("usr/lib/apk/db", 0o755)
+	require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
 	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoError(t, err, "unable to create APK")

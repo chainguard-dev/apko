@@ -25,8 +25,8 @@ import (
 	"slices"
 	"sync"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
-	coci "github.com/sigstore/cosign/v2/pkg/oci"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -179,7 +179,7 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 
 // buildImage build all of the components of an image in a single working directory.
 // Each layer is a separate file, as are config, manifests, index and sbom.
-func buildImageComponents(ctx context.Context, workDir string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, err error) {
+func buildImageComponents(ctx context.Context, workDir string, archs []types.Architecture, opts ...build.Option) (idx v1.ImageIndex, sboms []types.SBOM, err error) {
 	log := clog.FromContext(ctx)
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
@@ -231,7 +231,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	}
 	opts = append(opts, build.WithSBOM(imageDir))
 
-	imgs := map[types.Architecture]coci.SignedImage{}
+	imgs := map[types.Architecture]v1.Image{}
 
 	mtx := sync.Mutex{}
 

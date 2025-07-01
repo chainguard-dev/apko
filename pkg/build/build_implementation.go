@@ -32,7 +32,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	gzip "github.com/klauspost/pgzip"
-	"github.com/sigstore/cosign/v2/pkg/oci"
 
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -93,15 +92,11 @@ type layerWriter struct {
 // everything we need to know to implement a v1.Layer, which it will
 // produce when finalize() is called.
 func newLayerWriter(out *os.File) *layerWriter {
-	digest := sha256.New()
+	diffid := sha256.New()
 
 	buf := pooledBufioWriter(out)
 
-	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
-
-	diffid := sha256.New()
-
-	w := tar.NewWriter(io.MultiWriter(diffid, gzw))
+	w := tar.NewWriter(io.MultiWriter(diffid, buf))
 
 	// Just capturing everything in a closure here is more straightforward
 	// to read (as a translation from what used to implement this) than
@@ -109,36 +104,19 @@ func newLayerWriter(out *os.File) *layerWriter {
 	return &layerWriter{
 		w: w,
 		finalize: func() (*layer, error) {
-			defer pgzipPool.Put(gzw)
 			defer bufioPool.Put(buf)
 
 			if err := w.Close(); err != nil {
 				return nil, fmt.Errorf("closing tar writer: %w", err)
 			}
 
-			if err := gzw.Close(); err != nil {
-				return nil, fmt.Errorf("closing gzip writer: %w", err)
-			}
-
 			if err := buf.Flush(); err != nil {
 				return nil, fmt.Errorf("flushing %s: %w", out.Name(), err)
 			}
 
-			stat, err := out.Stat()
-			if err != nil {
-				return nil, fmt.Errorf("statting %s: %w", out.Name(), err)
-			}
-
-			h := v1.Hash{
-				Algorithm: "sha256",
-				Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
-			}
-
 			l := &layer{
-				filename: out.Name(),
+				uncompressed: out.Name(),
 				desc: &v1.Descriptor{
-					Digest:    h,
-					Size:      stat.Size(),
 					MediaType: v1types.OCILayer,
 				},
 				diffid: &v1.Hash{
@@ -175,16 +153,14 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		err  error
 	)
 	if bc.o.Lockfile != "" {
+		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load lock-file: %w", err)
 		}
-		if lock.Config == nil {
-			log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
-		} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lock.Config.DeepChecksum {
-			return nil, fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
-				"(maybe regenerate the lock file)",
-				bc.o.Lockfile, bc.o.ImageConfigFile)
+		err = bc.VerifyLockfileConsistency(ctx, lock.Config)
+		if err != nil {
+			return nil, err
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
@@ -246,6 +222,18 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 	return pkgs, nil
 }
 
+func (bc *Context) VerifyLockfileConsistency(ctx context.Context, lockConfig *lock.Config) error {
+	log := clog.FromContext(ctx)
+	if lockConfig == nil {
+		log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
+	} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lockConfig.DeepChecksum {
+		return fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
+			"(maybe regenerate the lock file)",
+			bc.o.Lockfile, bc.o.ImageConfigFile)
+	}
+	return nil
+}
+
 func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	if _, err := fsys.Stat("etc/ld.so.conf"); err != nil {
 		clog.FromContext(ctx).Debugf("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update: %v", err)
@@ -292,7 +280,7 @@ func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
 }
 
 // WriteIndex saves the index file from the given image configuration.
-func WriteIndex(ctx context.Context, o *options.Options, idx oci.SignedImageIndex) (string, error) {
+func WriteIndex(ctx context.Context, o *options.Options, idx v1.ImageIndex) (string, error) {
 	log := clog.FromContext(ctx)
 	outfile := filepath.Join(o.TempDir(), "index.json")
 
@@ -310,6 +298,11 @@ func WriteIndex(ctx context.Context, o *options.Options, idx oci.SignedImageInde
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.RepositoryPackage, conflicts []string, err error) {
 	log := clog.FromContext(ctx)
+
+	if bc.o.Lockfile != "" {
+		return nil, nil, fmt.Errorf("assertion: cannot ResolveWorld if LockFile:%s is given", bc.o.Lockfile)
+	}
+
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}

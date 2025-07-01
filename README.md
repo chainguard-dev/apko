@@ -125,12 +125,11 @@ The combination of melange and apko cover the vast majority of use cases when bu
 images. In the cases where they are not a good fit, our recommendation is to build a base image with
 apko and melange, then use traditional tooling such as Dockerfiles for the final step.
 
-## Support and Further Reading
+## Further Reading
 
 Tutorials and guides for apko can be found at the [Chainguard Academy](https://edu.chainguard.dev/open-source/apko/).
 
-For support, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko
-channel or [open an issue](https://github.com/chainguard-dev/apko/issue).
+For questions, please find us on the [Kubernetes Slack](https://kubernetes.slack.com/) in the #apko channel.
 
 ## Related Work and Resources
 

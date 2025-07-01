@@ -50,6 +50,52 @@ func TestBuildLayers(t *testing.T) {
 	require.Len(t, layers, 2)
 }
 
+func TestBuildLayersWithEmptyLayering(t *testing.T) {
+	ctx := context.Background()
+
+	// Use the empty-layering.yaml file we created in testdata
+	opts := []build.Option{
+		build.WithConfig("empty-layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should build successfully and return a single layer
+	layers, err := bc.BuildLayers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should fall back to the legacy single-layer approach with empty layering
+	require.Len(t, layers, 1)
+
+	// BuildLayer should also work with empty layering
+	_, _, err = bc.BuildLayer(ctx)
+	require.NoError(t, err, "BuildLayer should not fail with empty layering")
+}
+
+func TestBuildLayerWithLayeringStrategy(t *testing.T) {
+	ctx := context.Background()
+
+	// Use a config with a non-empty layering strategy
+	opts := []build.Option{
+		build.WithConfig("layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should return an error when trying to use BuildLayer with a layering strategy
+	_, _, err = bc.BuildLayer(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot use BuildLayer with a layering strategy")
+}
+
 func TestBuildImage(t *testing.T) {
 	ctx := context.Background()
 

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 type Lock struct {
@@ -77,4 +80,19 @@ func (lock Lock) SaveToFile(lockFile string) error {
 	jsonb = append(jsonb, '\n')
 	// #nosec G306 -- apk world must be publicly readable
 	return os.WriteFile(lockFile, jsonb, os.ModePerm)
+}
+
+// Arch2LockedPackages returns map: for each arch -> list of {package_name}={version} in archs.
+func (lock Lock) Arch2LockedPackages(archs []types.Architecture) map[string][]string {
+	wantedPackages := make(map[string][]string, len(archs))
+	for _, p := range lock.Contents.Packages {
+		arch := types.ParseArchitecture(p.Architecture)
+		if slices.Contains(archs, arch) {
+			wantedPackages[arch.String()] = append(
+				wantedPackages[arch.String()],
+				fmt.Sprintf("%s=%s", p.Name, p.Version),
+			)
+		}
+	}
+	return wantedPackages
 }

@@ -32,9 +32,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -45,15 +47,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.step.sm/crypto/jose"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
+	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
-	"chainguard.dev/apko/pkg/apk/internal/tarfs"
 	"chainguard.dev/apko/pkg/paths"
 
 	"github.com/chainguard-dev/clog"
@@ -138,10 +139,10 @@ var baseDirectories = []directory{
 	{"/tmp", 0o777 | fs.ModeSticky},
 	{"/dev", 0o755},
 	{"/etc", 0o755},
-	{"/lib", 0o755},
 	{"/opt", 0o755},
 	{"/proc", 0o555},
 	{"/var", 0o755},
+	{"/usr", 0o755},
 }
 
 // directories is a list of directories to create relative to the root. It will not do MkdirAll, so you
@@ -149,7 +150,6 @@ var baseDirectories = []directory{
 // It assumes that the following directories already exist:
 //
 //		/var
-//		/lib
 //		/tmp
 //		/dev
 //		/etc
@@ -157,8 +157,10 @@ var baseDirectories = []directory{
 var initDirectories = []directory{
 	{"/etc/apk", 0o755},
 	{"/etc/apk/keys", 0o755},
-	{"/lib/apk", 0o755},
-	{"/lib/apk/db", 0o755},
+	{"/usr/lib", 0o755},
+	{"/usr/lib/apk", 0o755},
+	{"/usr/lib/apk/db", 0o755},
+	{"/usr/lib/apk/exec", 0o755},
 	{"/var/cache", 0o755},
 	{"/var/cache/apk", 0o755},
 	{"/var/cache/misc", 0o755},
@@ -169,9 +171,9 @@ var initDirectories = []directory{
 var initFiles = []file{
 	{"/etc/apk/world", 0o644, []byte("\n")},
 	{"/etc/apk/repositories", 0o644, []byte("\n")},
-	{"/lib/apk/db/lock", 0o600, nil},
-	{"/lib/apk/db/triggers", 0o644, nil},
-	{"/lib/apk/db/installed", 0o644, nil},
+	{"/usr/lib/apk/db/lock", 0o600, nil},
+	{"/usr/lib/apk/db/triggers", 0o644, nil},
+	{"/usr/lib/apk/db/installed", 0o644, nil},
 }
 
 // deviceFiles is a list of files to create relative to the root.
@@ -335,6 +337,81 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	}
 
 	log.Debug("finished initializing apk database")
+	return nil
+}
+
+// Resolves the possible locations of APK's DB and assures that it will exist at /lib/apk/db.
+func (a *APK) resolveApkDB(ctx context.Context) error {
+	log := clog.FromContext(ctx)
+	log.Debug("resolving APK DB location")
+
+	_, span := otel.Tracer("go-apk").Start(ctx, "resolveApkDB")
+	defer span.End()
+
+	// Do nothing more if /lib already points at usr/lib (absolute or relative).
+	if target, err := a.fs.Readlink("/lib"); err == nil {
+		// MemFS will only let Readlink succeed on a real symlink.
+		// Prepend “/” and Clean to collapse things like “/../usr/lib” → “/usr/lib”.
+		if path.Clean("/"+target) == "/usr/lib" {
+			log.Debug("/lib is a symlink to /usr/lib")
+			return nil
+		}
+	}
+
+	// Do nothing more if /lib/apk already points at usr/lib/apk (absolute or relative).
+	// This is the case when we start with empty layering.
+	if target, err := a.fs.Readlink("/lib/apk"); err == nil {
+		if path.Clean("/"+target) == "/usr/lib/apk" {
+			log.Debug("/lib is a symlink to /usr/lib/apk")
+			return nil
+		}
+	}
+
+	// create /lib as a directory if is missing
+	if _, err := a.fs.Stat("lib"); errors.Is(err, fs.ErrNotExist) {
+		if err := a.fs.Mkdir("lib", 0o755); err != nil {
+			return fmt.Errorf("creating lib: %w", err)
+		}
+		log.Debug("created /lib as a directory")
+	}
+
+	// if /lib/apk already exists, as it will with alpine's version of apk-tools, handle it
+	if d, err := a.fs.Stat("lib/apk"); err == nil {
+		if d.IsDir() {
+			log.Debug("lib/apk is already a directory- we're likely building from alpine")
+			children, err := a.fs.ReadDir("lib/apk")
+			if err != nil {
+				return fmt.Errorf("reading /lib/apk: %w", err)
+			}
+			for _, child := range children {
+				if !child.IsDir() {
+					return fmt.Errorf("/lib/apk contains file %s, refusing to replace", child.Name())
+				}
+				// check if that subdir is empty
+				subents, err := a.fs.ReadDir(path.Join("lib/apk", child.Name()))
+				if err != nil {
+					return fmt.Errorf("reading /lib/apk/%s: %w", child.Name(), err)
+				}
+				if len(subents) > 0 {
+					return fmt.Errorf("/lib/apk/%s is not empty, refusing to replace", child.Name())
+				}
+				// Delete the child directory as it is empty
+				if err := a.fs.Remove(path.Join("lib/apk", child.Name())); err != nil {
+					return fmt.Errorf("removing /lib/apk/%s: %w", child.Name(), err)
+				}
+			}
+			// all children are empty dirs → safe to delete lib/apk
+			if err := a.fs.Remove("lib/apk"); err != nil {
+				return fmt.Errorf("removing /lib/apk: %w", err)
+			}
+		}
+	}
+
+	// create symlink /lib/apk → /usr/lib/apk
+	if err := a.fs.Symlink("../usr/lib/apk", "lib/apk"); err != nil {
+		return fmt.Errorf("creating lib/apk symlink: %w", err)
+	}
+	log.Debug("created symlink for lib/apk")
 	return nil
 }
 
@@ -600,8 +677,8 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]*P
 	//     a. Check if it is installed, if so, skip
 	//     b. Get the .apk file
 	//     c. Install the .apk file
-	//     d. Update /lib/apk/db/scripts.tar
-	//     d. Update /lib/apk/db/triggers
+	//     d. Update /usr/lib/apk/db/scripts.tar
+	//     d. Update /usr/lib/apk/db/triggers
 	//     e. Update the installed file
 	for _, pkg := range conflicts {
 		isInstalled, err := a.isInstalledPackage(pkg)
@@ -736,6 +813,10 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		}
 	}
 
+	// Resolve the APK DB location
+	if err := a.resolveApkDB(ctx); err != nil {
+		return nil, err
+	}
 	return infos, nil
 }
 

@@ -19,19 +19,19 @@ import (
 	"encoding/base32"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/apk/auth"
@@ -557,7 +557,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		}
 		require.Equal(t, len(install), len(want))
 		for i := range install {
-			got := install[i].Package.Name + "-" + install[i].Package.Version
+			got := install[i].Name + "-" + install[i].Version
 			require.Equal(t, got, want[i])
 		}
 	})
@@ -573,7 +573,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		}
 		require.Equal(t, len(install), len(want))
 		for i := range install {
-			got := install[i].Package.Name + "-" + install[i].Package.Version
+			got := install[i].Name + "-" + install[i].Version
 			require.Equal(t, want[i], got)
 		}
 	})
@@ -1004,7 +1004,7 @@ func makeResolver(provs, deps map[string][]string) *PkgResolver {
 
 	repo := Repository{}
 	repoWithIndex := repo.WithIndex(&APKIndex{
-		Packages: maps.Values(packages),
+		Packages: slices.Collect(maps.Values(packages)),
 	})
 	return NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{repoWithIndex}))
 }

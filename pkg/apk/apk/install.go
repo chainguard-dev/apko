@@ -29,7 +29,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 
-	"chainguard.dev/apko/pkg/apk/internal/tarfs"
+	"chainguard.dev/apko/internal/tarfs"
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.

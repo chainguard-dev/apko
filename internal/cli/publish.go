@@ -184,7 +184,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	var (
 		local           = opts.local
 		tags            = opts.tags
-		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
 
@@ -226,19 +225,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		//nolint:gosec // Make image ref file readable by non-root
 		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0o666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
-		}
-	}
-
-	// publish each arch-specific sbom
-	// publish the index sbom
-	if wantSBOM {
-		// TODO: Why aren't these just attached to idx?
-
-		// all sboms will be in the same directory
-		if err := oci.PostAttachSBOMsFromIndex(
-			ctx, idx, sboms, tags, ropt...,
-		); err != nil {
-			return fmt.Errorf("attaching sboms to index: %w", err)
 		}
 	}
 

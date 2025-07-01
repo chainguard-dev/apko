@@ -34,6 +34,10 @@ func TestUnify(t *testing.T) {
 		name: "empty",
 		want: map[string][]string{"index": {}},
 	}, {
+		name:      "no inputs",
+		originals: []string{"foo", "bar", "baz"},
+		want:      map[string][]string{"index": {}},
+	}, {
 		name:      "simple single arch",
 		originals: []string{"foo", "bar", "baz"},
 		inputs: []resolved{{
