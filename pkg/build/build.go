@@ -355,6 +355,7 @@ func (f *notAFile) Close() error {
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
 type layer struct {
+	mu           sync.Mutex
 	uncompressed string
 	compressed   string
 	diffid       *v1.Hash
@@ -362,6 +363,9 @@ type layer struct {
 }
 
 func (l *layer) compress() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.compressed != "" {
 		return nil
 	}

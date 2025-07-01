@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -26,14 +27,15 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestLayerCompressionCache(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
 
-	// Create test content
-	testContent := []byte("test layer content for compression cache")
+	// Create test content, big enough so we can test the race.
+	testContent := bytes.Repeat([]byte("test layer content for compression cache"), 100_000)
 
 	// Calculate the diffID (hash of uncompressed content)
 	h := sha256.Sum256(testContent)
@@ -55,10 +57,28 @@ func TestLayerCompressionCache(t *testing.T) {
 		},
 	}
 
-	// Get digest for first layer - this should compress the layer
-	digest1, err := layer1.Digest()
-	require.NoError(t, err)
-	require.NotEmpty(t, digest1.String())
+	var (
+		g       errgroup.Group
+		digest1 v1.Hash
+	)
+
+	g.Go(func() error {
+		// Get digest for first layer - this should compress the layer
+		digest1, err = layer1.Digest()
+		require.NoError(t, err)
+		require.NotEmpty(t, digest1.String())
+		return nil
+	})
+
+	g.Go(func() error {
+		// Do it again simultaneously to make sure -race catches it.
+		digest1, err := layer1.Digest()
+		require.NoError(t, err)
+		require.NotEmpty(t, digest1.String())
+		return nil
+	})
+
+	require.NoError(t, g.Wait())
 
 	// Verify the compressed file was created
 	require.FileExists(t, file1+".gz")
