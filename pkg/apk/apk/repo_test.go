@@ -557,7 +557,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		}
 		require.Equal(t, len(install), len(want))
 		for i := range install {
-			got := install[i].Package.Name + "-" + install[i].Package.Version
+			got := install[i].Name + "-" + install[i].Version
 			require.Equal(t, got, want[i])
 		}
 	})
@@ -573,7 +573,7 @@ func TestGetPackagesWithDependences(t *testing.T) {
 		}
 		require.Equal(t, len(install), len(want))
 		for i := range install {
-			got := install[i].Package.Name + "-" + install[i].Package.Version
+			got := install[i].Name + "-" + install[i].Version
 			require.Equal(t, want[i], got)
 		}
 	})

@@ -125,7 +125,7 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	defer span.End()
 
 	// Check if a non-empty layering strategy is supplied
-	if bc.ic.Layering != nil && !(bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
+	if bc.ic.Layering != nil && (bc.ic.Layering.Strategy != "" || bc.ic.Layering.Budget != 0) {
 		return "", nil, fmt.Errorf("cannot use BuildLayer with a layering strategy, use BuildLayers instead")
 	}
 

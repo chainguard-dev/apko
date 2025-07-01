@@ -45,9 +45,10 @@ func (a *APKFS) acquireCache() (*expandapk.APKExpanded, error) {
 }
 func (a *APKFS) getTarReader() (*os.File, *tar.Reader, error) {
 	var fileName string
-	if a.fsType == APKFSPackage {
+	switch a.fsType {
+	case APKFSPackage:
 		fileName = a.cache.PackageFile
-	} else if a.fsType == APKFSControl {
+	case APKFSControl:
 		fileName = a.cache.ControlFile
 	}
 	file, err := os.Open(fileName)
@@ -86,9 +87,10 @@ func NewAPKFS(ctx context.Context, archive string, apkfsType APKFSType) (*APKFS,
 	}
 	defer apkExpanded.Close()
 	var fileName string
-	if result.fsType == APKFSPackage {
+	switch result.fsType {
+	case APKFSPackage:
 		fileName = apkExpanded.PackageFile
-	} else if result.fsType == APKFSControl {
+	case APKFSControl:
 		fileName = apkExpanded.ControlFile
 	}
 	gzipFile, err := os.Open(fileName)

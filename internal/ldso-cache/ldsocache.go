@@ -142,7 +142,7 @@ func doGetElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 		return info, err
 	}
 	// FIXME: do we need to check for the ELF magic bytes?
-	if elflibf.FileHeader.Type != elf.ET_DYN {
+	if elflibf.Type != elf.ET_DYN {
 		return info, fmt.Errorf("not a dynamic object")
 	}
 	sonames, err := elflibf.DynString(elf.DT_SONAME)
@@ -150,7 +150,7 @@ func doGetElfInfo(libfReaderAt io.ReaderAt) (elfInfo, error) {
 		return info, err
 	}
 	info = elfInfo{
-		Machine: elflibf.FileHeader.Machine,
+		Machine: elflibf.Machine,
 		Sonames: sonames,
 	}
 	return info, nil
@@ -173,7 +173,7 @@ func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
 	mode := dirent.Type()
 	isLink := (mode&fs.ModeSymlink != 0)
 
-	if !(mode.IsRegular() || isLink) {
+	if !mode.IsRegular() && !isLink {
 		return li, fmt.Errorf("DEBUG: %s is neither a link nor a regular file", fullpath)
 	}
 	if isLink {
