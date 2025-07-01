@@ -998,8 +998,8 @@ func (m *memFileInfo) Name() string {
 }
 
 func (m *memFileInfo) Size() int64 {
-	if m.node.te != nil && len(m.data) == 0 {
-		return m.node.te.header.Size
+	if m.te != nil && len(m.data) == 0 {
+		return m.te.header.Size
 	}
 	return int64(len(m.data))
 }
@@ -1036,9 +1036,9 @@ func (m *memFileInfo) Sys() any {
 
 // This is a bit janky, but we need a way to know who owns this.
 func (m *memFileInfo) Package() *apk.Package {
-	if m.node.te == nil {
+	if m.te == nil {
 		return nil
 	}
 
-	return m.node.te.pkg
+	return m.te.pkg
 }
