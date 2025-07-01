@@ -28,13 +28,13 @@ jobs:
 
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version-file: 'go.mod'
+          go-version: 'stable'
           check-latest: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
         with:
-          version: v1.63
+          version: v1.64.8
 
       - run: |
           make generate
