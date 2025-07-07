@@ -44,7 +44,7 @@ func TestCleanImpl(t *testing.T) {
 			dir := filepath.Dir(filepath.Join(cacheDir, file))
 			err := os.MkdirAll(dir, 0755)
 			require.NoError(t, err)
-			
+
 			err = os.WriteFile(filepath.Join(cacheDir, file), []byte("dummy content"), 0644)
 			require.NoError(t, err)
 		}
@@ -112,8 +112,8 @@ func TestCalculateDirSize(t *testing.T) {
 
 	// Create files with known sizes
 	files := map[string]int{
-		"file1.txt": 100,
-		"file2.txt": 200,
+		"file1.txt":        100,
+		"file2.txt":        200,
 		"subdir/file3.txt": 300,
 	}
 
