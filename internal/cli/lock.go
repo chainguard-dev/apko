@@ -173,7 +173,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		arch := arch
 
 		log := log.With("arch", arch.ToAPK())
-		ctx = clog.WithLogger(ctx, log)
+		ctx := clog.WithLogger(ctx, log)
 
 		// working directory for this architecture
 		wd := filepath.Join(wd, arch.ToAPK())

@@ -253,7 +253,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 
 			arch := types.ParseArchitecture(arch)
 			log := log.With("arch", arch.ToAPK())
-			ctx = clog.WithLogger(ctx, log)
+			ctx := clog.WithLogger(ctx, log)
 
 			opts := slices.Clone(opts)
 			opts = append(opts, build.WithArch(arch), build.WithImageConfiguration(*ic))
