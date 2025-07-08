@@ -69,7 +69,7 @@ func TestGenerate(t *testing.T) {
 	fsys := apkfs.NewMemFS()
 	sx := New(fsys)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(testOpts, path)
+	err := sx.Generate(t.Context(), testOpts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 }
@@ -208,7 +208,7 @@ func TestSPDX_Generate(t *testing.T) {
 			sx := New(fsys)
 			imageSBOMName := fmt.Sprintf("%s.spdx.json", tt.name)
 			imageSBOMDestPath := filepath.Join(t.TempDir(), imageSBOMName)
-			err = sx.Generate(tt.opts, imageSBOMDestPath)
+			err = sx.Generate(t.Context(), tt.opts, imageSBOMDestPath)
 			require.NoError(t, err)
 
 			actual, err := os.ReadFile(imageSBOMDestPath)
@@ -252,7 +252,7 @@ func TestReproducible(t *testing.T) {
 	d := [][]byte{}
 	for i := 0; i < 2; i++ {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
-		require.NoError(t, sx.Generate(testOpts, path))
+		require.NoError(t, sx.Generate(t.Context(), testOpts, path))
 		require.FileExists(t, path)
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestValidateSPDX(t *testing.T) {
 	fsys := apkfs.NewMemFS()
 	sx := New(fsys)
 	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(testOpts, path)
+	err := sx.Generate(t.Context(), testOpts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 	require.NoError(t, command.New(
