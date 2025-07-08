@@ -21,7 +21,7 @@ func installKeys() *cobra.Command {
 			ctx := cmd.Context()
 			log := clog.FromContext(ctx)
 
-			a, err := apk.New()
+			a, err := apk.New(ctx)
 			if err != nil {
 				return err
 			}

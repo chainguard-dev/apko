@@ -25,7 +25,7 @@ import (
 
 func TestEmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	fs := DirFS(dir)
+	fs := DirFS(t.Context(), dir)
 	require.NotNil(t, fs, "fs should be created")
 }
 
@@ -57,7 +57,7 @@ func TestExistingDir(t *testing.T) {
 		}
 	}
 
-	fs := DirFS(dir)
+	fs := DirFS(t.Context(), dir)
 	require.NotNil(t, fs, "fs should be created")
 
 	for _, f := range files {
@@ -72,7 +72,7 @@ func TestExistingDir(t *testing.T) {
 
 func TestMissingDir(t *testing.T) {
 	dir := t.TempDir()
-	fs := DirFS(dir)
+	fs := DirFS(t.Context(), dir)
 	require.NotNil(t, fs, "fs should be created")
 	err := fs.WriteFile("foo/bar/world", []byte("world"), 0o600)
 	require.Error(t, err, "expected error writing file foo/bar/world when foo/bar dir does not exist")
@@ -98,7 +98,7 @@ func TestCaseInsensitive(t *testing.T) {
 
 	dir := t.TempDir()
 	// force underlying filesystem to be treated as case insensitive
-	fs := DirFS(dir, DirFSWithCaseSensitive(false))
+	fs := DirFS(t.Context(), dir, DirFSWithCaseSensitive(false))
 	require.NotNil(t, fs, "fs should be created")
 
 	// create the files in the fs
@@ -142,7 +142,7 @@ func TestCaseInsensitive(t *testing.T) {
 func TestDirFSConsistentOrdering(t *testing.T) {
 	dir := t.TempDir()
 	// force underlying filesystem to be treated as case insensitive
-	fsys := DirFS(dir)
+	fsys := DirFS(t.Context(), dir)
 	entries := []testDirEntry{
 		{"dir1", 0o777, true, nil},
 		{"dir1/subdir1", 0o777, true, nil},

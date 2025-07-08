@@ -117,7 +117,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		if cache != "" {
 			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
-		a, err := New(opts...)
+		a, err := New(t.Context(), opts...)
 		require.NoError(t, err, "unable to create APK")
 
 		// set a client so we use local testdata instead of heading out to the Internet each time
@@ -323,7 +323,7 @@ func TestIndexAuth_good(t *testing.T) {
 
 	ctx := context.Background()
 
-	a, err := New(WithFS(apkfs.NewMemFS()),
+	a, err := New(ctx, WithFS(apkfs.NewMemFS()),
 		WithArch("x86_64"),
 		WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoErrorf(t, err, "unable to create APK")
@@ -352,7 +352,7 @@ func TestIndexAuth_bad(t *testing.T) {
 
 	ctx := context.Background()
 
-	a, err := New(WithFS(apkfs.NewMemFS()),
+	a, err := New(ctx, WithFS(apkfs.NewMemFS()),
 		WithArch("x86_64"),
 		WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoErrorf(t, err, "unable to create APK")

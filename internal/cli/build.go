@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -253,7 +252,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 			}
 
 			arch := types.ParseArchitecture(arch)
-			log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+			log := log.With("arch", arch.ToAPK())
 			ctx := clog.WithLogger(ctx, log)
 
 			opts := slices.Clone(opts)

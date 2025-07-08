@@ -319,7 +319,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apkOpts = append(apkOpts, apk.WithNoSignatureIndexes(bc.baseimg.APKIndexPath()))
 	}
 
-	apkImpl, err := apk.New(apkOpts...)
+	apkImpl, err := apk.New(ctx, apkOpts...)
 	if err != nil {
 		return nil, err
 	}

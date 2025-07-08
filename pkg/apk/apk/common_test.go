@@ -15,6 +15,7 @@ package apk
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
@@ -98,7 +99,7 @@ func testGetTestAPK() (*APK, apkfs.FullFS, error) {
 	}); walkErr != nil {
 		return nil, nil, walkErr
 	}
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(context.Background(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	if err != nil {
 		return nil, nil, err
 	}

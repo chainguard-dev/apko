@@ -24,7 +24,7 @@ import (
 )
 
 func TestGroupParser(t *testing.T) {
-	fsys := apkfs.DirFS("testdata")
+	fsys := apkfs.DirFS(t.Context(), "testdata")
 	gf, err := ReadOrCreateGroupFile(fsys, "group")
 	require.NoError(t, err)
 
@@ -40,7 +40,7 @@ func TestGroupParser(t *testing.T) {
 }
 
 func TestGroupWriter(t *testing.T) {
-	fsys := apkfs.DirFS("testdata")
+	fsys := apkfs.DirFS(t.Context(), "testdata")
 	gf, err := ReadOrCreateGroupFile(fsys, "group")
 	require.NoError(t, err)
 

@@ -71,7 +71,7 @@ func ShowConfigCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+	fs := apkfs.DirFS(ctx, wd, apkfs.WithCreateDir())
 
 	bc, err := build.New(ctx, fs, opts...)
 	if err != nil {

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -74,7 +73,7 @@ func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types
 }
 
 func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img v1.Image) ([]types.SBOM, error) {
-	log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+	log := clog.FromContext(ctx).With("arch", arch.ToAPK())
 	ctx = clog.WithLogger(ctx, log)
 
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateImageSBOM")
