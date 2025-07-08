@@ -134,7 +134,7 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		}
 
 		filename := filepath.Join(s.OutputDir, s.FileName+"."+gen.Ext())
-		if err := gen.Generate(&s, filename); err != nil {
+		if err := gen.Generate(ctx, &s, filename); err != nil {
 			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
 		}
 		sboms = append(sboms, types.SBOM{

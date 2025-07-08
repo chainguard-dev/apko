@@ -15,6 +15,7 @@
 package spdx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/log"
+	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
@@ -81,7 +82,7 @@ func hashToString(h v1.Hash) string {
 }
 
 // Generate writes an SPDX SBOM in path
-func (sx *SPDX) Generate(opts *options.Options, path string) error {
+func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string) error {
 	// The default document name makes no attempt to avoid
 	// clashes. Ensuring a unique name requires a digest
 	documentName := "sbom"
@@ -157,7 +158,7 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 			seenIDs[doc.Packages[i].ID] = struct{}{}
 			dedupedPackages = append(dedupedPackages, doc.Packages[i])
 		} else {
-			log.Info("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
+			clog.FromContext(ctx).Info("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
 		}
 	}
 	doc.Packages = dedupedPackages

@@ -15,6 +15,8 @@
 package generator
 
 import (
+	"context"
+
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
@@ -24,7 +26,7 @@ import (
 type Generator interface {
 	Key() string
 	Ext() string
-	Generate(*options.Options, string) error
+	Generate(context.Context, *options.Options, string) error
 	GenerateIndex(*options.Options, string) error
 }
 
