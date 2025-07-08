@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -172,13 +171,14 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
 		arch := arch
-		log := clog.New(slog.Default().Handler()).With("arch", arch.ToAPK())
+
+		log := log.With("arch", arch.ToAPK())
 		ctx = clog.WithLogger(ctx, log)
 
 		// working directory for this architecture
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := append(slices.Clone(opts), build.WithArch(arch))
-		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+		fs := apkfs.DirFS(ctx, wd, apkfs.WithCreateDir())
 		bc, err := build.New(ctx, fs, bopts...)
 		if err != nil {
 			return err

@@ -30,7 +30,7 @@ func TestGetWorld(t *testing.T) {
 	packages := []string{"package1", "package2", "package3"}
 	err = src.WriteFile(worldFilePath, []byte(strings.Join(packages, "\n")), 0o644)
 	require.NoError(t, err, "unable to write world file")
-	a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err, "unable to create APK")
 	pkgs, err := a.GetWorld()
 	require.NoError(t, err, "unable to get world packages")

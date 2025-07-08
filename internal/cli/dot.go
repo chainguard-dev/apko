@@ -129,7 +129,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	wd = filepath.Join(wd, arch.ToAPK())
 	bopts := slices.Clone(opts)
 	bopts = append(bopts, build.WithArch(arch))
-	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+	fs := apkfs.DirFS(ctx, wd, apkfs.WithCreateDir())
 	bc, err := build.New(ctx, fs, bopts...)
 	if err != nil {
 		return err

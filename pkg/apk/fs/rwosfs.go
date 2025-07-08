@@ -15,9 +15,9 @@
 package fs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"golang.org/x/sys/unix"
 )
 
@@ -59,8 +60,8 @@ func WithCreateDir() DirFSOption {
 	}
 }
 
-func DirFS(dir string, opts ...DirFSOption) FullFS {
-	log := slog.Default()
+func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
+	log := clog.FromContext(ctx).With("dir", dir)
 
 	var options dirFSOpts
 	for _, opt := range opts {
@@ -80,15 +81,15 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 		return nil
 	case err != nil && os.IsNotExist(err):
 		if !options.mkdir {
-			log.Warn("dir does not exist", "dir", dir)
+			log.Warn("dir does not exist")
 			return nil
 		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			log.Warn("error creating dir", "dir", dir, "error", err)
+			log.Warn("error creating dir", "error", err)
 			return nil
 		}
 	case !fi.IsDir():
-		log.Warn("not a directory", "dir", dir)
+		log.Warn("not a directory")
 		return nil
 	}
 

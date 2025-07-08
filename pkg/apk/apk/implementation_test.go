@@ -65,7 +65,7 @@ var (
 
 func TestInitDB(t *testing.T) {
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	err = apk.InitDB(context.Background())
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestInitDB(t *testing.T) {
 
 func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 
 	err = apk.InitDB(context.Background(), "https://apk.cgr.dev/chainguard")
@@ -149,7 +149,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("no lib", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -168,7 +168,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("existing lib", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("existing lib apk", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -214,7 +214,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("existing lib apk dirs", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("existing lib apk dir files", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -256,7 +256,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("linked lib", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestResolveApkDB(t *testing.T) {
 
 	t.Run("linked lib apk", func(t *testing.T) {
 		src := apkfs.NewMemFS()
-		apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 		err = apk.InitDB(ctx)
 		require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestResolveApkDB(t *testing.T) {
 func TestSetWorld(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
 	err = src.MkdirAll("etc/apk", 0o755)
@@ -335,7 +335,7 @@ func TestSetWorld(t *testing.T) {
 func TestSetWorldWithVersions(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
 	err = src.MkdirAll("etc/apk", 0o755)
@@ -358,7 +358,7 @@ func TestSetWorldWithVersions(t *testing.T) {
 func TestSetRepositories(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
 
@@ -380,7 +380,7 @@ func TestSetRepositories(t *testing.T) {
 func TestSetRepositories_Empty(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
-	apk, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 	// for initialization
 
@@ -394,7 +394,7 @@ func TestSetRepositories_Empty(t *testing.T) {
 
 func TestInitKeyring(t *testing.T) {
 	src := apkfs.NewMemFS()
-	a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 
 	dir, err := os.MkdirTemp("", "go-apk")
@@ -462,7 +462,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("usr/lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
+			a, err := New(ctx, WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -477,7 +477,7 @@ func TestInitKeyring(t *testing.T) {
 			err := src.MkdirAll("usr/lib/apk/db", 0o755)
 			require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
-			a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
+			a, err := New(ctx, WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 			require.NoError(t, err, "unable to create APK")
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
@@ -493,7 +493,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 	t.Run("non-existent dir", func(t *testing.T) {
 		ctx := context.Background()
 		src := apkfs.NewMemFS()
-		a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		a, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 
 		// Read the empty dir, passing a non-existent location should err
@@ -503,7 +503,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 	t.Run("empty dir", func(t *testing.T) {
 		ctx := context.Background()
 		src := apkfs.NewMemFS()
-		a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		a, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 		require.NoError(t, err)
 
 		// Read the empty dir, passing only one empty location should err
@@ -525,7 +525,7 @@ func TestLoadSystemKeyring(t *testing.T) {
 			ctx := context.Background()
 			arch := ArchToAPK(runtime.GOARCH)
 			src := apkfs.NewMemFS()
-			a, err := New(WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+			a, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 			require.NoError(t, err)
 
 			// Write some dummy keyfiles in a random location
@@ -588,7 +588,7 @@ func TestFetchPackage(t *testing.T) {
 		if cache != "" {
 			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
-		a, err := New(opts...)
+		a, err := New(ctx, opts...)
 		require.NoError(t, err, "unable to create APK")
 		err = a.InitDB(ctx)
 		require.NoError(t, err)
@@ -771,7 +771,7 @@ func TestAuth_good(t *testing.T) {
 	err := src.MkdirAll("usr/lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
+	a, err := New(ctx, WithFS(src), WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)
@@ -803,7 +803,7 @@ func TestAuth_bad(t *testing.T) {
 	err := src.MkdirAll("usr/lib/apk/db", 0o755)
 	require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
-	a, err := New(WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
+	a, err := New(ctx, WithFS(src), WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")))
 	require.NoError(t, err, "unable to create APK")
 	err = a.InitDB(ctx)
 	require.NoError(t, err)

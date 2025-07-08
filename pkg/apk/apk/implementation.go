@@ -85,7 +85,7 @@ type APK struct {
 	ByArch map[string]*APK
 }
 
-func New(options ...Option) (*APK, error) {
+func New(ctx context.Context, options ...Option) (*APK, error) {
 	opt := defaultOpts()
 	for _, o := range options {
 		if err := o(opt); err != nil {
@@ -95,13 +95,13 @@ func New(options ...Option) (*APK, error) {
 
 	if opt.fs == nil {
 		// This is expensive so we only want to do it if we aren't passed WithFS.
-		opt.fs = apkfs.DirFS("/")
+		opt.fs = apkfs.DirFS(ctx, "/")
 	}
 
 	client := retryablehttp.NewClient()
 
 	client.HTTPClient = &http.Client{Transport: opt.transport}
-	client.Logger = clog.FromContext(context.Background())
+	client.Logger = clog.FromContext(ctx)
 
 	return &APK{
 		client:             client.StandardClient(),
