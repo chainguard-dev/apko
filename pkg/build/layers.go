@@ -16,6 +16,7 @@ package build
 
 import (
 	"archive/tar"
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -44,9 +45,14 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Build a single fs.FS, the normal way (this writes to bc.fs).
-	pkgs, err := bc.buildImage(ctx)
+	pkgs, diffs, err := bc.buildImage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("building filesystem: %w", err)
+	}
+
+	pkgToDiff := map[*apk.Package][]byte{}
+	for i := range pkgs {
+		pkgToDiff[pkgs[i]] = diffs[i]
 	}
 
 	// We don't pass around repositories cleanly between apko and the library
@@ -77,7 +83,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
-	return splitLayers(ctx, bc.fs, groups, bc.o.TempDir())
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 }
 
 func replacesGroup(rep string, g *group) (bool, error) {
@@ -245,7 +251,7 @@ func merge(groups ...*group) *group {
 	return merged
 }
 
-func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir string) ([]v1.Layer, error) {
+func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
 	// We'll create a writer for each layer and a map to quickly access the writer given a package or group.
@@ -375,6 +381,26 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir
 	layers := make([]v1.Layer, 0, len(groups)+1)
 	for i, g := range groups {
 		w := groupToWriter[g]
+
+		// Add a partial installed db to satisfy scanners.
+		var buf bytes.Buffer
+		for _, pkg := range g.pkgs {
+			if _, err := buf.Write(pkgToDiff[pkg]); err != nil {
+				return nil, err
+			}
+		}
+		if err := w.w.WriteHeader(&tar.Header{
+			Name: "usr/lib/apk/db/installed",
+			Size: int64(buf.Len()),
+			Mode: 0o644,
+		}); err != nil {
+			return nil, err
+		}
+
+		if _, err := io.Copy(w.w, &buf); err != nil {
+			return nil, err
+		}
+
 		l, err := w.finalize()
 		if err != nil {
 			return nil, fmt.Errorf("finalizing group[%d] layer: %w", i, err)

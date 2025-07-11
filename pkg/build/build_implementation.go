@@ -130,7 +130,7 @@ func newLayerWriter(out *os.File) *layerWriter {
 	}
 }
 
-func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
+func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, [][]byte, error) {
 	log := clog.FromContext(ctx)
 
 	// When using base image for the build, apko adds new layer on top of the base. This means
@@ -141,39 +141,40 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		// Index for loop to make golang-ci happy.
 		// See https://stackoverflow.com/questions/62446118/implicit-memory-aliasing-in-for-loop
 		for index := range basePkgs {
-			err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
+			_, err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 
 	var (
-		pkgs []*apk.Package
-		err  error
+		pkgs  []*apk.Package
+		diffs [][]byte
+		err   error
 	)
 	if bc.o.Lockfile != "" {
 		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load lock-file: %w", err)
+			return nil, nil, fmt.Errorf("failed to load lock-file: %w", err)
 		}
 		err = bc.VerifyLockfileConsistency(ctx, lock.Config)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
-			return nil, fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
+			return nil, nil, fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-		pkgs, err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
+		pkgs, _, err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
 		if err != nil {
-			return nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
+			return nil, nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
 	} else {
-		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
+		pkgs, diffs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
-			return nil, fmt.Errorf("installing apk packages: %w", err)
+			return nil, nil, fmt.Errorf("installing apk packages: %w", err)
 		}
 	}
 
@@ -182,44 +183,44 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 	// If one wants to add a support for adding additional users they would need to look into this piece of code.
 	if bc.ic.Contents.BaseImage == nil {
 		if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
-			return nil, fmt.Errorf("failed to mutate accounts: %w", err)
+			return nil, nil, fmt.Errorf("failed to mutate accounts: %w", err)
 		}
 	}
 
 	if err := bc.WriteEtcApkoConfig(ctx); err != nil {
-		return nil, fmt.Errorf("failed to install apko config: %w", err)
+		return nil, nil, fmt.Errorf("failed to install apko config: %w", err)
 	}
 
 	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
-		return nil, fmt.Errorf("failed to mutate paths: %w", err)
+		return nil, nil, fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
 	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {
-		return nil, fmt.Errorf("failed to write supervision tree: %w", err)
+		return nil, nil, fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
 	// add busybox symlinks
 	installed, err := bc.apk.GetInstalled()
 	if err != nil {
-		return nil, fmt.Errorf("getting installed packages: %w", err)
+		return nil, nil, fmt.Errorf("getting installed packages: %w", err)
 	}
 
 	if err := installBusyboxLinks(bc.fs, installed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// add necessary character devices
 	if err := installCharDevices(bc.fs); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := updateCache(ctx, bc.fs); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	log.Debug("finished building filesystem")
 
-	return pkgs, nil
+	return pkgs, diffs, nil
 }
 
 func (bc *Context) VerifyLockfileConsistency(ctx context.Context, lockConfig *lock.Config) error {

@@ -85,7 +85,7 @@ func TestAddInstalledPackage(t *testing.T) {
 		}}, // should generate extra a: perms line
 	}
 	// AddInstalledPackage(pkg *Package, files []tar.Header) error
-	err = a.AddInstalledPackage(newPkg, newFiles)
+	_, err = a.AddInstalledPackage(newPkg, newFiles)
 	require.NoErrorf(t, err, "unable to add installed package: %v", err)
 	// check that the new packages were added
 	pkgs, err := a.GetInstalled()
