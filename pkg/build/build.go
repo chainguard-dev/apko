@@ -100,7 +100,7 @@ func (bc *Context) BuildImage(ctx context.Context) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildImage")
 	defer span.End()
 
-	if _, err := bc.buildImage(ctx); err != nil {
+	if _, _, err := bc.buildImage(ctx); err != nil {
 		log.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ic)
 		if err2 != nil {
