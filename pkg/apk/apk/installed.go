@@ -47,12 +47,13 @@ func (a *APK) GetInstalled() ([]*InstalledPackage, error) {
 	return ParseInstalled(installedFile)
 }
 
-// addInstalledPackage add a package to the list of installed packages
-func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
+// AddInstalledPackage add a package to the list of installed packages and returns
+// the _incremental_ diff installing the package had on the idb file.
+func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, error) {
 	// be sure to open the file in append mode so we add to the end
 	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
+		return nil, fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
 	}
 	defer installedFile.Close()
 
@@ -82,7 +83,7 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
 					if !strings.HasPrefix(checksum, "Q1") {
 						hexsum, err := hex.DecodeString(checksum)
 						if err != nil {
-							return err
+							return nil, err
 						}
 						checksum = "Q1" + base64.StdEncoding.EncodeToString(hexsum)
 					}
@@ -94,9 +95,9 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
 	// write to installed file
 	b := []byte(strings.Join(pkgLines, "\n") + "\n\n")
 	if _, err := installedFile.Write(b); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return b, nil
 }
 
 // isInstalledPackage check if a specific package is installed

@@ -653,7 +653,7 @@ func (a *APK) ResolveAndCalculateWorld(ctx context.Context) ([]*APKResolved, err
 }
 
 // FixateWorld force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
-func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]*Package, error) {
+func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]InstalledDiff, error) {
 	log := clog.FromContext(ctx)
 	/*
 		equivalent of: "apk fix --arch arch --root root"
@@ -698,7 +698,16 @@ func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]*P
 	return a.InstallPackages(ctx, sourceDateEpoch, allInstPkgs)
 }
 
-func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) ([]*Package, error) {
+// InstalledDiff tracks a package and the incremental change it wrote to the installed database file.
+// This is used by our layering mechanism to generate partial idb files per layer to satisfy scanners.
+// Mostly, this just makes the return type of InstallPackages cleaner so it's easier to track which
+// package produced which diff to the idb file.
+type InstalledDiff struct {
+	Package *Package
+	Diff    []byte
+}
+
+func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) ([]InstalledDiff, error) {
 	// TODO: Consider making this configurable option.
 	jobs := runtime.GOMAXPROCS(0)
 
@@ -785,6 +794,8 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		return nil, fmt.Errorf("installing packages: %w", withCause(ctx, err))
 	}
 
+	diffs := make([]InstalledDiff, 0, len(allFiles))
+
 	// update the installed file
 	for i, files := range allFiles {
 		pkg := infos[i]
@@ -808,16 +819,22 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 			return owner != pkg
 		})
 
-		if err := a.AddInstalledPackage(pkg, files); err != nil {
+		diff, err := a.AddInstalledPackage(pkg, files)
+		if err != nil {
 			return nil, fmt.Errorf("unable to update installed file for pkg %s: %w", pkg.Name, err)
 		}
+
+		diffs = append(diffs, InstalledDiff{
+			Package: pkg,
+			Diff:    diff,
+		})
 	}
 
 	// Resolve the APK DB location
 	if err := a.resolveApkDB(ctx); err != nil {
 		return nil, err
 	}
-	return infos, nil
+	return diffs, nil
 }
 
 type NoKeysFoundError struct {

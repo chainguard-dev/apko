@@ -376,3 +376,11 @@ Because layers are tarballs, there's no cheap mechanism to overwrite _just_ file
 We'd have to overwrite the entire thing, which doesn't feel worth doing.
 
 Luckily, these kinds of path mutations aren't that common, just be aware that modifying permissions of a file in one image may mean it won't see any deduplication with similar layers in other images without said modifications.
+
+### usr/lib/apk/db/installed
+
+In order to associate files with packages, security scanners look at `usr/lib/apk/db/installed` (or "idb" for _installed database_).
+We've run into some scanners that look at each layer individually rather than the entire filesystem.
+For those scanners, having all of our operating system metadata files (including this idb file) in the top layer violated some of their assumptions around valid layers.
+In order to avoid breaking those scanners, we duplicate relevant portions of the idb file in each package-ful layer.
+These files are small relative to the size of most packages, so it doesn't cost much to do this for broader compatibility with security scanners.
