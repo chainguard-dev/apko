@@ -40,7 +40,7 @@
       "description": "Operating System",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: Apko Images, Plc",
-      "primaryPackagePurpose": "OPERATING-SYSTEM"
+      "primaryPackagePurpose": "OPERATING_SYSTEM"
     },
     {
       "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",

@@ -63,7 +63,7 @@
       "description": "Operating System",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: Replaces",
-      "primaryPackagePurpose": "OPERATING-SYSTEM"
+      "primaryPackagePurpose": "OPERATING_SYSTEM"
     },
     {
       "SPDXID": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",

@@ -40,7 +40,7 @@
       "description": "Operating System",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: unknown",
-      "primaryPackagePurpose": "OPERATING-SYSTEM"
+      "primaryPackagePurpose": "OPERATING_SYSTEM"
     },
     {
       "SPDXID": "SPDXRef-Package-unbound-libs-1.23.0-r0",
