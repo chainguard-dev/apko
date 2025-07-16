@@ -257,6 +257,9 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	if err := cacheFile.Write(lsc); err != nil {
 		return fmt.Errorf("writing /etc/ld.so.cache: %w", err)
 	}
+	if err := fsys.Chmod("etc/ld.so.cache", 0644); err != nil {
+		return fmt.Errorf("chmod /etc/ld.so.cache: %w", err)
+	}
 
 	return nil
 }
