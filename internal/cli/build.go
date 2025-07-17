@@ -359,7 +359,7 @@ func rename(from, to string) error {
 		return err
 	}
 	defer f1.Close()
-	f2, err := os.Create(to)
+	f2, err := os.OpenFile(to, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}

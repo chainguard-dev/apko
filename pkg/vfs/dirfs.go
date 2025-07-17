@@ -34,7 +34,7 @@ func (dir dirFS) finalPath(path string) string {
 }
 
 func (dir dirFS) Create(path string) (io.WriteCloser, error) {
-	return os.Create(dir.finalPath(path))
+	return os.OpenFile(dir.finalPath(path), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 }
 
 func (dir dirFS) Open(path string) (fs.File, error) {

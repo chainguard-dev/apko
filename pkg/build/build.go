@@ -177,9 +177,9 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	)
 
 	if bc.o.TarballPath != "" {
-		outfile, err = os.Create(bc.o.TarballPath)
+		outfile, err = os.OpenFile(bc.o.TarballPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+		outfile, err = os.OpenFile(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
@@ -376,7 +376,7 @@ func (l *layer) compress() error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(l.uncompressed + ".gz")
+	out, err := os.OpenFile(l.uncompressed+".gz", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}

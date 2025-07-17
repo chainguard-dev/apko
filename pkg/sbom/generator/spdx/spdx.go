@@ -355,7 +355,7 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 
 // renderDoc marshals a document to json and writes it to disk
 func renderDoc(doc *Document, path string) error {
-	out, err := os.Create(path)
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("opening SBOM path %s for writing: %w", path, err)
 	}
