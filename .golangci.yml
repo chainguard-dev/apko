@@ -20,6 +20,10 @@ linters:
     forbidigo:
       forbid:
         - pattern: ^print.*$
+        - pattern: ^os\.Create$
+          msg: os.Create creates files with 666 permissions, use os.OpenFile(<FILE_NAME>, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644) instead.
+      # This makes it possible to handle import renaming and forbid struct fields and methods.
+      analyze-types: true
     goheader:
       values:
         regexp:
