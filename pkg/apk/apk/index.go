@@ -154,7 +154,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			entry, ok = i.indexes.Get(key)
 			if ok {
 				// If there is an entry now, there was a race to the Get above. We can just return now.
-				i.indexesMux.Lock()
+				i.indexesMux.Unlock()
 				return entry()
 			}
 
