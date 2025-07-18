@@ -32,66 +32,64 @@ import (
 	"chainguard.dev/apko/pkg/paths"
 )
 
-type flightCache[T any] struct {
-	flight *singleflight.Group
-	cache  *sync.Map
+// newCoalescingCache creates a new coalescingCache.
+func newCoalescingCache[K comparable, V any]() *coalescingCache[K, V] {
+	return &coalescingCache[K, V]{
+		cache: make(map[K]func() (V, error)),
+	}
 }
 
-// TODO: Consider [K, V] if we need a non-string key type.
-func newFlightCache[T any]() *flightCache[T] {
-	return &flightCache[T]{
-		flight: &singleflight.Group{},
-		cache:  &sync.Map{},
-	}
+// coalescingCache combines singleflight's coalescing with a cache.
+type coalescingCache[K comparable, V any] struct {
+	mux   sync.RWMutex
+	cache map[K]func() (V, error)
 }
 
 // Do returns coalesces multiple calls, like singleflight, but also caches
-// the result if the call is successful. Failures are not cached to avoid
-// permanently failing for transient errors.
-func (f *flightCache[T]) Do(key string, fn func() (T, error)) (T, error) {
-	v, ok := f.cache.Load(key)
-	if ok {
-		if t, ok := v.(T); ok {
-			return t, nil
-		} else {
-			// This can't happen but just in case things change.
-			return t, fmt.Errorf("unexpected type %T", v)
-		}
+// the result if the call is successful.
+// Failures are not cached to avoid permanently failing for transient errors.
+func (f *coalescingCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
+	f.mux.RLock()
+	if v, ok := f.cache[key]; ok {
+		f.mux.RUnlock()
+		return v()
+	}
+	f.mux.RUnlock()
+
+	f.mux.Lock()
+
+	// Doubly-checked-locking in case of race conditions.
+	if v, ok := f.cache[key]; ok {
+		f.mux.Unlock()
+		return v()
 	}
 
-	v, err, _ := f.flight.Do(key, func() (any, error) {
-		if v, ok := f.cache.Load(key); ok {
-			return v, nil
-		}
-
-		// Don't cache errors, but maybe we should.
-		v, err := fn()
+	v := sync.OnceValues(func() (V, error) {
+		ret, err := fn()
 		if err != nil {
-			return nil, err
+			// We've put this value into the cache before executing it, so we need to remove it
+			// to avoid caching errors.
+			f.Forget(key)
 		}
-
-		f.cache.Store(key, v)
-
-		return v, nil
+		return ret, err
 	})
+	f.cache[key] = v
+	f.mux.Unlock()
 
-	t, ok := v.(T)
-	if err != nil {
-		return t, err
-	}
-	if !ok {
-		// This can't happen but just in case things change.
-		return t, fmt.Errorf("unexpected type %T", v)
-	}
-	return t, nil
+	return v()
+}
+
+func (f *coalescingCache[K, V]) Forget(key K) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	delete(f.cache, key)
 }
 
 type Cache struct {
-	etagCache  *sync.Map
-	headFlight *singleflight.Group
-	getFlight  *singleflight.Group
+	getFlight *singleflight.Group
 
-	discoverKeys *flightCache[[]Key]
+	etags        *coalescingCache[string, *http.Response]
+	discoverKeys *coalescingCache[string, []Key]
 }
 
 // NewCache returns a new Cache, which allows us to persist the results of HEAD requests
@@ -107,37 +105,16 @@ type Cache struct {
 // requests for the same resource when passing etag=false.
 func NewCache(etag bool) *Cache {
 	c := &Cache{
-		headFlight:   &singleflight.Group{},
 		getFlight:    &singleflight.Group{},
-		discoverKeys: newFlightCache[[]Key](),
+		discoverKeys: newCoalescingCache[string, []Key](),
 	}
 
 	if etag {
-		c.etagCache = &sync.Map{}
+		//nolint:bodyclose // Requests are closed as they're put into the cache already.
+		c.etags = newCoalescingCache[string, *http.Response]()
 	}
 
 	return c
-}
-
-func (c *Cache) load(cacheFile string) (*http.Response, bool) {
-	if c == nil || c.etagCache == nil {
-		return nil, false
-	}
-
-	v, ok := c.etagCache.Load(cacheFile)
-	if !ok {
-		return nil, false
-	}
-
-	return v.(*http.Response), true
-}
-
-func (c *Cache) store(cacheFile string, resp *http.Response) {
-	if c == nil || c.etagCache == nil {
-		return
-	}
-
-	c.etagCache.Store(cacheFile, resp)
 }
 
 // cache
@@ -209,12 +186,7 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 }
 
 func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Response, error) {
-	resp, ok := t.cache.load(cacheFile)
-	if ok {
-		return resp, nil
-	}
-
-	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (any, error) {
+	fetch := func() (*http.Response, error) {
 		req := request.Clone(request.Context())
 		req.Method = http.MethodHead
 		resp, err := t.wrapped.Do(req)
@@ -225,15 +197,13 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 		// HEAD shouldn't have a body. Make sure we close it so we can reuse the connection.
 		defer resp.Body.Close()
 
-		t.cache.store(cacheFile, resp)
-
 		return resp, nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
-	return v.(*http.Response), nil
+	if t.cache.etags != nil {
+		return t.cache.etags.Do(cacheFile, fetch)
+	}
+	return fetch()
 }
 
 func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFile, initialEtag string) (string, error) {
