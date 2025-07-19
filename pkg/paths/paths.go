@@ -58,7 +58,7 @@ func AdvertiseCachedFile(src, dst string) error {
 	// Create the symlink.
 	if err := os.Symlink(rel, dst); err != nil {
 		// Ignore already exists errors. We don't even want to do clean up here even when
-		// the symlink is pointing somewhere elese, to avoid relying too much on file system
+		// the symlink is pointing somewhere else, to avoid relying too much on file system
 		// remantics/eventual consistency, etc.
 		if errors.Is(err, os.ErrExist) {
 			return nil

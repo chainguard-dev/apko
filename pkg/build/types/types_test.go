@@ -113,7 +113,7 @@ func Test_YAML_Unmarshalling_UID_GID_mapping(t *testing.T) {
 		rawYAML     string
 	}{
 		{
-			desc:        "Unique GID gets propogated",
+			desc:        "Unique GID gets propagated",
 			expectedUID: id1234,
 			expectedGID: id1235T,
 			rawYAML: `

@@ -33,7 +33,7 @@ func TestPurlQualifierString(t *testing.T) {
 			"mediaType=application%2Fvnd.oci.image.index.v1%2Bjson",
 		},
 		{
-			// Mutiple value pairs
+			// Multiple value pairs
 			PurlQualifiers{
 				"arch":      "386",
 				"mediaType": "application/vnd.oci.image.manifest.v1+json",
