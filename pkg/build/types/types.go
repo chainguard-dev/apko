@@ -170,7 +170,7 @@ type ImageConfiguration struct {
 	//
 	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64
 	Archs []Architecture `json:"archs,omitempty" yaml:"archs,omitempty"`
-	// Optional: Envionment variables to set in the container image
+	// Optional: Environment variables to set in the container image
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
 	// Optional: List of paths mutations
 	Paths []PathMutation `json:"paths,omitempty" yaml:"paths,omitempty"`

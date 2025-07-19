@@ -420,7 +420,7 @@ func (p *PkgResolver) pick(pkg *RepositoryPackage) error {
 func (p *PkgResolver) disqualify(dq map[*RepositoryPackage]string, pkg *RepositoryPackage, reason string) {
 	dq[pkg] = reason
 
-	// TODO: Ripple up and disqualify anything that is no longer solveable.
+	// TODO: Ripple up and disqualify anything that is no longer solvable.
 }
 
 // constrain looks through a list of constraints and disqualifies anything that would
@@ -518,7 +518,7 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 		// do not add it to toInstall, as we want to have it in the correct order with dependencies
 		dependenciesMap[pkg.Name] = pkg
 
-		// Remove it from contraints.
+		// Remove it from constraints.
 		constraints = slices.DeleteFunc(constraints, func(s string) bool {
 			return s == next
 		})
@@ -788,7 +788,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				}
 
 				// See if any virtual packages of packages we've already
-				// selected satisfy this contraint.
+				// selected satisfy this constraint.
 				satisfiedByProvide := false
 				for _, provide := range picked.Provides {
 					prostraint := cachedResolvePackageNameVersionPin(provide)
