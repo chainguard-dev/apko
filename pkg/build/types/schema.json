@@ -100,7 +100,7 @@
             "type": "string"
           },
           "type": "object",
-          "description": "Optional: Envionment variables to set in the container image"
+          "description": "Optional: Environment variables to set in the container image"
         },
         "paths": {
           "items": {

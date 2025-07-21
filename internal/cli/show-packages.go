@@ -74,7 +74,7 @@ func showPackages() *cobra.Command {
 		Use:   "show-packages",
 		Short: "Show the packages and versions that would be installed by a configuration",
 		Long: `Show the packages and versions that would be installed by a configuration.
-The result is identical to the first stages of a build, but does not actuall install anything.
+The result is identical to the first stages of a build, but does not actually install anything.
 
 The output is one of several pre-defined formats, or can be customized to any go template, using
 the provided vars. See https://pkg.go.dev/text/template for more information. Available vars are

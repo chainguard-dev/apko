@@ -60,12 +60,12 @@ func (r *RepositoryWithIndex) Packages() []*RepositoryPackage {
 	return r.pkgs
 }
 
-// Count returns the amout of packages that are available in this repository
+// Count returns the amount of packages that are available in this repository
 func (r *RepositoryWithIndex) Count() int {
 	return len(r.index.Packages)
 }
 
-// RepoAbbr returns a short name of this repository consiting of the repo name
+// RepoAbbr returns a short name of this repository consisting of the repo name
 // and the architecture.
 func (r *RepositoryWithIndex) RepoAbbr() string {
 	parts := strings.Split(r.URI, "/")

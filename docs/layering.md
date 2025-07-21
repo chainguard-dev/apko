@@ -44,7 +44,7 @@ For "base" images, you probably don't want apko to use a huge number of layers b
 For "application" images that are intended to be run directly, you don't usually expect someone to append any (or many) layers on top of them, so you may want apko to take advantage of more layers.
 
 Thus, we shift the decision here to the user who will know more about how and where the image will be used.
-Emperically, we have found a budget of 10 layers to be a decent balance between deduplication benefit and small fixed costs associated with each layer, but your mileage may vary.
+Empirically, we have found a budget of 10 layers to be a decent balance between deduplication benefit and small fixed costs associated with each layer, but your mileage may vary.
 
 ### Strategy
 
@@ -128,7 +128,7 @@ You can declare that one package `replaces` another such that it will overwrite 
 An example of this is [libxcrypt replacing old versions of libcrypt1](https://github.com/wolfi-dev/os/blob/4996d337875501f74f6a084fb7837d9e569a6dbf/libxcrypt.yaml#L13-L16).
 
 One way to deal with this replaces directive would be to ensure layers are ordered correctly such that the last layer "wins" when the container runtime overlays each as a filesystem diff.
-To continue with the above example, we would need to ensure that `libxcrypt` belonged to a layer that was "above" `libcrypt1`, so that the overlayed filesystem replaced any conflicts with `libcryptx` files.
+To continue with the above example, we would need to ensure that `libxcrypt` belonged to a layer that was "above" `libcrypt1`, so that the overlaid filesystem replaced any conflicts with `libcryptx` files.
 This presents an interesting implementation challenge that I chose instead to sidestep.
 
 Rather than trying to track these `replaces` relationships and sort layers in a corresponding order, we simply group both the replacer and the replacee packages into the same layer.
@@ -224,14 +224,14 @@ Glad you asked.
 
 As mentioned earlier, we track metadata about every file we lazily "write" to our references-to-tar-offsets-backed filesystem.
 Part of that metadata is which package owned those file's bytes.
-We use that ownership information to paritition our single virtual filesystem into `$budget + 1` concrete layers.
+We use that ownership information to partition our single virtual filesystem into `$budget + 1` concrete layers.
 
 Any file that has actual contents gets split out into its own layer (including directories that contain said file (see next section for more details)).
 Any file _without_ package-owner metadata gets dumped into the top layer.
 
 Primarily, this is a bunch of directories and device files, but the actually interesting files are OS metadata like the installed database.
 
-Looking at `cgr.dev/chainguard/crane` and filtering out directores and files:
+Looking at `cgr.dev/chainguard/crane` and filtering out directories and files:
 
 ```
 $ crane blob cgr.dev/chainguard/crane@sha256:5d26415966d404f314a45b7952a9b2e6f9a9fee1b535e8bebd123ff904111b74 | tar -tvz | grep -v -e '^d' | grep -v -e '^c'
