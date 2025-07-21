@@ -24,7 +24,6 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 
 	"chainguard.dev/apko/pkg/apk/apk"
