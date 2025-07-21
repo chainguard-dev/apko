@@ -404,7 +404,7 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 
 			// Ensure parent directory exists in the tar.
 			if err := w.w.WriteHeader(&tar.Header{
-				Name:     filepath.Dir(idb.Name),
+				Name:     path.Dir(idb.Name),
 				Typeflag: tar.TypeDir,
 				Mode:     idb.Mode,
 				ModTime:  idb.ModTime,
