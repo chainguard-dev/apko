@@ -15,11 +15,16 @@
 package build
 
 import (
+	"archive/tar"
+	"context"
 	"fmt"
+	"io"
+	"os"
 	"slices"
 	"testing"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 func size(pkgs ...*apk.Package) uint64 {
@@ -223,4 +228,123 @@ func compareStacks(a, b []*file) error {
 	}
 
 	return nil
+}
+
+func TestSplitLayersDirectoryCreation(t *testing.T) {
+	// Create a minimal filesystem with an installed DB file
+	fsys := apkfs.NewMemFS()
+
+	// Create the parent directories first
+	if err := fsys.MkdirAll("usr/lib/apk/db", 0755); err != nil {
+		t.Fatalf("failed to create parent directories: %v", err)
+	}
+
+	// Create the installed DB file with some content
+	idbContent := []byte("test db content")
+	if err := fsys.WriteFile("usr/lib/apk/db/installed", idbContent, 0644); err != nil {
+		t.Fatalf("failed to create installed DB file: %v", err)
+	}
+
+	// Create test packages for multiple layers
+	pkg1 := &apk.Package{
+		Name:          "pkg1",
+		Origin:        "pkg1",
+		Version:       "1.0.0",
+		InstalledSize: 1000,
+	}
+	pkg2 := &apk.Package{
+		Name:          "pkg2",
+		Origin:        "pkg2",
+		Version:       "1.0.0",
+		InstalledSize: 2000,
+	}
+
+	// Create package groups (this will result in multiple layers)
+	groups := []*group{
+		{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"},
+		{pkgs: []*apk.Package{pkg2}, size: 2000, tiebreaker: "pkg2"},
+	}
+
+	// Create package diffs (minimal content for each package)
+	pkgToDiff := map[*apk.Package][]byte{
+		pkg1: []byte("pkg1 info\n"),
+		pkg2: []byte("pkg2 info\n"),
+	}
+
+	// Create temp directory for layer files
+	tmpDir, err := os.MkdirTemp("", "layer-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Call splitLayers to create the layers
+	ctx := context.Background()
+	layers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir)
+	if err != nil {
+		t.Fatalf("splitLayers failed: %v", err)
+	}
+
+	// We expect 3 layers: one for each package group + top layer
+	if len(layers) != 3 {
+		t.Fatalf("expected 3 layers, got %d", len(layers))
+	}
+
+	wantDirs := map[string]struct{}{
+		"usr":            {},
+		"usr/lib":        {},
+		"usr/lib/apk":    {},
+		"usr/lib/apk/db": {},
+	}
+
+	foundDirs := map[string]struct{}{}
+
+	// Check each of the first 2 layers (package layers) for directory and file
+	for i := range 2 {
+		layer := layers[i]
+
+		// Get layer content as tar reader
+		rc, err := layer.Uncompressed()
+		if err != nil {
+			t.Fatalf("failed to get layer %d content: %v", i, err)
+		}
+
+		tr := tar.NewReader(rc)
+
+		for {
+			header, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("failed to read tar entry in layer %d: %v", i, err)
+			}
+
+			// Check for the parent directory
+			if _, ok := wantDirs[header.Name]; ok && header.Typeflag == tar.TypeDir {
+				foundDirs[header.Name] = struct{}{}
+			}
+
+			// Check for the installed DB file
+			if header.Name == "usr/lib/apk/db/installed" && header.Typeflag == tar.TypeReg {
+				// Verify the file has content
+				content, err := io.ReadAll(tr)
+				if err != nil {
+					t.Fatalf("failed to read installed DB content in layer %d: %v", i, err)
+				}
+				if len(content) == 0 {
+					t.Errorf("installed DB file in layer %d is empty", i)
+				}
+			}
+		}
+
+		rc.Close()
+
+		// Verify both directory and file were found
+		for dir := range wantDirs {
+			if _, ok := foundDirs[dir]; !ok {
+				t.Errorf("layer %d missing parent directory %q - this indicates the directory creation fix is not working", i, dir)
+			}
+		}
+	}
 }
