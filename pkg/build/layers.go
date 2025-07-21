@@ -24,6 +24,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -399,6 +400,16 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 				if _, err := buf.Write(pkgToDiff[pkg]); err != nil {
 					return nil, err
 				}
+			}
+
+			// Ensure parent directory exists in the tar.
+			if err := w.w.WriteHeader(&tar.Header{
+				Name:     filepath.Dir(idb.Name),
+				Typeflag: tar.TypeDir,
+				Mode:     idb.Mode,
+				ModTime:  idb.ModTime,
+			}); err != nil {
+				return nil, fmt.Errorf("writing header for usr/lib/apk/db/: %w", err)
 			}
 
 			// Only the size should be different across layers.
