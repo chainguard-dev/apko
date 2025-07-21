@@ -238,7 +238,7 @@ func TestSplitLayersDirectoryCreation(t *testing.T) {
 	if err := fsys.MkdirAll("usr/lib/apk/db", 0755); err != nil {
 		t.Fatalf("failed to create parent directories: %v", err)
 	}
-	
+
 	// Create the installed DB file with some content
 	idbContent := []byte("test db content")
 	if err := fsys.WriteFile("usr/lib/apk/db/installed", idbContent, 0644); err != nil {
@@ -351,7 +351,7 @@ func TestSplitLayersDirectoryCreation(t *testing.T) {
 
 		// The critical test: in a valid tar, directories must come before files
 		// If the directory creation code is missing, the tar will be malformed
-		var dirIndex, fileIndex int = -1, -1
+		var dirIndex, fileIndex = -1, -1
 		for j, entry := range entries {
 			if entry == "usr/lib/apk/db" {
 				dirIndex = j
