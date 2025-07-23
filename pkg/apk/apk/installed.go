@@ -339,12 +339,17 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 				Gid:      0,
 				Typeflag: tar.TypeDir,
 			}
-			pkg.Files = append(pkg.Files, *lastDir)
+			if val != "" {
+				pkg.Files = append(pkg.Files, *lastDir)
+			}
 			lastFile = nil
 		case "M":
 			// directory perms if not 0o755
 			if lastDir == nil {
 				return nil, fmt.Errorf("cannot parse line %d: no directory specified when setting permissions", linenr)
+			}
+			if lastDir.Name == "" {
+				return nil, fmt.Errorf("cannot parse line %d: M entry cannot be associated with top level dir", linenr)
 			}
 			uid, gid, perms, err := parseInstalledPerms(val)
 			if err != nil {

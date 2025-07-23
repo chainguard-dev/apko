@@ -24,10 +24,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -357,6 +360,157 @@ func TestSortTarHeaders(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.expected, resultHeaderNames)
+		})
+	}
+}
+
+func TestParseInstalledPackages(t *testing.T) {
+	for _, c := range []struct {
+		installedFile string
+		errExp        string
+		want          []string
+	}{{
+		installedFile: "wolfi-base",
+		want: []string{
+			"apk-tools",
+			"busybox",
+			"ca-certificates-bundle",
+			"glibc",
+			"glibc-locale-posix",
+			"ld-linux",
+			"libcrypt1",
+			"libcrypto3",
+			"libgcc",
+			"libssl3",
+			"libxcrypt",
+			"wolfi-base",
+			"wolfi-baselayout",
+			"wolfi-keys",
+			"zlib",
+		},
+	}, {
+		installedFile: "redis-operator-compat",
+		want: []string{
+			"apk-tools",
+			"busybox",
+			"ca-certificates-bundle",
+			"glibc",
+			"glibc-locale-posix",
+			"ld-linux",
+			"libcrypt1",
+			"libcrypto3",
+			"libgcc",
+			"libssl3",
+			"libxcrypt",
+			"redis-operator-compat",
+			"wolfi-base",
+			"wolfi-baselayout",
+			"wolfi-keys",
+			"zlib",
+		},
+	}, {
+		installedFile: "bad-top-level-perms",
+		errExp:        "M entry cannot be associated with top level dir",
+		want:          []string{},
+	}} {
+		t.Run(c.installedFile, func(t *testing.T) {
+			f, err := os.Open("testdata/installed/" + c.installedFile)
+			if err != nil {
+				t.Fatalf("opening installed: %v", err)
+			}
+			defer f.Close()
+
+			installedPkgs, err := ParseInstalled(f)
+			if c.errExp != "" {
+				assert.Error(t, err, "ParseInstalledPackages(): Expected error but found none")
+				if err != nil {
+					assert.Contains(t, err.Error(), c.errExp)
+				}
+				return
+			} else if err != nil {
+				t.Fatalf("ParseInstalledPackages(): %v", err)
+			}
+			got := []string{}
+			for _, i := range installedPkgs {
+				got = append(got, i.Name)
+			}
+			sort.Strings(got)
+			sort.Strings(c.want)
+
+			if d := cmp.Diff(c.want, got); d != "" {
+				t.Errorf("ParseInstalledPackages() mismatch (-want  got):\n%s", d)
+			}
+		})
+	}
+}
+
+func TestParseInstalledFiles(t *testing.T) {
+	for _, c := range []struct {
+		installedFile string
+		pkgName       string
+		want          []string
+	}{{
+		installedFile: "wolfi-base",
+		pkgName:       "ld-linux",
+		want: []string{
+			"etc",
+			"etc/ld.so.conf",
+			"etc/ld.so.conf.d",
+			"etc/ld.so.conf.d/libc.conf",
+			"usr",
+			"usr/lib",
+			"usr/lib/ld-linux-x86-64.so.2",
+			"var",
+			"var/lib",
+			"var/lib/db",
+			"var/lib/db/sbom",
+			"var/lib/db/sbom/ld-linux-2.41-r55.spdx.json",
+		},
+	}, {
+		installedFile: "redis-operator-compat",
+		pkgName:       "redis-operator-compat",
+		want: []string{
+			"operator",
+			"var",
+			"var/lib",
+			"var/lib/db",
+			"var/lib/db/sbom",
+			"var/lib/db/sbom/redis-operator-compat-0.21.0-r1.spdx.json",
+		},
+	}} {
+		t.Run(c.installedFile, func(t *testing.T) {
+			f, err := os.Open("testdata/installed/" + c.installedFile)
+			if err != nil {
+				t.Fatalf("opening installed: %v", err)
+			}
+			defer f.Close()
+
+			installedPkgs, err := ParseInstalled(f)
+			if err != nil {
+				t.Fatalf("ParseInstalledFiles(): %v", err)
+			}
+
+			var installedPkg *InstalledPackage
+			for _, i := range installedPkgs {
+				if i.Name == c.pkgName {
+					installedPkg = i
+					break
+				}
+			}
+			if installedPkg == nil {
+				t.Fatalf("package %s not found installed in %s\n", c.pkgName, c.installedFile)
+			}
+
+			got := []string{}
+			for _, i := range installedPkg.Files {
+				got = append(got, i.Name)
+			}
+			sort.Strings(got)
+			sort.Strings(c.want)
+
+			if d := cmp.Diff(c.want, got); d != "" {
+				t.Errorf("ParseInstalledFiles() mismatch (-want  got):\n%s", d)
+			}
 		})
 	}
 }
