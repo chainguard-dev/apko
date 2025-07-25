@@ -154,10 +154,11 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			DeepChecksum: o.ImageConfigChecksum,
 		},
 		Contents: pkglock.LockContents{
-			Packages:          make([]pkglock.LockPkg, 0, len(ic.Contents.Packages)),
-			BuildRepositories: make([]pkglock.LockRepo, 0, len(ic.Contents.BuildRepositories)),
-			Repositories:      make([]pkglock.LockRepo, 0, len(ic.Contents.Repositories)),
-			Keyrings:          make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
+			Packages:                make([]pkglock.LockPkg, 0, len(ic.Contents.Packages)),
+			BuildRepositories:       make([]pkglock.LockRepo, 0, len(ic.Contents.BuildRepositories)),
+			RuntimeOnlyRepositories: make([]pkglock.LockRepo, 0, len(ic.Contents.RuntimeOnlyRepositories)),
+			Repositories:            make([]pkglock.LockRepo, 0, len(ic.Contents.Repositories)),
+			Keyrings:                make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
 		},
 	}
 
@@ -216,39 +217,45 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
 		}
 		for _, repositoryURI := range ic.Contents.BuildRepositories {
-			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			name, err := RemoveLabel(stripURLScheme(repo.URI))
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+				return fmt.Errorf("locking build repositories: %w", err)
 			}
-			url, err := RemoveLabel(repo.IndexURI())
+			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, repoLock)
+		}
+		for _, repositoryURI := range ic.Contents.RuntimeOnlyRepositories {
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
+				return fmt.Errorf("locking runtime repositories: %w", err)
 			}
-			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, pkglock.LockRepo{
-				Name:         name,
-				URL:          url,
-				Architecture: arch.ToAPK(),
-			})
+			lock.Contents.RuntimeOnlyRepositories = append(lock.Contents.RuntimeOnlyRepositories, repoLock)
 		}
 		for _, repositoryURI := range ic.Contents.Repositories {
-			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			name, err := RemoveLabel(stripURLScheme(repo.URI))
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+				return fmt.Errorf("locking repositories: %w", err)
 			}
-			url, err := RemoveLabel(repo.IndexURI())
-			if err != nil {
-				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
-			}
-			lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
-				Name:         name,
-				URL:          url,
-				Architecture: arch.ToAPK(),
-			})
+			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
 	return lock.SaveToFile(output)
+}
+
+func repoLock(repositoryURI string, arch types.Architecture) (pkglock.LockRepo, error) {
+	repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+	name, err := RemoveLabel(stripURLScheme(repo.URI))
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository URI: %w", err)
+	}
+	url, err := RemoveLabel(repo.IndexURI())
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository index URI: %w", err)
+	}
+	return pkglock.LockRepo{
+		Name:         name,
+		URL:          url,
+		Architecture: arch.ToAPK(),
+	}, nil
 }
 
 func stripURLScheme(url string) string {

@@ -12,6 +12,7 @@
       }
     ],
     "build_repositories": [],
+    "runtime_repositories": [],
     "repositories": [
       {
         "name": "./testdata/packages/x86_64",

@@ -73,19 +73,9 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 		}
 	}
 
-	repos := make([]string, 0, len(ic.Contents.Repositories))
-	for _, repo := range ic.Contents.Repositories {
-		repo = strings.TrimRight(repo, "/")
-		repos = append(repos, repo)
-	}
-	ic.Contents.Repositories = repos
-
-	buildRepos := make([]string, 0, len(ic.Contents.BuildRepositories))
-	for _, repo := range ic.Contents.BuildRepositories {
-		repo = strings.TrimRight(repo, "/")
-		buildRepos = append(buildRepos, repo)
-	}
-	ic.Contents.BuildRepositories = buildRepos
+	ic.Contents.BuildRepositories = trimRepos(ic.Contents.BuildRepositories)
+	ic.Contents.RuntimeOnlyRepositories = trimRepos(ic.Contents.RuntimeOnlyRepositories)
+	ic.Contents.Repositories = trimRepos(ic.Contents.Repositories)
 
 	// The top level components restriction is on the conservative side. Some of them would probably work out of the box.
 	// If someone needs any of them, it should be a matter of testing and hopefully doing minor changes.
@@ -103,6 +93,15 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 	}
 
 	return nil
+}
+
+func trimRepos(repos []string) []string {
+	result := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		repo = strings.TrimRight(repo, "/")
+		result = append(result, repo)
+	}
+	return result
 }
 
 // Merge this configuration into the target, with the target taking precedence.
@@ -166,6 +165,7 @@ func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 func (i *ImageContents) MergeInto(target *ImageContents) error {
 	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
 	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
+	target.RuntimeOnlyRepositories = slices.Concat(i.RuntimeOnlyRepositories, target.RuntimeOnlyRepositories)
 	target.Repositories = slices.Concat(i.Repositories, target.Repositories)
 	target.Packages = slices.Concat(i.Packages, target.Packages)
 	if target.BaseImage == nil {
@@ -244,6 +244,7 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 	log.Infof("image configuration:")
 	log.Infof("  contents:")
 	log.Infof("    build repositories: %v", ic.Contents.BuildRepositories)
+	log.Infof("    runtime repositories: %v", ic.Contents.RuntimeOnlyRepositories)
 	log.Infof("    repositories: %v", ic.Contents.Repositories)
 	log.Infof("    keyring:      %v", ic.Contents.Keyring)
 	log.Infof("    packages:     %v", ic.Contents.Packages)
