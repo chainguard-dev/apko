@@ -352,7 +352,7 @@ func (f *dirFS) Create(name string) (File, error) {
 	if f.createOnDisk(name) {
 		// close the memory one
 		_ = file.Close()
-		file, err = os.Create(filepath.Join(f.base, name))
+		file, err = os.OpenFile(filepath.Join(f.base, name), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 		if err != nil {
 			return nil, err
 		}

@@ -99,7 +99,7 @@ func BuildCPIOCmd(ctx context.Context, dest string, opts ...build.Option) error 
 
 	// Create the CPIO file, and set up a deduplicating writer
 	// to produce the gzip-compressed CPIO archive.
-	f, err := os.Create(dest)
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
