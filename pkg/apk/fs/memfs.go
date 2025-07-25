@@ -392,7 +392,9 @@ func (m *memFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 }
 
 func (m *memFS) Create(name string) (File, error) {
-	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o666)
+	// we are not honoring umask here, so choose a safer default than
+	// 0o666 used by os.Create()
+	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 }
 
 func (m *memFS) Symlink(oldname, newname string) error {

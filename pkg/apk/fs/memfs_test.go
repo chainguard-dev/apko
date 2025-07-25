@@ -450,3 +450,16 @@ func TestMemFSConsistentOrdering(t *testing.T) {
 	}
 	// all results should be the same
 }
+func TestMemFSCreate(t *testing.T) {
+	var (
+		m   = NewMemFS()
+		err error
+	)
+	fd, err := m.Create("testfile")
+	require.NoError(t, err)
+	defer fd.Close()
+
+	fileInfo, err := fd.Stat()
+	require.NoError(t, err)
+	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
+}
