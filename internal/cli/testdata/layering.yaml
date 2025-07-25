@@ -3,6 +3,8 @@ contents:
     - ./testdata/melange.rsa.pub
   build_repositories:
     - ./packages
+  runtime_repositories:
+    - apk.cgr.dev/runtime-only-repo
   repositories:
     - ./testdata/packages
   packages:

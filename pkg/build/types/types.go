@@ -79,6 +79,9 @@ type ImageContents struct {
 	// which are not installed into /etc/apk/repositories in the image (to
 	// install packages at runtime)
 	BuildRepositories []string `json:"build_repositories,omitempty" yaml:"build_repositories,omitempty"`
+	// A list of apk repositories that are installed into /etc/apk/repositories in the image but not used
+	// at build time
+	RuntimeRepositories []string `json:"runtime_repositories,omitempty" yaml:"runtime_repositories,omitempty"`
 	// A list of apk repositories to use for pulling packages during both the
 	// initial construction of the image, and also at runtime by seeding them
 	// into /etc/apk/repositories in the resulting image.
