@@ -30,7 +30,7 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 	//
 	// We do not include the build-time repositories here, because this is
 	// what defines the /etc/apk/repositories file in the final image.
-	runtimeRepos := sets.List(sets.New(bc.ic.Contents.RuntimeRepositories...).Insert(bc.o.ExtraRuntimeRepos...))
+	runtimeRepos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRuntimeRepos...))
 	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
 		return fmt.Errorf("failed to set apk repositories: %w", err)
 	}
@@ -47,7 +47,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	// with just the runtime repositories when we are done.
 	buildRepos := sets.List(
 		sets.New(bc.ic.Contents.BuildRepositories...).
-			Insert(bc.ic.Contents.RuntimeRepositories...).
+			Insert(bc.ic.Contents.Repositories...).
 			Insert(bc.o.ExtraBuildRepos...).
 			Insert(bc.o.ExtraRuntimeRepos...),
 	)
