@@ -73,12 +73,12 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 		}
 	}
 
-	runtimeRepos := make([]string, 0, len(ic.Contents.RuntimeRepositories))
-	for _, repo := range ic.Contents.RuntimeRepositories {
+	repos := make([]string, 0, len(ic.Contents.Repositories))
+	for _, repo := range ic.Contents.Repositories {
 		repo = strings.TrimRight(repo, "/")
-		runtimeRepos = append(runtimeRepos, repo)
+		repos = append(repos, repo)
 	}
-	ic.Contents.RuntimeRepositories = runtimeRepos
+	ic.Contents.Repositories = repos
 
 	buildRepos := make([]string, 0, len(ic.Contents.BuildRepositories))
 	for _, repo := range ic.Contents.BuildRepositories {
@@ -166,7 +166,7 @@ func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 func (i *ImageContents) MergeInto(target *ImageContents) error {
 	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
 	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
-	target.RuntimeRepositories = slices.Concat(i.RuntimeRepositories, target.RuntimeRepositories)
+	target.Repositories = slices.Concat(i.Repositories, target.Repositories)
 	target.Packages = slices.Concat(i.Packages, target.Packages)
 	if target.BaseImage == nil {
 		target.BaseImage = i.BaseImage
@@ -244,7 +244,7 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 	log.Infof("image configuration:")
 	log.Infof("  contents:")
 	log.Infof("    build repositories: %v", ic.Contents.BuildRepositories)
-	log.Infof("    runtime repositories: %v", ic.Contents.RuntimeRepositories)
+	log.Infof("    repositories: %v", ic.Contents.Repositories)
 	log.Infof("    keyring:      %v", ic.Contents.Keyring)
 	log.Infof("    packages:     %v", ic.Contents.Packages)
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
