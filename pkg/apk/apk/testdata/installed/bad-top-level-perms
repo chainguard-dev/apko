@@ -1,0 +1,24 @@
+C:Q1R4MwduR1pAnDMb+3kQscmyNxJPY=
+P:redis-operator-compat
+V:0.21.0-r1
+A:x86_64
+S:8129
+I:24072
+T:Compat package for redis-operator
+U:
+L:Apache-2.0
+o:redis-operator
+m:wolfi
+t:1752842988
+c:b0ab5e2e7fad981f5ca302a7b7f999f307e1ba85
+F:
+R:operator
+M:0:0:711
+a:0:0:777
+Z:Q1MpwFRrS6f7TyQUedTVkbLp8sNh4=
+F:var
+F:var/lib
+F:var/lib/db
+F:var/lib/db/sbom
+R:redis-operator-compat-0.21.0-r1.spdx.json
+Z:Q1wMbPeM/CWPzG1y2WCeFRhtw6FkA=

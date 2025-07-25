@@ -23,7 +23,9 @@ import (
 // Sanitize archive file pathing from "G305: Zip Slip vulnerability"
 func sanitizeArchivePath(d, t string) (v string, err error) {
 	v = filepath.Join(d, t)
-	if strings.HasPrefix(v, filepath.Clean(d)) {
+
+	// top level content have a directory of "". filepath.Clean("") returns .
+	if d == "" || strings.HasPrefix(v, filepath.Clean(d)) {
 		return v, nil
 	}
 
