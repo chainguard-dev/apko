@@ -131,6 +131,15 @@ func WithExtraBuildRepos(repos []string) Option {
 	}
 }
 
+// WithExtraRuntimeRepos adds repos to be used at both image build-time and image run-time.
+// A future version of apko will only add these repos to the list of runtime repos, as the name suggests.
+func WithExtraRuntimeRepos(repos []string) Option {
+	return func(bc *Context) error {
+		bc.o.ExtraRepos = repos
+		return nil
+	}
+}
+
 func WithExtraRepos(repos []string) Option {
 	return func(bc *Context) error {
 		bc.o.ExtraRepos = repos
