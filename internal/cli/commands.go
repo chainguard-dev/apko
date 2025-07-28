@@ -62,6 +62,7 @@ func New() *cobra.Command {
 	cmd.AddCommand(lock())
 	cmd.AddCommand(resolve())
 	cmd.AddCommand(installKeys())
+	cmd.AddCommand(cleanCmd())
 	cmd.AddCommand(version.Version())
 
 	cmd.PersistentFlags().StringVarP(&workDir, "workdir", "C", cwd, "working dir (default is current dir where executed)")
