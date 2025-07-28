@@ -36,7 +36,7 @@ func buildCPIO() *cobra.Command {
 	var sbomPath string
 	var extraKeys []string
 	var extraBuildRepos []string
-	var extraRuntimeRepos []string
+	var extraRepos []string
 	var extraPackages []string
 
 	cmd := &cobra.Command{
@@ -51,7 +51,7 @@ func buildCPIO() *cobra.Command {
 				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
-				build.WithExtraRuntimeRepos(extraRuntimeRepos),
+				build.WithExtraRepos(extraRepos),
 				build.WithExtraPackages(extraPackages),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
@@ -65,7 +65,7 @@ func buildCPIO() *cobra.Command {
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 
 	return cmd

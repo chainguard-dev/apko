@@ -131,9 +131,9 @@ func WithExtraBuildRepos(repos []string) Option {
 	}
 }
 
-func WithExtraRuntimeRepos(repos []string) Option {
+func WithExtraRepos(repos []string) Option {
 	return func(bc *Context) error {
-		bc.o.ExtraRuntimeRepos = repos
+		bc.o.ExtraRepos = repos
 		return nil
 	}
 }
