@@ -167,7 +167,7 @@ func TestPublishLayering(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:d930d3cea6e6b1e53f388302a0bbe6ddff31db9952a667ed2ab6b93c1eeade6c"
+	want := "sha256:66dc21761826860d1152e8a6defa7919ad3f65af5d56fd75164c4c36ba85c648"
 	require.Equal(t, want, digest.String())
 
 	im, err := idx.IndexManifest()
@@ -195,9 +195,6 @@ func TestPublishLayering(t *testing.T) {
 
 		if strings.Contains(string(b), "./packages") {
 			t.Errorf("etc/apk/repositories contains build_repositories entry %q", "./packages")
-		}
-		if !strings.Contains(string(b), "apk.cgr.dev/runtime-only-repo") {
-			t.Errorf("etc/apk/repositories does not contain expected runtime_repositories entry %q", "apk.cgr.dev/runtime-only-repo")
 		}
 	}
 }

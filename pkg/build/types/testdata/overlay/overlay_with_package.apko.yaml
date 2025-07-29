@@ -3,7 +3,5 @@ include: testdata/overlay/overlay.apko.yaml
 contents:
   build_repositories:
     - "other_secret repository"
-  runtime_repositories:
-    - "other runtime repository"
   packages:
     - "other_package"
