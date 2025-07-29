@@ -148,6 +148,13 @@
           "type": "array",
           "description": "A list of apk repositories to use for pulling packages at build time,\nwhich are not installed into /etc/apk/repositories in the image (to\ninstall packages at runtime)"
         },
+        "runtime_repositories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of apk repositories that are installed into /etc/apk/repositories in the image but not used\nat build time"
+        },
         "repositories": {
           "items": {
             "type": "string"

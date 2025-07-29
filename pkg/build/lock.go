@@ -41,7 +41,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 	}
 
 	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
-	input.Contents.RuntimeRepositories = sets.List(sets.New(input.Contents.RuntimeRepositories...).Insert(o.ExtraRuntimeRepos...))
+	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
 	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
 
 	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)

@@ -27,7 +27,8 @@ func TestOverlayWithEmptyContents(t *testing.T) {
 
 	require.NoError(t, ic.Load(ctx, configPath, []string{"testdata"}, hasher))
 	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository"})
-	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"repository"})
+	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"runtime repository"})
+	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package"})
 }
@@ -41,7 +42,8 @@ func TestOverlayWithAdditionalPackages(t *testing.T) {
 
 	require.NoError(t, ic.Load(ctx, configPath, []string{}, hasher))
 	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository", "other_secret repository"})
-	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"repository"})
+	require.ElementsMatch(t, ic.Contents.RuntimeRepositories, []string{"runtime repository", "other runtime repository"})
+	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
 	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package", "other_package"})
 }
@@ -75,10 +77,10 @@ func TestMergeInto(t *testing.T) {
 		name: "simple blend of contents",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo"},
-				BuildRepositories:   []string{"foo"},
-				RuntimeRepositories: []string{"foo"},
-				Packages:            []string{"foo"},
+				Keyring:           []string{"foo"},
+				BuildRepositories: []string{"foo"},
+				Repositories:      []string{"foo"},
+				Packages:          []string{"foo"},
 			},
 			Environment: map[string]string{
 				"EXTRA": "foo",
@@ -94,18 +96,18 @@ func TestMergeInto(t *testing.T) {
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"bar"},
-				BuildRepositories:   []string{"bar"},
-				RuntimeRepositories: []string{"bar"},
-				Packages:            []string{"bar"},
+				Keyring:           []string{"bar"},
+				BuildRepositories: []string{"bar"},
+				Repositories:      []string{"bar"},
+				Packages:          []string{"bar"},
 			},
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo", "bar"},
-				BuildRepositories:   []string{"foo", "bar"},
-				RuntimeRepositories: []string{"foo", "bar"},
-				Packages:            []string{"foo", "bar"},
+				Keyring:           []string{"foo", "bar"},
+				BuildRepositories: []string{"foo", "bar"},
+				Repositories:      []string{"foo", "bar"},
+				Packages:          []string{"foo", "bar"},
 			},
 			Environment: map[string]string{
 				"EXTRA": "foo",
@@ -123,36 +125,36 @@ func TestMergeInto(t *testing.T) {
 		name: "simple blend of contents",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo"},
-				BuildRepositories:   []string{"foo"},
-				RuntimeRepositories: []string{"foo"},
-				Packages:            []string{"foo"},
+				Keyring:           []string{"foo"},
+				BuildRepositories: []string{"foo"},
+				Repositories:      []string{"foo"},
+				Packages:          []string{"foo"},
 			},
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"bar"},
-				BuildRepositories:   []string{"bar"},
-				RuntimeRepositories: []string{"bar"},
-				Packages:            []string{"bar"},
+				Keyring:           []string{"bar"},
+				BuildRepositories: []string{"bar"},
+				Repositories:      []string{"bar"},
+				Packages:          []string{"bar"},
 			},
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo", "bar"},
-				BuildRepositories:   []string{"foo", "bar"},
-				RuntimeRepositories: []string{"foo", "bar"},
-				Packages:            []string{"foo", "bar"},
+				Keyring:           []string{"foo", "bar"},
+				BuildRepositories: []string{"foo", "bar"},
+				Repositories:      []string{"foo", "bar"},
+				Packages:          []string{"foo", "bar"},
 			},
 		},
 	}, {
 		name: "conflict resolution",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo"},
-				BuildRepositories:   []string{"foo"},
-				RuntimeRepositories: []string{"foo"},
-				Packages:            []string{"foo"},
+				Keyring:           []string{"foo"},
+				BuildRepositories: []string{"foo"},
+				Repositories:      []string{"foo"},
+				Packages:          []string{"foo"},
 			},
 			Cmd:        "foo",
 			StopSignal: "foo",
@@ -197,10 +199,10 @@ func TestMergeInto(t *testing.T) {
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:             []string{"foo"},
-				BuildRepositories:   []string{"foo"},
-				RuntimeRepositories: []string{"foo"},
-				Packages:            []string{"foo"},
+				Keyring:           []string{"foo"},
+				BuildRepositories: []string{"foo"},
+				Repositories:      []string{"foo"},
+				Packages:          []string{"foo"},
 			},
 			Cmd:        "bar",
 			StopSignal: "bar",
