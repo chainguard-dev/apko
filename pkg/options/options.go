@@ -40,7 +40,7 @@ type Options struct {
 	SBOMFormats             []string           `json:"sbomFormats,omitempty"`
 	ExtraKeyFiles           []string           `json:"extraKeyFiles,omitempty"`
 	ExtraBuildRepos         []string           `json:"extraBuildRepos,omitempty"`
-	ExtraRepos              []string           `json:"extraRepos,omitempty"`
+	ExtraRuntimeRepos       []string           `json:"extraRepos,omitempty"`
 	ExtraPackages           []string           `json:"extraPackages,omitempty"`
 	Arch                    types.Architecture `json:"arch,omitempty"`
 	TempDirPath             string             `json:"tempDirPath,omitempty"`

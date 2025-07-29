@@ -79,13 +79,10 @@ type ImageContents struct {
 	// which are not installed into /etc/apk/repositories in the image (to
 	// install packages at runtime)
 	BuildRepositories []string `json:"build_repositories,omitempty" yaml:"build_repositories,omitempty"`
-	// A list of apk repositories that are installed into /etc/apk/repositories in the image but not used
-	// at build time
-	RuntimeRepositories []string `json:"runtime_repositories,omitempty" yaml:"runtime_repositories,omitempty"`
 	// A list of apk repositories to use for pulling packages during both the
 	// initial construction of the image, and also at runtime by seeding them
 	// into /etc/apk/repositories in the resulting image.
-	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
+	RuntimeRepositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
@@ -109,13 +106,13 @@ func (i ImageContents) MarshalYAML() (interface{}, error) {
 		ri.BuildRepositories[idx] = parsed.Redacted()
 	}
 
-	for idx, repo := range ri.Repositories {
+	for idx, repo := range ri.RuntimeRepositories {
 		rawURL := repo
 		parsed, err := url.Parse(rawURL)
 		if err != nil {
 			return nil, fmt.Errorf("parsing repository URL: %w", err)
 		}
-		ri.Repositories[idx] = parsed.Redacted()
+		ri.RuntimeRepositories[idx] = parsed.Redacted()
 	}
 
 	for idx, key := range ri.Keyring {
