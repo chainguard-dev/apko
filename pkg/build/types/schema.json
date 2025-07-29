@@ -122,7 +122,7 @@
         },
         "include": {
           "type": "string",
-          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration\n\nDeprecated: This will be removed in a future release."
+          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration\n"
         },
         "volumes": {
           "items": {
