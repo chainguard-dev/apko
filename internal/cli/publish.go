@@ -46,7 +46,7 @@ func publish() *cobra.Command {
 	var archstrs []string
 	var extraKeys []string
 	var extraBuildRepos []string
-	var extraRuntimeRepos []string
+	var extraRepos []string
 	var extraPackages []string
 	var rawAnnotations []string
 	var withVCS bool
@@ -112,7 +112,7 @@ in a keychain.`,
 					build.WithSBOMFormats(sbomFormats),
 					build.WithExtraKeys(extraKeys),
 					build.WithExtraBuildRepos(extraBuildRepos),
-					build.WithExtraRuntimeRepos(extraRuntimeRepos),
+					build.WithExtraRepos(extraRepos),
 					build.WithExtraPackages(extraPackages),
 					build.WithTags(args[1:]...),
 					build.WithVCS(withVCS),
@@ -142,7 +142,7 @@ in a keychain.`,
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
