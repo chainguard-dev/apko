@@ -288,6 +288,92 @@ func TestUpdateTriggers(t *testing.T) {
 	t.Errorf("could not find entry for checksum: %s", cksum)
 }
 
+func TestPathCompare(t *testing.T) {
+	cases := []struct {
+		name     string
+		p1       string
+		p1Dir    bool
+		p2       string
+		p2Dir    bool
+		expected int
+	}{
+		{"top file equal", "a.txt", false, "a.txt", false, 0},
+		{"top file greater", "b.txt", false, "a.txt", false, 1},
+		{"top file less", "a.txt", false, "b.txt", false, -1},
+		{"top dir  equal", "aDir", true, "aDir", true, 0},
+		{"top dir  greater", "bDir", true, "aDir", true, 1},
+		{"top dir  less", "aDir", true, "bDir", true, -1},
+		{"top file to dir 1", "a", false, "bDir", true, -1},
+		{"top file to dir 2", "b", false, "aDir", true, -1},
+		{"top dir to file 1", "aDir", true, "b", false, 1},
+		{"top dir to file 2", "bDir", true, "a", false, 1},
+		{"diff paths file 1", "/a/file", false, "/b/file", false, -1},
+		{"diff paths file 2", "/a/b/c/d/file", false, "/a/b/c/e/file", false, -1},
+		{"diff paths file 3", "/a/file", false, "/a/b/c/e/file", false, -1},
+		{"diff paths file 4", "/a/b/c/e/file", false, "/a/file", false, 1},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected,
+				pathCompare(tt.p1, tt.p1Dir, tt.p2, tt.p2Dir))
+		})
+	}
+}
+
+func TestTarHeaderSort(t *testing.T) {
+	cases := []struct {
+		name     string
+		headers  []tar.Header
+		expected []string
+	}{
+		{
+			name: "normal",
+			headers: []tar.Header{
+				{Name: "bin", Typeflag: tar.TypeDir},
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/zFile", Typeflag: tar.TypeReg},
+				{Name: "usr/cDir", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "bin/ls", Typeflag: tar.TypeReg},
+				{Name: "bin/busybox"},
+				{Name: "etc", Typeflag: tar.TypeDir},
+				{Name: "etc/logrotate.d", Typeflag: tar.TypeDir},
+				{Name: "etc/logrotate.d/file", Typeflag: tar.TypeReg},
+				{Name: "etc/logrotate.d/file2", Typeflag: tar.TypeReg},
+				{Name: "etc/hosts", Typeflag: tar.TypeReg},
+				{Name: "etc/mylaterfile", Typeflag: tar.TypeReg}, // this is particularly good for testing that it comes before logrotate.d
+			},
+			expected: []string{
+				"bin",
+				"bin/busybox",
+				"bin/ls",
+				"etc",
+				"etc/hosts",
+				"etc/mylaterfile",
+				"etc/logrotate.d",
+				"etc/logrotate.d/file",
+				"etc/logrotate.d/file2",
+				"usr",
+				"usr/zFile",
+				"usr/bin",
+				"usr/cDir",
+			},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			tarHeadersSort(tt.headers)
+
+			var resultHeaderNames []string
+			for _, header := range tt.headers {
+				resultHeaderNames = append(resultHeaderNames, header.Name)
+			}
+
+			assert.Equal(t, tt.expected, resultHeaderNames)
+		})
+	}
+}
+
 func TestSortTarHeaders(t *testing.T) {
 	cases := []struct {
 		name     string
