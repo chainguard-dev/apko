@@ -58,7 +58,7 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 	defer installedFile.Close()
 
 	// sort the files by directory
-	sortedFiles := sortTarHeaders(files)
+	sortedFiles := cleanTarHeaders(files)
 	// package lines
 	pkgLines := PackageToInstalled(pkg)
 	// file lines
@@ -542,12 +542,13 @@ func removeEmptyDirectories(headers []tar.Header) int {
 	return writeIndex
 }
 
-// sortTarHeaders sorts tar headers by name. It ensures that all file children
-// of a directory are listed immediately after the directory itself. This is to
-// support usr/lib/apk/db/installed, which lists full paths for directories, but
-// only the basename for the files, so the last directory entry before a file
-// must be the parent in which it sits.
-func sortTarHeaders(headers []tar.Header) []tar.Header {
+// cleanTarHeaders - return a copy of headers cleaned for apk db.
+//
+// Cleaning consists of
+//  1. sorting (tarHeaderSort)
+//  2. removing orphaned entries
+//  3. removing empty directories
+func cleanTarHeaders(headers []tar.Header) []tar.Header {
 	hCopy := make([]tar.Header, len(headers))
 	copy(hCopy, headers)
 	tarHeadersSort(hCopy)

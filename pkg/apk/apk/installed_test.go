@@ -444,7 +444,7 @@ func TestSortTarHeaders(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			results := sortTarHeaders(tt.headers)
+			results := cleanTarHeaders(tt.headers)
 
 			var resultHeaderNames []string
 			for _, header := range results {
