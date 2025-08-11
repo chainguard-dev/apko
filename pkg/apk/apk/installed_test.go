@@ -597,7 +597,11 @@ func TestRemoveOrphanedEntries(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			results := removeOrphanedEntries(tt.headers)
+			headersCopy := make([]tar.Header, len(tt.headers))
+			copy(headersCopy, tt.headers)
+
+			newLen := removeOrphanedEntries(headersCopy)
+			results := headersCopy[:newLen]
 
 			var resultNames []string
 			for _, header := range results {
@@ -688,7 +692,11 @@ func TestRemoveEmptyDirectories(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			results := removeEmptyDirectories(tt.headers)
+			headersCopy := make([]tar.Header, len(tt.headers))
+			copy(headersCopy, tt.headers)
+
+			newLen := removeEmptyDirectories(headersCopy)
+			results := headersCopy[:newLen]
 
 			var resultNames []string
 			for _, header := range results {
@@ -698,6 +706,103 @@ func TestRemoveEmptyDirectories(t *testing.T) {
 			assert.Equal(t, tt.expected, resultNames)
 		})
 	}
+}
+
+// Benchmark tests for in-place implementations
+
+func BenchmarkRemoveOrphanedEntries(b *testing.B) {
+	// Create test data
+	headers := []tar.Header{
+		{Name: "usr", Typeflag: tar.TypeDir},
+		{Name: "usr/bin", Typeflag: tar.TypeDir},
+		{Name: "usr/bin/cmd1", Typeflag: tar.TypeReg},
+		{Name: "usr/bin/cmd2", Typeflag: tar.TypeReg},
+		{Name: "usr/lib", Typeflag: tar.TypeDir},
+		{Name: "usr/lib/lib1.so", Typeflag: tar.TypeReg},
+		{Name: "etc", Typeflag: tar.TypeDir},
+		{Name: "etc/config1", Typeflag: tar.TypeReg},
+		{Name: "etc/config2", Typeflag: tar.TypeReg},
+		{Name: "orphan/file", Typeflag: tar.TypeReg},      // orphaned - missing "orphan" dir
+		{Name: "usr/share/orphan", Typeflag: tar.TypeReg}, // orphaned - missing "usr/share" dir
+	}
+
+	b.Run("InPlace", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			testHeaders := make([]tar.Header, len(headers))
+			copy(testHeaders, headers)
+			_ = removeOrphanedEntries(testHeaders)
+		}
+	})
+}
+
+func BenchmarkRemoveEmptyDirectories(b *testing.B) {
+	// Create test data with some empty directories
+	headers := []tar.Header{
+		{Name: "usr", Typeflag: tar.TypeDir},
+		{Name: "usr/bin", Typeflag: tar.TypeDir},
+		{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+		{Name: "usr/lib", Typeflag: tar.TypeDir},
+		{Name: "usr/lib/lib.so", Typeflag: tar.TypeReg},
+		{Name: "etc", Typeflag: tar.TypeDir},
+		{Name: "etc/config", Typeflag: tar.TypeReg},
+		{Name: "empty1", Typeflag: tar.TypeDir},              // empty
+		{Name: "empty2", Typeflag: tar.TypeDir},              // empty
+		{Name: "empty3", Typeflag: tar.TypeDir},              // empty
+		{Name: "parent_empty", Typeflag: tar.TypeDir},        // parent of only empty dirs
+		{Name: "parent_empty/child1", Typeflag: tar.TypeDir}, // empty child
+		{Name: "parent_empty/child2", Typeflag: tar.TypeDir}, // empty child
+	}
+
+	b.Run("InPlace", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			testHeaders := make([]tar.Header, len(headers))
+			copy(testHeaders, headers)
+			_ = removeEmptyDirectories(testHeaders)
+		}
+	})
+}
+
+func BenchmarkLargeDataset(b *testing.B) {
+	// Create a larger, more realistic dataset
+	var headers []tar.Header
+
+	// Add many directories and files
+	for i := 0; i < 100; i++ {
+		dirName := fmt.Sprintf("dir%d", i)
+		headers = append(headers, tar.Header{Name: dirName, Typeflag: tar.TypeDir})
+
+		for j := 0; j < 10; j++ {
+			fileName := fmt.Sprintf("%s/file%d", dirName, j)
+			headers = append(headers, tar.Header{Name: fileName, Typeflag: tar.TypeReg})
+		}
+
+		// Add some subdirectories
+		for k := 0; k < 3; k++ {
+			subDirName := fmt.Sprintf("%s/subdir%d", dirName, k)
+			headers = append(headers, tar.Header{Name: subDirName, Typeflag: tar.TypeDir})
+
+			// Some subdirs are empty, some have files
+			if k%2 == 0 {
+				subFileName := fmt.Sprintf("%s/subfile", subDirName)
+				headers = append(headers, tar.Header{Name: subFileName, Typeflag: tar.TypeReg})
+			}
+		}
+	}
+
+	// Add some orphaned entries
+	for i := 0; i < 10; i++ {
+		orphanFile := fmt.Sprintf("missing_parent%d/orphan%d", i, i)
+		headers = append(headers, tar.Header{Name: orphanFile, Typeflag: tar.TypeReg})
+	}
+
+	b.Run("InPlace", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			testHeaders := make([]tar.Header, len(headers))
+			copy(testHeaders, headers)
+			newLen1 := removeOrphanedEntries(testHeaders)
+			_ = removeEmptyDirectories(testHeaders[:newLen1])
+		}
+	})
 }
 
 func TestParseInstalledFiles(t *testing.T) {

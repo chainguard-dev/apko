@@ -418,19 +418,21 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 //
 //		TestSortTarHeaders/intermediate_dirs_in_the_tree_should_be_required_to_preserve_children
 //	 test fails without this functionality.
-func removeOrphanedEntries(headers []tar.Header) []tar.Header {
+//
+// Works in-place by rearranging the slice and returns the new length.
+func removeOrphanedEntries(headers []tar.Header) int {
 	if len(headers) == 0 {
-		return headers
+		return 0
 	}
 
 	// Build a set of all directory paths (with and without trailing slashes)
 	dirPaths := make(map[string]bool)
-	for _, header := range headers {
-		if header.Typeflag == tar.TypeDir {
+	for i := 0; i < len(headers); i++ {
+		if headers[i].Typeflag == tar.TypeDir {
 			// Add both versions of the path (with and without trailing slash)
-			cleanPath := strings.TrimSuffix(header.Name, "/")
+			cleanPath := strings.TrimSuffix(headers[i].Name, "/")
 			dirPaths[cleanPath] = true
-			dirPaths[header.Name] = true
+			dirPaths[headers[i].Name] = true
 		}
 	}
 
@@ -438,9 +440,10 @@ func removeOrphanedEntries(headers []tar.Header) []tar.Header {
 	dirPaths[""] = true
 	dirPaths["."] = true
 
-	var result []tar.Header
-	for _, header := range headers {
+	writeIndex := 0
+	for readIndex := 0; readIndex < len(headers); readIndex++ {
 		keep := true
+		header := headers[readIndex]
 
 		// For non-root entries, check if parent directories exist
 		if header.Name != "" && header.Name != "." {
@@ -457,11 +460,14 @@ func removeOrphanedEntries(headers []tar.Header) []tar.Header {
 		}
 
 		if keep {
-			result = append(result, header)
+			if writeIndex != readIndex {
+				headers[writeIndex] = headers[readIndex]
+			}
+			writeIndex++
 		}
 	}
 
-	return result
+	return writeIndex
 }
 
 // removeEmptyDirectories - remove empty directories from a slice of tar.Header
@@ -469,17 +475,16 @@ func removeOrphanedEntries(headers []tar.Header) []tar.Header {
 // An empty directory is one that has no entries or
 // has only directories which themeselves are empty directories.
 //
-// removeEmptyDirectories will traverse the slice and return a copy where empty directories
-// are removed.
-func removeEmptyDirectories(headers []tar.Header) []tar.Header {
+// Works in-place by rearranging the slice and returns the new length.
+func removeEmptyDirectories(headers []tar.Header) int {
 	if len(headers) == 0 {
-		return headers
+		return 0
 	}
 
-	// Build a map of directories to their direct children
-	children := make(map[string][]tar.Header)
+	// Build a map of directories to their direct children indices
+	children := make(map[string][]int)
 
-	for _, header := range headers {
+	for i, header := range headers {
 		// Find parent directory for this item
 		headerPath := strings.TrimSuffix(header.Name, "/")
 		parentPath := filepath.Dir(headerPath)
@@ -487,25 +492,27 @@ func removeEmptyDirectories(headers []tar.Header) []tar.Header {
 			parentPath = ""
 		}
 
-		// Add this header as a child of its parent
-		children[parentPath] = append(children[parentPath], header)
+		// Add this header index as a child of its parent
+		children[parentPath] = append(children[parentPath], i)
 	}
 
 	// Recursively check if a directory has any non-directory descendants
 	var hasNonDirDescendants func(string) bool
 	hasNonDirDescendants = func(dirPath string) bool {
-		dirChildren := children[dirPath]
+		childIndices := children[dirPath]
 
-		for _, child := range dirChildren {
-			if child.Typeflag != tar.TypeDir {
+		for _, childIdx := range childIndices {
+			if childIdx < len(headers) && headers[childIdx].Typeflag != tar.TypeDir {
 				// Has a non-directory child
 				return true
 			}
 
 			// Check if this directory child has non-directory descendants
-			childPath := strings.TrimSuffix(child.Name, "/")
-			if hasNonDirDescendants(childPath) {
-				return true
+			if childIdx < len(headers) {
+				childPath := strings.TrimSuffix(headers[childIdx].Name, "/")
+				if hasNonDirDescendants(childPath) {
+					return true
+				}
 			}
 		}
 
@@ -513,21 +520,26 @@ func removeEmptyDirectories(headers []tar.Header) []tar.Header {
 		return false
 	}
 
-	// Filter out empty directories (directories with no non-directory descendants)
-	var result []tar.Header
-	for _, header := range headers {
+	// Filter out empty directories in-place
+	writeIndex := 0
+	for readIndex := 0; readIndex < len(headers); readIndex++ {
+		header := headers[readIndex]
+		keep := true
+
 		if header.Typeflag == tar.TypeDir {
 			dirPath := strings.TrimSuffix(header.Name, "/")
-			if hasNonDirDescendants(dirPath) {
-				result = append(result, header)
+			keep = hasNonDirDescendants(dirPath)
+		}
+
+		if keep {
+			if writeIndex != readIndex {
+				headers[writeIndex] = headers[readIndex]
 			}
-		} else {
-			// Keep non-directories
-			result = append(result, header)
+			writeIndex++
 		}
 	}
 
-	return result
+	return writeIndex
 }
 
 // sortTarHeaders sorts tar headers by name. It ensures that all file children
@@ -539,9 +551,9 @@ func sortTarHeaders(headers []tar.Header) []tar.Header {
 	hCopy := make([]tar.Header, len(headers))
 	copy(hCopy, headers)
 	tarHeadersSort(hCopy)
-	ret := removeOrphanedEntries(hCopy)
-	ret = removeEmptyDirectories(ret)
-	return ret
+	newLen1 := removeOrphanedEntries(hCopy)
+	newLen2 := removeEmptyDirectories(hCopy[:newLen1])
+	return hCopy[:newLen2]
 }
 
 // compare two paths such that inside a directory
