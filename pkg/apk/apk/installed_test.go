@@ -389,6 +389,7 @@ func TestSortTarHeaders(t *testing.T) {
 				{Name: "usr/bin", Typeflag: tar.TypeDir},
 				{Name: "bin/ls", Typeflag: tar.TypeReg},
 				{Name: "bin/busybox"},
+				{Name: "usr/bin/ls", Typeflag: tar.TypeReg},
 				{Name: "etc", Typeflag: tar.TypeDir},
 				{Name: "etc/logrotate.d", Typeflag: tar.TypeDir},
 				{Name: "etc/logrotate.d/file", Typeflag: tar.TypeReg},
@@ -408,7 +409,7 @@ func TestSortTarHeaders(t *testing.T) {
 				"etc/logrotate.d/file2",
 				"usr",
 				"usr/bin",
-				"usr/etc",
+				"usr/bin/ls",
 			},
 		},
 		{
@@ -531,6 +532,170 @@ func TestParseInstalledPackages(t *testing.T) {
 			if d := cmp.Diff(c.want, got); d != "" {
 				t.Errorf("ParseInstalledPackages() mismatch (-want  got):\n%s", d)
 			}
+		})
+	}
+}
+
+func TestRemoveOrphanedEntries(t *testing.T) {
+	cases := []struct {
+		name     string
+		headers  []tar.Header
+		expected []string
+	}{
+		{
+			name: "no orphans",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "orphaned file missing intermediate directory",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg}, // missing usr/bin
+				{Name: "etc", Typeflag: tar.TypeDir},
+				{Name: "etc/logrotate.d/file", Typeflag: tar.TypeReg}, // missing etc/logrotate.d
+			},
+			expected: []string{"usr", "etc"},
+		},
+		{
+			name: "orphaned directory missing parent",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/share/docs", Typeflag: tar.TypeDir},  // missing usr/share
+				{Name: "etc/logrotate.d", Typeflag: tar.TypeDir}, // missing etc
+			},
+			expected: []string{"usr"},
+		},
+		{
+			name: "trailing slashes handled correctly",
+			headers: []tar.Header{
+				{Name: "usr/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"usr/", "usr/bin/", "usr/bin/cmd"},
+		},
+		{
+			name: "root level files kept",
+			headers: []tar.Header{
+				{Name: "rootfile", Typeflag: tar.TypeReg},
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg}, // missing usr/bin
+			},
+			expected: []string{"rootfile", "usr"},
+		},
+		{
+			name:     "empty input",
+			headers:  []tar.Header{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			results := removeOrphanedEntries(tt.headers)
+
+			var resultNames []string
+			for _, header := range results {
+				resultNames = append(resultNames, header.Name)
+			}
+
+			assert.Equal(t, tt.expected, resultNames)
+		})
+	}
+}
+
+func TestRemoveEmptyDirectories(t *testing.T) {
+	cases := []struct {
+		name     string
+		headers  []tar.Header
+		expected []string
+	}{
+		{
+			name: "no empty directories",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "single empty directory",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+				{Name: "empty", Typeflag: tar.TypeDir}, // empty directory
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "nested empty directories",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+				{Name: "empty", Typeflag: tar.TypeDir},
+				{Name: "empty/nested", Typeflag: tar.TypeDir}, // nested empty
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "directory with only empty subdirectories",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+				{Name: "parent", Typeflag: tar.TypeDir},
+				{Name: "parent/empty1", Typeflag: tar.TypeDir},
+				{Name: "parent/empty2", Typeflag: tar.TypeDir},
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "mixed empty and non-empty directories",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+				{Name: "etc", Typeflag: tar.TypeDir},
+				{Name: "etc/config", Typeflag: tar.TypeReg},
+				{Name: "empty", Typeflag: tar.TypeDir}, // empty
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd", "etc", "etc/config"},
+		},
+		{
+			name: "trailing slashes handled correctly",
+			headers: []tar.Header{
+				{Name: "usr/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+				{Name: "empty/", Typeflag: tar.TypeDir}, // empty with trailing slash
+			},
+			expected: []string{"usr/", "usr/bin/", "usr/bin/cmd"},
+		},
+		{
+			name:     "empty input",
+			headers:  []tar.Header{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			results := removeEmptyDirectories(tt.headers)
+
+			var resultNames []string
+			for _, header := range results {
+				resultNames = append(resultNames, header.Name)
+			}
+
+			assert.Equal(t, tt.expected, resultNames)
 		})
 	}
 }

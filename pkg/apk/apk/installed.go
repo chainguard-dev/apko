@@ -410,14 +410,124 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 	return
 }
 
-// TODO: This function is needed to make the test pass in
+// removeOrphanedEntries - remove all entries in a slice of tar.Header that cannot be reached.
 //
-//	TestSortTarHeaders/intermediate_dirs_in_the_tree_should_be_required_to_preserve_children
+//	 An entry cannot be reached if there is no entry for it's parent directory.
+//	 As example, if /etc/hooks.d/pre-hook is a file, but there is no entry in
+//	 the slice for /etc or /etc/hooks.d, then /etc/hooks.d/pre-hook should be removed.
 //
-// The comment there indicates that we want to drop files that are orphaned rather than
-// keep them.
-func removeOrphanedEntries(headers []tar.Header) {
-	return
+//		TestSortTarHeaders/intermediate_dirs_in_the_tree_should_be_required_to_preserve_children
+//	 test fails without this functionality.
+func removeOrphanedEntries(headers []tar.Header) []tar.Header {
+	if len(headers) == 0 {
+		return headers
+	}
+
+	// Build a set of all directory paths (with and without trailing slashes)
+	dirPaths := make(map[string]bool)
+	for _, header := range headers {
+		if header.Typeflag == tar.TypeDir {
+			// Add both versions of the path (with and without trailing slash)
+			cleanPath := strings.TrimSuffix(header.Name, "/")
+			dirPaths[cleanPath] = true
+			dirPaths[header.Name] = true
+		}
+	}
+
+	// Add root directory implicitly
+	dirPaths[""] = true
+	dirPaths["."] = true
+
+	var result []tar.Header
+	for _, header := range headers {
+		keep := true
+
+		// For non-root entries, check if parent directories exist
+		if header.Name != "" && header.Name != "." {
+			parentPath := filepath.Dir(strings.TrimSuffix(header.Name, "/"))
+
+			// Check parent hierarchy exists
+			for parentPath != "" && parentPath != "." {
+				if !dirPaths[parentPath] {
+					keep = false
+					break
+				}
+				parentPath = filepath.Dir(parentPath)
+			}
+		}
+
+		if keep {
+			result = append(result, header)
+		}
+	}
+
+	return result
+}
+
+// removeEmptyDirectories - remove empty directories from a slice of tar.Header
+//
+// An empty directory is one that has no entries or
+// has only directories which themeselves are empty directories.
+//
+// removeEmptyDirectories will traverse the slice and return a copy where empty directories
+// are removed.
+func removeEmptyDirectories(headers []tar.Header) []tar.Header {
+	if len(headers) == 0 {
+		return headers
+	}
+
+	// Build a map of directories to their direct children
+	children := make(map[string][]tar.Header)
+
+	for _, header := range headers {
+		// Find parent directory for this item
+		headerPath := strings.TrimSuffix(header.Name, "/")
+		parentPath := filepath.Dir(headerPath)
+		if parentPath == "." {
+			parentPath = ""
+		}
+
+		// Add this header as a child of its parent
+		children[parentPath] = append(children[parentPath], header)
+	}
+
+	// Recursively check if a directory has any non-directory descendants
+	var hasNonDirDescendants func(string) bool
+	hasNonDirDescendants = func(dirPath string) bool {
+		dirChildren := children[dirPath]
+
+		for _, child := range dirChildren {
+			if child.Typeflag != tar.TypeDir {
+				// Has a non-directory child
+				return true
+			}
+
+			// Check if this directory child has non-directory descendants
+			childPath := strings.TrimSuffix(child.Name, "/")
+			if hasNonDirDescendants(childPath) {
+				return true
+			}
+		}
+
+		// No non-directory descendants found
+		return false
+	}
+
+	// Filter out empty directories (directories with no non-directory descendants)
+	var result []tar.Header
+	for _, header := range headers {
+		if header.Typeflag == tar.TypeDir {
+			dirPath := strings.TrimSuffix(header.Name, "/")
+			if hasNonDirDescendants(dirPath) {
+				result = append(result, header)
+			}
+		} else {
+			// Keep non-directories
+			result = append(result, header)
+		}
+	}
+
+	return result
 }
 
 // sortTarHeaders sorts tar headers by name. It ensures that all file children
@@ -429,8 +539,9 @@ func sortTarHeaders(headers []tar.Header) []tar.Header {
 	hCopy := make([]tar.Header, len(headers))
 	copy(hCopy, headers)
 	tarHeadersSort(hCopy)
-	removeOrphanedEntries(hCopy)
-	return hCopy
+	ret := removeOrphanedEntries(hCopy)
+	ret = removeEmptyDirectories(ret)
+	return ret
 }
 
 // compare two paths such that inside a directory
