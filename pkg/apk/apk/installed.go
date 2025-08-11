@@ -442,37 +442,19 @@ func sortTarHeaders(headers []tar.Header) []tar.Header {
 	}
 	sort.Strings(dirEntries)
 
-	// We'll start with top-level entries (including files and directories in root),
-	// and then descend into their children recursively.
-	var topLevelEntries = make([]string, 0, len(dirEntries))
+	// We'll start with top-level directories, and then descend into their children
+	// recursively.
+	var topLevelDirs = make([]string, 0, len(dirEntries))
 	for _, dir := range dirEntries {
 		if filepath.Dir(dir) == "." {
-			topLevelEntries = append(topLevelEntries, dir)
+			topLevelDirs = append(topLevelDirs, dir)
 		}
 	}
 
-	// Special case: if we have files in the root directory, include them
-	rootFiles := directoryChildren["."]
-	var hasRootFiles bool
-	for _, rootFile := range rootFiles {
-		header, ok := all[rootFile]
-		if ok && header.Typeflag != tar.TypeDir {
-			hasRootFiles = true
-			break
-		}
-	}
+	sort.Strings(topLevelDirs)
 
-	sort.Strings(topLevelEntries)
-
-	if hasRootFiles {
-		// If we have root files, use the children of "." as the starting point
-		sorted := sortChildrenTarHeaders(directoryChildren, all, rootFiles)
-		return sorted
-	} else {
-		// Otherwise use the original algorithm
-		sorted := sortChildrenTarHeaders(directoryChildren, all, topLevelEntries)
-		return sorted
-	}
+	sorted := sortChildrenTarHeaders(directoryChildren, all, topLevelDirs)
+	return sorted
 }
 
 func sortChildrenTarHeaders(directoryChildren map[string][]string, all map[string]tar.Header, children []string) []tar.Header {

@@ -77,8 +77,6 @@ func TestAddInstalledPackage(t *testing.T) {
 		BuildTime: time.Now(),
 	}
 	newFiles := []tar.Header{
-		{Name: "slashfile", Typeflag: tar.TypeReg, Size: 24, Mode: 0o644}, // file in /
-		{Name: "slashLink", Typeflag: tar.TypeSymlink, Linkname: "usr/foo/testfile"},
 		{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},                          // standard perms should not generate extra perms line
 		{Name: "usr/foo", Typeflag: tar.TypeDir, Mode: 0o700},                      // should generate extra M: perms line
 		{Name: "usr/foo/testfile", Typeflag: tar.TypeReg, Size: 1234, Mode: 0o644}, // standard perms should not generate extra perms line
@@ -105,11 +103,8 @@ func TestAddInstalledPackage(t *testing.T) {
 
 	// The same random checksum from before, converted to what we expect.
 	want := "Z:Q1kavxlyJ9L+cdAW9My2ixbJybJ2g="
-	lines := strings.Split(string(installedFile), "\n")
-	require.Contains(t, lines, want)
-	require.Contains(t, lines, "R:testfile")
-	require.Contains(t, lines, "R:slashfile")
-	require.Contains(t, lines, "R:slashLink")
+	str := string(installedFile)
+	require.Contains(t, str, want)
 }
 
 func TestIsInstalledPackage(t *testing.T) {
