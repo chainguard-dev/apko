@@ -478,22 +478,17 @@ func cacheDirForPackage(root string, pkg InstallablePackage) (string, error) {
 
 // cachePathFromURL given a URL, figure out what the cache path would be
 func cachePathFromURL(root string, u url.URL) (string, error) {
+	// We have a content-addressable cache "inside" of a package, thus we don't
+	// have to separate different index hosts when caching packages. This will
+	// allow cache hits even when using different index hosts, as long as the
+	// package is the same.
 	// the last two levels are what we append. For example https://example.com/foo/bar/x86_64/baz.apk
 	// means we want to append x86_64/baz.apk to our cache root
-	u2 := u
-	u2.ForceQuery = false
-	u2.RawFragment = ""
-	u2.RawQuery = ""
-	filename := filepath.Base(u2.Path)
-	archDir := filepath.Dir(u2.Path)
-	dir := filepath.Base(archDir)
-	repoDir := filepath.Dir(archDir)
-	// include the hostname
-	u2.Path = repoDir
+	filename := filepath.Base(u.Path)
+	archDir := filepath.Dir(u.Path)
+	arch := filepath.Base(archDir)
 
-	// url encode it so it can be a single directory
-	repoDir = url.QueryEscape(u2.String())
-	cacheFile := filepath.Join(root, repoDir, dir, filename)
+	cacheFile := filepath.Join(root, arch, filename)
 	// validate it is within root
 	cacheFile = filepath.Clean(cacheFile)
 	cleanroot := filepath.Clean(root)
