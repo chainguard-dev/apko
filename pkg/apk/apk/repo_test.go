@@ -22,7 +22,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -178,7 +177,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		tmpDir := t.TempDir()
 		a := prepLayout(t, tmpDir, []string{testAlpineRepos})
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		dir := filepath.Join(tmpDir, testArch)
 
 		a.SetClient(&http.Client{
 			Transport: &testLocalTransport{
@@ -193,7 +192,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// check that the contents are the same
-		index1, err := os.ReadFile(filepath.Join(repoDir, "APKINDEX", base32.StdEncoding.EncodeToString([]byte("an-etag"))+".tar.gz"))
+		index1, err := os.ReadFile(filepath.Join(dir, "APKINDEX", base32.StdEncoding.EncodeToString([]byte("an-etag"))+".tar.gz"))
 		require.NoError(t, err, "unable to read cache index file")
 		index2, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, indexFilename))
 		require.NoError(t, err, "unable to read previous index file")

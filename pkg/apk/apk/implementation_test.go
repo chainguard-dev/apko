@@ -619,11 +619,11 @@ func TestFetchPackage(t *testing.T) {
 		tmpDir := t.TempDir()
 		a := prepLayout(t, tmpDir)
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
-		err := os.MkdirAll(repoDir, 0o755)
+		dir := filepath.Join(tmpDir, testArch)
+		err := os.MkdirAll(dir, 0o755)
 		require.NoError(t, err, "unable to mkdir cache")
 
-		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
+		cacheApkFile := filepath.Join(dir, testPkgFilename)
 		cacheApkDir := strings.TrimSuffix(cacheApkFile, ".apk")
 
 		a.SetClient(&http.Client{
