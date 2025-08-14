@@ -18,8 +18,6 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
-type Services map[string]string
-
 type Context struct {
 	fs apkfs.FullFS
 }
