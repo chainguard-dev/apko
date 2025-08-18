@@ -15,6 +15,7 @@
 package build
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,4 +63,39 @@ func TestBadFSReleaseData(t *testing.T) {
 	// Bad data in file should err.
 	_, err := fetchFSReleaseData(fsys)
 	require.Error(t, err)
+}
+
+func TestSbomPerms(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []Option{
+		WithConfig("apko.yaml", []string{"testdata"}),
+	}
+
+	bc, err := New(ctx, apkfs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.NoError(t, bc.fs.MkdirAll("var/lib/db/sbom", 0o755))
+
+	f, err := bc.fs.Create("var/lib/db/sbom/foo.spdx.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	err = bc.BuildImage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := "var/lib/db/sbom/foo.spdx.json"
+	info, err := bc.fs.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := info.Mode()
+	perm := mode.Perm()
+	if perm != 0o644 {
+		t.Errorf("%s has unexpected permissions: %v", cache, perm)
+	}
 }

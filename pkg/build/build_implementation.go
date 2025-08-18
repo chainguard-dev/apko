@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -217,6 +218,10 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		return nil, err
 	}
 
+	if err := updateSBOM(ctx, bc.fs); err != nil {
+		return nil, err
+	}
+
 	log.Debug("finished building filesystem")
 
 	return pkgs, nil
@@ -262,6 +267,27 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	}
 
 	return nil
+}
+
+func updateSBOM(ctx context.Context, fsys apkfs.FullFS) error {
+	if _, err := fsys.Stat("var/lib/db/sbom"); err != nil {
+		clog.FromContext(ctx).Debugf("/var/lib/db/sbom not found, skipping permissions update: %v", err)
+		return nil
+	}
+
+	return fs.WalkDir(fsys, "var/lib/db/sbom", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.Type().IsRegular() {
+			if err := fsys.Chmod(path, 0o644); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
 }
 
 func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
