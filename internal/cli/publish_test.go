@@ -95,7 +95,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:91213f5088cd9e4e0b8daa74f86085c7007c5896ade6ef0ef9bcbcdda16f5f2d"
+	want := "sha256:11c42f7a33ac15da57504113c1e54687197c4bf71ea534a12090c5da4a3ee3a9"
 	require.Equal(t, want, digest.String())
 
 	// Check that the sbomPath is not empty.
