@@ -18,7 +18,7 @@ require (
 	github.com/package-url/packageurl-go v0.1.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.9.1
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
 	github.com/u-root/u-root v0.14.0
 	go.lsp.dev/uri v0.3.0
