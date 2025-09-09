@@ -41,6 +41,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/jonjohnsonjr/targz/tarfs"
 	"go.lsp.dev/uri"
@@ -56,7 +57,6 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/paths"
-	"github.com/chainguard-dev/clog"
 )
 
 // This is terrible but simpler than plumbing around a cache for now.
