@@ -20,8 +20,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	apkbuildtypes "chainguard.dev/apko/pkg/build/types"
 	"github.com/chainguard-dev/clog"
+
+	apkbuildtypes "chainguard.dev/apko/pkg/build/types"
 )
 
 func (sc *Context) WriteSupervisionTree(ctx context.Context, services apkbuildtypes.ImageServices) error {
