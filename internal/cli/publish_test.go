@@ -35,10 +35,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
-	"github.com/jonjohnsonjr/targz/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
+	"github.com/jonjohnsonjr/targz/tarfs"
 )
 
 func TestPublish(t *testing.T) {

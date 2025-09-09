@@ -51,11 +51,11 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
-	"github.com/jonjohnsonjr/targz/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/paths"
+	"github.com/jonjohnsonjr/targz/tarfs"
 
 	"github.com/chainguard-dev/clog"
 )
