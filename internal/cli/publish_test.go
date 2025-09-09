@@ -35,7 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
-	"chainguard.dev/apko/internal/tarfs"
+	"github.com/jonjohnsonjr/targz/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"

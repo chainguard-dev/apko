@@ -24,12 +24,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
 	"go.opentelemetry.io/otel"
 
-	"chainguard.dev/apko/internal/tarfs"
+	"github.com/jonjohnsonjr/targz/tarfs"
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
@@ -310,6 +311,28 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 	return checksum, nil
 }
 
+// getAllEntries walks the tarfs.FS and collects all Entry objects
+func getAllEntries(tf *tarfs.FS) ([]*tarfs.Entry, error) {
+	var entries []*tarfs.Entry
+	err := fs.WalkDir(tf, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Skip the root directory "." as it may not have a corresponding Entry
+		if path == "." {
+			return nil
+		}
+		entry, err := tf.Entry(path)
+		if err != nil {
+			// For debugging: we might encounter paths that don't map to entries
+			return fmt.Errorf("failed to get entry for path %q: %w", path, err)
+		}
+		entries = append(entries, entry)
+		return nil
+	})
+	return entries, err
+}
+
 // lazilyInstallAPKFiles avoids actually writing anything to disk, instead relying on a tarfs.FS
 // to provide much cheaper access to the file data when we read it later.
 //
@@ -318,7 +341,10 @@ func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, tf *t
 	_, span := otel.Tracer("go-apk").Start(ctx, "lazilyInstallAPKFiles")
 	defer span.End()
 
-	entries := tf.Entries()
+	entries, err := getAllEntries(tf)
+	if err != nil {
+		return nil, fmt.Errorf("getting all entries from tarfs: %w", err)
+	}
 	files := make([]tar.Header, 0, len(entries))
 
 	var startedDataSection bool

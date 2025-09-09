@@ -51,7 +51,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
-	"chainguard.dev/apko/internal/tarfs"
+	"github.com/jonjohnsonjr/targz/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -1099,9 +1099,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 
 	exp.PackageFile = datDst
 
-	if err := exp.TarFS.Close(); err != nil {
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
+	// Note: external tarfs library doesn't require explicit closing
 
 	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
 
