@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/jonjohnsonjr/targz/tarfs"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -55,8 +56,6 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/paths"
-	"github.com/jonjohnsonjr/targz/tarfs"
-
 	"github.com/chainguard-dev/clog"
 )
 
