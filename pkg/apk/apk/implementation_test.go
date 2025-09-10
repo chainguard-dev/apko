@@ -309,6 +309,102 @@ func TestResolveApkDB(t *testing.T) {
 	})
 }
 
+func TestHasUsrMergeBaseImage(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no packages installed", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// With no installed packages, should return false
+		require.False(t, apk.hasUsrMergeBaseImage())
+	})
+
+	t.Run("packages without merged-lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Add a package without merged-lib virtual
+		pkg := &Package{
+			Name:     "test-package",
+			Version:  "1.0.0",
+			Arch:     "x86_64",
+			Provides: []string{"some-other-virtual"},
+		}
+		_, err = apk.AddInstalledPackage(pkg, nil)
+		require.NoError(t, err)
+
+		// Should return false as no package provides merged-lib
+		require.False(t, apk.hasUsrMergeBaseImage())
+	})
+
+	t.Run("package with merged-lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Add wolfi-baselayout which provides merged-lib
+		pkg := &Package{
+			Name:     "wolfi-baselayout",
+			Version:  "20230201-r23",
+			Arch:     "x86_64",
+			Provides: []string{"merged-bin", "merged-lib", "merged-sbin", "merged-usrsbin"},
+		}
+		_, err = apk.AddInstalledPackage(pkg, nil)
+		require.NoError(t, err)
+
+		// Should return true as wolfi-baselayout provides merged-lib
+		require.True(t, apk.hasUsrMergeBaseImage())
+	})
+
+	t.Run("multiple packages with one providing merged-lib", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		apk, err := New(ctx, WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(ctx)
+		require.NoError(t, err)
+
+		// Add multiple packages
+		pkg1 := &Package{
+			Name:     "glibc",
+			Version:  "2.42-r0",
+			Arch:     "x86_64",
+			Provides: []string{},
+		}
+		_, err = apk.AddInstalledPackage(pkg1, nil)
+		require.NoError(t, err)
+
+		pkg2 := &Package{
+			Name:     "wolfi-baselayout",
+			Version:  "20230201-r23",
+			Arch:     "x86_64",
+			Provides: []string{"merged-bin", "merged-lib", "merged-sbin", "merged-usrsbin"},
+		}
+		_, err = apk.AddInstalledPackage(pkg2, nil)
+		require.NoError(t, err)
+
+		pkg3 := &Package{
+			Name:     "busybox",
+			Version:  "1.36.1-r29",
+			Arch:     "x86_64",
+			Provides: []string{},
+		}
+		_, err = apk.AddInstalledPackage(pkg3, nil)
+		require.NoError(t, err)
+
+		// Should return true as wolfi-baselayout provides merged-lib
+		require.True(t, apk.hasUsrMergeBaseImage())
+	})
+}
+
 func TestSetWorld(t *testing.T) {
 	ctx := context.Background()
 	src := apkfs.NewMemFS()
