@@ -1,0 +1,108 @@
+name: Test Examples
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-on-top-of-base:
+    name: Test on_top_of_base example (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+
+    steps:
+      - uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Build apko
+        run: make apko
+
+      - name: Test on_top_of_base example - usr-merge base image handling
+        run: |
+          set -euxo pipefail
+
+          # Test with busybox base image (has usr-merge layout with /lib -> /usr/lib symlink)
+          # This verifies that apko correctly handles building on top of base images with usr-merge layout
+          BASE_IMAGE="cgr.dev/chainguard/busybox:latest"
+          OUTPUT_TAR="test-output-${{ matrix.arch }}.tar"
+
+          echo "Testing on_top_of_base example with ${{ matrix.arch }} architecture..."
+
+          # Build image on top of base using the parameterized build.sh script
+          ./examples/on_top_of_base/build.sh \
+            ./apko \
+            "$BASE_IMAGE" \
+            "$OUTPUT_TAR" \
+            "${{ matrix.arch }}"
+
+          # Load the built image
+          docker load -i "$OUTPUT_TAR"
+
+          # Determine the correct image tag based on architecture
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            IMAGE_TAG="base_image:latest-amd64"
+          else
+            IMAGE_TAG="base_image:latest-arm64"
+          fi
+
+          # Test that shell works (verifies /lib symlink is preserved correctly)
+          echo "Testing shell execution on ${{ matrix.arch }}..."
+          if docker run --rm --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+             --entrypoint /bin/sh "$IMAGE_TAG" \
+             -c "echo 'Shell works on ${{ matrix.arch }}'" | grep -q "Shell works"; then
+            echo "Shell executes correctly on ${{ matrix.arch }}"
+          else
+            echo "FAILED: Shell failed to execute on ${{ matrix.arch }} (indicates broken /lib symlink)"
+            exit 1
+          fi
+
+          # Test another binary to be thorough
+          echo "Testing busybox execution on ${{ matrix.arch }}..."
+          if docker run --rm --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+             --entrypoint /bin/busybox "$IMAGE_TAG" echo "Busybox works" | grep -q "Busybox works"; then
+            echo "Busybox executes correctly on ${{ matrix.arch }}"
+          else
+            echo "FAILED: Busybox failed to execute on ${{ matrix.arch }}"
+            exit 1
+          fi
+
+          echo "PASSED: on_top_of_base example test for ${{ matrix.arch }}"
+
+      - name: Clean up
+        if: always()
+        run: |
+          # Clean up docker images
+          docker rmi base_image:latest-amd64 2>/dev/null || true
+          docker rmi base_image:latest-arm64 2>/dev/null || true
+          # Clean up build artifacts
+          rm -rf ./examples/on_top_of_base/{base_image,apkindexes,fs_dump,top_image,*.lock.json,*.tar}
+

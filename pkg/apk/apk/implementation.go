@@ -340,10 +340,35 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	return nil
 }
 
+// hasUsrMergeBaseImage checks if the base image uses a usr-merge filesystem layout.
+// This is determined by checking if any installed packages provide the "merged-lib" virtual package.
+// The merged-lib virtual is provided by wolfi-baselayout to indicate usr-merge layout where
+// traditional directories like /lib, /bin, /sbin are symlinked to their /usr counterparts.
+// See: https://github.com/wolfi-dev/os/blob/main/wolfi-baselayout.yaml
+func (a *APK) hasUsrMergeBaseImage() bool {
+	installedPkgs, err := a.GetInstalled()
+	if err != nil || len(installedPkgs) == 0 {
+		return false
+	}
+
+	for _, pkg := range installedPkgs {
+		for _, prov := range pkg.Provides {
+			if prov == "merged-lib" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Resolves the possible locations of APK's DB and assures that it will exist at /lib/apk/db.
 func (a *APK) resolveApkDB(ctx context.Context) error {
 	log := clog.FromContext(ctx)
 	log.Debug("resolving APK DB location")
+
+	// Check if we have base image packages that provide merged-lib
+	// This indicates the base image has usr-merge layout
+	hasUsrMergeBase := a.hasUsrMergeBaseImage()
 
 	_, span := otel.Tracer("go-apk").Start(ctx, "resolveApkDB")
 	defer span.End()
@@ -351,7 +376,7 @@ func (a *APK) resolveApkDB(ctx context.Context) error {
 	// Do nothing more if /lib already points at usr/lib (absolute or relative).
 	if target, err := a.fs.Readlink("/lib"); err == nil {
 		// MemFS will only let Readlink succeed on a real symlink.
-		// Prepend “/” and Clean to collapse things like “/../usr/lib” → “/usr/lib”.
+		// Prepend "/" and Clean to collapse things like "/../usr/lib" → "/usr/lib".
 		if path.Clean("/"+target) == "/usr/lib" {
 			log.Debug("/lib is a symlink to /usr/lib")
 			return nil
@@ -369,6 +394,15 @@ func (a *APK) resolveApkDB(ctx context.Context) error {
 
 	// create /lib as a directory if is missing
 	if _, err := a.fs.Stat("lib"); errors.Is(err, fs.ErrNotExist) {
+		// If we have a usr-merge base image, we should NOT create /lib as a directory
+		// because the base image already has /lib as a symlink to /usr/lib
+		if hasUsrMergeBase {
+			// Don't create /lib - the base image has it as a symlink
+			// Create the symlink in our filesystem to match the base
+			_ = a.fs.Symlink("usr/lib", "lib")
+			// If we can't create the symlink, just skip - the base has it
+			return nil
+		}
 		if err := a.fs.Mkdir("lib", 0o755); err != nil {
 			return fmt.Errorf("creating lib: %w", err)
 		}
