@@ -133,13 +133,11 @@ func (i ImageContents) MarshalYAML() (interface{}, error) {
 
 type ImageService struct {
 	// Required: The command of the service
-	Command string `yaml:"command"`
+	Command string `json:"command,omitempty" yaml:"command"`
 	// Optional: The name of the parent service
-	DependsOn []string `yaml:"depends_on"`
-	// Optional: The restart policy
-	//
-	// This will be 'always' by default as tipically is in docker.
-	Restart string `yaml:"restart"`
+	DependsOn []string `json:"depends_on,omitempty" yaml:"depends_on"`
+	// Optional: The restart policy of the service ('always' by default as in docker)
+	Restart string `json:"restart,omitempty" yaml:"restart"`
 }
 
 type ImageServices map[string]ImageService

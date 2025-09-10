@@ -199,13 +199,37 @@
           "description": "Optional: The shell fragment of the entrypoint command"
         },
         "services": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
+          "$ref": "#/$defs/ImageServices"
         }
       },
       "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageService": {
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Required: The command of the service"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Optional: The name of the parent service"
+        },
+        "restart": {
+          "type": "string",
+          "description": "Optional: The restart policy of the service ('always' by default as in docker)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageServices": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ImageService"
+      },
       "type": "object"
     },
     "Layering": {
