@@ -212,8 +212,8 @@ type PkgResolver struct {
 func (p *PkgResolver) Clone() *PkgResolver {
 	return &PkgResolver{
 		indexes:      p.indexes,
-		nameMap:      maps.Clone(p.nameMap),
-		installIfMap: maps.Clone(p.installIfMap),
+		nameMap:      p.nameMap,
+		installIfMap: p.installIfMap,
 		selected:     map[string]*RepositoryPackage{},
 	}
 }
