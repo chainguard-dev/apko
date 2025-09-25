@@ -32,10 +32,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
+	"github.com/jonjohnsonjr/targz/tarfs"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
