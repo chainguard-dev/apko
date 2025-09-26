@@ -15,6 +15,7 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -22,6 +23,50 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
+
+func TestYamlMarshallingRepositories(t *testing.T) {
+	const alpineMain = "https://dl-cdn.alpinelinux.org/alpine/v3.22/main"
+	const alpineCommunity = "https://dl-cdn.alpinelinux.org/alpine/v3.22/community"
+	const alpineEdgeTesting = "https://dl-cdn.alpinelinux.org/alpine/edge/testing"
+	const alpineEdgeCommunity = "https://dl-cdn.alpinelinux.org/alpine/edge/community"
+	const alpineWithCreds = "https://user:pass@dl-cdn.my.org/alpine/v3.22/main"
+
+	for _, c := range []struct {
+		desc string
+		in   ImageContents
+		want string
+	}{{
+		desc: "empty",
+		in:   ImageContents{},
+		want: "{}\n",
+	}, {
+		desc: "simple",
+		in: ImageContents{
+			Repositories:      []string{alpineMain, alpineCommunity},
+			BuildRepositories: []string{alpineMain, alpineCommunity},
+		},
+		want: fmt.Sprintf("build_repositories:\n    - %s\n    - %s\nrepositories:\n    - %s\n    - %s\n", alpineMain, alpineCommunity, alpineMain, alpineCommunity),
+	}, {
+		desc: "tagged",
+		in: ImageContents{
+			Repositories:      []string{"@testing " + alpineEdgeTesting},
+			BuildRepositories: []string{"@community " + alpineEdgeCommunity},
+		},
+		want: fmt.Sprintf("build_repositories:\n    - '@community %s'\nrepositories:\n    - '@testing %s'\n", alpineEdgeCommunity, alpineEdgeTesting),
+	}, {
+		desc: "tagged with creds",
+		in: ImageContents{
+			Repositories: []string{"@myorg " + alpineWithCreds},
+		},
+		want: fmt.Sprintf("repositories:\n    - '@myorg %s'\n", "https://user:xxxxx@dl-cdn.my.org/alpine/v3.22/main"),
+	}} {
+		t.Run(c.desc, func(t *testing.T) {
+			b, err := yaml.Marshal(c.in)
+			require.NoError(t, err)
+			require.Equal(t, c.want, string(b))
+		})
+	}
+}
 
 func TestParseArchitectures(t *testing.T) {
 	for _, c := range []struct {
