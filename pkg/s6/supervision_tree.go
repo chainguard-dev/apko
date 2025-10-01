@@ -18,11 +18,13 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
+	apkbuildtypes "chainguard.dev/apko/pkg/build/types"
 	"github.com/chainguard-dev/clog"
 )
 
-func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) error {
+func (sc *Context) WriteSupervisionTree(ctx context.Context, services apkbuildtypes.ImageServices) error {
 	log := clog.FromContext(ctx)
 	log.Debug("generating supervision tree")
 
@@ -33,8 +35,38 @@ func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) 
 			return fmt.Errorf("could not make supervision directory: %w", err)
 		}
 
-		if err := sc.fs.WriteFile(filepath.Join(svcdir, "run"), []byte(fmt.Sprintf("#!/bin/execlineb\n%s\n", svccmd)), 0755); err != nil {
+		// Construct dependencies by adding 's6-svwait' if needed, then execute the main command
+		runContent := "#!/bin/execlineb\n"
+		for _, dep := range svccmd.DependsOn {
+			runContent += fmt.Sprintf("foreground { s6-svwait -D /sv/%s }\n", dep)
+		}
+		runContent += svccmd.Command
+
+		if err := sc.fs.WriteFile(filepath.Join(svcdir, "run"), []byte(runContent), 0755); err != nil {
 			return fmt.Errorf("could not write runfile: %w", err)
+		}
+
+		// Manage finish scripts according to defined restart policy
+		restartPolicy := strings.ToLower(strings.TrimSpace(svccmd.Restart))
+
+		var finishContent string
+		switch restartPolicy {
+		case "no":
+			// Always send down signal
+			finishContent = fmt.Sprintf(`#!/bin/execlineb
+			s6-svc -D /sv/%s`, service)
+		case "on-failure":
+			// Send down signal in case the run script exited with zero value
+			finishContent = fmt.Sprintf(`#!/bin/execlineb -s1
+			if { eltest ${1} -eq 0 }
+			s6-svc -D /sv/%s
+			`, service)
+		}
+
+		if finishContent != "" {
+			if err := sc.fs.WriteFile(filepath.Join(svcdir, "finish"), []byte(finishContent), 0755); err != nil {
+				return fmt.Errorf("could not write finishfile: %w", err)
+			}
 		}
 	}
 
