@@ -50,10 +50,27 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		return nil, err
 	}
 
+	annotations := ic.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	if ic.VCSUrl != "" {
+		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
+			annotations["org.opencontainers.image.source"] = url
+			annotations["org.opencontainers.image.revision"] = hash
+		}
+	}
+	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
+
 	comment := "This is an apko single-layer image"
 	if len(layers) > 1 {
 		// TODO: Consider plumbing per-layer info here?
 		comment = ""
+	}
+	// Compute author
+	author := "apko"
+	if vendor, ok := annotations["org.opencontainers.image.vendor"]; ok {
+		author = vendor
 	}
 
 	adds := make([]mutate.Addendum, 0, len(layers))
@@ -72,9 +89,10 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		log.Infof("layer diffID: %v", diffid)
 
 		adds = append(adds, mutate.Addendum{
-			Layer: layer,
+			Annotations: annotations,
+			Layer:       layer,
 			History: v1.History{
-				Author:    "apko",
+				Author:    author,
 				Comment:   comment,
 				CreatedBy: "apko",
 				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
@@ -90,18 +108,6 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 	if err != nil {
 		return nil, fmt.Errorf("unable to append oci layer to empty image: %w", err)
 	}
-
-	annotations := ic.Annotations
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	if ic.VCSUrl != "" {
-		if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
-			annotations["org.opencontainers.image.source"] = url
-			annotations["org.opencontainers.image.revision"] = hash
-		}
-	}
-	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 
 	v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
 
