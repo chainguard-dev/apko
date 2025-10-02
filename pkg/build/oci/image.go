@@ -50,10 +50,19 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		return nil, err
 	}
 
+	// Compute comment
 	comment := "This is an apko single-layer image"
 	if len(layers) > 1 {
-		// TODO: Consider plumbing per-layer info here?
 		comment = ""
+	}
+	if title, ok := ic.Annotations["org.opencontainers.image.title"]; ok {
+		comment = title
+	}
+
+	// Compute createdBy
+	createdBy := "apko"
+	if vendor, ok := ic.Annotations["org.opencontainers.image.vendor"]; ok {
+		createdBy = vendor
 	}
 
 	adds := make([]mutate.Addendum, 0, len(layers))
@@ -76,7 +85,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 			History: v1.History{
 				Author:    "apko",
 				Comment:   comment,
-				CreatedBy: "apko",
+				CreatedBy: createdBy,
 				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
 			},
 		})
