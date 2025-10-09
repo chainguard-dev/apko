@@ -53,7 +53,7 @@ func LoadImage(ctx context.Context, image v1.Image, tags []string) (name.Referen
 		if err != nil {
 			return name.Digest{}, err
 		}
-		if !strings.HasPrefix(localSrcTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
+		if !strings.HasPrefix(localDstTag.Name(), fmt.Sprintf("%s/", LocalDomain)) {
 			log.Infof("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
 			if err := daemon.Tag(localSrcTag, localDstTag, daemon.WithContext(ctx)); err != nil {
 				return name.Digest{}, err
