@@ -38,7 +38,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -63,7 +62,7 @@ import (
 // This is terrible but simpler than plumbing around a cache for now.
 // We just hold the expanded APK in memory rather than re-parsing it every time,
 // which is expensive. This also dedupes simultaneous fetches.
-var globalApkCache = &apkCache{}
+var globalApkCache = newCoalescingCache[string, *expandapk.APKExpanded]()
 
 type APK struct {
 	arch               string
@@ -1260,40 +1259,6 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 	return &exp, nil
 }
 
-type apkResult struct {
-	exp *expandapk.APKExpanded
-	err error
-}
-
-type apkCache struct {
-	// url -> *sync.Once
-	onces sync.Map
-
-	// url -> apkResult
-	resps sync.Map
-}
-
-func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	u := pkg.URL()
-	// Do all the expensive things inside the once.
-	once, _ := c.onces.LoadOrStore(u, &sync.Once{})
-	once.(*sync.Once).Do(func() {
-		exp, err := expandPackage(ctx, a, pkg)
-		c.resps.Store(u, apkResult{
-			exp: exp,
-			err: err,
-		})
-	})
-
-	v, ok := c.resps.Load(u)
-	if !ok {
-		panic(fmt.Errorf("did not see apk %q after writing it", u))
-	}
-
-	result := v.(apkResult)
-	return result.exp, result.err
-}
-
 func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
 	if a.cache == nil {
 		// If we don't have a cache configured, don't use the global cache.
@@ -1303,7 +1268,9 @@ func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expan
 		return expandPackage(ctx, a, pkg)
 	}
 
-	return globalApkCache.get(ctx, a, pkg)
+	return globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
+		return expandPackage(ctx, a, pkg)
+	})
 }
 
 func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
