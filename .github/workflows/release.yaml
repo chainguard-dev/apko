@@ -32,8 +32,32 @@ jobs:
           git fetch --tags
           TAG=$(git tag --points-at HEAD)
           if [ -z "$TAG" ]; then
-            echo "No tag points at HEAD, so we need a new tag and then a new release."
-            echo "need_release=yes" >> $GITHUB_OUTPUT
+            echo "No tag points at HEAD, checking if changes warrant a release."
+
+            # Get the last release tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+            if [ -n "$LAST_TAG" ]; then
+              echo "Last release tag: $LAST_TAG"
+
+              # Get all changed files since last tag
+              CHANGED_FILES=$(git diff --name-only "$LAST_TAG"..HEAD)
+
+              # Only release if changes include .go files, go.mod, go.sum, or LICENSE
+              RELEASE_WORTHY_CHANGES=$(echo "$CHANGED_FILES" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^LICENSE$)' || true)
+
+              if [ -z "$RELEASE_WORTHY_CHANGES" ]; then
+                echo "No Go source files, go.mod, go.sum, or LICENSE changed since last release. Skipping release."
+                echo "need_release=no" >> $GITHUB_OUTPUT
+              else
+                echo "Found release-worthy changes since last release:"
+                echo "$RELEASE_WORTHY_CHANGES"
+                echo "need_release=yes" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "No previous tags found. Creating first release."
+              echo "need_release=yes" >> $GITHUB_OUTPUT
+            fi
           else
             RELEASE=$(gh release view "$TAG" --json tagName --jq '.tagName' || echo "none")
             if [ "$RELEASE" == "$TAG" ]; then
