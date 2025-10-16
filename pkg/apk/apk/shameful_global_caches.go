@@ -68,7 +68,7 @@ func (r *resolverCache) fill(indexes []NamedIndex, pr *PkgResolver) {
 	child.fill(indexes[1:], pr)
 }
 
-func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+func (r *resolverCache) get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	r.Lock()
 	defer r.Unlock()
 
@@ -76,7 +76,7 @@ func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResol
 		return pr.Clone()
 	}
 
-	pr := newPkgResolver(ctx, indexes)
+	pr := NewPkgResolver(ctx, indexes)
 	r.fill(indexes, pr)
 
 	return pr.Clone()
@@ -130,7 +130,7 @@ func (r *disqualifyCache) fill(indexes []NamedIndex, dq map[*RepositoryPackage]s
 
 // It is expensive to compute the difference between every architecture.
 // This caches that difference based on the input []NamedIndex for every architecture.
-func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
+func (r *disqualifyCache) get(ctx context.Context, byArch map[string][]NamedIndex, resolverCache *resolverCache) map[*RepositoryPackage]string {
 	r.Lock()
 	defer r.Unlock()
 
@@ -142,7 +142,7 @@ func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedInde
 		return maps.Clone(dq)
 	}
 
-	dq := disqualifyDifference(ctx, byArch)
+	dq := disqualifyDifference(ctx, byArch, resolverCache)
 	r.fill(indexes, dq)
 
 	return maps.Clone(dq)
