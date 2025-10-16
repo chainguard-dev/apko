@@ -610,7 +610,12 @@ func (a *APK) ResolveWorld(ctx context.Context) (toInstall []*RepositoryPackage,
 	if err != nil {
 		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
 	}
-	resolver := NewPkgResolver(ctx, indexes)
+
+	resolverCache := globalResolverCache
+	if a.cache != nil {
+		resolverCache = a.cache.resolverCache
+	}
+	resolver := resolverCache.get(ctx, indexes)
 
 	// For other architectures we're building (if any), we want to disqualify any packages not present in all archs.
 	allArchs := map[string][]NamedIndex{}
@@ -622,7 +627,13 @@ func (a *APK) ResolveWorld(ctx context.Context) (toInstall []*RepositoryPackage,
 		allArchs[otherArch] = indexes
 	}
 
-	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs, allArchs)
+	dqCache := globalDisqualifyCache
+	if a.cache != nil {
+		dqCache = a.cache.disqualifyCache
+	}
+	dq := dqCache.get(ctx, allArchs, resolverCache)
+
+	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs, dq)
 	if err != nil {
 		return
 	}
