@@ -36,7 +36,7 @@ func Test_userToUserEntry_UID_GID_mapping(t *testing.T) {
 		expectedGID uint32
 	}{
 		{
-			desc: "Unique GID gets propogated",
+			desc: "Unique GID gets propagated",
 			user: types.User{
 				UID: id1234,
 				GID: id1235T,

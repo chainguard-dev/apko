@@ -19,8 +19,11 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"io/fs"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 
@@ -155,4 +158,17 @@ func TestTarFS(t *testing.T) {
 			t.Errorf("readlink: want %q, got %q", want, got)
 		}
 	}
+}
+
+func TestTarFSCreate(t *testing.T) {
+	var (
+		tfs = tarfs.New()
+		err error
+	)
+	fd, err := tfs.Create("testfile")
+	require.NoError(t, err)
+
+	fileInfo, err := fd.Stat()
+	require.NoError(t, err)
+	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
 }

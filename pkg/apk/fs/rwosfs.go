@@ -236,8 +236,9 @@ func (f *dirFS) open(name string) (*fileImpl, error) {
 		file, err := os.Open(fullpath)
 		if err == nil {
 			return &fileImpl{
-				file: file,
-				name: baseName,
+				file:     file,
+				name:     baseName,
+				fullpath: fullpath,
 			}, nil
 		}
 		if !os.IsPermission(err) {
@@ -258,9 +259,10 @@ func (f *dirFS) open(name string) (*fileImpl, error) {
 		}
 		perms := fi.Mode()
 		return &fileImpl{
-			file:  file,
-			name:  baseName,
-			perms: &perms,
+			file:     file,
+			name:     baseName,
+			fullpath: fullpath,
+			perms:    &perms,
 		}, nil
 	}
 
@@ -618,8 +620,9 @@ func (f *dirFS) removeOnDisk(p string) (removeOnDisk bool) {
 type file File
 type fileImpl struct {
 	file
-	name  string
-	perms *os.FileMode
+	name     string
+	fullpath string
+	perms    *os.FileMode
 }
 
 func (f fileImpl) Close() error {
@@ -627,7 +630,8 @@ func (f fileImpl) Close() error {
 		return err
 	}
 	if f.perms != nil {
-		return os.Chmod(f.name, *f.perms)
+		// f.name is the basename of the path, use the f.file.name here
+		return os.Chmod(f.fullpath, *f.perms)
 	}
 	return nil
 }

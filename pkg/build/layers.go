@@ -16,6 +16,7 @@ package build
 
 import (
 	"archive/tar"
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -44,9 +45,16 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Build a single fs.FS, the normal way (this writes to bc.fs).
-	pkgs, err := bc.buildImage(ctx)
+	diffs, err := bc.buildImage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("building filesystem: %w", err)
+	}
+
+	pkgs := make([]*apk.Package, 0, len(diffs))
+	pkgToDiff := map[*apk.Package][]byte{}
+	for _, pkgDiff := range diffs {
+		pkgs = append(pkgs, pkgDiff.Package)
+		pkgToDiff[pkgDiff.Package] = pkgDiff.Diff
 	}
 
 	// We don't pass around repositories cleanly between apko and the library
@@ -77,7 +85,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
-	return splitLayers(ctx, bc.fs, groups, bc.o.TempDir())
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 }
 
 func replacesGroup(rep string, g *group) (bool, error) {
@@ -245,7 +253,7 @@ func merge(groups ...*group) *group {
 	return merged
 }
 
-func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir string) ([]v1.Layer, error) {
+func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
 	// We'll create a writer for each layer and a map to quickly access the writer given a package or group.
@@ -359,7 +367,6 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir
 			if err != nil {
 				return nil, fmt.Errorf("opening %s: %w", f.path, err)
 			}
-
 			if _, err := io.CopyBuffer(w.w, data, buf); err != nil {
 				return nil, fmt.Errorf("copying %s: %w", f.path, err)
 			}
@@ -369,12 +376,49 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, tmpdir
 				return nil, fmt.Errorf("closing %s: %w", f.path, err)
 			}
 		}
+
+		if f.header.Name == "usr/lib/apk/db/installed" {
+			// Add a partial installed db to each layer to satisfy scanners.
+			for _, g := range groups {
+				w := groupToWriter[g]
+
+				// Make sure we have all parent directories to appease AWS Lambda.
+				for _, todo := range w.alignStacks(stack) {
+					todo.header.ModTime = f.header.ModTime
+
+					if err := w.w.WriteHeader(todo.header); err != nil {
+						return nil, fmt.Errorf("writing header %s: %w", todo.header.Name, err)
+					}
+				}
+
+				// Accumulate all the idb entries for this layer.
+				var buf bytes.Buffer
+				for _, pkg := range g.pkgs {
+					if _, err := buf.Write(pkgToDiff[pkg]); err != nil {
+						return nil, err
+					}
+				}
+
+				// Only the size should be different across layers.
+				idb := *f.header
+				idb.Size = int64(buf.Len())
+
+				if err := w.w.WriteHeader(&idb); err != nil {
+					return nil, err
+				}
+
+				if _, err := io.Copy(w.w, &buf); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	// Once we're done walking the FS, we need to finalize each layer...
 	layers := make([]v1.Layer, 0, len(groups)+1)
 	for i, g := range groups {
 		w := groupToWriter[g]
+
 		l, err := w.finalize()
 		if err != nil {
 			return nil, fmt.Errorf("finalizing group[%d] layer: %w", i, err)

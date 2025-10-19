@@ -19,17 +19,23 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/apk/expandapk"
 )
 
 var testInstalledPackages = []*Package{
@@ -49,6 +55,53 @@ var testInstalledPackages = []*Package{
 	{Name: "libc-utils", Version: "0.7.2-r3"},
 }
 
+func openAPKFile(t *testing.T, filename string) (*Package, []tar.Header) {
+	t.Helper()
+
+	apkFile, err := os.Open(filename)
+	require.NoError(t, err, "failed to open APK file %s", filename)
+	defer apkFile.Close()
+
+	stat, err := apkFile.Stat()
+	require.NoError(t, err, "failed to stat APK file %s", filename)
+
+	pkg, err := ParsePackage(context.Background(), apkFile, uint64(stat.Size()))
+	require.NoError(t, err, "failed to parse package from %s", filename)
+
+	apkFile.Seek(0, 0)
+
+	split, err := expandapk.Split(apkFile)
+	require.NoError(t, err, "failed to split APK %s", filename)
+
+	var dataSection io.Reader
+	switch len(split) {
+	case 2:
+		dataSection = split[1]
+	case 3:
+		dataSection = split[2]
+	default:
+		require.Fail(t, "unexpected number of sections in APK %s", filename)
+	}
+
+	gz, err := gzip.NewReader(dataSection)
+	require.NoError(t, err, "failed to create gzip reader for data section of %s", filename)
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	var headers []tar.Header
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err, "failed to read tar header from %s", filename)
+		headers = append(headers, *header)
+	}
+
+	return pkg, headers
+}
+
 func TestGetInstalled(t *testing.T) {
 	a, _, err := testGetTestAPK()
 	require.NoError(t, err, "unable to initialize APK implementation")
@@ -64,6 +117,7 @@ func TestGetInstalled(t *testing.T) {
 	}
 }
 
+// TestAddInstalledPackage - checks result in usr/lib/apk/db/installed
 func TestAddInstalledPackage(t *testing.T) {
 	a, _, err := testGetTestAPK()
 	require.NoErrorf(t, err, "unable to initialize APK implementation: %v", err)
@@ -85,7 +139,7 @@ func TestAddInstalledPackage(t *testing.T) {
 		}}, // should generate extra a: perms line
 	}
 	// AddInstalledPackage(pkg *Package, files []tar.Header) error
-	err = a.AddInstalledPackage(newPkg, newFiles)
+	_, err = a.AddInstalledPackage(newPkg, newFiles)
 	require.NoErrorf(t, err, "unable to add installed package: %v", err)
 	// check that the new packages were added
 	pkgs, err := a.GetInstalled()
@@ -102,6 +156,162 @@ func TestAddInstalledPackage(t *testing.T) {
 	want := "Z:Q1kavxlyJ9L+cdAW9My2ixbJybJ2g="
 	str := string(installedFile)
 	require.Contains(t, str, want)
+}
+
+// TestAddInstalledPackageAdded - checks return value of AddInstalledPackage
+func TestAddInstalledPackageAdded(t *testing.T) {
+	newPkg := &Package{
+		Name:             "testpkg",
+		Version:          "1.0.0",
+		Arch:             "x86_64",
+		Description:      "my-description",
+		URL:              "https://example.com/testpkg",
+		Origin:           "testpkg",
+		Dependencies:     []string{"testlib"},
+		RepoCommit:       "a2020bf03d408b2ef1585d7dc52c29ce88524a76",
+		BuildTime:        time.Date(2025, 8, 11, 1, 0, 0, 0, time.UTC),
+		Size:             13282,
+		InstalledSize:    123541,
+		License:          "GPL-2.0-only",
+		ProviderPriority: 0,
+	}
+	newPkgContent := strings.Join([]string{
+		"P:testpkg",
+		"V:1.0.0",
+		"A:x86_64",
+		"L:GPL-2.0-only",
+		"T:my-description",
+		"o:testpkg",
+		"m:",
+		"U:https://example.com/testpkg",
+		"D:testlib",
+		"p:",
+		"c:a2020bf03d408b2ef1585d7dc52c29ce88524a76",
+		"i:[]",
+		"t:1754874000",
+		"S:13282",
+		"I:123541",
+		"k:0",
+	}, "\n")
+
+	cases := []struct {
+		name     string
+		headers  []tar.Header
+		expected string
+	}{
+		{
+			name: "files in root - should create empty F record to house R:",
+			headers: []tar.Header{
+				{Name: "README", Typeflag: tar.TypeReg, Mode: 0o444, Uid: 0, Gid: 0},
+			},
+			expected: "F:\nR:README\na:0:0:0444",
+		},
+		{
+			name: "dir in root - should not create empty F record.",
+			headers: []tar.Header{
+				{Name: "my.d", Typeflag: tar.TypeDir, Mode: 0o755, Uid: 0, Gid: 0},
+			},
+			expected: "F:my.d",
+		},
+		{
+			name: "files sort before dirs",
+			headers: []tar.Header{
+				{Name: "my.d", Typeflag: tar.TypeDir, Mode: 0755, Uid: 0, Gid: 0},
+				{Name: "my.d/zfile", Typeflag: tar.TypeReg, Mode: 0644, Uid: 0, Gid: 0},
+				{Name: "my.d/xfile", Typeflag: tar.TypeReg, Mode: 0644, Uid: 0, Gid: 0},
+				{Name: "my.d/adir", Typeflag: tar.TypeDir, Mode: 0755, Uid: 0, Gid: 0},
+			},
+			expected: "F:my.d\nR:xfile\nR:zfile\nF:my.d/adir",
+		},
+		{
+			name: "files sort before dirs",
+			headers: []tar.Header{
+				{Name: "my.d", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "my.d/zfile", Typeflag: tar.TypeReg, Mode: 0o644},
+				{Name: "my.d/xfile", Typeflag: tar.TypeReg, Mode: 0o644},
+				{Name: "my.d/adir", Typeflag: tar.TypeDir, Mode: 0o755},
+			},
+			expected: "F:my.d\nR:xfile\nR:zfile\nF:my.d/adir",
+		},
+		{
+			name: "file noperm",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "adir/file", Typeflag: tar.TypeReg, Mode: 0o000},
+			},
+			expected: "F:adir\nR:file\na:0:0:0000",
+		},
+		{
+			name: "file default perm - no a: record for 0:0 644",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "adir/file", Typeflag: tar.TypeReg, Mode: 0o644},
+			},
+			expected: "F:adir\nR:file",
+		},
+		{
+			name: "file 0600",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "adir/file", Typeflag: tar.TypeReg, Mode: 0o600},
+			},
+			expected: "F:adir\nR:file\na:0:0:0600",
+		},
+		{
+			name: "file 4755",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "adir/xxfile", Typeflag: tar.TypeReg, Mode: 0o4755},
+			},
+			expected: "F:adir\nR:xxfile\na:0:0:4755",
+		},
+		{
+			name: "dir default perm - no M record expected for 0:0 0755",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755},
+			},
+			expected: "F:adir",
+		},
+		{
+			name: "dir 1001:0 0755 - M record required",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755, Uid: 1001},
+			},
+			expected: "F:adir\nM:1001:0:0755",
+		},
+		{
+			name: "dir 0:1001 0755 - M record required",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o755, Gid: 1001},
+			},
+			expected: "F:adir\nM:0:1001:0755",
+		},
+		{
+			name: "dir 0700",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o700},
+			},
+			expected: "F:adir\nM:0:0:0700",
+		},
+		{
+			name: "dir 2600",
+			headers: []tar.Header{
+				{Name: "adir", Typeflag: tar.TypeDir, Mode: 0o2600},
+			},
+			expected: "F:adir\nM:0:0:2600",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			a, _, err := testGetTestAPK()
+			require.NoError(t, err, "unable to initialize APK implementation")
+
+			installedBytes, err := a.AddInstalledPackage(newPkg, tt.headers)
+			require.NoError(t, err, "AddInstalledPackage should not return error")
+			require.NotEmpty(t, installedBytes, "AddInstalledPackage should return non-empty bytes")
+			require.Equal(t, newPkgContent+"\n"+tt.expected+"\n\n", string(installedBytes))
+		})
+	}
 }
 
 func TestIsInstalledPackage(t *testing.T) {
@@ -280,7 +490,39 @@ func TestUpdateTriggers(t *testing.T) {
 	t.Errorf("could not find entry for checksum: %s", cksum)
 }
 
-func TestSortTarHeaders(t *testing.T) {
+func TestPathCompare(t *testing.T) {
+	cases := []struct {
+		name     string
+		p1       string
+		p1Dir    bool
+		p2       string
+		p2Dir    bool
+		expected int
+	}{
+		{"top file equal", "a.txt", false, "a.txt", false, 0},
+		{"top file greater", "b.txt", false, "a.txt", false, 1},
+		{"top file less", "a.txt", false, "b.txt", false, -1},
+		{"top dir  equal", "aDir", true, "aDir", true, 0},
+		{"top dir  greater", "bDir", true, "aDir", true, 1},
+		{"top dir  less", "aDir", true, "bDir", true, -1},
+		{"top file to dir 1", "a", false, "bDir", true, -1},
+		{"top file to dir 2", "b", false, "aDir", true, -1},
+		{"top dir to file 1", "aDir", true, "b", false, 1},
+		{"top dir to file 2", "bDir", true, "a", false, 1},
+		{"diff paths file 1", "/a/file", false, "/b/file", false, -1},
+		{"diff paths file 2", "/a/b/c/d/file", false, "/a/b/c/e/file", false, -1},
+		{"diff paths file 3", "/a/file", false, "/a/b/c/e/file", false, -1},
+		{"diff paths file 4", "/a/b/c/e/file", false, "/a/file", false, 1},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected,
+				pathCompare(tt.p1, tt.p1Dir, tt.p2, tt.p2Dir))
+		})
+	}
+}
+
+func TestCleanTarHeaders(t *testing.T) {
 	cases := []struct {
 		name     string
 		headers  []tar.Header
@@ -327,6 +569,7 @@ func TestSortTarHeaders(t *testing.T) {
 				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
 			},
 			expected: []string{
+				"etc",
 				"usr",
 				"usr/bin",
 				"usr/bin/cmd",
@@ -349,7 +592,7 @@ func TestSortTarHeaders(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			results := sortTarHeaders(tt.headers)
+			results := cleanTarHeaders(tt.headers)
 
 			var resultHeaderNames []string
 			for _, header := range results {
@@ -357,6 +600,579 @@ func TestSortTarHeaders(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.expected, resultHeaderNames)
+		})
+	}
+}
+
+func TestParseInstalledPackages(t *testing.T) {
+	for _, c := range []struct {
+		installedFile string
+		errExp        string
+		want          []string
+	}{{
+		installedFile: "wolfi-base",
+		want: []string{
+			"apk-tools",
+			"busybox",
+			"ca-certificates-bundle",
+			"glibc",
+			"glibc-locale-posix",
+			"ld-linux",
+			"libcrypt1",
+			"libcrypto3",
+			"libgcc",
+			"libssl3",
+			"libxcrypt",
+			"wolfi-base",
+			"wolfi-baselayout",
+			"wolfi-keys",
+			"zlib",
+		},
+	}, {
+		installedFile: "redis-operator-compat",
+		want: []string{
+			"apk-tools",
+			"busybox",
+			"ca-certificates-bundle",
+			"glibc",
+			"glibc-locale-posix",
+			"ld-linux",
+			"libcrypt1",
+			"libcrypto3",
+			"libgcc",
+			"libssl3",
+			"libxcrypt",
+			"redis-operator-compat",
+			"wolfi-base",
+			"wolfi-baselayout",
+			"wolfi-keys",
+			"zlib",
+		},
+	}, {
+		installedFile: "bad-top-level-perms",
+		errExp:        "M entry cannot be associated with top level dir",
+		want:          []string{},
+	}} {
+		t.Run(c.installedFile, func(t *testing.T) {
+			f, err := os.Open("testdata/installed/" + c.installedFile)
+			if err != nil {
+				t.Fatalf("opening installed: %v", err)
+			}
+			defer f.Close()
+
+			installedPkgs, err := ParseInstalled(f)
+			if c.errExp != "" {
+				assert.Error(t, err, "ParseInstalledPackages(): Expected error but found none")
+				if err != nil {
+					assert.Contains(t, err.Error(), c.errExp)
+				}
+				return
+			} else if err != nil {
+				t.Fatalf("ParseInstalledPackages(): %v", err)
+			}
+			got := []string{}
+			for _, i := range installedPkgs {
+				got = append(got, i.Name)
+			}
+			sort.Strings(got)
+			sort.Strings(c.want)
+
+			if d := cmp.Diff(c.want, got); d != "" {
+				t.Errorf("ParseInstalledPackages() mismatch (-want  got):\n%s", d)
+			}
+		})
+	}
+}
+
+func TestRemoveOrphanedEntries(t *testing.T) {
+	cases := []struct {
+		name     string
+		headers  []tar.Header
+		expected []string
+	}{
+		{
+			name: "no orphans",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"usr", "usr/bin", "usr/bin/cmd"},
+		},
+		{
+			name: "orphaned file missing intermediate directory",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg}, // missing usr/bin
+				{Name: "etc", Typeflag: tar.TypeDir},
+				{Name: "etc/logrotate.d/file", Typeflag: tar.TypeReg}, // missing etc/logrotate.d
+			},
+			expected: []string{"usr", "etc"},
+		},
+		{
+			name: "orphaned directory missing parent",
+			headers: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/share/docs", Typeflag: tar.TypeDir},  // missing usr/share
+				{Name: "etc/logrotate.d", Typeflag: tar.TypeDir}, // missing etc
+			},
+			expected: []string{"usr"},
+		},
+		{
+			name: "trailing slashes handled correctly",
+			headers: []tar.Header{
+				{Name: "usr/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"usr/", "usr/bin/", "usr/bin/cmd"},
+		},
+		{
+			name: "root level files kept",
+			headers: []tar.Header{
+				{Name: "rootfile", Typeflag: tar.TypeReg},
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg}, // missing usr/bin
+			},
+			expected: []string{"rootfile", "usr"},
+		},
+		{
+			name:     "empty input",
+			headers:  []tar.Header{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			headersCopy := make([]tar.Header, len(tt.headers))
+			copy(headersCopy, tt.headers)
+
+			newLen := removeOrphanedEntries(headersCopy)
+			results := headersCopy[:newLen]
+
+			var resultNames []string
+			for _, header := range results {
+				resultNames = append(resultNames, header.Name)
+			}
+
+			assert.Equal(t, tt.expected, resultNames)
+		})
+	}
+}
+
+// TestAddInstalledPackageFromAPK - test AddInstalled for the full apks in tree.
+func TestAddInstalledPackageFromAPK(t *testing.T) {
+	cases := []struct {
+		name     string
+		apkFile  string
+		expected string
+	}{
+		{
+			name:    "alpine-baselayout-3.4.0-r0",
+			apkFile: "testdata/alpine-317/alpine-baselayout-3.4.0-r0.apk",
+			expected: `P:alpine-baselayout
+V:3.2.0-r23
+A:aarch64
+L:GPL-2.0-only
+T:Alpine base dir structure and init scripts
+o:alpine-baselayout
+m:Natanael Copa <ncopa@alpinelinux.org>
+U:https://git.alpinelinux.org/cgit/aports/tree/main/alpine-baselayout
+D:alpine-baselayout-data=3.2.0-r23 /bin/sh so:libc.musl-aarch64.so.1
+p:cmd:mkmntdirs=3.2.0-r23
+c:348653a9ba0701e8e968b3344e72313a9ef334e4
+i:[]
+t:1662926906
+S:11012
+I:339968
+k:0
+C:Q1LLq2qDNrS/qRnhxQ3hsY/sHbQnc=
+F:dev
+F:dev/pts
+F:dev/shm
+F:etc
+R:motd
+Z:Q1XmduVVNURHQ27TvYp1Lr5TMtFcA=
+F:etc/apk
+F:etc/conf.d
+F:etc/crontabs
+R:root
+a:0:0:0600
+Z:Q1vfk1apUWI4yLJGhhNRd0kJixfvY=
+F:etc/init.d
+F:etc/modprobe.d
+R:aliases.conf
+Z:Q1WUbh6TBYNVK7e4Y+uUvLs/7viqk=
+R:blacklist.conf
+Z:Q14TdgFHkTdt3uQC+NBtrntOnm9n4=
+R:i386.conf
+Z:Q1pnay/njn6ol9cCssL7KiZZ8etlc=
+R:kms.conf
+Z:Q1ynbLn3GYDpvajba/ldp1niayeog=
+F:etc/modules-load.d
+F:etc/network
+F:etc/network/if-down.d
+F:etc/network/if-post-down.d
+F:etc/network/if-pre-up.d
+F:etc/network/if-up.d
+F:etc/opt
+F:etc/periodic
+F:etc/periodic/15min
+F:etc/periodic/daily
+F:etc/periodic/hourly
+F:etc/periodic/monthly
+F:etc/periodic/weekly
+F:etc/profile.d
+R:README
+Z:Q135OWsCzzvnB2fmFx62kbqm1Ax1k=
+R:color_prompt.sh.disabled
+Z:Q11XM9mde1Z29tWMGaOkeovD/m4uU=
+R:locale.sh
+Z:Q1S8j+WW71mWxfVy8ythqU7HUVoBw=
+F:etc/sysctl.d
+F:home
+F:lib
+F:lib/firmware
+F:lib/mdev
+F:lib/modules-load.d
+F:lib/sysctl.d
+R:00-alpine.conf
+Z:Q1HpElzW1xEgmKfERtTy7oommnq6c=
+F:media
+F:media/cdrom
+F:media/floppy
+F:media/usb
+F:mnt
+F:opt
+F:proc
+F:root
+M:0:0:0700
+F:run
+F:sbin
+R:mkmntdirs
+a:0:0:0755
+Z:Q1Yz4VxhO2EVju3t6SmUoDtmTSK+U=
+F:srv
+F:sys
+F:tmp
+M:0:0:1777
+F:usr
+F:usr/lib
+F:usr/lib/modules-load.d
+F:usr/local
+F:usr/local/bin
+F:usr/local/lib
+F:usr/local/share
+F:usr/sbin
+F:usr/share
+F:usr/share/man
+F:usr/share/misc
+F:var
+R:run
+a:0:0:0777
+Z:Q11/SNZz/8cK2dSKK+cJpVrZIuF4Q=
+F:var/cache
+F:var/cache/misc
+F:var/empty
+M:0:0:0555
+F:var/lib
+F:var/lib/misc
+F:var/local
+F:var/lock
+F:var/lock/subsys
+F:var/log
+F:var/mail
+F:var/opt
+F:var/spool
+R:mail
+a:0:0:0777
+Z:Q1dzbdazYZA2nTzSIG3YyNw7d4Juc=
+F:var/spool/cron
+R:crontabs
+a:0:0:0777
+Z:Q1OFZt+ZMp7j0Gny0rqSKuWJyqYmA=
+F:var/tmp
+M:0:0:1777
+
+`,
+		},
+		{
+			name:    "hello-0.1.0-r0",
+			apkFile: "testdata/hello-0.1.0-r0.apk",
+			expected: `P:hello
+V:0.1.0-r0
+A:x86_64
+L:Apache-2.0
+T:just a test package
+o:
+m:
+U:
+D:busybox
+p:
+c:
+i:[]
+t:0
+S:499
+I:4117
+k:0
+C:Q1DNWZeWkviN7MJedLpYM8yBvmnGM=
+F:
+R:hello
+a:0:0:0755
+Z:Q1nbbwdPygqQMTe5HHyGayHU5yBac=
+
+`,
+		},
+		{
+			name:    "alpine-baselayout-3.2.0-r23",
+			apkFile: "testdata/alpine-317/alpine-baselayout-3.2.0-r23.apk",
+			expected: `P:alpine-baselayout
+V:3.2.0-r23
+A:aarch64
+L:GPL-2.0-only
+T:Alpine base dir structure and init scripts
+o:alpine-baselayout
+m:Natanael Copa <ncopa@alpinelinux.org>
+U:https://git.alpinelinux.org/cgit/aports/tree/main/alpine-baselayout
+D:alpine-baselayout-data=3.2.0-r23 /bin/sh so:libc.musl-aarch64.so.1
+p:cmd:mkmntdirs=3.2.0-r23
+c:348653a9ba0701e8e968b3344e72313a9ef334e4
+i:[]
+t:1662926906
+S:11012
+I:339968
+k:0
+C:Q1LLq2qDNrS/qRnhxQ3hsY/sHbQnc=
+F:dev
+F:dev/pts
+F:dev/shm
+F:etc
+R:motd
+Z:Q1XmduVVNURHQ27TvYp1Lr5TMtFcA=
+F:etc/apk
+F:etc/conf.d
+F:etc/crontabs
+R:root
+a:0:0:0600
+Z:Q1vfk1apUWI4yLJGhhNRd0kJixfvY=
+F:etc/init.d
+F:etc/modprobe.d
+R:aliases.conf
+Z:Q1WUbh6TBYNVK7e4Y+uUvLs/7viqk=
+R:blacklist.conf
+Z:Q14TdgFHkTdt3uQC+NBtrntOnm9n4=
+R:i386.conf
+Z:Q1pnay/njn6ol9cCssL7KiZZ8etlc=
+R:kms.conf
+Z:Q1ynbLn3GYDpvajba/ldp1niayeog=
+F:etc/modules-load.d
+F:etc/network
+F:etc/network/if-down.d
+F:etc/network/if-post-down.d
+F:etc/network/if-pre-up.d
+F:etc/network/if-up.d
+F:etc/opt
+F:etc/periodic
+F:etc/periodic/15min
+F:etc/periodic/daily
+F:etc/periodic/hourly
+F:etc/periodic/monthly
+F:etc/periodic/weekly
+F:etc/profile.d
+R:README
+Z:Q135OWsCzzvnB2fmFx62kbqm1Ax1k=
+R:color_prompt.sh.disabled
+Z:Q11XM9mde1Z29tWMGaOkeovD/m4uU=
+R:locale.sh
+Z:Q1S8j+WW71mWxfVy8ythqU7HUVoBw=
+F:etc/sysctl.d
+F:home
+F:lib
+F:lib/firmware
+F:lib/mdev
+F:lib/modules-load.d
+F:lib/sysctl.d
+R:00-alpine.conf
+Z:Q1HpElzW1xEgmKfERtTy7oommnq6c=
+F:media
+F:media/cdrom
+F:media/floppy
+F:media/usb
+F:mnt
+F:opt
+F:proc
+F:root
+M:0:0:0700
+F:run
+F:sbin
+R:mkmntdirs
+a:0:0:0755
+Z:Q1Yz4VxhO2EVju3t6SmUoDtmTSK+U=
+F:srv
+F:sys
+F:tmp
+M:0:0:1777
+F:usr
+F:usr/lib
+F:usr/lib/modules-load.d
+F:usr/local
+F:usr/local/bin
+F:usr/local/lib
+F:usr/local/share
+F:usr/sbin
+F:usr/share
+F:usr/share/man
+F:usr/share/misc
+F:var
+R:run
+a:0:0:0777
+Z:Q11/SNZz/8cK2dSKK+cJpVrZIuF4Q=
+F:var/cache
+F:var/cache/misc
+F:var/empty
+M:0:0:0555
+F:var/lib
+F:var/lib/misc
+F:var/local
+F:var/lock
+F:var/lock/subsys
+F:var/log
+F:var/mail
+F:var/opt
+F:var/spool
+R:mail
+a:0:0:0777
+Z:Q1dzbdazYZA2nTzSIG3YyNw7d4Juc=
+F:var/spool/cron
+R:crontabs
+a:0:0:0777
+Z:Q1OFZt+ZMp7j0Gny0rqSKuWJyqYmA=
+F:var/tmp
+M:0:0:1777
+
+`,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			a, _, err := testGetTestAPK()
+			require.NoError(t, err, "unable to initialize APK implementation")
+
+			pkg, files := openAPKFile(t, tt.apkFile)
+
+			installedBytes, err := a.AddInstalledPackage(pkg, files)
+			require.NoError(t, err, "AddInstalledPackage should not return error")
+			require.NotEmpty(t, installedBytes, "AddInstalledPackage should return non-empty bytes")
+
+			installedStr := string(installedBytes)
+			require.Equal(t, tt.expected, installedStr, "AddInstalledPackage output should match expected format exactly")
+		})
+	}
+}
+
+func TestParseInstalledFiles(t *testing.T) {
+	for _, c := range []struct {
+		installedFile string
+		pkgName       string
+		want          []string
+	}{{
+		installedFile: "wolfi-base",
+		pkgName:       "ld-linux",
+		want: []string{
+			"etc",
+			"etc/ld.so.conf",
+			"etc/ld.so.conf.d",
+			"etc/ld.so.conf.d/libc.conf",
+			"usr",
+			"usr/lib",
+			"usr/lib/ld-linux-x86-64.so.2",
+			"var",
+			"var/lib",
+			"var/lib/db",
+			"var/lib/db/sbom",
+			"var/lib/db/sbom/ld-linux-2.41-r55.spdx.json",
+		},
+	}, {
+		installedFile: "redis-operator-compat",
+		pkgName:       "redis-operator-compat",
+		want: []string{
+			"operator",
+			"var",
+			"var/lib",
+			"var/lib/db",
+			"var/lib/db/sbom",
+			"var/lib/db/sbom/redis-operator-compat-0.21.0-r1.spdx.json",
+		},
+	}} {
+		t.Run(c.installedFile, func(t *testing.T) {
+			f, err := os.Open("testdata/installed/" + c.installedFile)
+			if err != nil {
+				t.Fatalf("opening installed: %v", err)
+			}
+			defer f.Close()
+
+			installedPkgs, err := ParseInstalled(f)
+			if err != nil {
+				t.Fatalf("ParseInstalledFiles(): %v", err)
+			}
+
+			var installedPkg *InstalledPackage
+			for _, i := range installedPkgs {
+				if i.Name == c.pkgName {
+					installedPkg = i
+					break
+				}
+			}
+			if installedPkg == nil {
+				t.Fatalf("package %s not found installed in %s\n", c.pkgName, c.installedFile)
+			}
+
+			got := []string{}
+			for _, i := range installedPkg.Files {
+				got = append(got, i.Name)
+			}
+			sort.Strings(got)
+			sort.Strings(c.want)
+
+			if d := cmp.Diff(c.want, got); d != "" {
+				t.Errorf("ParseInstalledFiles() mismatch (-want  got):\n%s", d)
+			}
+		})
+	}
+}
+
+func TestParseInstalledPerms(t *testing.T) {
+	cases := []struct {
+		name     string
+		permStr  string
+		uid      int
+		gid      int
+		perms    int64
+		errMatch string
+	}{
+		{"executable file", "0:0:755", 0, 0, 0755, ""},
+		{"setuid executable file", "0:0:4755", 0, 0, 04755, ""},
+		{"non-root owner", "1001:0:644", 1001, 0, 0644, ""},
+		{"non-root group", "0:1001:644", 0, 1001, 0644, ""},
+		{"other-write perm", "0:0:777", 0, 0, 0777, ""},
+		{"too many tokens", "0:0:0:0", 0, 0, 0, "3 parts"},
+		{"bad uid token", "a:0:777", 0, 0, 0, "invalid.*uid"},
+		{"bad gid token", "0:b:7770", 0, 0, 0, "invalid.*gid"},
+		{"bad perm token", "0:0:cat", 0, 0, 0, "invalid.*perms"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			uid, gid, perms, err := parseInstalledPerms(tt.permStr)
+			if tt.errMatch != "" {
+				require.Error(t, err, "expected error found none")
+				assert.Regexp(t, tt.errMatch, err.Error(), "Error message should match the regex")
+				return
+			}
+			assert.Equal(t, tt.uid, uid, "unexpected uid")
+			assert.Equal(t, tt.gid, gid, "unexpected gid")
+			assert.Equal(t, tt.perms, perms, "unexpected perms")
 		})
 	}
 }

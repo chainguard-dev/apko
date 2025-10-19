@@ -79,10 +79,13 @@ type ImageContents struct {
 	// which are not installed into /etc/apk/repositories in the image (to
 	// install packages at runtime)
 	BuildRepositories []string `json:"build_repositories,omitempty" yaml:"build_repositories,omitempty"`
+	// A list of apk repositories that are installed into /etc/apk/repositories in the image but not used
+	// at build time
+	RuntimeOnlyRepositories []string `json:"runtime_repositories,omitempty" yaml:"runtime_repositories,omitempty"`
 	// A list of apk repositories to use for pulling packages during both the
 	// initial construction of the image, and also at runtime by seeding them
 	// into /etc/apk/repositories in the resulting image.
-	RuntimeRepositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
+	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// A list of packages to include in the image
@@ -106,13 +109,13 @@ func (i ImageContents) MarshalYAML() (interface{}, error) {
 		ri.BuildRepositories[idx] = parsed.Redacted()
 	}
 
-	for idx, repo := range ri.RuntimeRepositories {
+	for idx, repo := range ri.Repositories {
 		rawURL := repo
 		parsed, err := url.Parse(rawURL)
 		if err != nil {
 			return nil, fmt.Errorf("parsing repository URL: %w", err)
 		}
-		ri.RuntimeRepositories[idx] = parsed.Redacted()
+		ri.Repositories[idx] = parsed.Redacted()
 	}
 
 	for idx, key := range ri.Keyring {
@@ -170,7 +173,7 @@ type ImageConfiguration struct {
 	//
 	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64
 	Archs []Architecture `json:"archs,omitempty" yaml:"archs,omitempty"`
-	// Optional: Envionment variables to set in the container image
+	// Optional: Environment variables to set in the container image
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
 	// Optional: List of paths mutations
 	Paths []PathMutation `json:"paths,omitempty" yaml:"paths,omitempty"`

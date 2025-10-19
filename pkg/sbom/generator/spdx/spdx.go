@@ -637,7 +637,7 @@ func addOperatingSystem(doc *Document, opts *options.Options) {
 		FilesAnalyzed:    false,
 		Description:      "Operating System",
 		DownloadLocation: NOASSERTION,
-		PrimaryPurpose:   "OPERATING-SYSTEM",
+		PrimaryPurpose:   "OPERATING_SYSTEM",
 	}
 
 	doc.Packages = append(doc.Packages, osPackage)

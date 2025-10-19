@@ -130,7 +130,7 @@ func newLayerWriter(out *os.File) *layerWriter {
 	}
 }
 
-func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
+func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) {
 	log := clog.FromContext(ctx)
 
 	// When using base image for the build, apko adds new layer on top of the base. This means
@@ -141,7 +141,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 		// Index for loop to make golang-ci happy.
 		// See https://stackoverflow.com/questions/62446118/implicit-memory-aliasing-in-for-loop
 		for index := range basePkgs {
-			err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
+			_, err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
 			if err != nil {
 				return nil, err
 			}
@@ -149,7 +149,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]*apk.Package, error) {
 	}
 
 	var (
-		pkgs []*apk.Package
+		pkgs []apk.InstalledDiff
 		err  error
 	)
 	if bc.o.Lockfile != "" {
@@ -256,6 +256,9 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	}
 	if err := cacheFile.Write(lsc); err != nil {
 		return fmt.Errorf("writing /etc/ld.so.cache: %w", err)
+	}
+	if err := fsys.Chmod("etc/ld.so.cache", 0644); err != nil {
+		return fmt.Errorf("chmod /etc/ld.so.cache: %w", err)
 	}
 
 	return nil

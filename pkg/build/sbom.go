@@ -229,7 +229,7 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 
 	s.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
 
-	// Make sure we have a determinstic for iterating over imgs.
+	// Make sure we have a deterministic for iterating over imgs.
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)

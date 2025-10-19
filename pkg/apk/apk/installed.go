@@ -47,22 +47,24 @@ func (a *APK) GetInstalled() ([]*InstalledPackage, error) {
 	return ParseInstalled(installedFile)
 }
 
-// addInstalledPackage add a package to the list of installed packages
-func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
+// AddInstalledPackage add a package to the list of installed packages and returns
+// the _incremental_ diff installing the package had on the idb file.
+func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, error) {
 	// be sure to open the file in append mode so we add to the end
 	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
+		return nil, fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
 	}
 	defer installedFile.Close()
 
 	// sort the files by directory
-	sortedFiles := sortTarHeaders(files)
+	sortedFiles := cleanTarHeaders(files)
 	// package lines
 	pkgLines := PackageToInstalled(pkg)
 	// file lines
+	topDirNeeded := true
 	for _, f := range sortedFiles {
-		perm := f.Mode & 0777
+		perm := f.Mode & 0o7777
 		user := f.Uid
 		group := f.Gid
 
@@ -72,7 +74,12 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
 			if perm != 0o755 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("M:%d:%d:%04o", user, group, perm))
 			}
+			topDirNeeded = false
 		} else {
+			if topDirNeeded {
+				pkgLines = append(pkgLines, "F:")
+				topDirNeeded = false
+			}
 			pkgLines = append(pkgLines, fmt.Sprintf("R:%s", filepath.Base(f.Name)))
 			if perm != 0o644 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("a:%d:%d:%04o", user, group, perm))
@@ -82,7 +89,7 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
 					if !strings.HasPrefix(checksum, "Q1") {
 						hexsum, err := hex.DecodeString(checksum)
 						if err != nil {
-							return err
+							return nil, err
 						}
 						checksum = "Q1" + base64.StdEncoding.EncodeToString(hexsum)
 					}
@@ -94,9 +101,9 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) error {
 	// write to installed file
 	b := []byte(strings.Join(pkgLines, "\n") + "\n\n")
 	if _, err := installedFile.Write(b); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return b, nil
 }
 
 // isInstalledPackage check if a specific package is installed
@@ -338,12 +345,17 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 				Gid:      0,
 				Typeflag: tar.TypeDir,
 			}
-			pkg.Files = append(pkg.Files, *lastDir)
+			if val != "" {
+				pkg.Files = append(pkg.Files, *lastDir)
+			}
 			lastFile = nil
 		case "M":
 			// directory perms if not 0o755
 			if lastDir == nil {
 				return nil, fmt.Errorf("cannot parse line %d: no directory specified when setting permissions", linenr)
+			}
+			if lastDir.Name == "" {
+				return nil, fmt.Errorf("cannot parse line %d: M entry cannot be associated with top level dir", linenr)
 			}
 			uid, gid, perms, err := parseInstalledPerms(val)
 			if err != nil {
@@ -404,87 +416,119 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 	return
 }
 
-// sortTarHeaders sorts tar headers by name. It ensures that all file children
-// of a directory are listed immediately after the directory itself. This is to
-// support usr/lib/apk/db/installed, which lists full paths for directories, but
-// only the basename for the files, so the last directory entry before a file
-// must be the parent in which it sits.
-func sortTarHeaders(headers []tar.Header) []tar.Header {
-	var (
-		// Create a tree with everything in it, where keys are full directory paths,
-		// values are slice of full paths of children. (Every directory in the tree will
-		// have its own key in the map.)
-		directoryChildren = map[string][]string{}
-
-		all = map[string]tar.Header{}
-	)
-
-	for _, header := range headers {
-		// Use a cleaned name for map keys to ensure consistency with lookups later.
-		cleanedName := filepath.Clean(header.Name)
-
-		dir := filepath.Dir(cleanedName)
-		directoryChildren[dir] = append(directoryChildren[dir], cleanedName)
-		all[cleanedName] = header
+// removeOrphanedEntries - remove all entries in a slice of tar.Header that cannot be reached.
+//
+//	An entry cannot be reached if there is no entry for it's parent directory.
+//	As example, if /etc/hooks.d/pre-hook is a file, but there is no entry in
+//	the slice for /etc or /etc/hooks.d, then /etc/hooks.d/pre-hook should be removed.
+//
+// https://github.com/chainguard-dev/apko/issues/1810
+//
+// Works in-place by rearranging the slice and returns the new length.
+func removeOrphanedEntries(headers []tar.Header) int {
+	if len(headers) == 0 {
+		return 0
 	}
 
-	// Map the directory entries (the keys in "directoryChildren") to a slice (and
-	// sort them for determinism).
-	var dirEntries = make([]string, 0, len(directoryChildren))
-	for dir := range directoryChildren {
-		dirEntries = append(dirEntries, dir)
-	}
-	sort.Strings(dirEntries)
-
-	// We'll start with top-level directories, and then descend into their children
-	// recursively.
-	var topLevelDirs = make([]string, 0, len(dirEntries))
-	for _, dir := range dirEntries {
-		if filepath.Dir(dir) == "." {
-			topLevelDirs = append(topLevelDirs, dir)
+	// Build a set of all directory paths (with and without trailing slashes)
+	dirPaths := make(map[string]bool)
+	for i := 0; i < len(headers); i++ {
+		if headers[i].Typeflag == tar.TypeDir {
+			// Add both versions of the path (with and without trailing slash)
+			cleanPath := strings.TrimSuffix(headers[i].Name, "/")
+			dirPaths[cleanPath] = true
+			dirPaths[headers[i].Name] = true
 		}
 	}
 
-	sort.Strings(topLevelDirs)
+	// Add root directory implicitly
+	dirPaths[""] = true
+	dirPaths["."] = true
 
-	sorted := sortChildrenTarHeaders(directoryChildren, all, topLevelDirs)
-	return sorted
+	writeIndex := 0
+	for readIndex := 0; readIndex < len(headers); readIndex++ {
+		keep := true
+		header := headers[readIndex]
+
+		// For non-root entries, check if parent directories exist
+		if header.Name != "" && header.Name != "." {
+			parentPath := filepath.Dir(strings.TrimSuffix(header.Name, "/"))
+
+			// Check parent hierarchy exists
+			for parentPath != "" && parentPath != "." {
+				if !dirPaths[parentPath] {
+					keep = false
+					break
+				}
+				parentPath = filepath.Dir(parentPath)
+			}
+		}
+
+		if keep {
+			if writeIndex != readIndex {
+				headers[writeIndex] = headers[readIndex]
+			}
+			writeIndex++
+		}
+	}
+
+	return writeIndex
 }
 
-func sortChildrenTarHeaders(directoryChildren map[string][]string, all map[string]tar.Header, children []string) []tar.Header {
-	sort.Strings(children)
+// cleanTarHeaders - return a copy of headers cleaned for apk installed database.
+//
+// Cleaning consists of
+//  1. sorting
+//  2. removing orphaned entries
+func cleanTarHeaders(headers []tar.Header) []tar.Header {
+	hCopy := make([]tar.Header, len(headers))
+	copy(hCopy, headers)
+	sort.SliceStable(hCopy,
+		func(i, j int) bool {
+			return pathCompare(
+				hCopy[i].Name, hCopy[i].Typeflag == tar.TypeDir,
+				hCopy[j].Name, hCopy[j].Typeflag == tar.TypeDir) < 0
+		})
+	newLen := removeOrphanedEntries(hCopy)
+	return hCopy[:newLen]
+}
 
-	// Non-directory type files need to be first.
-	var sorted = make([]tar.Header, 0, len(children))
-	for _, child := range children {
-		header, ok := all[child]
-		if !ok {
-			continue
-		}
-		if header.Typeflag != tar.TypeDir {
-			sorted = append(sorted, header)
+// pathCompare - compare two paths for writing to apk installed database.
+// within a given directory:
+// 1. all non-directories (files, symlink, ...) will sort before directories
+// 2. all non-directories and directories will be sorted within themselves.
+func pathCompare(a string, aIsDir bool, b string, bIsDir bool) int {
+	var n, result int
+	aClean := filepath.Clean(a)
+	bClean := filepath.Clean(b)
+	if aClean == bClean {
+		return 0
+	}
+	sep := fmt.Sprintf("%c", filepath.Separator)
+	aToks := strings.Split(aClean, sep)
+	bToks := strings.Split(bClean, sep)
+
+	for n = 0; n < len(aToks)-1 && n < len(bToks)-1; n++ {
+		result = strings.Compare(aToks[n], bToks[n])
+		if result != 0 {
+			return result
 		}
 	}
 
-	// Then directories.
-	for _, child := range children {
-		header, ok := all[child]
-		if !ok {
-			continue
-		}
-		if header.Typeflag == tar.TypeDir {
-			sorted = append(sorted, header)
+	// n represents the component that should be compared.
+	// this token is a directory if
+	//  1. it is the last token and the header is a directory ('lib' in /usr/local/lib)
+	//  2. it is not the path's last token ('local' in /var/local/lib)
+	aTokIsDir := n+1 < len(aToks) || aIsDir
+	bTokIsDir := n+1 < len(bToks) || bIsDir
 
-			// And their children.
-			children, ok := directoryChildren[child]
-			if !ok || len(children) == 0 {
-				continue
-			}
-
-			sortedChildren := sortChildrenTarHeaders(directoryChildren, all, children)
-			sorted = append(sorted, sortedChildren...)
-		}
+	if aTokIsDir == bTokIsDir {
+		// both are directories or non-directories
+		return strings.Compare(aToks[n], bToks[n])
 	}
-
-	return sorted
+	// if a is not a dir, it goes before b
+	if !aTokIsDir {
+		return -1
+	}
+	return 1
 }

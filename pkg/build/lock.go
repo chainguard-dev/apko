@@ -41,7 +41,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 	}
 
 	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
-	input.Contents.RuntimeRepositories = sets.List(sets.New(input.Contents.RuntimeRepositories...).Insert(o.ExtraRuntimeRepos...))
+	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
 	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
 
 	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)
@@ -167,7 +167,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 		pinned := ""
 
 		// The function we want from go-apk is private, but these are all the
-		// special characters that delimit the package name from the cosntraint
+		// special characters that delimit the package name from the constraint
 		// so lop off the package name and stick the rest of the constraint into
 		// the versions map.
 		if idx := strings.IndexAny(orig, "=<>~"); idx >= 0 {

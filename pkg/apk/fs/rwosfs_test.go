@@ -44,6 +44,9 @@ func TestExistingDir(t *testing.T) {
 		{"a/b/c", false, 0o644, []byte("hello")},
 		{"foo/bar", true, 0o700, nil},
 		{"foo/bar/world", false, 0o600, []byte("world")},
+		// ReadFile() fails on the following and doesn't fall back to
+		// trying to adjust the permissions.
+		// {"foo/bar/shadow", false, 0o000, []byte("shadow")},
 	}
 
 	dir := t.TempDir()
@@ -67,6 +70,62 @@ func TestExistingDir(t *testing.T) {
 		content, err = fs.ReadFile(f.path)
 		require.NoError(t, err, "error reading file %s", f.path)
 		require.Equal(t, f.content, content, "content of %s should be %s", f.path, f.content)
+	}
+}
+
+// DirFS has differing behaviors depending on handling an inaccessible
+// file due to permissions in ReadFile(), OpenFile(), and Open().
+func TestExistingDirUsingOpen(t *testing.T) {
+	var (
+		err     error
+		content []byte
+	)
+	files := []struct {
+		path    string
+		dir     bool
+		perms   os.FileMode
+		content []byte
+	}{
+		{"a/b", true, 0o755, nil},
+		{"a/b/c", false, 0o644, []byte("hello")},
+		{"foo/bar", true, 0o700, nil},
+		{"foo/bar/world", false, 0o600, []byte("world")},
+		{"foo/bar/shadow", false, 0o000, []byte("shadow")},
+	}
+
+	dir := t.TempDir()
+	for _, f := range files {
+		if f.dir {
+			err = os.MkdirAll(filepath.Join(dir, f.path), f.perms)
+			require.NoError(t, err, "error creating dir %s", f.path)
+		} else {
+			err = os.WriteFile(filepath.Join(dir, f.path), f.content, f.perms)
+			require.NoError(t, err, "error creating file %s", f.path)
+		}
+	}
+
+	fs := DirFS(t.Context(), dir)
+	require.NotNil(t, fs, "fs should be created")
+
+	for _, f := range files {
+		if f.dir {
+			continue
+		}
+		fd, err := fs.Open(f.path)
+		require.NoError(t, err, "error opening file %s", f.path)
+
+		content = make([]byte, len(f.content))
+		_, err = fd.Read(content)
+		require.NoError(t, err, "error reading file %s", f.path)
+
+		require.Equal(t, f.content, content, "content of %s should be %s", f.path, f.content)
+
+		fd.Close()
+		// Ensure 0 permissions on the original file were maintained/reset correctly
+		if f.perms == 0o000 {
+			_, err = os.ReadFile(f.path)
+			require.Error(t, err, "expected permissions error reading %s", f.path)
+		}
 	}
 }
 

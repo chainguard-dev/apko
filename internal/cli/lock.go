@@ -64,7 +64,7 @@ func RemoveLabel(s string) (string, error) {
 func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
-	var extraRuntimeRepos []string
+	var extraRepos []string
 	var archstrs []string
 	var output string
 	var includePaths []string
@@ -93,7 +93,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 					build.WithConfig(args[0], includePaths),
 					build.WithExtraKeys(extraKeys),
 					build.WithExtraBuildRepos(extraBuildRepos),
-					build.WithExtraRuntimeRepos(extraRuntimeRepos),
+					build.WithExtraRepos(extraRepos),
 					build.WithIncludePaths(includePaths),
 					build.WithIgnoreSignatures(ignoreSignatures),
 					build.WithCache(cacheDir, false, apk.NewCache(true)),
@@ -104,7 +104,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
@@ -154,10 +154,11 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			DeepChecksum: o.ImageConfigChecksum,
 		},
 		Contents: pkglock.LockContents{
-			Packages:            make([]pkglock.LockPkg, 0, len(ic.Contents.Packages)),
-			BuildRepositories:   make([]pkglock.LockRepo, 0, len(ic.Contents.BuildRepositories)),
-			RuntimeRepositories: make([]pkglock.LockRepo, 0, len(ic.Contents.RuntimeRepositories)),
-			Keyrings:            make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
+			Packages:                make([]pkglock.LockPkg, 0, len(ic.Contents.Packages)),
+			BuildRepositories:       make([]pkglock.LockRepo, 0, len(ic.Contents.BuildRepositories)),
+			RuntimeOnlyRepositories: make([]pkglock.LockRepo, 0, len(ic.Contents.RuntimeOnlyRepositories)),
+			Repositories:            make([]pkglock.LockRepo, 0, len(ic.Contents.Repositories)),
+			Keyrings:                make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
 		},
 	}
 
@@ -216,39 +217,45 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
 		}
 		for _, repositoryURI := range ic.Contents.BuildRepositories {
-			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			name, err := RemoveLabel(stripURLScheme(repo.URI))
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+				return fmt.Errorf("locking build repositories: %w", err)
 			}
-			url, err := RemoveLabel(repo.IndexURI())
-			if err != nil {
-				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
-			}
-			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, pkglock.LockRepo{
-				Name:         name,
-				URL:          url,
-				Architecture: arch.ToAPK(),
-			})
+			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, repoLock)
 		}
-		for _, repositoryURI := range ic.Contents.RuntimeRepositories {
-			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			name, err := RemoveLabel(stripURLScheme(repo.URI))
+		for _, repositoryURI := range ic.Contents.RuntimeOnlyRepositories {
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository URI: %w", err)
+				return fmt.Errorf("locking runtime repositories: %w", err)
 			}
-			url, err := RemoveLabel(repo.IndexURI())
+			lock.Contents.RuntimeOnlyRepositories = append(lock.Contents.RuntimeOnlyRepositories, repoLock)
+		}
+		for _, repositoryURI := range ic.Contents.Repositories {
+			repoLock, err := repoLock(repositoryURI, arch)
 			if err != nil {
-				return fmt.Errorf("failed to remove label from repository index URI: %w", err)
+				return fmt.Errorf("locking repositories: %w", err)
 			}
-			lock.Contents.RuntimeRepositories = append(lock.Contents.RuntimeRepositories, pkglock.LockRepo{
-				Name:         name,
-				URL:          url,
-				Architecture: arch.ToAPK(),
-			})
+			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
 	return lock.SaveToFile(output)
+}
+
+func repoLock(repositoryURI string, arch types.Architecture) (pkglock.LockRepo, error) {
+	repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+	name, err := RemoveLabel(stripURLScheme(repo.URI))
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository URI: %w", err)
+	}
+	url, err := RemoveLabel(repo.IndexURI())
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository index URI: %w", err)
+	}
+	return pkglock.LockRepo{
+		Name:         name,
+		URL:          url,
+		Architecture: arch.ToAPK(),
+	}, nil
 }
 
 func stripURLScheme(url string) string {

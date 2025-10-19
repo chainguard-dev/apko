@@ -63,7 +63,7 @@ type pkgInfo struct {
 func showPackages() *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
-	var extraRuntimeRepos []string
+	var extraRepos []string
 	var archstrs []string
 	var format string
 	var tmpl string
@@ -74,7 +74,7 @@ func showPackages() *cobra.Command {
 		Use:   "show-packages",
 		Short: "Show the packages and versions that would be installed by a configuration",
 		Long: `Show the packages and versions that would be installed by a configuration.
-The result is identical to the first stages of a build, but does not actuall install anything.
+The result is identical to the first stages of a build, but does not actually install anything.
 
 The output is one of several pre-defined formats, or can be customized to any go template, using
 the provided vars. See https://pkg.go.dev/text/template for more information. Available vars are
@@ -108,7 +108,7 @@ packagelock and packagelock-source are particularly useful for inserting back in
 				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
-				build.WithExtraRuntimeRepos(extraRuntimeRepos),
+				build.WithExtraRepos(extraRepos),
 				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
@@ -116,7 +116,7 @@ packagelock and packagelock-source are particularly useful for inserting back in
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
-	cmd.Flags().StringSliceVarP(&extraRuntimeRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&format, "format", showPkgsFormatDefault, "format for showing packages; if pre-defined from list, will use that, else go template. See https://pkg.go.dev/text/template for more information. Available vars are `.Name`, `.Version`, `.Source`")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
