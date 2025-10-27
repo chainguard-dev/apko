@@ -47,7 +47,7 @@ An apko file for building an Alpine base image looks like this:
 ```yaml
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-base
 

@@ -12,7 +12,7 @@ This is easier to understand by looking at a simple example:
 ```yaml
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-base
 
@@ -42,7 +42,7 @@ The following example builds an nginx image and covers the full range of apko fe
 ```yaml
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-baselayout
     - nginx
