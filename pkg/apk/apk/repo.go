@@ -1164,7 +1164,7 @@ func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) m
 	}
 
 	for arch := range allowablePackages {
-		p := newPkgResolver(ctx, byArch[arch])
+		p := globalResolverCache.Get(ctx, byArch[arch])
 		for otherArch, allowed := range allowablePackages {
 			if otherArch == arch {
 				continue
