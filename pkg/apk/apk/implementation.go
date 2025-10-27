@@ -41,7 +41,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/jonjohnsonjr/targz/tarfs"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -51,13 +53,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/paths"
-
-	"github.com/chainguard-dev/clog"
 )
 
 // This is terrible but simpler than plumbing around a cache for now.
@@ -1133,9 +1132,7 @@ func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *exp
 
 	exp.PackageFile = datDst
 
-	if err := exp.TarFS.Close(); err != nil {
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
+	// Note: external tarfs library doesn't require explicit closing
 
 	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
 
