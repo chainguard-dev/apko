@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"gopkg.in/yaml.v3"
 )
 
 type User struct {
@@ -130,6 +131,17 @@ func (i ImageContents) MarshalYAML() (interface{}, error) {
 	return ri, nil
 }
 
+type ImageService struct {
+	// Required: The command of the service
+	Command string `json:"command,omitempty" yaml:"command"`
+	// Optional: The name of the parent service
+	DependsOn []string `json:"depends_on,omitempty" yaml:"depends_on"`
+	// Optional: The restart policy of the service ('always' by default as in docker)
+	Restart string `json:"restart,omitempty" yaml:"restart"`
+}
+
+type ImageServices map[string]ImageService
+
 type ImageEntrypoint struct {
 	// Optional: The type of entrypoint. Only "service-bundle" is supported.
 	Type string `json:"type,omitempty"`
@@ -138,7 +150,33 @@ type ImageEntrypoint struct {
 	// Optional: The shell fragment of the entrypoint command
 	ShellFragment string `json:"shell-fragment,omitempty" yaml:"shell-fragment"`
 
-	Services map[string]string `json:"services,omitempty"`
+	Services ImageServices `json:"services,omitempty"`
+}
+
+func (s *ImageServices) UnmarshalYAML(value *yaml.Node) error {
+	// First attempt to parse as map[string]ImageService
+	var structured map[string]ImageService
+	if err := value.Decode(&structured); err == nil {
+		*s = structured
+		return nil
+	}
+
+	// If err, attempt as map[string]string
+	var flat map[string]string
+	if err := value.Decode(&flat); err == nil {
+		converted := make(map[string]ImageService)
+		for name, cmd := range flat {
+			converted[name] = ImageService{
+				Command:   cmd,
+				DependsOn: []string{},
+				Restart:   "always",
+			}
+		}
+		*s = converted
+		return nil
+	}
+
+	return fmt.Errorf("services field must be map[string]string or map[string]ImageService")
 }
 
 type ImageAccounts struct {
