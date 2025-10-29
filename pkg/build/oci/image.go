@@ -50,10 +50,15 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		return nil, err
 	}
 
+	// Compute comment
 	comment := "This is an apko single-layer image"
 	if len(layers) > 1 {
-		// TODO: Consider plumbing per-layer info here?
 		comment = ""
+	}
+	title, titleok := ic.Annotations["org.opencontainers.image.title"]
+	vendor, vendorok := ic.Annotations["org.opencontainers.image.vendor"]
+	if titleok && vendorok {
+		comment = title + " by " + vendor
 	}
 
 	adds := make([]mutate.Addendum, 0, len(layers))
