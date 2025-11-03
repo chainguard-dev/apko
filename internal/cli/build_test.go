@@ -41,7 +41,15 @@ func TestBuild(t *testing.T) {
 	config := filepath.Join("testdata", "apko.yaml")
 
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden:latest")}
+	opts := []build.Option{
+		build.WithConfig(config, []string{}),
+		build.WithSBOMFormats([]string{"spdx"}),
+		build.WithTags("golden:latest"),
+		build.WithAnnotations(map[string]string{
+			"org.opencontainers.image.vendor": "Vendor",
+			"org.opencontainers.image.title":  "Title",
+		}),
+	}
 
 	sbomPath := filepath.Join(tmp, "sboms")
 	err := os.MkdirAll(sbomPath, 0o750)
