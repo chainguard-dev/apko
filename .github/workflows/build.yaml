@@ -37,6 +37,9 @@ jobs:
 
       - name: Setup cosign (needed in CI tests)
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+        with:
+          # https://github.com/goreleaser/goreleaser/issues/6195
+          cosign-release: "v2.6.1"
 
       - name: Setup crane (needed in CI tests)
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
