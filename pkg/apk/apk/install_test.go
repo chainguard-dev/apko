@@ -296,6 +296,47 @@ func TestInstallAPKFiles(t *testing.T) {
 			checkDuplicateIDBEntries(t, apk)
 		})
 	})
+
+	t.Run("overwriting files from untracked packages", func(t *testing.T) {
+		t.Run("file not in installedFiles map can be overwritten", func(t *testing.T) {
+			apk, src, err := testGetTestAPK()
+			require.NoErrorf(t, err, "failed to get test APK")
+
+			// Pre-create a file that's not tracked in installedFiles
+			// This simulates busybox-provided files in the base system
+			filePath := "usr/bin/testcmd"
+			require.NoError(t, src.MkdirAll("usr/bin", 0o755))
+			initialContent := []byte("busybox stub")
+			require.NoError(t, src.WriteFile(filePath, initialContent, 0o755))
+
+			// Verify the file exists with old content
+			oldContent, err := src.ReadFile(filePath)
+			require.NoError(t, err)
+			require.Equal(t, initialContent, oldContent)
+
+			// Mark this file as if it were from a symlink (by not tracking it)
+			// The actual symlink behavior is tested in container tests
+
+			// Install a package that provides the real binary
+			realContent := []byte("#!/bin/sh\necho real binary")
+			pkg := &Package{Name: "testcmd-pkg", Origin: "testcmd", Version: "1.0.0"}
+			fp := fakePackage(t, pkg, []testDirEntry{
+				{"usr", 0o755, true, nil, nil},
+				{"usr/bin", 0o755, true, nil, nil},
+				{filePath, 0o755, false, realContent, nil},
+			})
+
+			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp})
+			require.NoError(t, err)
+
+			// Verify the file was replaced with new content
+			actual, err := src.ReadFile(filePath)
+			require.NoError(t, err)
+			require.Equal(t, realContent, actual)
+
+			checkDuplicateIDBEntries(t, apk)
+		})
+	})
 }
 
 func checkDuplicateIDBEntries(t *testing.T, apk *APK) {

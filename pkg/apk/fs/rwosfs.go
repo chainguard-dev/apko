@@ -291,7 +291,13 @@ func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) 
 		// do we create it on disk?
 		if f.createOnDisk(name) {
 			_ = file.Close()
-			file, err = os.OpenFile(filepath.Join(f.base, name), flag, perm)
+			fullPath := filepath.Join(f.base, name)
+			// If a symlink exists at this path, remove it first so we can create a regular file.
+			// This handles cases like busybox symlinks that need to be replaced.
+			if fi, err := os.Lstat(fullPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+				_ = os.Remove(fullPath)
+			}
+			file, err = os.OpenFile(fullPath, flag, perm)
 			if err != nil {
 				return nil, err
 			}
@@ -364,7 +370,9 @@ func (f *dirFS) Create(name string) (File, error) {
 }
 
 func (f *dirFS) Remove(name string) error {
-	if err := f.overrides.Remove(name); err != nil {
+	// Try to remove from overlay first. If it doesn't exist in the overlay, that's okay -
+	// it might still exist on disk (e.g., symlinks that weren't walked yet).
+	if err := f.overrides.Remove(name); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if f.removeOnDisk(name) {
@@ -607,6 +615,12 @@ func (f *dirFS) removeOnDisk(p string) (removeOnDisk bool) {
 	} else if v, ok := f.caseMap[key]; ok && v == p {
 		delete(f.caseMap, key)
 		removeOnDisk = true
+	} else {
+		// Even if not in caseMap, check if file exists on disk (e.g., symlinks that weren't walked).
+		// If it exists, we should remove it.
+		if _, err := os.Lstat(filepath.Join(f.base, p)); err == nil {
+			removeOnDisk = true
+		}
 	}
 	return
 }

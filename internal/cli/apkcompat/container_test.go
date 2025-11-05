@@ -352,6 +352,64 @@ func min(a, b int) int {
 	return b
 }
 
+// TestAddPackageWithSymlinkOverwrite tests installing a package that overwrites busybox symlinks
+func TestAddPackageWithSymlinkOverwrite(t *testing.T) {
+	ct := newContainerTest(t)
+
+	// Verify egrep is a symlink to busybox before installation
+	stdout, _, exitCode := ct.exec("sh", "-c", "ls -la /usr/bin/egrep")
+	if exitCode != 0 {
+		t.Fatalf("failed to check egrep: exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "busybox") {
+		t.Skipf("egrep is not a busybox symlink, skipping test. Output: %s", stdout)
+	}
+
+	// Install grep package which should replace the busybox symlinks
+	stdout, stderr, exitCode := ct.exec("apko-as-apk", "add", "grep")
+	if exitCode != 0 {
+		t.Fatalf("failed to install grep: exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Verify grep was installed successfully
+	if !strings.Contains(stderr, "OK") && !strings.Contains(stderr, "Installing grep") {
+		t.Errorf("expected success message, got: %s", stderr)
+	}
+
+	// Verify egrep is now a regular file, not a symlink
+	stdout, _, exitCode = ct.exec("sh", "-c", "test -L /usr/bin/egrep && echo 'symlink' || echo 'file'")
+	if exitCode != 0 {
+		t.Errorf("failed to check egrep type: exit code %d", exitCode)
+	}
+	if strings.Contains(stdout, "symlink") {
+		t.Error("egrep should be a regular file after installing grep, not a symlink")
+	}
+
+	// Verify egrep works
+	stdout, _, exitCode = ct.exec("/usr/bin/egrep", "--version")
+	if exitCode != 0 {
+		t.Errorf("egrep --version failed: exit code %d", exitCode)
+	}
+	if !strings.Contains(stdout, "grep") {
+		t.Errorf("egrep should be GNU grep, got: %s", stdout)
+	}
+
+	// Verify fgrep was also replaced
+	stdout, _, exitCode = ct.exec("sh", "-c", "test -L /usr/bin/fgrep && echo 'symlink' || echo 'file'")
+	if exitCode != 0 {
+		t.Errorf("failed to check fgrep type: exit code %d", exitCode)
+	}
+	if strings.Contains(stdout, "symlink") {
+		t.Error("fgrep should be a regular file after installing grep, not a symlink")
+	}
+
+	// Verify the package is recorded in the world file
+	stdout, _, exitCode = ct.exec("apko-as-apk", "info", "grep")
+	if exitCode != 0 {
+		t.Errorf("grep should be installed: exit code %d", exitCode)
+	}
+}
+
 // TestCompareOutputFormats tests that output formats are compatible
 func TestCompareOutputFormats(t *testing.T) {
 	ct := newContainerTest(t)

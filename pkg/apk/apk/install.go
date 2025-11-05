@@ -35,9 +35,14 @@ import (
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
 func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool) error {
-	// check if the file exists; allow override if the origin i
-	if _, err := a.fs.Stat(header.Name); err == nil {
+	// check if the file exists; use Lstat to not follow symlinks
+	fi, err := a.fs.Lstat(header.Name)
+	if err == nil {
 		if !allowOverwrite {
+			// If it's a symlink, we can't calculate a checksum, so just return an error
+			if fi.Mode()&os.ModeSymlink != 0 {
+				return FileExistsError{Path: header.Name, Sha1: nil}
+			}
 			// get the sum of the file, so we can compare it to the new file
 			w := sha1.New() //nolint:gosec // this is what apk tools is using
 			f, err := a.fs.Open(header.Name)
@@ -51,11 +56,20 @@ func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool)
 			return FileExistsError{Path: header.Name, Sha1: w.Sum(nil)}
 		}
 		// allowOverwrite, so remove the file
-		if err := a.fs.Remove(header.Name); err != nil {
+		// Note: in layered filesystems, the file might not be in the overlay yet,
+		// so Remove might fail with "not exist". That's okay - we'll overwrite it anyway.
+		if err := a.fs.Remove(header.Name); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("unable to remove existing file %s: %w", header.Name, err)
 		}
 	}
-	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, header.FileInfo().Mode())
+	// When allowOverwrite is false, use O_EXCL to ensure we don't overwrite existing files.
+	// When allowOverwrite is true, just use O_CREATE|O_WRONLY (the Remove above should have
+	// removed the file, so we're creating a new one).
+	flags := os.O_CREATE | os.O_WRONLY
+	if !allowOverwrite {
+		flags |= os.O_EXCL
+	}
+	f, err := a.fs.OpenFile(header.Name, flags, header.FileInfo().Mode())
 	if err != nil {
 		return fmt.Errorf("error creating file %s: %w", header.Name, err)
 	}
@@ -130,7 +144,13 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 		// If the existing file's package replaces the package we want to install, we don't need to write this file.
 		pk, ok := a.installedFiles[header.Name]
 		if !ok {
-			return false, fmt.Errorf("found existing file we did not install (this should never happen): %s", header.Name)
+			// If the file is not tracked in our installed files, it might be from the base system
+			// (e.g., busybox symlinks). APK allows overwriting these.
+			// Try to overwrite the file.
+			if err := a.writeOneFile(header, r, true); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 
 		if slices.Contains(pk.Replaces, pkg.Name) {
