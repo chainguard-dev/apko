@@ -29,7 +29,7 @@ import (
 )
 
 var readerPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewReaderSize(nil, 1<<20)
 	},
 }

@@ -683,8 +683,8 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 	}
 
 	// If this is a github package, add a purl to it:
-	if strings.HasPrefix(packageName, "github.com/") {
-		slug := strings.TrimPrefix(packageName, "github.com/")
+	if after, ok := strings.CutPrefix(packageName, "github.com/"); ok {
+		slug := after
 		org, user, ok := strings.Cut(slug, "/")
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{

@@ -51,7 +51,7 @@ import (
 var pgzipThreads = min(runtime.GOMAXPROCS(0), 8)
 
 var pgzipPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		zw := gzip.NewWriter(nil)
 		if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
 			// This should never happen.
@@ -68,7 +68,7 @@ func pooledGzipWriter(w io.Writer) *gzip.Writer {
 }
 
 var bufioPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewWriterSize(nil, 1<<22)
 	},
 }

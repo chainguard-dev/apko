@@ -240,8 +240,8 @@ func ParseLibFilename(realname string) (string, string, error) {
 	if !strings.HasPrefix(realname, "lib") && !strings.HasPrefix(realname, "ld-") {
 		return "", "", fmt.Errorf("filename does not start with 'lib' or 'ld-': %s", realname)
 	}
-	if strings.HasSuffix(realname, ".so") {
-		name = strings.TrimSuffix(realname, ".so")
+	if before, ok := strings.CutSuffix(realname, ".so"); ok {
+		name = before
 		ver = ""
 		return name, ver, nil
 	}

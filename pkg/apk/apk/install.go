@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -132,10 +133,8 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 			return false, fmt.Errorf("found existing file we did not install (this should never happen): %s", header.Name)
 		}
 
-		for _, rep := range pk.Replaces {
-			if pkg.Name == rep {
-				return false, nil
-			}
+		if slices.Contains(pk.Replaces, pkg.Name) {
+			return false, nil
 		}
 
 		// Otherwise, we can only overwrite the file if it's in the same origin or if it replaces the existing package.
@@ -289,11 +288,9 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 		return nil, nil
 	}
 
-	if strings.HasPrefix(hexsum, "Q1") {
+	if b64, ok := strings.CutPrefix(hexsum, "Q1"); ok {
 		// This is nonstandard but something we did at one point, handle it.
 		// In other contexts, this Q1 prefix means "this is sha1 not md5".
-		b64 := strings.TrimPrefix(hexsum, "Q1")
-
 		checksum, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {
 			return nil, fmt.Errorf("decoding base64 checksum from header for %q: %w", header.Name, err)

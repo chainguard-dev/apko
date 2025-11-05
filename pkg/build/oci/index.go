@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -59,9 +60,7 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 	// If annotations are set and we're using the OCI mediaType, set annotations on the index.
 	annCopy := make(map[string]string, len(ic.Annotations))
 	if mediaType == ggcrtypes.OCIImageIndex {
-		for k, v := range ic.Annotations {
-			annCopy[k] = v
-		}
+		maps.Copy(annCopy, ic.Annotations)
 		if ic.VCSUrl != "" {
 			if url, hash, ok := strings.Cut(ic.VCSUrl, "@"); ok {
 				annCopy["org.opencontainers.image.source"] = url

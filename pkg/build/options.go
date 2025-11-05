@@ -19,6 +19,7 @@ import (
 	sha2562 "crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"net/http"
 	"time"
 
@@ -35,7 +36,6 @@ type Option func(*Context) error
 // WithConfig sets the image configuration for the build context.
 // The image configuration is parsed from given config file.
 // TODO(jason): Remove this.
-// Deprecated: Use WithImageConfiguration instead.
 func WithConfig(configFile string, includePaths []string) Option {
 	return func(bc *Context) error {
 		ctx := context.Background()
@@ -184,9 +184,7 @@ func WithAnnotations(annotations map[string]string) Option {
 		if bc.ic.Annotations == nil {
 			bc.ic.Annotations = make(map[string]string)
 		}
-		for k, v := range annotations {
-			bc.ic.Annotations[k] = v
-		}
+		maps.Copy(bc.ic.Annotations, annotations)
 		return nil
 	}
 }

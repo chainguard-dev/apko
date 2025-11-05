@@ -238,7 +238,7 @@ func TestDirFSConsistentOrdering(t *testing.T) {
 	}
 	// now walk the tree, we should get consistent results each time
 	var results []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		var result []string
 		err := fs.WalkDir(fsys, "/", func(path string, _ fs.DirEntry, err error) error {
 			require.NoError(t, err)

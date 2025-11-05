@@ -59,7 +59,7 @@ func (f *flightCache[T]) Do(key string, fn func() (T, error)) (T, error) {
 		}
 	}
 
-	v, err, _ := f.flight.Do(key, func() (interface{}, error) {
+	v, err, _ := f.flight.Do(key, func() (any, error) {
 		if v, ok := f.cache.Load(key); ok {
 			return v, nil
 		}
@@ -214,7 +214,7 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 		return resp, nil
 	}
 
-	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (interface{}, error) {
+	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (any, error) {
 		req := request.Clone(request.Context())
 		req.Method = http.MethodHead
 		resp, err := t.wrapped.Do(req)
@@ -237,7 +237,7 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 }
 
 func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFile, initialEtag string) (string, error) {
-	v, err, _ := t.cache.getFlight.Do(cacheFile, func() (interface{}, error) {
+	v, err, _ := t.cache.getFlight.Do(cacheFile, func() (any, error) {
 		// We simulate content-based addressing with the etag values using an .etag file extension.
 		etagFile, err := cacheFileFromEtag(cacheFile, initialEtag)
 		if err != nil {
