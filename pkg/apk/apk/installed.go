@@ -128,10 +128,33 @@ func (a *APK) updateScriptsTar(pkg *Package, controlTarGz io.Reader, sourceDateE
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
+
+	// Check if scripts.tar exists, and create it if it doesn't
 	fi, err := a.fs.Stat(scriptsFilePath)
 	if err != nil {
-		return fmt.Errorf("unable to stat scripts file: %w", err)
+		if os.IsNotExist(err) {
+			// Create the scripts.tar file as an empty tar file
+			scriptsDir := "usr/lib/apk/db"
+			if err := a.fs.MkdirAll(scriptsDir, 0o755); err != nil {
+				return fmt.Errorf("unable to create directory %s: %w", scriptsDir, err)
+			}
+			f, err := a.fs.OpenFile(scriptsFilePath, os.O_CREATE|os.O_WRONLY, os.FileMode(scriptsTarPerms))
+			if err != nil {
+				return fmt.Errorf("unable to create scripts file %s: %w", scriptsFilePath, err)
+			}
+			tw := tar.NewWriter(f)
+			tw.Close()
+			f.Close()
+			// Now stat it again
+			fi, err = a.fs.Stat(scriptsFilePath)
+			if err != nil {
+				return fmt.Errorf("unable to stat newly created scripts file: %w", err)
+			}
+		} else {
+			return fmt.Errorf("unable to stat scripts file: %w", err)
+		}
 	}
+
 	scripts, err := a.fs.OpenFile(scriptsFilePath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("unable to open scripts file %s: %w", scriptsFilePath, err)
