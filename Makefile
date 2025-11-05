@@ -151,6 +151,14 @@ lint: checkfmt golangci-lint ## Run linters and checks like golangci-lint
 test: ## Run go test
 	go test ./... -race
 
+.PHONY: test-apko-as-apk
+test-apko-as-apk: apko-as-apk ## Run unit tests for apko-as-apk
+	go test ./internal/cli/apkcompat/... -v
+
+.PHONY: test-apko-as-apk-container
+test-apko-as-apk-container: apko-as-apk ## Run container integration tests for apko-as-apk (requires docker)
+	go test -tags containerTest ./internal/cli/apkcompat/... -v -timeout 10m
+
 .PHONY: clean
 clean: ## Clean the workspace
 	rm -rf apko apko-as-apk

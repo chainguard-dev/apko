@@ -126,22 +126,62 @@ No new APK parsing or installation code was needed - everything leverages battle
 
 ## Testing
 
-The tool has been tested in Wolfi containers:
+### Unit Tests
+
+Run fast unit tests that don't require Docker:
 
 ```bash
-# Test in a container
-docker run --rm \
-  --mount=type=bind,source=$PWD/apko-as-apk,destination=/usr/bin/apko-as-apk \
-  cgr.dev/chainguard/wolfi-base:latest \
-  apko-as-apk info
+make test-apko-as-apk
 ```
 
-Compare output with native `apk`:
+These tests cover:
+- Repository file parsing
+- Key installation logic
+- Package info formatting
+- Helper functions
+
+### Container Integration Tests
+
+Run integration tests that compare `apk` and `apko-as-apk` behavior in Docker containers:
+
 ```bash
-docker run --rm \
+make test-apko-as-apk-container
+```
+
+**Note**: Requires Docker to be running.
+
+These tests:
+- Compare `info` command output between `apk` and `apko-as-apk`
+- Verify `update` command updates repository indexes correctly
+- Test various command-line flags and options
+- Validate exit codes and error handling
+
+Tests use the `containerTest` build tag and can also be run directly:
+
+```bash
+go test -tags containerTest ./internal/cli/apkcompat/... -v
+```
+
+### Manual Testing
+
+Test in a container interactively:
+
+```bash
+# Start container with binary mounted
+docker run --rm -it \
   --mount=type=bind,source=$PWD/apko-as-apk,destination=/usr/bin/apko-as-apk \
   cgr.dev/chainguard/wolfi-base:latest \
-  sh -c "apk info && echo '---' && apko-as-apk info"
+  sh
+
+# Inside container, compare commands:
+apk info
+apko-as-apk info
+
+apk info -v
+apko-as-apk info -v
+
+apk info busybox
+apko-as-apk info busybox
 ```
 
 ## Future Work
