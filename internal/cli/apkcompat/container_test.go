@@ -410,6 +410,61 @@ func TestAddPackageWithSymlinkOverwrite(t *testing.T) {
 	}
 }
 
+// TestAddCoreutils tests installing coreutils which replaces busybox symlinks with new symlinks
+func TestAddCoreutils(t *testing.T) {
+	ct := newContainerTest(t)
+
+	// Verify [ is a symlink to busybox before installation
+	stdout, _, exitCode := ct.exec("sh", "-c", "ls -la /usr/bin/[")
+	if exitCode != 0 {
+		t.Fatalf("failed to check [: exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "busybox") {
+		t.Skipf("[ is not a busybox symlink, skipping test. Output: %s", stdout)
+	}
+
+	// Install coreutils package which should replace busybox symlinks with coreutils symlinks
+	stdout, stderr, exitCode := ct.exec("apko-as-apk", "add", "coreutils")
+	if exitCode != 0 {
+		t.Fatalf("failed to install coreutils: exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Verify coreutils was installed successfully
+	if !strings.Contains(stderr, "OK") && !strings.Contains(stderr, "Installing coreutils") {
+		t.Errorf("expected success message, got: %s", stderr)
+	}
+
+	// Verify [ now points to coreutils
+	stdout, _, exitCode = ct.exec("sh", "-c", "ls -la /usr/bin/[")
+	if exitCode != 0 {
+		t.Errorf("failed to check [: exit code %d", exitCode)
+	}
+	if !strings.Contains(stdout, "coreutils") {
+		t.Errorf("[ should point to coreutils, got: %s", stdout)
+	}
+
+	// Verify test command also points to coreutils
+	stdout, _, exitCode = ct.exec("sh", "-c", "ls -la /usr/bin/test")
+	if exitCode != 0 {
+		t.Errorf("failed to check test: exit code %d", exitCode)
+	}
+	if !strings.Contains(stdout, "coreutils") {
+		t.Errorf("test should point to coreutils, got: %s", stdout)
+	}
+
+	// Verify the [ command works
+	_, _, exitCode = ct.exec("sh", "-c", "/usr/bin/[ 1 = 1 ]")
+	if exitCode != 0 {
+		t.Errorf("[ command should work: exit code %d", exitCode)
+	}
+
+	// Verify the package is recorded in the world file
+	stdout, _, exitCode = ct.exec("apko-as-apk", "info", "coreutils")
+	if exitCode != 0 {
+		t.Errorf("coreutils should be installed: exit code %d", exitCode)
+	}
+}
+
 // TestCompareOutputFormats tests that output formats are compatible
 func TestCompareOutputFormats(t *testing.T) {
 	ct := newContainerTest(t)
