@@ -100,6 +100,10 @@ generate: ## Generates jsonschema for apko types.
 apko: $(SRCS) ## Builds apko
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
 
+.PHONY: apko-as-apk
+apko-as-apk: $(SRCS) ## Builds apko-as-apk
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./cmd/apko-as-apk
+
 .PHONY: install
 install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
 	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
@@ -149,7 +153,7 @@ test: ## Run go test
 
 .PHONY: clean
 clean: ## Clean the workspace
-	rm -rf apko
+	rm -rf apko apko-as-apk
 	rm -rf bin/
 	rm -rf dist/
 
