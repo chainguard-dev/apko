@@ -280,6 +280,11 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 			if target, err := a.fs.Readlink(header.Name); err == nil && target == header.Linkname {
 				continue
 			}
+			// If a symlink or file exists at this path with a different target, remove it first.
+			// This handles cases like busybox symlinks that need to be replaced.
+			if err := a.fs.Remove(header.Name); err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("unable to remove existing symlink %s: %w", header.Name, err)
+			}
 			if err := a.fs.Symlink(header.Linkname, header.Name); err != nil {
 				return nil, fmt.Errorf("unable to install symlink from %s -> %s: %w", header.Name, header.Linkname, err)
 			}
