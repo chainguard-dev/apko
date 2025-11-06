@@ -286,8 +286,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		eg := errgroup.Group{}
-		for i := 0; i < 100; i++ {
-			i := i
+		for i := range 100 {
 			eg.Go(func() error {
 				a := prepLayout(t, tmpDir, nil)
 				a.SetClient(&http.Client{

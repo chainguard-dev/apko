@@ -432,7 +432,7 @@ func removeOrphanedEntries(headers []tar.Header) int {
 
 	// Build a set of all directory paths (with and without trailing slashes)
 	dirPaths := make(map[string]bool)
-	for i := 0; i < len(headers); i++ {
+	for i := range headers {
 		if headers[i].Typeflag == tar.TypeDir {
 			// Add both versions of the path (with and without trailing slash)
 			cleanPath := strings.TrimSuffix(headers[i].Name, "/")
@@ -446,7 +446,7 @@ func removeOrphanedEntries(headers []tar.Header) int {
 	dirPaths["."] = true
 
 	writeIndex := 0
-	for readIndex := 0; readIndex < len(headers); readIndex++ {
+	for readIndex := range headers {
 		keep := true
 		header := headers[readIndex]
 

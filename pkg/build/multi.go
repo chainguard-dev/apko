@@ -72,8 +72,6 @@ func (m *MultiArch) BuildLayers(ctx context.Context) (map[types.Architecture]v1.
 	layers := map[types.Architecture]v1.Layer{}
 	errs := []error{}
 	for arch, bc := range m.Contexts {
-		arch, bc := arch, bc
-
 		g.Go(func() error {
 			_, layer, err := bc.BuildLayer(ctx)
 
@@ -110,8 +108,6 @@ func (m *MultiArch) BuildPackageLists(ctx context.Context) (map[types.Architectu
 	toInstalls := map[types.Architecture][]*apk.RepositoryPackage{}
 	errs := []error{}
 	for arch, bc := range m.Contexts {
-		arch, bc := arch, bc
-
 		g.Go(func() error {
 			toInstall, _, err := bc.apk.ResolveWorld(ctx)
 

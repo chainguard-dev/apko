@@ -303,6 +303,6 @@ func (info *tarballItemFileInfo) Size() int64        { return info.size }
 func (info *tarballItemFileInfo) Mode() os.FileMode  { return 0644 }
 func (info *tarballItemFileInfo) ModTime() time.Time { return time.Time{} }
 func (info *tarballItemFileInfo) IsDir() bool        { return false }
-func (info *tarballItemFileInfo) Sys() interface{}   { return nil }
+func (info *tarballItemFileInfo) Sys() any           { return nil }
 
 var _ os.FileInfo = (*tarballItemFileInfo)(nil)

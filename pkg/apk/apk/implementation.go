@@ -352,10 +352,8 @@ func (a *APK) hasUsrMergeBaseImage() bool {
 	}
 
 	for _, pkg := range installedPkgs {
-		for _, prov := range pkg.Provides {
-			if prov == "merged-lib" {
-				return true
-			}
+		if slices.Contains(pkg.Provides, "merged-lib") {
+			return true
 		}
 	}
 	return false
@@ -520,7 +518,6 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 	var eg errgroup.Group
 
 	for _, element := range keyFiles {
-		element := element
 		eg.Go(func() error {
 			log.Debugf("installing key %v", element)
 
@@ -641,8 +638,6 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 
 	// concurrently fetch and expand all our APKs.
 	for i, pkg := range allpkgs {
-		i, pkg := i, pkg
-
 		g.Go(func() error {
 			expanded, err := a.expandPackage(ctx, pkg)
 
@@ -809,8 +804,6 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	// Meanwhile, concurrently fetch and expand all our APKs.
 	// We signal they are ready to be installed by closing done[i].
 	for i, pkg := range allpkgs {
-		i, pkg := i, pkg
-
 		g.Go(func() error {
 			defer func() { close(done[i]) }()
 			exp, err := a.expandPackage(ctx, pkg)

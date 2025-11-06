@@ -171,8 +171,6 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
-		arch := arch
-
 		log := log.With("arch", arch.ToAPK())
 		ctx := clog.WithLogger(ctx, log)
 

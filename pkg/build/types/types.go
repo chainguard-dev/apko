@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
-	"sort"
+	"slices"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -96,7 +96,7 @@ type ImageContents struct {
 
 // MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
 // the ImageContents struct fields.
-func (i ImageContents) MarshalYAML() (interface{}, error) {
+func (i ImageContents) MarshalYAML() (any, error) {
 	type redactedImageContents ImageContents
 	ri := redactedImageContents(i)
 
@@ -207,7 +207,7 @@ type Architecture string
 
 func (a Architecture) String() string { return string(a) }
 
-func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (a *Architecture) UnmarshalYAML(unmarshal func(any) error) error {
 	var buf string
 	if err := unmarshal(&buf); err != nil {
 		return err
@@ -401,9 +401,7 @@ func ParseArchitectures(in []string) []Architecture {
 	for k := range uniq {
 		archs = append(archs, k)
 	}
-	sort.Slice(archs, func(i, j int) bool {
-		return archs[i] < archs[j]
-	})
+	slices.Sort(archs)
 	return archs
 }
 

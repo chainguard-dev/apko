@@ -59,8 +59,8 @@ func controlValue(controlTar io.Reader, want ...string) (map[string][]string, er
 			return nil, fmt.Errorf("unable to read .PKGINFO from control tar.gz file: %w", err)
 		}
 		mapping := map[string][]string{}
-		lines := strings.Split(string(b), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(string(b), "\n")
+		for line := range lines {
 			parts := strings.Split(line, "=")
 			if len(parts) != 2 {
 				continue

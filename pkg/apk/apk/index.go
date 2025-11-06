@@ -241,8 +241,6 @@ func GetRepositoryIndexes(ctx context.Context, repos []string, keys map[string][
 
 	var eg errgroup.Group
 	for i, repo := range repos {
-		i, repo := i, repo
-
 		eg.Go(func() error {
 			// does it start with a pin?
 			var (

@@ -27,6 +27,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -84,11 +85,9 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 		return nil, nil
 	}
 
-	if strings.HasPrefix(hexsum, "Q1") {
+	if b64, ok := strings.CutPrefix(hexsum, "Q1"); ok {
 		// This is nonstandard but something we did at one point, handle it.
 		// In other contexts, this Q1 prefix means "this is sha1 not md5".
-		b64 := strings.TrimPrefix(hexsum, "Q1")
-
 		checksum, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {
 			return nil, fmt.Errorf("decoding base64 checksum from header for %q: %w", header.Name, err)
@@ -495,20 +494,12 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 	}
 
 	// If the existing file's package replaces the package we want to install, we don't need to write this file.
-	for _, replace := range got.pkg.Replaces {
-		if want.pkg.Name == replace {
-			return false, nil
-		}
+	if slices.Contains(got.pkg.Replaces, want.pkg.Name) {
+		return false, nil
 	}
 
 	// Otherwise, determine if the package we are installing replaces the existing package.
-	replaces := false
-	for _, replace := range want.pkg.Replaces {
-		if got.pkg.Name == replace {
-			replaces = true
-			break
-		}
-	}
+	replaces := slices.Contains(want.pkg.Replaces, got.pkg.Name)
 
 	// Or if they're from the same origin.
 	sameOrigin := got.pkg.Origin == want.pkg.Origin

@@ -656,7 +656,7 @@ func (f *fileInfo) ModTime() time.Time {
 func (f *fileInfo) IsDir() bool {
 	return f.file.IsDir()
 }
-func (f *fileInfo) Sys() interface{} {
+func (f *fileInfo) Sys() any {
 	return f.mem.Sys()
 }
 

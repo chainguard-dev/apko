@@ -99,7 +99,7 @@ func TestBuild(t *testing.T) {
 		// https://github.com/google/go-cmp/issues/224#issuecomment-650429859
 		transformJSON := cmp.FilterValues(func(x, y []byte) bool {
 			return json.Valid(x) && json.Valid(y)
-		}, cmp.Transformer("ParseJSON", func(in []byte) (out interface{}) {
+		}, cmp.Transformer("ParseJSON", func(in []byte) (out any) {
 			if err := json.Unmarshal(in, &out); err != nil {
 				panic(err) // should never occur given previous filter to ensure valid JSON
 			}

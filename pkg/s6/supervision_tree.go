@@ -33,7 +33,7 @@ func (sc *Context) WriteSupervisionTree(ctx context.Context, services Services) 
 			return fmt.Errorf("could not make supervision directory: %w", err)
 		}
 
-		if err := sc.fs.WriteFile(filepath.Join(svcdir, "run"), []byte(fmt.Sprintf("#!/bin/execlineb\n%s\n", svccmd)), 0755); err != nil {
+		if err := sc.fs.WriteFile(filepath.Join(svcdir, "run"), fmt.Appendf(nil, "#!/bin/execlineb\n%s\n", svccmd), 0755); err != nil {
 			return fmt.Errorf("could not write runfile: %w", err)
 		}
 	}
