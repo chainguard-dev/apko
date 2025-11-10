@@ -19,7 +19,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
-	github.com/tmc/dot v0.0.0-20210901225022-f9bc17da75c0
+	github.com/tmc/dot v0.2.0
 	github.com/u-root/u-root v0.15.0
 	go.lsp.dev/uri v0.3.0
 	go.opentelemetry.io/otel v1.38.0
