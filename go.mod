@@ -27,7 +27,7 @@ require (
 	go.step.sm/crypto v0.73.0
 	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sync v0.18.0
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.38.0
 	golang.org/x/time v0.14.0
 	google.golang.org/api v0.254.0
 	gopkg.in/ini.v1 v1.67.0
