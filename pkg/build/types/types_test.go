@@ -59,13 +59,48 @@ func TestYamlMarshallingRepositories(t *testing.T) {
 			Repositories: []string{"@myorg " + alpineWithCreds},
 		},
 		want: fmt.Sprintf("repositories:\n    - '@myorg %s'\n", "https://user:xxxxx@dl-cdn.my.org/alpine/v3.22/main"),
+	}, {
+		desc: "invalid tag format - missing @",
+		in: ImageContents{
+			Repositories: []string{"testing https://dl-cdn.alpinelinux.org/alpine/edge/testing"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid tag format - empty tag",
+		in: ImageContents{
+			Repositories: []string{"@ https://dl-cdn.alpinelinux.org/alpine/edge/testing"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid URL in tagged repository",
+		in: ImageContents{
+			Repositories: []string{"@testing ://invalid-url"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid URL in untagged repository",
+		in: ImageContents{
+			Repositories: []string{"://invalid-url"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "too many parts in repository",
+		in: ImageContents{
+			Repositories: []string{"@testing https://example.com extra-part"},
+		},
+		want: "error", // This will cause an error during marshalling
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
 			b, err := yaml.Marshal(c.in)
-			require.NoError(t, err)
-			require.Equal(t, c.want, string(b))
+			if c.want == "error" {
+				require.Error(t, err, "expected error for invalid repository format")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, c.want, string(b))
+			}
 		})
 	}
+
 }
 
 func TestParseArchitectures(t *testing.T) {
