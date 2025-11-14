@@ -39,9 +39,7 @@ LDFLAGS=-buildid= -X $(PKG).gitVersion=$(GIT_VERSION) \
 
 DIGEST ?=
 
-define create_kocache_path
-  mkdir -p $(KOCACHE_PATH)
-endef
+PROJECT_BIN := $(shell pwd)/bin
 
 ##########
 # default
@@ -53,35 +51,54 @@ default: help
 # ko build
 ##########
 
+DOCKER_HOST ?= $(shell docker context inspect --format '{{.Endpoints.docker.Host}}')
+
+KO_BIN := $(PROJECT_BIN)/ko
+KO_VERSION := v0.18.0
+KO_DOCKER_REPO ?= chainguard.dev/apko
+KOCACHE := $(PROJECT_BIN)/kocache
+KO_TAGS := --tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH)
+
+$(KO_BIN):
+	@echo "Installing ko@$(KO_VERSION) to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/google/ko@$(KO_VERSION)
+
+$(KOCACHE):
+	@mkdir -p $@
+
 .PHONY: ko
-ko: ## Build images using ko
-	$(create_kocache_path)
-	$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
-	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--platform=all --tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) \
-		chainguard.dev/apko))
+ko: $(KO_BIN) $(KOCACHE) ## Build images using ko
+	@$(MAKE) --no-print-directory log-$@
+	@$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
+	$< build --bare --platform=all $(KO_TAGS)))
 	@echo Image Digest $(DIGEST)
 
 .PHONY: ko-local
-ko-local:  ## Build images locally using ko
-	$(create_kocache_path)
+ko-local: $(KO_BIN) $(KOCACHE) ## Build images locally using ko
+	@$(MAKE) --no-print-directory log-$@
+	@DOCKER_HOST=$(DOCKER_HOST) \
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
 	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
-	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
-		chainguard.dev/apko
+	$< build --bare --local $(KO_TAGS)
 
 .PHONY: ko-apply
-ko-apply:  ## Build the image and apply the manifests
-	$(create_kocache_path)
+ko-apply: $(KO_BIN) $(KOCACHE) ## Build the image and apply the manifests
+	@$(MAKE) --no-print-directory log-$@
+	@KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
 	LDFLAGS="$(LDFLAGS)" \
-	KOCACHE=$(KOCACHE_PATH) ko apply --base-import-paths \
+	$< apply --base-import-paths \
 		--recursive --filename config/
 
-.PHONY: ko-apply
-ko-resolve:  ## Build the image generate the Task YAML
-	$(create_kocache_path)
+.PHONY: ko-resolve
+ko-resolve: $(KO_BIN) $(KOCACHE) ## Build the image generate the Task YAML
+	@$(MAKE) --no-print-directory log-$@
+	@KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
 	LDFLAGS="$(LDFLAGS)" \
-	KOCACHE=$(KOCACHE_PATH) ko resolve --base-import-paths \
+	$< resolve --base-import-paths \
 		--recursive --filename config/ > task.yaml
 
 ##########
@@ -108,26 +125,28 @@ install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
 # lint / test section
 #####################
 
-GOLANGCI_LINT_DIR = $(shell pwd)/bin
-GOLANGCI_LINT_BIN = $(GOLANGCI_LINT_DIR)/golangci-lint
+GOLANGCI_LINT_BIN := $(PROJECT_BIN)/golangci-lint
+GOLANGCI_LINT_VERSION := v2.6.1
 
-.PHONY: golangci-lint
-golangci-lint:
-	rm -f $(GOLANGCI_LINT_BIN) || :
-	set -e ;\
-	GOBIN=$(GOLANGCI_LINT_DIR) go install github.com/golangci/golangci-lint/cmd/golangci-lint/v2@v2.2.1 ;\
+$(GOLANGCI_LINT_BIN):
+	@echo "Installing golangci-lint@$(GOLANGCI_LINT_VERSION) to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+$(GOBIN)/goimports:
+	@echo "Installing goimports to $(GOBIN)…"
+	@go install golang.org/x/tools/cmd/goimports@latest
 
 .PHONY: fmt
-fmt: ## Format all go files
-	@ $(MAKE) --no-print-directory log-$@
-	goimports -w $(GOFILES)
+fmt: $(GOBIN)/goimports ## Format all go files
+	@$(MAKE) --no-print-directory log-$@
+	@$< -l $(GOFILES)
 
 .PHONY: checkfmt
 checkfmt: SHELL := /usr/bin/env bash
-checkfmt: ## Check formatting of all go files
-	@ $(MAKE) --no-print-directory log-$@
-	$(shell test -z "$(shell gofmt -l $(GOFILES) | tee /dev/stderr)")
-	$(shell test -z "$(shell goimports -l $(GOFILES) | tee /dev/stderr)")
+checkfmt: $(GOBIN)/goimports ## Check formatting of all go files
+	@$(MAKE) --no-print-directory log-$@
+	@test -z "$$(gofmt -l $(GOFILES))" || { echo "Files need formatting"; exit 1; }
+	@test -z "$$($< -l $(GOFILES))" || { echo "Linting issues found"; exit 1; }
 
 log-%:
 	@grep -h -E '^$*:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -140,8 +159,9 @@ log-%:
 			}'
 
 .PHONY: lint
-lint: checkfmt golangci-lint ## Run linters and checks like golangci-lint
-	$(GOLANGCI_LINT_BIN) run -n
+lint: checkfmt $(GOLANGCI_LINT_BIN) ## Run linters and checks like golangci-lint
+	@$(MAKE) --no-print-directory log-$@
+	@$(GOLANGCI_LINT_BIN) run -n
 
 .PHONY: test
 test: ## Run go test
@@ -177,9 +197,18 @@ ci:
 #######################
 # Sign images
 #######################
+
+COSIGN_VERSION := v3.0.2
+
+$(PROJECT_BIN)/cosign:
+	@echo "Installing cosign to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/sigstore/cosign/v3/cmd/cosign@$(COSIGN_VERSION)
+
 .PHONY: sign-image
-sign-image: ko ## Sign images built using ko
-	cosign sign -y $(DIGEST)
+sign-image: $(PROJECT_BIN)/cosign ko ## Sign images built using ko
+	@$(MAKE) --no-print-directory log-$@
+	@echo "Signing $(DIGEST)…"
+	@$< sign -y $(DIGEST)
 
 ##################
 # help
