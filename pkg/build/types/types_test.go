@@ -100,7 +100,6 @@ func TestYamlMarshallingRepositories(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestParseArchitectures(t *testing.T) {

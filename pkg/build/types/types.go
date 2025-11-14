@@ -27,7 +27,8 @@ import (
 func processRepositoryURLs(repositories []string) error {
 	for idx, repo := range repositories {
 		parts := strings.Split(repo, " ")
-		if len(parts) == 2 {
+		switch len(parts) {
+		case 2:
 			tag := parts[0]
 			rawURL := parts[1]
 			if !strings.HasPrefix(tag, "@") || len(tag) <= 1 {
@@ -38,14 +39,14 @@ func processRepositoryURLs(repositories []string) error {
 				return fmt.Errorf("parsing repository URL: %w", err)
 			}
 			repositories[idx] = tag + " " + parsed.Redacted()
-		} else if len(parts) == 1 {
+		case 1:
 			rawURL := repo
 			parsed, err := url.Parse(rawURL)
 			if err != nil {
 				return fmt.Errorf("parsing repository URL: %w", err)
 			}
 			repositories[idx] = parsed.Redacted()
-		} else {
+		default:
 			return fmt.Errorf("invalid repository format: %s (expected either 'url' or '@tag url')", repo)
 		}
 	}
