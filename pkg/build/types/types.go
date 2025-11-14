@@ -19,9 +19,39 @@ import (
 	"net/url"
 	"runtime"
 	"slices"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
+
+func processRepositoryURLs(repositories []string) error {
+	for idx, repo := range repositories {
+		parts := strings.Split(repo, " ")
+		switch len(parts) {
+		case 2:
+			tag := parts[0]
+			rawURL := parts[1]
+			if !strings.HasPrefix(tag, "@") || len(tag) <= 1 {
+				return fmt.Errorf("invalid tag format in repository: %s (expected @tag format)", tag)
+			}
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = tag + " " + parsed.Redacted()
+		case 1:
+			rawURL := repo
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = parsed.Redacted()
+		default:
+			return fmt.Errorf("invalid repository format: %s (expected either 'url' or '@tag url')", repo)
+		}
+	}
+	return nil
+}
 
 type User struct {
 	// Required: The name of the user
@@ -100,22 +130,12 @@ func (i ImageContents) MarshalYAML() (any, error) {
 	type redactedImageContents ImageContents
 	ri := redactedImageContents(i)
 
-	for idx, repo := range ri.BuildRepositories {
-		rawURL := repo
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			return nil, fmt.Errorf("parsing repository URL: %w", err)
-		}
-		ri.BuildRepositories[idx] = parsed.Redacted()
+	if err := processRepositoryURLs(ri.BuildRepositories); err != nil {
+		return nil, err
 	}
 
-	for idx, repo := range ri.Repositories {
-		rawURL := repo
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			return nil, fmt.Errorf("parsing repository URL: %w", err)
-		}
-		ri.Repositories[idx] = parsed.Redacted()
+	if err := processRepositoryURLs(ri.Repositories); err != nil {
+		return nil, err
 	}
 
 	for idx, key := range ri.Keyring {
