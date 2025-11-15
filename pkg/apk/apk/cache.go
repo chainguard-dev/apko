@@ -493,12 +493,21 @@ func cachePathFromURL(root string, u url.URL) (string, error) {
 
 	// url encode it so it can be a single directory
 	repoDir = url.QueryEscape(u2.String())
-	cacheFile := filepath.Join(root, repoDir, dir, filename)
-	// validate it is within root
-	cacheFile = filepath.Clean(cacheFile)
-	cleanroot := filepath.Clean(root)
-	if !strings.HasPrefix(cacheFile, cleanroot) {
-		return "", fmt.Errorf("cache file %s is not within root %s", cacheFile, cleanroot)
+	relativePath := filepath.Join(repoDir, dir, filename)
+
+	// Use os.Root for secure path validation to prevent path traversal
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return "", fmt.Errorf("failed to open root directory %q: %w", root, err)
 	}
-	return cacheFile, nil
+	defer rootFS.Close()
+
+	// Validate that the relative path is safe and within the root
+	// This prevents path traversal attacks including symlink attacks
+	if _, err := rootFS.Stat(relativePath); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("invalid cache path %q: %w", relativePath, err)
+	}
+
+	// Return the absolute path for use by other functions
+	return filepath.Join(root, relativePath), nil
 }
