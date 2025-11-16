@@ -36,7 +36,7 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       - run: |
           make apko
           ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
@@ -112,7 +112,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@1b32103f5aa389c31ab0be75a8edc38d7e4750d8 # v1.5.7
+      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
         with:
           port: 5000
 
@@ -154,7 +154,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@1b32103f5aa389c31ab0be75a8edc38d7e4750d8 # v1.5.7
+      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
         with:
           port: 5000
 
@@ -197,7 +197,7 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
       - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
-      - uses: chainguard-dev/actions/setup-registry@1b32103f5aa389c31ab0be75a8edc38d7e4750d8 # v1.5.7
+      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
         with:
           port: 5000
       - run: |
