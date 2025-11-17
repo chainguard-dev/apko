@@ -327,7 +327,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 				if !errors.As(err, &nokeysErr) {
 					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
 				}
-				log.Warnf("ignoring missing keys: %v", err)
+				log.Debugf("ignoring missing keys: %v", err)
 			}
 		}
 
@@ -880,7 +880,6 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 
 	u := alpineReleasesURL
 	client := a.client
-	// Wrap client with cache transport to support offline mode
 	if a.cache != nil {
 		client = a.cache.client(client, true)
 	}
@@ -1084,7 +1083,7 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 	keys, err := a.DiscoverKeys(ctx, repository)
 	if err != nil {
-		log.Warnf("ignoring missing keys for %s: %v", repository, err)
+		log.Debugf("ignoring missing keys for %s: %v", repository, err)
 	}
 
 	for _, key := range keys {

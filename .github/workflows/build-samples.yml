@@ -90,6 +90,7 @@ jobs:
               ${build_script} ./apko
             else
               ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
             fi
           done
 
