@@ -323,11 +323,13 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	for _, repo := range buildRepos {
 		if ver, ok := parseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
-				var nokeysErr *NoKeysFoundError
-				if !errors.As(err, &nokeysErr) {
-					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+				if a.cache != nil && !a.cache.offline {
+					var nokeysErr *NoKeysFoundError
+					if !errors.As(err, &nokeysErr) {
+						return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+					}
 				}
-				log.Warnf("ignoring missing keys: %v", err)
+				log.Debugf("ignoring missing keys: %v", err)
 			}
 		}
 
@@ -880,6 +882,11 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 
 	u := alpineReleasesURL
 	client := a.client
+	// NB: Does not seem to work, but at least offline builds are
+	// not getting stuck here anymore
+	if a.cache != nil {
+		client = a.cache.client(client, true)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -1080,7 +1087,7 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 	keys, err := a.DiscoverKeys(ctx, repository)
 	if err != nil {
-		log.Warnf("ignoring missing keys for %s: %v", repository, err)
+		log.Debugf("ignoring missing keys for %s: %v", repository, err)
 	}
 
 	for _, key := range keys {
