@@ -323,11 +323,9 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	for _, repo := range buildRepos {
 		if ver, ok := parseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
-				if a.cache != nil && !a.cache.offline {
-					var nokeysErr *NoKeysFoundError
-					if !errors.As(err, &nokeysErr) {
-						return fmt.Errorf("failed to fetch alpine-keys: %w", err)
-					}
+				var nokeysErr *NoKeysFoundError
+				if !errors.As(err, &nokeysErr) {
+					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
 				}
 				log.Debugf("ignoring missing keys: %v", err)
 			}
@@ -882,8 +880,6 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 
 	u := alpineReleasesURL
 	client := a.client
-	// NB: Does not seem to work, but at least offline builds are
-	// not getting stuck here anymore
 	if a.cache != nil {
 		client = a.cache.client(client, true)
 	}
