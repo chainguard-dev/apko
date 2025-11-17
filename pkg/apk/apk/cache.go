@@ -323,16 +323,24 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 		return nil, fmt.Errorf("listing %q for offline cache: %w", cacheDir, err)
 	}
 
-	if len(des) == 0 {
+	// Filter out directories, only consider files
+	var files []os.DirEntry
+	for _, de := range des {
+		if !de.IsDir() {
+			files = append(files, de)
+		}
+	}
+
+	if len(files) == 0 {
 		return nil, fmt.Errorf("no offline cached entries for %s", cacheDir)
 	}
 
-	newest, err := des[0].Info()
+	newest, err := files[0].Info()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, de := range des[1:] {
+	for _, de := range files[1:] {
 		fi, err := de.Info()
 		if err != nil {
 			return nil, err
