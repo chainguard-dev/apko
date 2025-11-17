@@ -26,11 +26,6 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
-// ErrPathMutationFileAlreadyExists is returned when a path mutation
-// attempts to create a file that already exists.
-// This is a user error in the image configuration.
-var ErrPathMutationFileAlreadyExists = errors.New("file already present")
-
 type PathMutator func(apkfs.FullFS, *options.Options, types.PathMutation) error
 
 var pathMutators = map[string]PathMutator{
@@ -143,7 +138,7 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 
 		if err := pm(fsys, o, mut); err != nil {
 			if errors.Is(err, fs.ErrExist) {
-				err = ErrPathMutationFileAlreadyExists
+				err = &PathMutationFileConflictError{Path: mut.Path}
 			}
 			return fmt.Errorf("mutating path %q: %w", mut.Path, err)
 		}
@@ -156,4 +151,16 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 	}
 
 	return nil
+}
+
+// PathMutationFileConflictError is returned when a path mutation
+// attempts to create a file that conflicts with an existing file.
+// This is a user error in the image configuration.
+type PathMutationFileConflictError struct {
+	// The full path of the file that has a conflict.
+	Path string
+}
+
+func (e *PathMutationFileConflictError) Error() string {
+	return fmt.Sprintf("file %q already exists", e.Path)
 }
