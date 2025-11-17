@@ -880,6 +880,10 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 
 	u := alpineReleasesURL
 	client := a.client
+	// Wrap client with cache transport to support offline mode
+	if a.cache != nil {
+		client = a.cache.client(client, true)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
