@@ -47,9 +47,75 @@ PROJECT_BIN := $(shell pwd)/bin
 
 default: help
 
-##########
-# ko build
-##########
+.PHONY: help
+help: ## Display help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n	make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "	\033[36m%-22s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Development:
+
+.PHONY: generate
+generate: ## Generates jsonschema for apko types.
+	go generate ./...
+
+GOLANGCI_LINT_BIN := $(PROJECT_BIN)/golangci-lint
+GOLANGCI_LINT_VERSION := v2.6.1
+
+$(GOLANGCI_LINT_BIN):
+	@echo "Installing golangci-lint@$(GOLANGCI_LINT_VERSION) to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+$(GOBIN)/goimports:
+	@echo "Installing goimports to $(GOBIN)…"
+	@go install golang.org/x/tools/cmd/goimports@latest
+
+.PHONY: fmt
+fmt: $(GOBIN)/goimports ## Format all go files
+	@$(MAKE) --no-print-directory log-$@
+	@$< -l $(GOFILES)
+
+.PHONY: checkfmt
+checkfmt: SHELL := /usr/bin/env bash
+checkfmt: $(GOBIN)/goimports ## Check formatting of all go files
+	@$(MAKE) --no-print-directory log-$@
+	@test -z "$$(gofmt -l $(GOFILES))" || { echo "Files need formatting"; exit 1; }
+	@test -z "$$($< -l $(GOFILES))" || { echo "Linting issues found"; exit 1; }
+
+log-%:
+	@grep -h -E '^$*:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk \
+			'BEGIN { \
+				FS = ":.*?## " \
+			}; \
+			{ \
+				printf "\033[36m==> %s\033[0m\n", $$2 \
+			}'
+
+.PHONY: lint
+lint: checkfmt $(GOLANGCI_LINT_BIN) ## Run linters and checks like golangci-lint
+	@$(MAKE) --no-print-directory log-$@
+	@$(GOLANGCI_LINT_BIN) run -n
+
+.PHONY: test
+test: ## Run go test
+	go test ./... -race
+
+.PHONY: clean
+clean: ## Clean the workspace
+	rm -rf apko
+	rm -rf bin/
+	rm -rf dist/
+
+##@ Compile:
+
+.PHONY: apko
+apko: $(SRCS) ## Builds apko
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
+
+.PHONY: install
+install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
+	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
+
+##@ ko-build:
 
 DOCKER_HOST ?= $(shell docker context inspect --format '{{.Endpoints.docker.Host}}')
 
@@ -101,81 +167,7 @@ ko-resolve: $(KO_BIN) $(KOCACHE) ## Build the image generate the Task YAML
 	$< resolve --base-import-paths \
 		--recursive --filename config/ > task.yaml
 
-##########
-# codegen
-##########
-
-.PHONY: generate
-generate: ## Generates jsonschema for apko types.
-	go generate ./...
-
-##########
-# Build
-##########
-
-.PHONY: apko
-apko: $(SRCS) ## Builds apko
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
-
-.PHONY: install
-install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
-	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
-
-#####################
-# lint / test section
-#####################
-
-GOLANGCI_LINT_BIN := $(PROJECT_BIN)/golangci-lint
-GOLANGCI_LINT_VERSION := v2.6.1
-
-$(GOLANGCI_LINT_BIN):
-	@echo "Installing golangci-lint@$(GOLANGCI_LINT_VERSION) to $(PROJECT_BIN)…"
-	@GOBIN=$(PROJECT_BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-
-$(GOBIN)/goimports:
-	@echo "Installing goimports to $(GOBIN)…"
-	@go install golang.org/x/tools/cmd/goimports@latest
-
-.PHONY: fmt
-fmt: $(GOBIN)/goimports ## Format all go files
-	@$(MAKE) --no-print-directory log-$@
-	@$< -l $(GOFILES)
-
-.PHONY: checkfmt
-checkfmt: SHELL := /usr/bin/env bash
-checkfmt: $(GOBIN)/goimports ## Check formatting of all go files
-	@$(MAKE) --no-print-directory log-$@
-	@test -z "$$(gofmt -l $(GOFILES))" || { echo "Files need formatting"; exit 1; }
-	@test -z "$$($< -l $(GOFILES))" || { echo "Linting issues found"; exit 1; }
-
-log-%:
-	@grep -h -E '^$*:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk \
-			'BEGIN { \
-				FS = ":.*?## " \
-			}; \
-			{ \
-				printf "\033[36m==> %s\033[0m\n", $$2 \
-			}'
-
-.PHONY: lint
-lint: checkfmt $(GOLANGCI_LINT_BIN) ## Run linters and checks like golangci-lint
-	@$(MAKE) --no-print-directory log-$@
-	@$(GOLANGCI_LINT_BIN) run -n
-
-.PHONY: test
-test: ## Run go test
-	go test ./... -race
-
-.PHONY: clean
-clean: ## Clean the workspace
-	rm -rf apko
-	rm -rf bin/
-	rm -rf dist/
-
-#######################
-# Release / goreleaser
-#######################
+##@ Release:
 
 .PHONY: snapshot
 snapshot: ## Run Goreleaser in snapshot mode
@@ -184,19 +176,6 @@ snapshot: ## Run Goreleaser in snapshot mode
 .PHONY: release
 release: ## Run Goreleaser in release mode
 	LDFLAGS="$(LDFLAGS)" goreleaser release --clean
-
-
-#######################
-# CI tests
-#######################
-
-.PHONY: ci
-ci:
-	./hack/ci-tests.sh
-
-#######################
-# Sign images
-#######################
 
 COSIGN_VERSION := v3.0.2
 
@@ -210,12 +189,8 @@ sign-image: $(PROJECT_BIN)/cosign ko ## Sign images built using ko
 	@echo "Signing $(DIGEST)…"
 	@$< sign -y $(DIGEST)
 
-##################
-# help
-##################
+##@ CI:
 
-help: ## Display help
-	@awk -F ':|##' \
-		'/^[^\t].+?:.*?##/ {\
-			printf "\033[36m%-30s\033[0m %s\n", $$1, $$NF \
-		}' $(MAKEFILE_LIST) | sort
+.PHONY: ci
+ci: ## Run all CI tests
+	./hack/ci-tests.sh
