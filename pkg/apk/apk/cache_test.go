@@ -59,11 +59,12 @@ func TestCacheTransport_ETagCollision_Integration(t *testing.T) {
 
 		// Return unique content per URL so we can verify no collision
 		var content []byte
-		if strings.Contains(r.URL.Path, "616ae350") {
+		switch {
+		case strings.Contains(r.URL.Path, "616ae350"):
 			content = []byte("x86_64-key-content-616ae350")
-		} else if strings.Contains(r.URL.Path, "6165ee59") {
+		case strings.Contains(r.URL.Path, "6165ee59"):
 			content = []byte("aarch64-key-content-6165ee59")
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -174,7 +175,7 @@ func TestCacheTransport_ConcurrentDuplicateETag(t *testing.T) {
 		counterMu.Unlock()
 
 		// Return unique content based on URL
-		w.Write([]byte(fmt.Sprintf("content-for-%s", r.URL.Path)))
+		fmt.Fprintf(w, "content-for-%s", r.URL.Path)
 	}))
 	defer server.Close()
 
@@ -237,9 +238,9 @@ func TestCacheTransport_ConcurrentDuplicateETag(t *testing.T) {
 	}
 
 	// Verify all results are different (no cache corruption)
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[i] == results[j] {
+	for i := range len(results) {
+		for j := range len(results) {
+			if j > i && results[i] == results[j] {
 				t.Errorf("Concurrent requests returned same content!\n"+
 					"URL%d: %s\nURL%d: %s\nContent: %s",
 					i, urls[i], j, urls[j], results[i])
