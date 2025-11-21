@@ -193,7 +193,21 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 		// check that the contents are the same
-		index1, err := os.ReadFile(filepath.Join(repoDir, "APKINDEX", base32.StdEncoding.EncodeToString([]byte("an-etag"))+".tar.gz"))
+		// Note: With URL-aware cache keys, the filename includes a hash suffix
+		// Find the cached file that starts with the expected etag
+		apkindexDir := filepath.Join(repoDir, "APKINDEX")
+		etagPrefix := base32.StdEncoding.EncodeToString([]byte("an-etag"))
+		entries, err := os.ReadDir(apkindexDir)
+		require.NoError(t, err, "unable to read APKINDEX dir")
+		var cachedFile string
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), etagPrefix) && strings.HasSuffix(entry.Name(), ".tar.gz") {
+				cachedFile = filepath.Join(apkindexDir, entry.Name())
+				break
+			}
+		}
+		require.NotEmpty(t, cachedFile, "cached index file not found")
+		index1, err := os.ReadFile(cachedFile)
 		require.NoError(t, err, "unable to read cache index file")
 		index2, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, indexFilename))
 		require.NoError(t, err, "unable to read previous index file")

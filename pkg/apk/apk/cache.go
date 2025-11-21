@@ -16,6 +16,7 @@ package apk
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
 	"io"
@@ -381,7 +382,14 @@ func cacheFileFromEtag(cacheFile, etag string) (string, error) {
 		ext = ".tar.gz"
 	}
 
-	absPath, err := filepath.Abs(filepath.Join(cacheDir, etag+ext))
+	// Create a unique cache key by combining the etag with a hash of the URL.
+	// This prevents collisions when different URLs return the same ETag
+	// (e.g., Alpine Linux keys all have ETag "639a4604-320").
+	// The URL hash ensures each unique file gets its own cache entry.
+	urlHash := sha256.Sum256([]byte(cacheFile))
+	cacheKey := fmt.Sprintf("%s-%x", etag, urlHash[:4])
+
+	absPath, err := filepath.Abs(filepath.Join(cacheDir, cacheKey+ext))
 	if err != nil {
 		return "", err
 	}
