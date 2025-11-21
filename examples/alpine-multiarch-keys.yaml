@@ -1,0 +1,20 @@
+# Regression test for #1944: multi-arch builds with Alpine signing keys
+# This config triggered a bug where Alpine Linux returns the same ETag
+# for different architecture-specific signing keys, causing cache collisions.
+contents:
+  repositories:
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/community
+  packages:
+    - alpine-baselayout
+    - ca-certificates-bundle
+    - alpine-keys
+    - busybox
+
+archs: [x86_64, aarch64]
+
+environment:
+  PATH: /usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
+
+entrypoint:
+  command: /bin/sh
