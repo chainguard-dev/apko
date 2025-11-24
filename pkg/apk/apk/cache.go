@@ -326,8 +326,7 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 
 	// Compute the expected cache file name with URL hash for this specific file
 	// In offline mode, we need to find the cached entry for this exact URL
-	urlHash := sha256.Sum256([]byte(cacheFile))
-	expectedSuffix := fmt.Sprintf("-%x", urlHash[:4])
+	expectedSuffix := "-" + cacheFileHash(cacheFile)
 
 	// Determine the file extension
 	ext := ".etag"
@@ -381,6 +380,13 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 	}, nil
 }
 
+// cacheFileHash computes a short hash from the cache file path
+// to uniquely identify the URL in cache filenames.
+func cacheFileHash(cacheFile string) string {
+	urlHash := sha256.Sum256([]byte(cacheFile))
+	return fmt.Sprintf("%x", urlHash[:4])
+}
+
 func cacheDirFromFile(cacheFile string) string {
 	if strings.HasSuffix(cacheFile, "APKINDEX.tar.gz") {
 		return filepath.Join(filepath.Dir(cacheFile), "APKINDEX")
@@ -403,8 +409,7 @@ func cacheFileFromEtag(cacheFile, etag string) (string, error) {
 	// This prevents collisions when different URLs return the same ETag
 	// (e.g., Alpine Linux keys all have ETag "639a4604-320").
 	// The URL hash ensures each unique file gets its own cache entry.
-	urlHash := sha256.Sum256([]byte(cacheFile))
-	cacheKey := fmt.Sprintf("%s-%x", etag, urlHash[:4])
+	cacheKey := fmt.Sprintf("%s-%s", etag, cacheFileHash(cacheFile))
 
 	absPath, err := filepath.Abs(filepath.Join(cacheDir, cacheKey+ext))
 	if err != nil {
