@@ -324,18 +324,35 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 		return nil, fmt.Errorf("listing %q for offline cache: %w", cacheDir, err)
 	}
 
-	// Filter out directories, only consider files
+	// Compute the expected cache file name with URL hash for this specific file
+	// In offline mode, we need to find the cached entry for this exact URL
+	urlHash := sha256.Sum256([]byte(cacheFile))
+	expectedSuffix := fmt.Sprintf("-%x", urlHash[:4])
+
+	// Determine the file extension
+	ext := ".etag"
+	if strings.HasSuffix(cacheFile, "APKINDEX.tar.gz") {
+		ext = ".tar.gz"
+	}
+
+	// Filter files that match this specific cacheFile (by URL hash suffix)
 	var files []os.DirEntry
 	for _, de := range des {
-		if !de.IsDir() {
+		if de.IsDir() {
+			continue
+		}
+		// Check if filename contains our URL hash and has correct extension
+		name := de.Name()
+		if strings.Contains(name, expectedSuffix) && strings.HasSuffix(name, ext) {
 			files = append(files, de)
 		}
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no offline cached entries for %s", cacheDir)
+		return nil, fmt.Errorf("no offline cached entries for %s (looking for files with %s)", cacheFile, expectedSuffix)
 	}
 
+	// Pick the newest file (in case there are multiple versions with same URL hash)
 	newest, err := files[0].Info()
 	if err != nil {
 		return nil, err
