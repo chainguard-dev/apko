@@ -178,6 +178,35 @@ jobs:
             fi
           done
 
+  # Regression test for #1944: multi-arch builds with Alpine signing keys
+  # This tests the scenario where Alpine Linux returns the same ETag for
+  # different architecture-specific signing keys, which caused cache collisions.
+  build-alpine-multiarch-keys:
+    name: alpine-multiarch-keys-regression
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - run: |
+          make apko
+          # Build multi-arch image that triggers Alpine signing key ETag collision
+          ./apko build ./examples/alpine-multiarch-keys.yaml alpine-test:latest /tmp/alpine-multiarch.tar --arch x86_64,aarch64
+
   annotations:
     name: annotations
     runs-on: ubuntu-latest
