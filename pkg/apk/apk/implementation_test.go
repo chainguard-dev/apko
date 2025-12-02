@@ -753,6 +753,29 @@ func TestFetchPackage(t *testing.T) {
 		require.NoError(t, err, "unable to read previous apk file")
 		require.Equal(t, apk1, apk2, "apk files do not match")
 	})
+	t.Run("handle missing cache files when expanding APK", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepLayout(t, tmpDir)
+		// Fill the cache
+		exp, err := a.expandPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expand package")
+		_, err = os.Stat(exp.TarFile)
+		require.NoError(t, err, "unable to stat cached tar file")
+		// Delete the tar file from the cache
+		require.NoError(t, os.Remove(exp.TarFile), "unable to delete cached tar file")
+		_, err = os.Stat(exp.TarFile)
+		require.ErrorIs(t, err, os.ErrNotExist, "unexpectedly able to stat cached tar file that should have been deleted")
+
+		// Expand the package again, this should re-populate the cache.
+		exp2, err := a.expandPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expandPackage after deleting cached tar file")
+
+		// We should be able to read the APK contents
+		rc, err := exp2.APK()
+		require.NoError(t, err, "unable to get reader for APK()")
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err, "unable to read APK contents")
+	})
 	t.Run("cache hit no etag", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		a := prepLayout(t, tmpDir)
