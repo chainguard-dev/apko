@@ -640,7 +640,6 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
 			expanded, err := a.expandPackage(ctx, pkg)
-
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
 			}
@@ -1262,29 +1261,30 @@ type apkResult struct {
 }
 
 type apkCache struct {
-	// url -> func() apkResult (from sync.OnceValues(...))
+	// url -> func() apkResult (from sync.OnceValue(...))
 	onces sync.Map
 }
 
 func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
 	u := pkg.URL()
 	// Do all the expensive things inside sync.OnceValue()
-	fn := sync.OnceValue(func() apkResult {
+	fn := func() apkResult {
 		exp, err := expandPackage(ctx, a, pkg)
 		return apkResult{
 			exp: exp,
 			err: err,
 		}
-	})
-	once, cached := c.onces.LoadOrStore(u, fn)
+	}
+	once, cached := c.onces.LoadOrStore(u, sync.OnceValue(fn))
 	result := once.(func() apkResult)()
 	if cached && result.exp != nil {
 		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
 		// If it references a non-existent file, we should act as though this was a cache miss and expand the
 		// APK again.
 		if _, err := os.Stat(result.exp.TarFile); os.IsNotExist(err) {
-			c.onces.Store(u, fn)
-			result = fn()
+			newValue := sync.OnceValue(fn)
+			c.onces.Store(u, newValue)
+			result = newValue()
 		}
 	}
 
