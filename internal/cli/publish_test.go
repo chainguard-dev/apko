@@ -15,6 +15,7 @@
 package cli_test
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
 	"io"
@@ -29,9 +30,11 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
@@ -86,6 +89,8 @@ func TestPublish(t *testing.T) {
 
 	idx, err := remote.Index(ref, ropt...)
 	require.NoError(t, err)
+
+	checkEarlyFiles(t, idx)
 
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
@@ -159,6 +164,8 @@ func TestPublishLayering(t *testing.T) {
 	idx, err := remote.Index(ref, ropt...)
 	require.NoError(t, err)
 
+	checkEarlyFiles(t, idx)
+
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
 
@@ -199,5 +206,48 @@ func TestPublishLayering(t *testing.T) {
 		if !strings.Contains(string(b), "apk.cgr.dev/runtime-only-repo") {
 			t.Errorf("etc/apk/repositories does not contain expected runtime_repositories entry %q", "apk.cgr.dev/runtime-only-repo")
 		}
+	}
+}
+
+// checkEarlyFiles ensures that certain important files are present
+// early in the image tarball, which can help with performance when
+// extracting or using the image.
+func checkEarlyFiles(t *testing.T, idx v1.ImageIndex) {
+	mf, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.NotEmpty(t, len(mf.Manifests))
+
+	img, err := idx.Image(mf.Manifests[0].Digest)
+	require.NoError(t, err)
+
+	rc := mutate.Extract(img)
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+
+	fileOffsets := map[string]int{}
+	offset := 0
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		fileOffsets[h.Name] = offset
+		offset += int(h.Size)
+	}
+
+	requiredFiles := []string{
+		"etc/apk/repositories",
+		"etc/passwd",
+		"etc/apko.json",
+		"etc/os-release",
+	}
+	maxOffset := 4000 // files should be in the first N bytes of the extracted tar
+	for _, f := range requiredFiles {
+		pos, ok := fileOffsets[f]
+		assert.True(t, ok, "file %q not found in image", f)
+		t.Logf("file %q found at offset %d", f, pos)
+		assert.Less(t, pos, maxOffset, "file %q found too late in image (pos %d)", f, pos)
 	}
 }
