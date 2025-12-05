@@ -39,9 +39,7 @@ LDFLAGS=-buildid= -X $(PKG).gitVersion=$(GIT_VERSION) \
 
 DIGEST ?=
 
-define create_kocache_path
-  mkdir -p $(KOCACHE_PATH)
-endef
+PROJECT_BIN := $(shell pwd)/bin
 
 ##########
 # default
@@ -49,85 +47,38 @@ endef
 
 default: help
 
-##########
-# ko build
-##########
+.PHONY: help
+help: ## Display help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n	make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "	\033[36m%-22s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-.PHONY: ko
-ko: ## Build images using ko
-	$(create_kocache_path)
-	$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
-	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--platform=all --tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) \
-		chainguard.dev/apko))
-	@echo Image Digest $(DIGEST)
-
-.PHONY: ko-local
-ko-local:  ## Build images locally using ko
-	$(create_kocache_path)
-	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
-	KOCACHE=$(KOCACHE_PATH) ko build --bare \
-		--tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH) --local \
-		chainguard.dev/apko
-
-.PHONY: ko-apply
-ko-apply:  ## Build the image and apply the manifests
-	$(create_kocache_path)
-	LDFLAGS="$(LDFLAGS)" \
-	KOCACHE=$(KOCACHE_PATH) ko apply --base-import-paths \
-		--recursive --filename config/
-
-.PHONY: ko-apply
-ko-resolve:  ## Build the image generate the Task YAML
-	$(create_kocache_path)
-	LDFLAGS="$(LDFLAGS)" \
-	KOCACHE=$(KOCACHE_PATH) ko resolve --base-import-paths \
-		--recursive --filename config/ > task.yaml
-
-##########
-# codegen
-##########
+##@ Development:
 
 .PHONY: generate
 generate: ## Generates jsonschema for apko types.
 	go generate ./...
 
-##########
-# Build
-##########
+GOLANGCI_LINT_BIN := $(PROJECT_BIN)/golangci-lint
+GOLANGCI_LINT_VERSION := v2.6.1
 
-.PHONY: apko
-apko: $(SRCS) ## Builds apko
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
+$(GOLANGCI_LINT_BIN):
+	@echo "Installing golangci-lint@$(GOLANGCI_LINT_VERSION) to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
-.PHONY: install
-install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
-	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
-
-#####################
-# lint / test section
-#####################
-
-GOLANGCI_LINT_DIR = $(shell pwd)/bin
-GOLANGCI_LINT_BIN = $(GOLANGCI_LINT_DIR)/golangci-lint
-
-.PHONY: golangci-lint
-golangci-lint:
-	rm -f $(GOLANGCI_LINT_BIN) || :
-	set -e ;\
-	GOBIN=$(GOLANGCI_LINT_DIR) go install github.com/golangci/golangci-lint/cmd/golangci-lint/v2@v2.2.1 ;\
+$(GOBIN)/goimports:
+	@echo "Installing goimports to $(GOBIN)…"
+	@go install golang.org/x/tools/cmd/goimports@latest
 
 .PHONY: fmt
-fmt: ## Format all go files
-	@ $(MAKE) --no-print-directory log-$@
-	goimports -w $(GOFILES)
+fmt: $(GOBIN)/goimports ## Format all go files
+	@$(MAKE) --no-print-directory log-$@
+	@$< -l $(GOFILES)
 
 .PHONY: checkfmt
 checkfmt: SHELL := /usr/bin/env bash
-checkfmt: ## Check formatting of all go files
-	@ $(MAKE) --no-print-directory log-$@
-	$(shell test -z "$(shell gofmt -l $(GOFILES) | tee /dev/stderr)")
-	$(shell test -z "$(shell goimports -l $(GOFILES) | tee /dev/stderr)")
+checkfmt: $(GOBIN)/goimports ## Check formatting of all go files
+	@$(MAKE) --no-print-directory log-$@
+	@test -z "$$(gofmt -l $(GOFILES))" || { echo "Files need formatting"; exit 1; }
+	@test -z "$$($< -l $(GOFILES))" || { echo "Linting issues found"; exit 1; }
 
 log-%:
 	@grep -h -E '^$*:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -140,8 +91,9 @@ log-%:
 			}'
 
 .PHONY: lint
-lint: checkfmt golangci-lint ## Run linters and checks like golangci-lint
-	$(GOLANGCI_LINT_BIN) run -n
+lint: checkfmt $(GOLANGCI_LINT_BIN) ## Run linters and checks like golangci-lint
+	@$(MAKE) --no-print-directory log-$@
+	@$(GOLANGCI_LINT_BIN) run -n
 
 .PHONY: test
 test: ## Run go test
@@ -153,9 +105,69 @@ clean: ## Clean the workspace
 	rm -rf bin/
 	rm -rf dist/
 
-#######################
-# Release / goreleaser
-#######################
+##@ Compile:
+
+.PHONY: apko
+apko: $(SRCS) ## Builds apko
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./
+
+.PHONY: install
+install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
+	install -Dm755 apko ${DESTDIR}${BINDIR}/apko
+
+##@ ko-build:
+
+DOCKER_HOST ?= $(shell docker context inspect --format '{{.Endpoints.docker.Host}}')
+
+KO_BIN := $(PROJECT_BIN)/ko
+KO_VERSION := v0.18.0
+KO_DOCKER_REPO ?= chainguard.dev/apko
+KOCACHE := $(PROJECT_BIN)/kocache
+KO_TAGS := --tags $(IMAGE_TAG) --tags $(GIT_VERSION) --tags $(GIT_HASH)
+
+$(KO_BIN):
+	@echo "Installing ko@$(KO_VERSION) to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/google/ko@$(KO_VERSION)
+
+$(KOCACHE):
+	@mkdir -p $@
+
+.PHONY: ko
+ko: $(KO_BIN) $(KOCACHE) ## Build images using ko
+	@$(MAKE) --no-print-directory log-$@
+	@$(eval DIGEST := $(shell LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
+	$< build --bare --platform=all $(KO_TAGS)))
+	@echo Image Digest $(DIGEST)
+
+.PHONY: ko-local
+ko-local: $(KO_BIN) $(KOCACHE) ## Build images locally using ko
+	@$(MAKE) --no-print-directory log-$@
+	@DOCKER_HOST=$(DOCKER_HOST) \
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	LDFLAGS="$(LDFLAGS)" GIT_HASH=$(GIT_HASH) GIT_VERSION=$(GIT_VERSION) \
+	$< build --bare --local $(KO_TAGS)
+
+.PHONY: ko-apply
+ko-apply: $(KO_BIN) $(KOCACHE) ## Build the image and apply the manifests
+	@$(MAKE) --no-print-directory log-$@
+	@KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
+	LDFLAGS="$(LDFLAGS)" \
+	$< apply --base-import-paths \
+		--recursive --filename config/
+
+.PHONY: ko-resolve
+ko-resolve: $(KO_BIN) $(KOCACHE) ## Build the image generate the Task YAML
+	@$(MAKE) --no-print-directory log-$@
+	@KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+	KOCACHE=$(KOCACHE) \
+	LDFLAGS="$(LDFLAGS)" \
+	$< resolve --base-import-paths \
+		--recursive --filename config/ > task.yaml
+
+##@ Release:
 
 .PHONY: snapshot
 snapshot: ## Run Goreleaser in snapshot mode
@@ -165,28 +177,20 @@ snapshot: ## Run Goreleaser in snapshot mode
 release: ## Run Goreleaser in release mode
 	LDFLAGS="$(LDFLAGS)" goreleaser release --clean
 
+COSIGN_VERSION := v3.0.2
 
-#######################
-# CI tests
-#######################
+$(PROJECT_BIN)/cosign:
+	@echo "Installing cosign to $(PROJECT_BIN)…"
+	@GOBIN=$(PROJECT_BIN) go install github.com/sigstore/cosign/v3/cmd/cosign@$(COSIGN_VERSION)
+
+.PHONY: sign-image
+sign-image: $(PROJECT_BIN)/cosign ko ## Sign images built using ko
+	@$(MAKE) --no-print-directory log-$@
+	@echo "Signing $(DIGEST)…"
+	@$< sign -y $(DIGEST)
+
+##@ CI:
 
 .PHONY: ci
-ci:
+ci: ## Run all CI tests
 	./hack/ci-tests.sh
-
-#######################
-# Sign images
-#######################
-.PHONY: sign-image
-sign-image: ko ## Sign images built using ko
-	cosign sign -y $(DIGEST)
-
-##################
-# help
-##################
-
-help: ## Display help
-	@awk -F ':|##' \
-		'/^[^\t].+?:.*?##/ {\
-			printf "\033[36m%-30s\033[0m %s\n", $$1, $$NF \
-		}' $(MAKEFILE_LIST) | sort
