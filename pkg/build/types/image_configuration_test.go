@@ -208,7 +208,7 @@ func TestMergeInto(t *testing.T) {
 			StopSignal: "bar",
 			WorkDir:    "bar",
 			Accounts: types.ImageAccounts{
-				RunAs: "bar",
+				RunAs: "foo",
 				Users: []types.User{{
 					UserName: "foo",
 					UID:      1000,

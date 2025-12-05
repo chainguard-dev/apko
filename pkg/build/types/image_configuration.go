@@ -154,7 +154,7 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 }
 
 func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
-	if target.RunAs == "" {
+	if a.RunAs != "" {
 		target.RunAs = a.RunAs
 	}
 	target.Users = slices.Concat(a.Users, target.Users)
