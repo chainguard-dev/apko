@@ -368,6 +368,10 @@ func cacheDirFromFile(cacheFile string) string {
 		return filepath.Join(filepath.Dir(cacheFile), "APKINDEX")
 	}
 
+	if strings.HasSuffix(cacheFile, ".rsa.pub") {
+		return filepath.Join(filepath.Dir(cacheFile), filepath.Base(cacheFile))
+	}
+
 	return filepath.Dir(cacheFile)
 }
 
@@ -379,6 +383,11 @@ func cacheFileFromEtag(cacheFile, etag string) (string, error) {
 	if strings.HasSuffix(cacheFile, "APKINDEX.tar.gz") {
 		cacheDir = filepath.Join(cacheDir, "APKINDEX")
 		ext = ".tar.gz"
+	}
+
+	// Keep all the rsa.pub files under subdirectory named by full filename.
+	if strings.HasSuffix(cacheFile, ".rsa.pub") {
+		cacheDir = filepath.Join(cacheDir, filepath.Base(cacheFile))
 	}
 
 	absPath, err := filepath.Abs(filepath.Join(cacheDir, etag+ext))
