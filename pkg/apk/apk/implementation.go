@@ -327,7 +327,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 				if !errors.As(err, &nokeysErr) {
 					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
 				}
-				log.Warnf("ignoring missing keys: %v", err)
+				log.Debugf("ignoring missing keys: %v", err)
 			}
 		}
 
@@ -640,7 +640,6 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
 			expanded, err := a.expandPackage(ctx, pkg)
-
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
 			}
@@ -880,6 +879,9 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 
 	u := alpineReleasesURL
 	client := a.client
+	if a.cache != nil {
+		client = a.cache.client(client, true)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -1080,7 +1082,7 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 
 	keys, err := a.DiscoverKeys(ctx, repository)
 	if err != nil {
-		log.Warnf("ignoring missing keys for %s: %v", repository, err)
+		log.Debugf("ignoring missing keys for %s: %v", repository, err)
 	}
 
 	for _, key := range keys {
@@ -1259,31 +1261,33 @@ type apkResult struct {
 }
 
 type apkCache struct {
-	// url -> *sync.Once
+	// url -> func() apkResult (from sync.OnceValue(...))
 	onces sync.Map
-
-	// url -> apkResult
-	resps sync.Map
 }
 
 func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
 	u := pkg.URL()
-	// Do all the expensive things inside the once.
-	once, _ := c.onces.LoadOrStore(u, &sync.Once{})
-	once.(*sync.Once).Do(func() {
+	// Do all the expensive things inside sync.OnceValue()
+	fn := func() apkResult {
 		exp, err := expandPackage(ctx, a, pkg)
-		c.resps.Store(u, apkResult{
+		return apkResult{
 			exp: exp,
 			err: err,
-		})
-	})
-
-	v, ok := c.resps.Load(u)
-	if !ok {
-		panic(fmt.Errorf("did not see apk %q after writing it", u))
+		}
+	}
+	once, cached := c.onces.LoadOrStore(u, sync.OnceValue(fn))
+	result := once.(func() apkResult)()
+	if cached && result.exp != nil {
+		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
+		// If it references a non-existent file, we should act as though this was a cache miss and expand the
+		// APK again.
+		if _, err := os.Stat(result.exp.TarFile); os.IsNotExist(err) {
+			newValue := sync.OnceValue(fn)
+			c.onces.Store(u, newValue)
+			result = newValue()
+		}
 	}
 
-	result := v.(apkResult)
 	return result.exp, result.err
 }
 

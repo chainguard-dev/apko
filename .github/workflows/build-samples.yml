@@ -24,14 +24,14 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
-      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           egress-policy: audit
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
@@ -68,14 +68,14 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           egress-policy: audit
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
@@ -90,6 +90,7 @@ jobs:
               ${build_script} ./apko
             else
               ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
             fi
           done
 
@@ -101,18 +102,18 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           egress-policy: audit
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
+      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
         with:
           port: 5000
 
@@ -143,18 +144,18 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           egress-policy: audit
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
+      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
         with:
           port: 5000
 
@@ -185,19 +186,19 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           egress-policy: audit
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
       - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
-      - uses: chainguard-dev/actions/setup-registry@abcc11e1cf9073eff6c69e91c49756c1430b094c # v1.5.8
+      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
         with:
           port: 5000
       - run: |

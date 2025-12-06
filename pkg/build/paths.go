@@ -15,6 +15,7 @@
 package build
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -136,6 +137,9 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 		}
 
 		if err := pm(fsys, o, mut); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				err = &PathMutationFileConflictError{Path: mut.Path}
+			}
 			return fmt.Errorf("mutating path %q: %w", mut.Path, err)
 		}
 
@@ -147,4 +151,16 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 	}
 
 	return nil
+}
+
+// PathMutationFileConflictError is returned when a path mutation
+// attempts to create a file that conflicts with an existing file.
+// This is a user error in the image configuration.
+type PathMutationFileConflictError struct {
+	// The full path of the file that has a conflict.
+	Path string
+}
+
+func (e *PathMutationFileConflictError) Error() string {
+	return fmt.Sprintf("file %q already exists", e.Path)
 }
