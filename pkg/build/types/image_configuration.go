@@ -121,6 +121,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Layering == nil {
 		target.Layering = ic.Layering
 	}
+	if target.Certificates == nil {
+		target.Certificates = ic.Certificates
+	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
 	}
@@ -221,6 +224,17 @@ func (ic *ImageConfiguration) Validate() error {
 	for _, g := range ic.Accounts.Groups {
 		if g.GroupName == "" {
 			return fmt.Errorf("configured group %v has no configured group name", g)
+		}
+	}
+
+	if ic.Certificates != nil {
+		for _, additional := range ic.Certificates.Additional {
+			if additional.Name == "" {
+				return fmt.Errorf("configured additional certificate has no name")
+			}
+			if additional.Content == "" {
+				return fmt.Errorf("configured additional certificate %s has no content", additional.Name)
+			}
 		}
 	}
 	return nil

@@ -17,6 +17,20 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CertificateEntry": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Required: Name of the certificate entry"
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: PEM-encoded certificate content to install in the image.\nMust contain exactly one certificate.\nThe certificate will be:\n1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)\n2. Installed as an individual file in the ca-certificates."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Group": {
       "properties": {
         "groupname": {
@@ -57,6 +71,19 @@
           },
           "type": "array",
           "description": "Required: List of groups to populate the image with"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageCertificates": {
+      "properties": {
+        "additional": {
+          "items": {
+            "$ref": "#/$defs/CertificateEntry"
+          },
+          "type": "array",
+          "description": "Additional certificates to install in the image"
         }
       },
       "additionalProperties": false,
@@ -134,6 +161,10 @@
         "layering": {
           "$ref": "#/$defs/Layering",
           "description": "Optional: Configuration to control layering of the OCI image."
+        },
+        "certificates": {
+          "$ref": "#/$defs/ImageCertificates",
+          "description": "Optional: Certificates to install in the container image"
         }
       },
       "additionalProperties": false,
