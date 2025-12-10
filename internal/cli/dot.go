@@ -213,7 +213,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 					panic(err)
 				}
 			}
-			if _, err := out.AddNode(n); err != nil {
+			if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 				panic(err)
 			}
 
@@ -231,7 +231,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						}
 					}
 				}
-				if _, err := out.AddNode(d); err != nil {
+				if _, err := out.AddNode(d); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 					panic(err)
 				}
 				if _, ok := edges[dep]; !ok || !span {
@@ -269,7 +269,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
 			}
-			if _, err := out.AddNode(n); err != nil {
+			if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 				panic(err)
 			}
 
@@ -281,7 +281,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							if _, err := out.AddNode(p); err != nil {
+							if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 								panic(err)
 							}
 
@@ -296,7 +296,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							if _, err := out.AddNode(p); err != nil {
+							if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 								panic(err)
 							}
 
@@ -310,7 +310,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 					}
 				}
 				p := dot.NewNode(prov)
-				if _, err := out.AddNode(p); err != nil {
+				if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 					panic(err)
 				}
 				if _, ok := edges[pkg.Name]; !ok || !span {
