@@ -235,7 +235,8 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - run: |
+      - name: test additional certificates
+        run: |
           set -euo pipefail
 
           # Gets all certificate fingerprints from a PEM file, sorted, so two files can
@@ -276,3 +277,4 @@ jobs:
 
           # Verify that the files are semantically identical.
           diff /tmp/combined-fingerprints.txt /tmp/updated-fingerprints.txt
+          echo "Certificate bundles before and after update-ca-certificates are identical."
