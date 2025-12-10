@@ -93,6 +93,12 @@ func TestMergeInto(t *testing.T) {
 			Volumes: []string{
 				"volume1",
 			},
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "foo",
+					Content: "bar",
+				}},
+			},
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
@@ -119,6 +125,12 @@ func TestMergeInto(t *testing.T) {
 			},
 			Volumes: []string{
 				"volume1",
+			},
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "foo",
+					Content: "bar",
+				}},
 			},
 		},
 	}, {
@@ -237,6 +249,54 @@ func TestMergeInto(t *testing.T) {
 			err := tt.source.MergeInto(&tt.target)
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, tt.target)
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name          string
+		configuration types.ImageConfiguration
+		expectError   string
+	}{{
+		name: "no cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: "configured additional certificate has no name",
+	}, {
+		name: "path walking cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "trying/../../../to/break",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate "trying/../../../to/break" has an invalid name, it must match ^[a-zA-Z0-9_-]+$`,
+	}, {
+		name: "weird characters cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "my-cert@123!",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate "my-cert@123!" has an invalid name, it must match ^[a-zA-Z0-9_-]+$`,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.configuration.Validate()
+			require.EqualError(t, err, tt.expectError)
 		})
 	}
 }

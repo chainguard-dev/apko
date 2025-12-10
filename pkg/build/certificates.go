@@ -93,6 +93,8 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 
 		// Write individual certificate file for update-ca-certificates to pick up.
+		// Name is validated not to do any path shenanigans on configuration validation.
+		// The fingerprint is controlled to be a hash and so also doesn't allow shenanigans.
 		certPath := filepath.Join(caCertsDir, fmt.Sprintf("%s-%s.crt", additional.Name, cert.fingerprint))
 		if err := bc.fs.WriteFile(certPath, cert.pem, 0o644); err != nil {
 			return fmt.Errorf("failed to write certificate file %s: %w", certPath, err)

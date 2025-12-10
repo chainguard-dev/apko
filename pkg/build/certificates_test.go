@@ -151,7 +151,7 @@ func TestInstallCertificates(t *testing.T) {
 	}, {
 		name: "valid single certificate without existing bundle",
 		cfg: &types.ImageCertificates{
-			Additional: []types.CertificateEntry{
+			Additional: []types.AdditionalCertificateEntry{
 				{Name: "test-cert", Content: testCertPEM},
 			},
 		},
@@ -162,7 +162,7 @@ func TestInstallCertificates(t *testing.T) {
 	}, {
 		name: "multiple certificate entries only one existing bundle",
 		cfg: &types.ImageCertificates{
-			Additional: []types.CertificateEntry{
+			Additional: []types.AdditionalCertificateEntry{
 				{Name: "test-cert-1", Content: testCertPEM},
 				{Name: "test-cert-2", Content: testCertPEM2},
 			},
@@ -178,7 +178,7 @@ func TestInstallCertificates(t *testing.T) {
 	}, {
 		name: "multiple certificate entries with multiple existing bundles",
 		cfg: &types.ImageCertificates{
-			Additional: []types.CertificateEntry{
+			Additional: []types.AdditionalCertificateEntry{
 				{Name: "test-cert-1", Content: testCertPEM},
 				{Name: "test-cert-2", Content: testCertPEM2},
 			},
@@ -196,7 +196,7 @@ func TestInstallCertificates(t *testing.T) {
 	}, {
 		name: "multiple certificate entries with identical names",
 		cfg: &types.ImageCertificates{
-			Additional: []types.CertificateEntry{
+			Additional: []types.AdditionalCertificateEntry{
 				{Name: "test-cert", Content: testCertPEM},
 				{Name: "test-cert", Content: testCertPEM2},
 			},
@@ -212,7 +212,7 @@ func TestInstallCertificates(t *testing.T) {
 	}, {
 		name: "certificate with additional metadata",
 		cfg: &types.ImageCertificates{
-			Additional: []types.CertificateEntry{
+			Additional: []types.AdditionalCertificateEntry{
 				{Name: "test-cert", Content: "additional text\n" + testCertPEM},
 			},
 		},

@@ -440,7 +440,7 @@ type Layering struct {
 	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
 }
 
-type CertificateEntry struct {
+type AdditionalCertificateEntry struct {
 	// Required: Name of the certificate entry
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	// Required: PEM-encoded certificate content to install in the image.
@@ -453,5 +453,5 @@ type CertificateEntry struct {
 
 type ImageCertificates struct {
 	// Additional certificates to install in the image
-	Additional []CertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
+	Additional []AdditionalCertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
 }

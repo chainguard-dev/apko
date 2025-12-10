@@ -3,6 +3,20 @@
   "$id": "https://chainguard.dev/apko/pkg/build/types/image-configuration",
   "$ref": "#/$defs/ImageConfiguration",
   "$defs": {
+    "AdditionalCertificateEntry": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Required: Name of the certificate entry"
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: PEM-encoded certificate content to install in the image.\nMust contain exactly one certificate.\nThe certificate will be:\n1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)\n2. Installed as an individual file in the ca-certificates."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "BaseImageDescriptor": {
       "properties": {
         "image": {
@@ -12,20 +26,6 @@
         "apkindex": {
           "type": "string",
           "description": "Required: Path to file representing installed packages in the base image in APKINDEX format.\n(Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "CertificateEntry": {
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Required: Name of the certificate entry"
-        },
-        "content": {
-          "type": "string",
-          "description": "Required: PEM-encoded certificate content to install in the image.\nMust contain exactly one certificate.\nThe certificate will be:\n1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)\n2. Installed as an individual file in the ca-certificates."
         }
       },
       "additionalProperties": false,
@@ -80,7 +80,7 @@
       "properties": {
         "additional": {
           "items": {
-            "$ref": "#/$defs/CertificateEntry"
+            "$ref": "#/$defs/AdditionalCertificateEntry"
           },
           "type": "array",
           "description": "Additional certificates to install in the image"
