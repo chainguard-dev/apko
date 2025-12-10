@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"testing"
+	"time"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
@@ -139,6 +140,9 @@ func TestParseCertificates(t *testing.T) {
 }
 
 func TestInstallCertificates(t *testing.T) {
+	epoch := time.Unix(1337, 0)
+	t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
+
 	tests := []struct {
 		name          string
 		cfg           *types.ImageCertificates
@@ -227,12 +231,11 @@ func TestInstallCertificates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set SOURCE_DATE_EPOCH to avoid needing APK initialization
-			t.Setenv("SOURCE_DATE_EPOCH", "0")
-
 			fsys := apkfs.NewMemFS()
 			bc := &Context{
-				o: options.Options{},
+				o: options.Options{
+					SourceDateEpoch: epoch,
+				},
 				ic: types.ImageConfiguration{
 					Certificates: tt.cfg,
 				},
@@ -284,6 +287,15 @@ func TestInstallCertificates(t *testing.T) {
 				gotContent := string(data)
 				if diff := cmp.Diff(wantContent, gotContent); diff != "" {
 					t.Errorf("file content mismatch for %s (-want +got):\n%s", path, diff)
+				}
+
+				stat, err := fsys.Stat(path)
+				if err != nil {
+					t.Fatalf("failed to stat file %s: %v", path, err)
+				}
+				modTime := stat.ModTime()
+				if !modTime.Equal(epoch) {
+					t.Errorf("file %s has mod time %v, want %v", path, modTime, epoch)
 				}
 				return nil
 			})

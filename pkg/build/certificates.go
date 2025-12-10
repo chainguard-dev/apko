@@ -115,6 +115,12 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 	}
 
+	for _, caBundlePath := range caBundlePaths {
+		if err := bc.fs.Chtimes(caBundlePath, builtTime, builtTime); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to change times on CA bundle %s: %w", caBundlePath, err)
+		}
+	}
+
 	return nil
 }
 
