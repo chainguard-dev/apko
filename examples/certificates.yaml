@@ -5,6 +5,11 @@ contents:
     - https://packages.wolfi.dev/os
   packages:
     - ca-certificates-bundle
+    - ca-certificates
+    - busybox
+
+entrypoint:
+  command: /bin/sh -c
 
 archs:
   - amd64

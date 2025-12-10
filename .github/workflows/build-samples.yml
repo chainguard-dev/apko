@@ -215,3 +215,45 @@ jobs:
 
           # Check per-image config labels.
           crane config --platform=linux/arm64 $ref | jq -r '.config.Labels' | grep bar
+
+  certificates:
+    name: certificates
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+      - run: |
+          set -euxo pipefail
+
+          make apko
+
+          # Build the certificates image.
+          ./apko build ./examples/certificates.yaml certificates:build /tmp/certificates.tar --arch amd64
+          docker load < /tmp/certificates.tar
+
+          # Get the appended certificates from the image.
+          docker run --rm certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" > /tmp/combined-certs.pem
+
+          # Verify that the additional certificates are present.
+          grep "MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm" /tmp/combined-certs.pem
+          grep "MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL" /tmp/combined-certs.pem
+
+          # Run update-ca-certificates to verify no errors occur.
+          docker run --rm certificates:build-amd64 "update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" > /tmp/updated-certs.pem
+
+          # Verify that the additional certificates are still present.
+          grep "MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm" /tmp/updated-certs.pem
+          grep "MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL" /tmp/updated-certs.pem
