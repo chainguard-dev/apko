@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -38,15 +39,14 @@ const (
 var (
 	// Common paths for CA bundles.
 	caBundlePaths = []string{
-		"etc/ssl/certs/ca-certificates.crt",
-		"var/lib/ecs/deps/execute-command/certs/tls-ca-bundle.pem",
+		"etc/ssl/certs/ca-certificates.crt",                        // Alpine default.
+		"var/lib/ecs/deps/execute-command/certs/tls-ca-bundle.pem", // AWS ECS-specific.
 	}
 )
 
 // parsedCertificate represents a parsed certificate with its metadata.
 type parsedCertificate struct {
 	pem         []byte
-	cert        *x509.Certificate
 	fingerprint string
 }
 
@@ -108,7 +108,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			if _, err := bundle.Write(cert.pem); err != nil {
 				return fmt.Errorf("failed to append certificate to bundle: %w", err)
 			}
-			// Put newlines in-between certificates to mimick update-ca-certificates behavior.
+			// Put newlines in-between certificates to mimic update-ca-certificates behavior.
 			if _, err := bundle.Write([]byte("\n")); err != nil {
 				return fmt.Errorf("failed to append newline to bundle: %w", err)
 			}
@@ -142,7 +142,7 @@ func parseCertificates(pemData string) (*parsedCertificate, error) {
 		}
 
 		// Parse the certificate to validate it
-		x509Cert, err := x509.ParseCertificate(block.Bytes)
+		_, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse certificate: %w", err)
 		}
@@ -152,11 +152,13 @@ func parseCertificates(pemData string) (*parsedCertificate, error) {
 		fingerprint := hex.EncodeToString(hash[:])
 
 		// Re-encode to PEM. This drops any additional text from the original block.
-		pemBytes := pem.EncodeToMemory(block)
+		var pemBuf bytes.Buffer
+		if err := pem.Encode(&pemBuf, block); err != nil {
+			return nil, fmt.Errorf("failed to re-encode certificate to PEM: %w", err)
+		}
 
 		cert = &parsedCertificate{
-			pem:         pemBytes,
-			cert:        x509Cert,
+			pem:         pemBuf.Bytes(),
 			fingerprint: fingerprint,
 		}
 	}
