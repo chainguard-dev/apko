@@ -5,8 +5,8 @@ contents:
     - https://packages.wolfi.dev/os
   packages:
     - ca-certificates-bundle
-    - ca-certificates
     - busybox
+    - apk-tools
 
 entrypoint:
   command: /bin/sh -c

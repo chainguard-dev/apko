@@ -252,7 +252,7 @@ jobs:
           grep "MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL" /tmp/combined-certs.pem
 
           # Run update-ca-certificates to verify no errors occur.
-          docker run --rm certificates:build-amd64 "update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" > /tmp/updated-certs.pem
+          docker run --rm certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" > /tmp/updated-certs.pem
 
           # Verify that the additional certificates are still present.
           grep "MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm" /tmp/updated-certs.pem
