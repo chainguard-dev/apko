@@ -267,6 +267,13 @@ jobs:
           docker run --rm certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" > /tmp/combined-certs.pem
           get_fingerprints /tmp/combined-certs.pem > /tmp/combined-fingerprints.txt
 
+          # Verify that a few more certificates are present. We're just adding 2.
+          BASE_CERT_COUNT=$(cat /tmp/combined-fingerprints.txt | wc -l)
+          if [ "$BASE_CERT_COUNT" -lt 10 ]; then
+              echo "Expected at least 10 base certificates, found $BASE_CERT_COUNT"
+              exit 1
+          fi
+
           # Verify that the additional certificates are present.
           grep "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" /tmp/combined-fingerprints.txt
           grep "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" /tmp/combined-fingerprints.txt
