@@ -236,7 +236,25 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
       - run: |
-          set -euxo pipefail
+          set -euo pipefail
+
+          # Gets all certificate fingerprints from a PEM file, sorted, so two files can
+          # be semantically compared.
+          get_fingerprints() {
+              local cert=""
+              while IFS= read -r line; do
+                  case "$line" in
+                      "-----BEGIN CERTIFICATE-----")
+                          cert="$line"$'\n' ;;
+                      "-----END CERTIFICATE-----")
+                          cert+="$line"
+                          echo "$cert" | openssl x509 -noout -fingerprint -sha256 2>/dev/null
+                          cert="" ;;
+                      *)
+                          [[ -n "$cert" ]] && cert+="$line"$'\n' || true ;;
+                  esac
+              done < "$1" | sort
+          }
 
           make apko
 
@@ -246,14 +264,15 @@ jobs:
 
           # Get the appended certificates from the image.
           docker run --rm certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" > /tmp/combined-certs.pem
+          get_fingerprints /tmp/combined-certs.pem > /tmp/combined-fingerprints.txt
 
           # Verify that the additional certificates are present.
-          grep "MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm" /tmp/combined-certs.pem
-          grep "MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL" /tmp/combined-certs.pem
+          grep "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" /tmp/combined-fingerprints.txt
+          grep "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" /tmp/combined-fingerprints.txt
 
           # Run update-ca-certificates to verify no errors occur.
           docker run --rm certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" > /tmp/updated-certs.pem
+          get_fingerprints /tmp/updated-certs.pem > /tmp/updated-fingerprints.txt
 
-          # Verify that the additional certificates are still present.
-          grep "MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm" /tmp/updated-certs.pem
-          grep "MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL" /tmp/updated-certs.pem
+          # Verify that the files are semantically identical.
+          diff /tmp/combined-fingerprints.txt /tmp/updated-fingerprints.txt
