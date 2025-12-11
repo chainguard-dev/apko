@@ -219,6 +219,9 @@ type ImageConfiguration struct {
 
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
+
+	// Optional: Certificates to install in the container image
+	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -435,4 +438,20 @@ type SBOM struct {
 type Layering struct {
 	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
+}
+
+type AdditionalCertificateEntry struct {
+	// Required: Name of the certificate entry
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: PEM-encoded certificate content to install in the image.
+	// Must contain exactly one certificate.
+	// The certificate will be:
+	// 1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)
+	// 2. Installed as an individual file in the ca-certificates.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
+}
+
+type ImageCertificates struct {
+	// Additional certificates to install in the image
+	Additional []AdditionalCertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
 }

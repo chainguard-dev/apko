@@ -21,6 +21,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -32,6 +33,10 @@ import (
 	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/vcs"
 )
+
+// Regex for valid certificate names. Since the name of the certificate is used
+// as a filename, we restrict it to a safe subset of characters.
+var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Attempt to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
@@ -120,6 +125,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	}
 	if target.Layering == nil {
 		target.Layering = ic.Layering
+	}
+	if target.Certificates == nil {
+		target.Certificates = ic.Certificates
 	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
@@ -221,6 +229,17 @@ func (ic *ImageConfiguration) Validate() error {
 	for _, g := range ic.Accounts.Groups {
 		if g.GroupName == "" {
 			return fmt.Errorf("configured group %v has no configured group name", g)
+		}
+	}
+
+	if ic.Certificates != nil {
+		for _, additional := range ic.Certificates.Additional {
+			if additional.Name == "" {
+				return fmt.Errorf("configured additional certificate has no name")
+			}
+			if !certNameRegex.MatchString(additional.Name) {
+				return fmt.Errorf("configured additional certificate %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
+			}
 		}
 	}
 	return nil
