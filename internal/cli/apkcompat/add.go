@@ -160,15 +160,59 @@ func runAdd(ctx context.Context, opts *addOptions, packages []string) error {
 		return fmt.Errorf("virtual packages not yet implemented")
 	}
 
-	// Add packages to world
+	// Get list of installed packages to avoid re-resolving them
+	installed, err := apkClient.GetInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to get installed packages: %w", err)
+	}
+
+	installedMap := make(map[string]bool)
+	for _, pkg := range installed {
+		// Store package name without version for comparison
+		installedMap[pkg.Name] = true
+	}
+
+	// Add packages to world and track which are new
+	newPackages := []string{}
 	for _, pkg := range packages {
 		// Check if it's a local .apk file
 		if strings.HasSuffix(pkg, ".apk") {
 			return fmt.Errorf("local .apk files not yet fully supported: %s", pkg)
 		}
 
-		// Add to world
-		world = append(world, pkg)
+		// Extract package name (remove version constraint if present)
+		pkgName := pkg
+		if idx := strings.IndexAny(pkg, "=<>~"); idx != -1 {
+			pkgName = pkg[:idx]
+		}
+
+		// Check if already in world
+		alreadyInWorld := false
+		for _, w := range world {
+			wName := w
+			if idx := strings.IndexAny(w, "=<>~"); idx != -1 {
+				wName = w[:idx]
+			}
+			if wName == pkgName {
+				alreadyInWorld = true
+				break
+			}
+		}
+
+		if !alreadyInWorld {
+			world = append(world, pkg)
+		}
+
+		// Track as new package if not already installed
+		if !installedMap[pkgName] {
+			newPackages = append(newPackages, pkg)
+		}
+	}
+
+	// If all requested packages are already installed, nothing to do
+	if len(newPackages) == 0 {
+		slog.Info("All requested packages are already installed")
+		return nil
 	}
 
 	slog.Info("Setting world", "packages", world)
@@ -177,21 +221,60 @@ func runAdd(ctx context.Context, opts *addOptions, packages []string) error {
 	}
 
 	if opts.simulate {
-		slog.Info("Simulation mode - would resolve and install packages")
+		slog.Info("Simulation mode - would resolve and install packages", "new_packages", newPackages)
 		// TODO: show what would be installed
 		return nil
 	}
 
-	// Resolve dependencies
-	slog.Info("Resolving world")
-	if _, _, err := apkClient.ResolveWorld(ctx); err != nil {
+	// To avoid re-resolving already installed packages that may not be in current repos,
+	// we create a temporary world with only packages that need to be installed
+	worldToResolve := []string{}
+	for _, w := range world {
+		wName := w
+		if idx := strings.IndexAny(w, "=<>~"); idx != -1 {
+			wName = w[:idx]
+		}
+		// Only include packages that are not already installed
+		if !installedMap[wName] {
+			worldToResolve = append(worldToResolve, w)
+		}
+	}
+
+	// Temporarily set world to only uninstalled packages for resolution
+	if err := apkClient.SetWorld(ctx, worldToResolve); err != nil {
+		return fmt.Errorf("failed to set temporary world for resolution: %w", err)
+	}
+
+	// Resolve dependencies for new packages only
+	slog.Info("Resolving new packages", "packages", worldToResolve)
+	toInstall, conflicts, err := apkClient.ResolveWorld(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to resolve world: %w", err)
 	}
 
-	// Install packages
+	// Check for conflicts with already installed packages
+	for _, conflict := range conflicts {
+		// Check if conflict package is already installed
+		if installedMap[conflict] {
+			return fmt.Errorf("cannot install due to conflict with %s", conflict)
+		}
+	}
+
+	// Restore full world before installation
+	if err := apkClient.SetWorld(ctx, world); err != nil {
+		return fmt.Errorf("failed to restore world: %w", err)
+	}
+
+	// Convert to InstallablePackage slice
+	allInstPkgs := make([]apk.InstallablePackage, len(toInstall))
+	for i, pkg := range toInstall {
+		allInstPkgs[i] = pkg
+	}
+
+	// Install packages directly without calling FixateWorld (which would re-resolve everything)
 	slog.Info("Installing packages")
 	var sourceDateEpoch *time.Time
-	diffs, err := apkClient.FixateWorld(ctx, sourceDateEpoch)
+	diffs, err := apkClient.InstallPackages(ctx, sourceDateEpoch, allInstPkgs)
 	if err != nil {
 		return fmt.Errorf("failed to install packages: %w", err)
 	}
