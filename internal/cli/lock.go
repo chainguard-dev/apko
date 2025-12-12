@@ -18,10 +18,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -169,6 +171,13 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		})
 	}
 
+	// Discover and add auto-discovered keys from repositories
+	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
+	if err != nil {
+		return fmt.Errorf("failed to discover keys: %w", err)
+	}
+	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
+
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
 		log := log.With("arch", arch.ToAPK())
@@ -261,4 +270,80 @@ func stripURLScheme(url string) string {
 		strings.TrimPrefix(url, "https://"),
 		"http://",
 	)
+}
+
+// discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
+	log := clog.FromContext(ctx)
+
+	// Collect all unique repositories
+	repoSet := make(map[string]struct{})
+	for _, repo := range ic.Contents.BuildRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.RuntimeOnlyRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.Repositories {
+		repoSet[repo] = struct{}{}
+	}
+
+	// Map to track discovered keys by URL to avoid duplicates
+	discoveredKeyMap := make(map[string]pkglock.LockKeyring)
+
+	// Fetch Alpine releases once (cached by HTTP client)
+	client := &http.Client{}
+	var alpineReleases *apk.Releases
+
+	// Discover keys for each repository and architecture
+	for repo := range repoSet {
+		// Try Alpine-style key discovery
+		if ver, ok := apk.ParseAlpineVersion(repo); ok {
+			// Fetch releases.json if not already fetched
+			if alpineReleases == nil {
+				releases, err := apk.FetchAlpineReleases(ctx, client)
+				if err != nil {
+					log.Warnf("Failed to fetch Alpine releases: %v", err)
+					continue
+				}
+				alpineReleases = releases
+			}
+
+			branch := alpineReleases.GetReleaseBranch(ver)
+			if branch == nil {
+				log.Debugf("Alpine version %s not found in releases", ver)
+				continue
+			}
+
+			// Get keys for each architecture
+			for _, arch := range archs {
+				log.Debugf("Discovering Alpine keys for %s (version %s, arch %s)", repo, ver, arch.ToAPK())
+				urls := branch.KeysFor(arch.ToAPK(), time.Now())
+				if len(urls) == 0 {
+					log.Debugf("No keys found for arch %s and version %s", arch.ToAPK(), ver)
+					continue
+				}
+
+				// Add discovered key URLs to the map
+				for _, u := range urls {
+					discoveredKeyMap[u] = pkglock.LockKeyring{
+						Name: stripURLScheme(u),
+						URL:  u,
+					}
+				}
+			}
+		}
+
+		// TODO: Add Chainguard-style key discovery here if needed
+		// For now, focusing on Alpine keys as requested by the user
+	}
+
+	// Convert map to slice
+	var discoveredKeys []pkglock.LockKeyring
+	for _, key := range discoveredKeyMap {
+		discoveredKeys = append(discoveredKeys, key)
+	}
+
+	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
+	return discoveredKeys, nil
 }
