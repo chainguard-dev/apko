@@ -321,7 +321,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 
 	// Perform key discovery for the various build-time repositories.
 	for _, repo := range buildRepos {
-		if ver, ok := parseAlpineVersion(repo); ok {
+		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
 				if !errors.As(err, &nokeysErr) {
@@ -449,18 +449,14 @@ func (a *APK) resolveApkDB(ctx context.Context) error {
 
 var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
 
-func parseAlpineVersion(repo string) (version string, ok bool) {
+// ParseAlpineVersion parses the Alpine version from a repository URL.
+// Returns the version string (e.g., "v3.21") and true if successful.
+func ParseAlpineVersion(repo string) (version string, ok bool) {
 	parts := repoRE.FindStringSubmatch(repo)
 	if len(parts) < 2 {
 		return "", false
 	}
 	return parts[1], true
-}
-
-// ParseAlpineVersion parses the Alpine version from a repository URL.
-// Returns the version string (e.g., "v3.21") and true if successful.
-func ParseAlpineVersion(repo string) (version string, ok bool) {
-	return parseAlpineVersion(repo)
 }
 
 // loadSystemKeyring returns the keys found in the system keyring
