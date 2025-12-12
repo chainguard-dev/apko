@@ -254,3 +254,203 @@ func TestDirFSConsistentOrdering(t *testing.T) {
 	}
 	// all results should be the same
 }
+
+// TestWriteReadCaching tests that WriteFile followed by ReadFile returns the correct data.
+// This test demonstrates a bug where dirFS caches an empty buffer after WriteFile,
+// causing subsequent ReadFile operations to return zeros instead of the actual file content.
+func TestWriteReadCaching(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys, "fs should be created")
+
+	// Test data
+	testData := []byte("Hello, World! This is test data.")
+	testPath := "test-file.txt"
+
+	// Write the file through dirFS
+	err := fsys.WriteFile(testPath, testData, 0o644)
+	require.NoError(t, err, "WriteFile should succeed")
+
+	// Verify the file was written to disk correctly
+	diskData, err := os.ReadFile(filepath.Join(dir, testPath))
+	require.NoError(t, err, "should be able to read from disk")
+	require.Equal(t, testData, diskData, "disk file should contain correct data")
+
+	// Read the file back through dirFS - this should return the same data
+	readData, err := fsys.ReadFile(testPath)
+	require.NoError(t, err, "ReadFile should succeed")
+	require.Equal(t, testData, readData, "ReadFile should return the same data that was written")
+}
+
+// TestWriteReadCachingMultiple tests multiple write-read cycles to ensure caching works correctly.
+func TestWriteReadCachingMultiple(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys, "fs should be created")
+
+	testPath := "multi-test.txt"
+
+	// Multiple write-read cycles with different data
+	testCases := []struct {
+		name string
+		data []byte
+	}{
+		{"first write", []byte("First write data")},
+		{"second write", []byte("Second write with different data")},
+		{"third write", []byte("Third write with even more different data!")},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Write through dirFS
+			err := fsys.WriteFile(testPath, tc.data, 0o644)
+			require.NoError(t, err, "WriteFile should succeed")
+
+			// Read back through dirFS
+			readData, err := fsys.ReadFile(testPath)
+			require.NoError(t, err, "ReadFile should succeed")
+			require.Equal(t, tc.data, readData, "ReadFile should return the data that was just written")
+
+			// Verify disk has correct data
+			diskData, err := os.ReadFile(filepath.Join(dir, testPath))
+			require.NoError(t, err, "should be able to read from disk")
+			require.Equal(t, tc.data, diskData, "disk file should contain correct data")
+		})
+	}
+}
+
+// TestWriteReadAfterStat tests that Stat doesn't interfere with read caching.
+// This is important because Stat updates internal dirFS state that affects
+// whether ReadFile uses disk or cached overlay.
+func TestWriteReadAfterStat(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys, "fs should be created")
+
+	testData := []byte("Test data after stat")
+	testPath := "stat-test.txt"
+
+	// Write the file
+	err := fsys.WriteFile(testPath, testData, 0o644)
+	require.NoError(t, err, "WriteFile should succeed")
+
+	// Call Stat on the file (this updates dirFS internal state)
+	fi, err := fsys.Stat(testPath)
+	require.NoError(t, err, "Stat should succeed")
+	require.Equal(t, int64(len(testData)), fi.Size(), "Stat should report correct size")
+
+	// Now read the file - this should still return correct data
+	readData, err := fsys.ReadFile(testPath)
+	require.NoError(t, err, "ReadFile should succeed after Stat")
+	require.Equal(t, testData, readData, "ReadFile should return correct data even after Stat")
+}
+
+// TestOpenFileWriteReadCaching tests the OpenFile/Write/Close pattern followed by ReadFile.
+// This mimics the pattern used in updateScriptsTar where files are created with OpenFile,
+// written to, closed, and then read back later.
+func TestOpenFileWriteReadCaching(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys, "fs should be created")
+
+	testData := []byte("Data written via OpenFile/Write/Close")
+
+	// Create directory first
+	err := fsys.MkdirAll("subdir", 0o755)
+	require.NoError(t, err, "MkdirAll should succeed")
+
+	testPath := "subdir/openfile-test.txt"
+
+	// Write using OpenFile/Write/Close pattern
+	f, err := fsys.OpenFile(testPath, os.O_CREATE|os.O_WRONLY, 0o644)
+	require.NoError(t, err, "OpenFile should succeed")
+
+	n, err := f.Write(testData)
+	require.NoError(t, err, "Write should succeed")
+	require.Equal(t, len(testData), n, "should write all bytes")
+
+	err = f.Close()
+	require.NoError(t, err, "Close should succeed")
+
+	// Verify disk has correct data
+	diskData, err := os.ReadFile(filepath.Join(dir, testPath))
+	require.NoError(t, err, "should be able to read from disk")
+	require.Equal(t, testData, diskData, "disk file should contain correct data")
+
+	// Now read through dirFS - this should return correct data
+	readData, err := fsys.ReadFile(testPath)
+	require.NoError(t, err, "ReadFile should succeed")
+	require.Equal(t, testData, readData, "ReadFile should return correct data after OpenFile/Write/Close")
+}
+
+// TestScriptsTarPattern tests the exact pattern used by updateScriptsTar:
+// 1. Stat the file
+// 2. ReadFile to get existing content
+// 3. OpenFile to create temp file
+// 4. Write existing + new content
+// 5. Close temp file
+// 6. WriteFile to move temp to final
+// 7. ReadFile the final file
+func TestScriptsTarPattern(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys, "fs should be created")
+
+	// Create directory
+	err := fsys.MkdirAll("lib/apk/db", 0o755)
+	require.NoError(t, err, "MkdirAll should succeed")
+
+	scriptsPath := "lib/apk/db/scripts.tar"
+	tempPath := scriptsPath + ".tmp"
+
+	// Initial content (simulating existing scripts)
+	initialData := []byte("existing tar content")
+
+	// Step 1: Create initial file
+	err = fsys.WriteFile(scriptsPath, initialData, 0o644)
+	require.NoError(t, err, "initial WriteFile should succeed")
+
+	// Step 2: Stat the file (like updateScriptsTar does)
+	fi, err := fsys.Stat(scriptsPath)
+	require.NoError(t, err, "Stat should succeed")
+	require.Equal(t, int64(len(initialData)), fi.Size(), "Stat should report correct size")
+
+	// Step 3: ReadFile to get existing content (like updateScriptsTar does)
+	existingData, err := fsys.ReadFile(scriptsPath)
+	require.NoError(t, err, "ReadFile should succeed")
+	require.Equal(t, initialData, existingData, "ReadFile should return initial data")
+
+	// Step 4: Create temp file with OpenFile
+	tempFile, err := fsys.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	require.NoError(t, err, "OpenFile for temp should succeed")
+
+	// Step 5: Write existing + new content to temp
+	combinedData := make([]byte, len(existingData))
+	copy(existingData, combinedData)
+	combinedData = append(combinedData, []byte(" + new content")...)
+
+	_, err = tempFile.Write(combinedData)
+	require.NoError(t, err, "Write to temp should succeed")
+
+	err = tempFile.Close()
+	require.NoError(t, err, "Close temp should succeed")
+
+	// Step 6: Read temp file data
+	tempData, err := fsys.ReadFile(tempPath)
+	require.NoError(t, err, "ReadFile temp should succeed")
+	require.Equal(t, combinedData, tempData, "temp file should have combined data")
+
+	// Step 7: WriteFile to move temp to final
+	err = fsys.WriteFile(scriptsPath, tempData, 0o644)
+	require.NoError(t, err, "WriteFile to final location should succeed")
+
+	// Step 8: Verify final file on disk
+	diskData, err := os.ReadFile(filepath.Join(dir, scriptsPath))
+	require.NoError(t, err, "should be able to read final file from disk")
+	require.Equal(t, combinedData, diskData, "disk file should have combined data")
+
+	// Step 9: ReadFile the final file through dirFS - THIS IS WHERE THE BUG MANIFESTS
+	finalData, err := fsys.ReadFile(scriptsPath)
+	require.NoError(t, err, "ReadFile final should succeed")
+	require.Equal(t, combinedData, finalData, "ReadFile should return combined data, not zeros")
+}

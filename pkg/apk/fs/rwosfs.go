@@ -423,21 +423,15 @@ func (f *dirFS) ReadFile(name string) ([]byte, error) {
 	return f.overrides.ReadFile(name)
 }
 func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
-	var (
-		memContent []byte
-	)
 	if f.createOnDisk(name) {
 		if err := os.WriteFile(filepath.Join(f.base, name), b, mode); err != nil {
 			return err
 		}
-	} else {
-		memContent = b
 	}
 
-	// ensure file exists in memory
-	// if this is just a flag for what is on disk, make it with zero size
-	// if it is the actual file because of case sensitivity, then use the actual content
-	return f.overrides.WriteFile(name, memContent, mode)
+	// Always cache the actual content to ensure ReadFile returns correct data
+	// Previously cached empty buffer for disk files, causing ReadFile to return zeros
+	return f.overrides.WriteFile(name, b, mode)
 }
 
 func (f *dirFS) Readnod(name string) (dev int, err error) {
