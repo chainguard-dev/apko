@@ -16,6 +16,7 @@ package apk
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
 	"io"
@@ -323,18 +324,34 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 		return nil, fmt.Errorf("listing %q for offline cache: %w", cacheDir, err)
 	}
 
-	// Filter out directories, only consider files
+	// Compute the expected cache file name with URL hash for this specific file
+	// In offline mode, we need to find the cached entry for this exact URL
+	expectedSuffix := "-" + cacheFileHash(cacheFile)
+
+	// Determine the file extension
+	ext := ".etag"
+	if strings.HasSuffix(cacheFile, "APKINDEX.tar.gz") {
+		ext = ".tar.gz"
+	}
+
+	// Filter files that match this specific cacheFile (by URL hash suffix)
 	var files []os.DirEntry
 	for _, de := range des {
-		if !de.IsDir() {
+		if de.IsDir() {
+			continue
+		}
+		// Check if filename contains our URL hash and has correct extension
+		name := de.Name()
+		if strings.Contains(name, expectedSuffix) && strings.HasSuffix(name, ext) {
 			files = append(files, de)
 		}
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no offline cached entries for %s", cacheDir)
+		return nil, fmt.Errorf("no offline cached entries for %s (looking for files with %s)", cacheFile, expectedSuffix)
 	}
 
+	// Pick the newest file (in case there are multiple versions with same URL hash)
 	newest, err := files[0].Info()
 	if err != nil {
 		return nil, err
@@ -363,6 +380,13 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 	}, nil
 }
 
+// cacheFileHash computes a short hash from the cache file path
+// to uniquely identify the URL in cache filenames.
+func cacheFileHash(cacheFile string) string {
+	urlHash := sha256.Sum256([]byte(cacheFile))
+	return fmt.Sprintf("%x", urlHash[:4])
+}
+
 func cacheDirFromFile(cacheFile string) string {
 	if strings.HasSuffix(cacheFile, "APKINDEX.tar.gz") {
 		return filepath.Join(filepath.Dir(cacheFile), "APKINDEX")
@@ -381,7 +405,13 @@ func cacheFileFromEtag(cacheFile, etag string) (string, error) {
 		ext = ".tar.gz"
 	}
 
-	absPath, err := filepath.Abs(filepath.Join(cacheDir, etag+ext))
+	// Create a unique cache key by combining the etag with a hash of the URL.
+	// This prevents collisions when different URLs return the same ETag
+	// (e.g., Alpine Linux keys all have ETag "639a4604-320").
+	// The URL hash ensures each unique file gets its own cache entry.
+	cacheKey := fmt.Sprintf("%s-%s", etag, cacheFileHash(cacheFile))
+
+	absPath, err := filepath.Abs(filepath.Join(cacheDir, cacheKey+ext))
 	if err != nil {
 		return "", err
 	}
