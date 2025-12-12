@@ -44,7 +44,6 @@ func TestLock(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.basename, func(t *testing.T) {
-
 			golden := filepath.Join("testdata", tt.basename+".lock.json")
 
 			config := tt.basename + ".yaml"

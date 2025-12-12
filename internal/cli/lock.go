@@ -172,10 +172,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	}
 
 	// Discover and add auto-discovered keys from repositories
-	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
-	if err != nil {
-		return fmt.Errorf("failed to discover keys: %w", err)
-	}
+	discoveredKeys := discoverKeysForLock(ctx, ic, archs)
 	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
 
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
@@ -273,7 +270,7 @@ func stripURLScheme(url string) string {
 }
 
 // discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
-func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) []pkglock.LockKeyring {
 	log := clog.FromContext(ctx)
 
 	// Collect all unique repositories
@@ -339,11 +336,11 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 	}
 
 	// Convert map to slice
-	var discoveredKeys []pkglock.LockKeyring
+	discoveredKeys := make([]pkglock.LockKeyring, 0, len(discoveredKeyMap))
 	for _, key := range discoveredKeyMap {
 		discoveredKeys = append(discoveredKeys, key)
 	}
 
 	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
-	return discoveredKeys, nil
+	return discoveredKeys
 }
