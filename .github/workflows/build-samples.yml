@@ -89,8 +89,8 @@ jobs:
             if [ -f ${build_script} ]; then
               ${build_script} ./apko
             else
-              ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
-              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+              ./apko build ${cfg} ${name}:build /tmp/${name}.tar
+              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar
             fi
           done
 
