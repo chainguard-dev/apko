@@ -1,0 +1,125 @@
+{
+  "version": "v1",
+  "config": {
+    "name": "apko-discover.yaml",
+    "checksum": "sha256-kavcew8/jqbZ7DFvcotFbAayzKdTSro2Z4p4i8dRvoE="
+  },
+  "contents": {
+    "keyring": [
+      {
+        "name": "./testdata/melange.rsa.pub",
+        "url": "./testdata/melange.rsa.pub"
+      },
+      {
+        "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub",
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub"
+      },
+      {
+        "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub",
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub"
+      }
+    ],
+    "build_repositories": [],
+    "runtime_repositories": [],
+    "repositories": [
+      {
+        "name": "dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "./testdata/packages/x86_64",
+        "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      },
+      {
+        "name": "./testdata/packages/aarch64",
+        "url": "./testdata/packages/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      }
+    ],
+    "packages": [
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/x86_64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-648",
+          "checksum": "sha1-V+Htugmm+Ru2ogsWm7VgD4A1DsQ="
+        },
+        "control": {
+          "range": "bytes=649-1562",
+          "checksum": "sha1-DRtLIHolxOMB++9L4ZjkeUFaKYc="
+        },
+        "data": {
+          "range": "bytes=1563-2767",
+          "checksum": "sha256-dZB1iTdQ2sfndKG6Ohf5VwWFjqz6kjSzZbqYU17BSRM="
+        },
+        "checksum": "Q1DRtLIHolxOMB++9L4ZjkeUFaKYc="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/x86_64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-647",
+          "checksum": "sha1-ZrPCeQ4XeDjZSQw+IhJ4g4BcUlo="
+        },
+        "control": {
+          "range": "bytes=648-1589",
+          "checksum": "sha1-IvTcfj6zzLipr9akZ+YRTIyQCr8="
+        },
+        "data": {
+          "range": "bytes=1590-2786",
+          "checksum": "sha256-IIzbGjwv4H9h6N1bEbF8p4cqkV0Ex54sXEsvf6txnEo="
+        },
+        "checksum": "Q1IvTcfj6zzLipr9akZ+YRTIyQCr8="
+      },
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/aarch64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-644",
+          "checksum": "sha1-n9SJ91H1UwE+mkVVCifh6ziTwbc="
+        },
+        "control": {
+          "range": "bytes=645-1555",
+          "checksum": "sha1-URAMn9SfiCvjs6C812GovkgRgVo="
+        },
+        "data": {
+          "range": "bytes=1556-2762",
+          "checksum": "sha256-igCqZKcxRp6yHq2IlyozkM68Z6v9PMr/PDAIuSh2W3A="
+        },
+        "checksum": "Q1URAMn9SfiCvjs6C812GovkgRgVo="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/aarch64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-646",
+          "checksum": "sha1-1ifrimC4bUlo4O6aCGXcjOKAcTo="
+        },
+        "control": {
+          "range": "bytes=647-1586",
+          "checksum": "sha1-SWYSZF3dGLrN8kebGjOBfDH6vG4="
+        },
+        "data": {
+          "range": "bytes=1587-2787",
+          "checksum": "sha256-U85iWddHApXsVosa4S0srhkr3SSlzuoBrEpZg5f1irQ="
+        },
+        "checksum": "Q1SWYSZF3dGLrN8kebGjOBfDH6vG4="
+      }
+    ]
+  }
+}

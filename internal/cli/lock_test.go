@@ -33,25 +33,39 @@ func TestLock(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 
-	golden := filepath.Join("testdata", "apko.lock.json")
+	tests := []struct {
+		basename string
+	}{
+		{
+			basename: "apko",
+		}, {
+			basename: "apko-discover",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.basename, func(t *testing.T) {
 
-	config := "apko.yaml"
-	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config, []string{"testdata"})}
-	outputPath := filepath.Join(tmp, "apko.lock.json")
+			golden := filepath.Join("testdata", tt.basename+".lock.json")
 
-	err := cli.LockCmd(ctx, outputPath, archs, opts)
-	require.NoError(t, err)
+			config := tt.basename + ".yaml"
+			archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+			opts := []build.Option{build.WithConfig(config, []string{"testdata"})}
+			outputPath := filepath.Join(tmp, tt.basename+".lock.json")
 
-	want, err := os.ReadFile(golden)
-	require.NoError(t, err)
-	got, err := os.ReadFile(outputPath)
-	require.NoError(t, err)
+			err := cli.LockCmd(ctx, outputPath, archs, opts)
+			require.NoError(t, err)
 
-	if !bytes.Equal(want, got) {
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("Mismatched lock files: (-%q +%q):\n%s", golden, outputPath, diff)
-		}
+			want, err := os.ReadFile(golden)
+			require.NoError(t, err)
+			got, err := os.ReadFile(outputPath)
+			require.NoError(t, err)
+
+			if !bytes.Equal(want, got) {
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("Mismatched lock files: (-%q +%q):\n%s", golden, outputPath, diff)
+				}
+			}
+		})
 	}
 }
 
