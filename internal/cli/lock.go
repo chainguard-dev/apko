@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -243,6 +244,12 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
+
+	// Sort keyrings by name for reproducible lock files
+	sort.Slice(lock.Contents.Keyrings, func(i, j int) bool {
+		return lock.Contents.Keyrings[i].Name < lock.Contents.Keyrings[j].Name
+	})
+
 	return lock.SaveToFile(output)
 }
 
