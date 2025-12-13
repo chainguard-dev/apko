@@ -321,10 +321,10 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 
 	// Perform key discovery for the various build-time repositories.
 	for _, repo := range buildRepos {
-		if ver, ok := parseAlpineVersion(repo); ok {
+		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
-				if !errors.As(err, &nokeysErr) {
+				if !a.cache.offline && !errors.As(err, &nokeysErr) {
 					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
 				}
 				log.Debugf("ignoring missing keys: %v", err)
@@ -449,7 +449,9 @@ func (a *APK) resolveApkDB(ctx context.Context) error {
 
 var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
 
-func parseAlpineVersion(repo string) (version string, ok bool) {
+// ParseAlpineVersion parses the Alpine version from a repository URL.
+// Returns the version string (e.g., "v3.21") and true if successful.
+func ParseAlpineVersion(repo string) (version string, ok bool) {
 	parts := repoRE.FindStringSubmatch(repo)
 	if len(parts) < 2 {
 		return "", false
@@ -872,36 +874,45 @@ func (e *NoKeysFoundError) Error() string {
 	return fmt.Sprintf("no keys found for arch %s and releases %v", e.arch, e.releases)
 }
 
+// FetchAlpineReleases fetches and returns the Alpine releases metadata from alpinelinux.org.
+func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, error) {
+	u := alpineReleasesURL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	// NB: Not setting basic auth, since we know Alpine doesn't support it.
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unable to get alpine releases at %s: %v", u, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read alpine releases: %w", err)
+	}
+	var releases Releases
+	if err := json.Unmarshal(b, &releases); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal alpine releases: %w", err)
+	}
+	return &releases, nil
+}
+
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
 func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
 	defer span.End()
 
-	u := alpineReleasesURL
 	client := a.client
 	if a.cache != nil {
 		client = a.cache.client(client, true)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	releases, err := FetchAlpineReleases(ctx, client)
 	if err != nil {
 		return err
-	}
-	// NB: Not setting basic auth, since we know Alpine doesn't support it.
-	res, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch alpine releases: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get alpine releases at %s: %v", u, res.Status)
-	}
-	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read alpine releases: %w", err)
-	}
-	var releases Releases
-	if err := json.Unmarshal(b, &releases); err != nil {
-		return fmt.Errorf("failed to unmarshal alpine releases: %w", err)
 	}
 	var urls []string
 	// now just need to get the keys for the desired architecture and releases
