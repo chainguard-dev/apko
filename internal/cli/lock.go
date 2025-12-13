@@ -30,6 +30,7 @@ import (
 	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
@@ -331,8 +332,23 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 			}
 		}
 
-		// TODO: Add Chainguard-style key discovery here if needed
-		// For now, focusing on Alpine keys as requested by the user
+		// Try Chainguard-style key discovery
+		log.Debugf("Attempting Chainguard-style key discovery for %s", repo)
+		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo)
+		if err != nil {
+			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
+		} else if len(keys) > 0 {
+			log.Debugf("Discovered %d Chainguard-style keys for %s", len(keys), repo)
+			// For each JWKS key, emit a URL: repository + "/" + KeyID
+			repoBase := strings.TrimSuffix(repo, "/")
+			for _, key := range keys {
+				keyURL := repoBase + "/" + key.ID
+				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
+					Name: stripURLScheme(keyURL),
+					URL:  keyURL,
+				}
+			}
+		}
 	}
 
 	// Convert map to slice

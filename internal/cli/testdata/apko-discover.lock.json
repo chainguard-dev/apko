@@ -2,7 +2,7 @@
   "version": "v1",
   "config": {
     "name": "apko-discover.yaml",
-    "checksum": "sha256-kavcew8/jqbZ7DFvcotFbAayzKdTSro2Z4p4i8dRvoE="
+    "checksum": "sha256-D1mtHLoTBln0iH+VqWZMIPQOScXMWprVolB2sihPWAk="
   },
   "contents": {
     "keyring": [
@@ -11,12 +11,24 @@
         "url": "./testdata/melange.rsa.pub"
       },
       {
+        "name": "apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub"
+      },
+      {
         "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub",
         "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub"
       },
       {
         "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub",
         "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/chainguard-a87b67b52e9fa08414a5535a99adc7b66643536ccd52f4da66057b67adf21363.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-a87b67b52e9fa08414a5535a99adc7b66643536ccd52f4da66057b67adf21363.rsa.pub"
       }
     ],
     "build_repositories": [],
@@ -28,6 +40,11 @@
         "architecture": "x86_64"
       },
       {
+        "name": "apk.cgr.dev/chainguard/x86_64",
+        "url": "https://apk.cgr.dev/chainguard/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
         "name": "./testdata/packages/x86_64",
         "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
         "architecture": "x86_64"
@@ -35,6 +52,11 @@
       {
         "name": "dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64",
         "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/aarch64",
+        "url": "https://apk.cgr.dev/chainguard/aarch64/APKINDEX.tar.gz",
         "architecture": "aarch64"
       },
       {

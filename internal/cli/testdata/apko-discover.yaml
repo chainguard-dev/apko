@@ -3,6 +3,7 @@ contents:
     - ./testdata/melange.rsa.pub
   repositories:
     - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
+    - https://apk.cgr.dev/chainguard
     - ./testdata/packages
   packages:
     - replayout
