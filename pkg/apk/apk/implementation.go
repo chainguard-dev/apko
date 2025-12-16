@@ -1213,13 +1213,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureHash = signatureHash[:]
 	}
 
-	f, err := os.Open(ctl)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	datahash, err := a.datahash(f)
+	datahash, err := a.datahash(bytes.NewReader(control))
 	if err != nil {
 		return nil, fmt.Errorf("datahash for %s: %w", pkg, err)
 	}
@@ -1486,29 +1480,27 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the scripts.tar
-	controlData, err := os.Open(expanded.ControlFile)
+	controlData, err := expanded.ControlData()
 	if err != nil {
 		return nil, fmt.Errorf("opening control file %q: %w", expanded.ControlFile, err)
 	}
-	defer controlData.Close()
 
-	if err := a.updateScriptsTar(pkg, controlData, sourceDateEpoch); err != nil {
+	controlTar := bytes.NewReader(controlData)
+	if err := a.updateScriptsTar(pkg, controlTar, sourceDateEpoch); err != nil {
 		return nil, fmt.Errorf("unable to update scripts.tar for pkg %s: %w", pkg.Name, err)
 	}
 
 	// update the triggers
-	if _, err := controlData.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("unable to seek to start of control data for pkg %s: %w", pkg.Name, err)
-	}
-	if err := a.updateTriggers(pkg, controlData); err != nil {
+	controlTar.Reset(controlData)
+	if err := a.updateTriggers(pkg, controlTar); err != nil {
 		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
 	}
 
 	return installedFiles, nil
 }
 
-func (a *APK) datahash(controlTarGz io.Reader) (string, error) {
-	values, err := a.controlValue(controlTarGz, "datahash")
+func (a *APK) datahash(controlTar io.Reader) (string, error) {
+	values, err := a.controlValue(controlTar, "datahash")
 	if err != nil {
 		return "", fmt.Errorf("reading datahash from control: %w", err)
 	}

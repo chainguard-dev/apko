@@ -361,8 +361,7 @@ func TestUpdateScriptsTar(t *testing.T) {
 		".post-upgrade": []byte("echo 'post upgrade'"),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -379,7 +378,6 @@ func TestUpdateScriptsTar(t *testing.T) {
 	})
 	_, _ = tw.Write([]byte(pkginfo))
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
@@ -450,8 +448,7 @@ func TestUpdateTriggers(t *testing.T) {
 		".PKGINFO":      []byte(pkginfo),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -461,7 +458,6 @@ func TestUpdateTriggers(t *testing.T) {
 		_, _ = tw.Write(content)
 	}
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
