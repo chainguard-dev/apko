@@ -209,6 +209,29 @@ func (m *multiReadCloser) Close() error {
 	return errors.Join(errs...)
 }
 
+// IsValid checks that the expanded APK is still valid by verifying that
+// the underlying files exist and that the file handles match the expected files.
+// Since this structure is heavily cached, this is useful to verify that the
+// cached data is still valid.
+func (a *APKExpanded) IsValid() bool {
+	if tarfsReader, ok := a.TarFS.UnderlyingReader().(*os.File); ok && !isValidFileHandle(tarfsReader) {
+		return false
+	}
+
+	// Check that all the expected files exist.
+	files := []string{a.ControlFile, a.PackageFile, a.TarFile}
+	if a.SignatureFile != "" {
+		files = append(files, a.SignatureFile)
+	}
+	for _, file := range files {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (a *APKExpanded) Close() error {
 	errs := []error{}
 

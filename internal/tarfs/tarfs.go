@@ -262,6 +262,10 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 	return fsys, nil
 }
 
+func (fsys *FS) UnderlyingReader() io.ReaderAt {
+	return fsys.ra
+}
+
 func (fsys *FS) Close() error {
 	if fsys == nil {
 		return nil
