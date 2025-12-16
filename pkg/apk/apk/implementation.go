@@ -1213,7 +1213,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureHash = signatureHash[:]
 	}
 
-	datahash, err := a.datahash(bytes.NewReader(control))
+	datahash, err := a.datahash(exp.ControlFS)
 	if err != nil {
 		return nil, fmt.Errorf("datahash for %s: %w", pkg, err)
 	}
@@ -1491,16 +1491,15 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the triggers
-	controlTar.Reset(controlData)
-	if err := a.updateTriggers(pkg, controlTar); err != nil {
+	if err := a.updateTriggers(pkg, expanded.ControlFS); err != nil {
 		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
 	}
 
 	return installedFiles, nil
 }
 
-func (a *APK) datahash(controlTar io.Reader) (string, error) {
-	values, err := a.controlValue(controlTar, "datahash")
+func (a *APK) datahash(controlFS fs.FS) (string, error) {
+	values, err := a.controlValue(controlFS, "datahash")
 	if err != nil {
 		return "", fmt.Errorf("reading datahash from control: %w", err)
 	}
