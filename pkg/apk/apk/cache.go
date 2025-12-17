@@ -62,21 +62,17 @@ func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
 		return v()
 	}
 
-	v := sync.OnceValues(func() (V, error) {
-		ret, err := fn()
-		if err != nil {
-			// We've put this value into the cache before executing it, so we need to remove it
-			// to avoid caching errors.
-			f.Forget(key)
-		}
-		return ret, err
-	})
+	v := sync.OnceValues(fn)
 	f.cache[key] = v
 
 	// Unlock before calling the function to avoid holding the lock for a potentially long time.
 	f.mux.Unlock()
 
-	return v()
+	val, err := v()
+	if err != nil {
+		f.Forget(key)
+	}
+	return val, err
 }
 
 // Forget removes the given key from the cache.
