@@ -215,6 +215,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						if err := n.Set("target", "_blank"); err != nil {
 							panic(err)
 						}
+						if err := n.Set("tooltip", targetPkg.Description); err != nil {
+							panic(err)
+						}
 					}
 				}
 
@@ -244,6 +247,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						if err := n.Set("target", "_blank"); err != nil {
 							panic(err)
 						}
+						if err := n.Set("tooltip", targetPkg.Description); err != nil {
+							panic(err)
+						}
 					}
 				}
 
@@ -268,6 +274,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			}
 
 			if err := n.Set("label", pkgver(pkg)); err != nil {
+				panic(err)
+			}
+			if err := n.Set("tooltip", pkg.Description); err != nil {
 				panic(err)
 			}
 			if web {
@@ -305,6 +314,9 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 								panic(err)
 							}
 							if err := d.Set("target", "_blank"); err != nil {
+								panic(err)
+							}
+							if err := d.Set("tooltip", depPkg.Description); err != nil {
 								panic(err)
 							}
 						} else {
@@ -357,6 +369,13 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			}
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
+			}
+			if pkg.Description != "" {
+				if err := n.Set("tooltip", pkg.Description); err != nil {
+					panic(err)
+				}
+			} else {
+				log.Debugf("No description for package %s", pkg.Name)
 			}
 
 			for _, prov := range pmap[pkg.Name] {
