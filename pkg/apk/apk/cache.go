@@ -32,58 +32,58 @@ import (
 	"chainguard.dev/apko/pkg/paths"
 )
 
-type flightCache[T any] struct {
-	flight *singleflight.Group
-	cache  *sync.Map
+type flightCache[K comparable, V any] struct {
+	mux   sync.RWMutex
+	cache map[K]func() (V, error)
 }
 
-// TODO: Consider [K, V] if we need a non-string key type.
-func newFlightCache[T any]() *flightCache[T] {
-	return &flightCache[T]{
-		flight: &singleflight.Group{},
-		cache:  &sync.Map{},
+func newFlightCache[K comparable, V any]() *flightCache[K, V] {
+	return &flightCache[K, V]{
+		cache: make(map[K]func() (V, error)),
 	}
 }
 
 // Do returns coalesces multiple calls, like singleflight, but also caches
 // the result if the call is successful. Failures are not cached to avoid
 // permanently failing for transient errors.
-func (f *flightCache[T]) Do(key string, fn func() (T, error)) (T, error) {
-	v, ok := f.cache.Load(key)
-	if ok {
-		if t, ok := v.(T); ok {
-			return t, nil
-		} else {
-			// This can't happen but just in case things change.
-			return t, fmt.Errorf("unexpected type %T", v)
-		}
+func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
+	f.mux.RLock()
+	if v, ok := f.cache[key]; ok {
+		f.mux.RUnlock()
+		return v()
+	}
+	f.mux.RUnlock()
+
+	f.mux.Lock()
+
+	// Doubly-checked-locking in case of race conditions.
+	if v, ok := f.cache[key]; ok {
+		f.mux.Unlock()
+		return v()
 	}
 
-	v, err, _ := f.flight.Do(key, func() (any, error) {
-		if v, ok := f.cache.Load(key); ok {
-			return v, nil
-		}
-
-		// Don't cache errors, but maybe we should.
-		v, err := fn()
+	v := sync.OnceValues(func() (V, error) {
+		ret, err := fn()
 		if err != nil {
-			return nil, err
+			// We've put this value into the cache before executing it, so we need to remove it
+			// to avoid caching errors.
+			f.Forget(key)
 		}
-
-		f.cache.Store(key, v)
-
-		return v, nil
+		return ret, err
 	})
+	f.cache[key] = v
 
-	t, ok := v.(T)
-	if err != nil {
-		return t, err
-	}
-	if !ok {
-		// This can't happen but just in case things change.
-		return t, fmt.Errorf("unexpected type %T", v)
-	}
-	return t, nil
+	// Unlock before calling the function to avoid holding the lock for a potentially long time.
+	f.mux.Unlock()
+
+	return v()
+}
+
+// Forget removes the given key from the cache.
+func (f *flightCache[K, V]) Forget(key K) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	delete(f.cache, key)
 }
 
 type Cache struct {
@@ -91,7 +91,7 @@ type Cache struct {
 	headFlight *singleflight.Group
 	getFlight  *singleflight.Group
 
-	discoverKeys *flightCache[[]Key]
+	discoverKeys *flightCache[string, []Key]
 }
 
 // NewCache returns a new Cache, which allows us to persist the results of HEAD requests
@@ -109,7 +109,7 @@ func NewCache(etag bool) *Cache {
 	c := &Cache{
 		headFlight:   &singleflight.Group{},
 		getFlight:    &singleflight.Group{},
-		discoverKeys: newFlightCache[[]Key](),
+		discoverKeys: newFlightCache[string, []Key](),
 	}
 
 	if etag {
