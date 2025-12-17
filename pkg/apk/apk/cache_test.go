@@ -15,10 +15,13 @@
 package apk
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestFlightCache(t *testing.T) {
@@ -72,4 +75,28 @@ func TestFlightCacheCachesNoErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1337, r2)
 	require.Equal(t, 2, called, "Function should be called twice, once for the error and once for the success")
+}
+
+func TestFlightCacheCoalescesCalls(t *testing.T) {
+	s := newFlightCache[string, int]()
+
+	var called atomic.Int32
+	var mux sync.Mutex
+	mux.Lock() // Lock to ensure the call below hangs until we unlock.
+
+	var eg errgroup.Group
+	for range 10 {
+		eg.Go(func() error {
+			_, err := s.Do("test", func() (int, error) {
+				mux.Lock() // Hangs until the unlock below.
+				called.Add(1)
+				return 42, nil
+			})
+			return err
+		})
+	}
+	mux.Unlock() // Allow the calls to proceed.
+	require.NoError(t, eg.Wait())
+
+	require.EqualValues(t, 1, called.Load(), "Function should only be called once")
 }
