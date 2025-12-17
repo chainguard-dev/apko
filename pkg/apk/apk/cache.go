@@ -87,11 +87,11 @@ func (f *flightCache[T]) Do(key string, fn func() (T, error)) (T, error) {
 }
 
 type Cache struct {
-	etagCache  *sync.Map
 	headFlight *singleflight.Group
 	getFlight  *singleflight.Group
 
 	discoverKeys *flightCache[[]Key]
+	etags        *flightCache[*http.Response]
 }
 
 // NewCache returns a new Cache, which allows us to persist the results of HEAD requests
@@ -113,31 +113,11 @@ func NewCache(etag bool) *Cache {
 	}
 
 	if etag {
-		c.etagCache = &sync.Map{}
+		//nolint:bodyclose // Body is already closed before caching.
+		c.etags = newFlightCache[*http.Response]()
 	}
 
 	return c
-}
-
-func (c *Cache) load(cacheFile string) (*http.Response, bool) {
-	if c == nil || c.etagCache == nil {
-		return nil, false
-	}
-
-	v, ok := c.etagCache.Load(cacheFile)
-	if !ok {
-		return nil, false
-	}
-
-	return v.(*http.Response), true
-}
-
-func (c *Cache) store(cacheFile string, resp *http.Response) {
-	if c == nil || c.etagCache == nil {
-		return
-	}
-
-	c.etagCache.Store(cacheFile, resp)
 }
 
 // cache
@@ -209,12 +189,7 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 }
 
 func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Response, error) {
-	resp, ok := t.cache.load(cacheFile)
-	if ok {
-		return resp, nil
-	}
-
-	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (any, error) {
+	fetch := func() (*http.Response, error) {
 		req := request.Clone(request.Context())
 		req.Method = http.MethodHead
 		resp, err := t.wrapped.Do(req)
@@ -225,14 +200,20 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 		// HEAD shouldn't have a body. Make sure we close it so we can reuse the connection.
 		defer resp.Body.Close()
 
-		t.cache.store(cacheFile, resp)
-
 		return resp, nil
+	}
+
+	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (any, error) {
+		if t.cache.etags != nil {
+			//nolint:bodyclose // Body is already closed in fetch.
+			return t.cache.etags.Do(cacheFile, fetch)
+		}
+		//nolint:bodyclose // Body is already closed in fetch.
+		return fetch()
 	})
 	if err != nil {
 		return nil, err
 	}
-
 	return v.(*http.Response), nil
 }
 
