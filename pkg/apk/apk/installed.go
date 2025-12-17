@@ -22,14 +22,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/klauspost/compress/gzip"
 )
 
 type InstalledPackage struct {
@@ -121,13 +120,8 @@ func (a *APK) isInstalledPackage(pkg string) (bool, error) {
 }
 
 // updateScriptsTar insert the scripts into the tarball
-func (a *APK) updateScriptsTar(pkg *Package, controlTarGz io.Reader, sourceDateEpoch *time.Time) error {
-	gz, err := gzip.NewReader(controlTarGz)
-	if err != nil {
-		return fmt.Errorf("unable to gunzip control tar.gz file: %w", err)
-	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
+func (a *APK) updateScriptsTar(pkg *Package, controlData io.Reader, sourceDateEpoch *time.Time) error {
+	tr := tar.NewReader(controlData)
 	fi, err := a.fs.Stat(scriptsFilePath)
 	if err != nil {
 		return fmt.Errorf("unable to stat scripts file: %w", err)
@@ -197,14 +191,8 @@ func (a *APK) readScriptsTar() (io.ReadCloser, error) {
 }
 
 // TODO: We should probably parse control section on the first pass and reuse it.
-func (a *APK) controlValue(controlTarGz io.Reader, want string) ([]string, error) {
-	gz, err := gzip.NewReader(controlTarGz)
-	if err != nil {
-		return nil, fmt.Errorf("unable to gunzip control tar file: %w", err)
-	}
-	defer gz.Close()
-
-	mapping, err := controlValue(gz, want)
+func (a *APK) controlValue(controlFs fs.FS, want string) ([]string, error) {
+	mapping, err := controlValue(controlFs, want)
 	if err != nil {
 		return nil, err
 	}
@@ -217,14 +205,14 @@ func (a *APK) controlValue(controlTarGz io.Reader, want string) ([]string, error
 }
 
 // updateTriggers insert the triggers into the triggers file
-func (a *APK) updateTriggers(pkg *Package, controlTarGz io.Reader) error {
+func (a *APK) updateTriggers(pkg *Package, controlFs fs.FS) error {
 	triggers, err := a.fs.OpenFile(triggersFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("unable to open triggers file %s: %w", triggersFilePath, err)
 	}
 	defer triggers.Close()
 
-	values, err := a.controlValue(controlTarGz, "triggers")
+	values, err := a.controlValue(controlFs, "triggers")
 	if err != nil {
 		return fmt.Errorf("updating triggers for %s: %w", pkg.Name, err)
 	}

@@ -15,10 +15,10 @@
 package apk
 
 import (
-	"archive/tar"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 )
@@ -38,48 +38,41 @@ func uniqify[T comparable](s []T) []T {
 	return uniq
 }
 
-func controlValue(controlTar io.Reader, want ...string) (map[string][]string, error) {
-	tr := tar.NewReader(controlTar)
-	for {
-		header, err := tr.Next()
-		if errors.Is(err, io.EOF) {
+func controlValue(controlFs fs.FS, want ...string) (map[string][]string, error) {
+	f, err := controlFs.Open(".PKGINFO")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("control file not found")
 		}
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("opening .PKGINFO: %w", err)
+	}
+	defer f.Close()
 
-		// ignore .PKGINFO as it is not a script
-		if header.Name != ".PKGINFO" {
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read .PKGINFO from control tar.gz file: %w", err)
+	}
+	mapping := map[string][]string{}
+	lines := strings.SplitSeq(string(b), "\n")
+	for line := range lines {
+		parts := strings.Split(line, "=")
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if !slices.Contains(want, key) {
 			continue
 		}
 
-		b, err := io.ReadAll(tr)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read .PKGINFO from control tar.gz file: %w", err)
+		values, ok := mapping[key]
+		if !ok {
+			values = []string{}
 		}
-		mapping := map[string][]string{}
-		lines := strings.SplitSeq(string(b), "\n")
-		for line := range lines {
-			parts := strings.Split(line, "=")
-			if len(parts) != 2 {
-				continue
-			}
-			key := strings.TrimSpace(parts[0])
-			if !slices.Contains(want, key) {
-				continue
-			}
 
-			values, ok := mapping[key]
-			if !ok {
-				values = []string{}
-			}
+		value := strings.TrimSpace(parts[1])
+		values = append(values, value)
 
-			value := strings.TrimSpace(parts[1])
-			values = append(values, value)
-
-			mapping[key] = values
-		}
-		return mapping, nil
+		mapping[key] = values
 	}
+	return mapping, nil
 }
