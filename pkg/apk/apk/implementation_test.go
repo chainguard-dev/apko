@@ -756,11 +756,13 @@ func TestFetchPackage(t *testing.T) {
 	t.Run("handle missing cache files when expanding APK", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		a := prepLayout(t, tmpDir)
+
 		// Fill the cache
 		exp, err := a.expandPackage(ctx, pkg)
 		require.NoError(t, err, "unable to expand package")
 		_, err = os.Stat(exp.TarFile)
 		require.NoError(t, err, "unable to stat cached tar file")
+
 		// Delete the tar file from the cache
 		require.NoError(t, os.Remove(exp.TarFile), "unable to delete cached tar file")
 		_, err = os.Stat(exp.TarFile)
@@ -769,9 +771,22 @@ func TestFetchPackage(t *testing.T) {
 		// Expand the package again, this should re-populate the cache.
 		exp2, err := a.expandPackage(ctx, pkg)
 		require.NoError(t, err, "unable to expandPackage after deleting cached tar file")
+		_, err = os.Stat(exp2.TarFile)
+		require.NoError(t, err, "unable to stat cached tar file")
+
+		// Delete and recreate the tar file from the cache (changing its inodes)
+		bs, err := os.ReadFile(exp2.TarFile)
+		require.NoError(t, err, "unable to read cached tar file")
+		require.NoError(t, os.Remove(exp2.TarFile), "unable to delete cached tar file")
+		require.NoError(t, os.WriteFile(exp2.TarFile, bs, 0o644), "unable to recreate cached tar file")
+
+		// Ensure that the underlying reader is different (i.e. we re-read the file)
+		exp3, err := a.expandPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expandPackage after deleting and recreating cached tar file")
+		require.NotEqual(t, exp2.TarFS.UnderlyingReader(), exp3.TarFS.UnderlyingReader())
 
 		// We should be able to read the APK contents
-		rc, err := exp2.APK()
+		rc, err := exp3.APK()
 		require.NoError(t, err, "unable to get reader for APK()")
 		_, err = io.ReadAll(rc)
 		require.NoError(t, err, "unable to read APK contents")

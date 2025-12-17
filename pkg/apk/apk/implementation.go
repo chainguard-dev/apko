@@ -1292,7 +1292,7 @@ func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*ex
 		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
 		// If it references a non-existent file, we should act as though this was a cache miss and expand the
 		// APK again.
-		if _, err := os.Stat(result.exp.TarFile); os.IsNotExist(err) {
+		if !result.exp.IsValid() {
 			newValue := sync.OnceValue(fn)
 			c.onces.Store(u, newValue)
 			result = newValue()
