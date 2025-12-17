@@ -237,7 +237,7 @@ func (a *APKExpanded) IsValid() bool {
 		files = append(files, a.SignatureFile)
 	}
 	for _, file := range files {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if _, err := os.Stat(file); err != nil {
 			return false
 		}
 	}
