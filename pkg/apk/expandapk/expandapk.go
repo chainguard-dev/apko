@@ -214,8 +214,21 @@ func (m *multiReadCloser) Close() error {
 // Since this structure is heavily cached, this is useful to verify that the
 // cached data is still valid.
 func (a *APKExpanded) IsValid() bool {
-	if tarfsReader, ok := a.TarFS.UnderlyingReader().(*os.File); ok && !isValidFileHandle(tarfsReader) {
-		return false
+	if f, ok := a.TarFS.UnderlyingReader().(*os.File); ok {
+		// Verify that the file descriptor matches the expected file on disk.
+		fdInfo, err := f.Stat()
+		if err != nil {
+			return false
+		}
+
+		pathInfo, err := os.Stat(f.Name())
+		if err != nil {
+			return false
+		}
+
+		if !os.SameFile(fdInfo, pathInfo) {
+			return false
+		}
 	}
 
 	// Check that all the expected files exist.
