@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/tmc/dot"
@@ -39,6 +40,8 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
+
+var extRegistryViewer string
 
 func dotcmd() *cobra.Command {
 	var extraKeys []string
@@ -85,6 +88,7 @@ apko dot --web -S example.yaml
 	cmd.Flags().BoolVar(&web, "web", false, "launch a browser")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
+	cmd.Flags().StringVarP(&extRegistryViewer, "registry-explorer", "e", "apk.dag.dev", "FQDN of the registry explorer that rendered nodes in SVG will link to.")
 
 	return cmd
 }
@@ -156,6 +160,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	render := func(args []string) *dot.Graph {
 		edges := map[string]struct{}{}
 		deps := map[string]struct{}{}
+		addedNodes := map[string]*dot.Node{}
 
 		out := dot.NewGraph("images")
 		if err := out.Set("rankdir", "LR"); err != nil {
@@ -165,36 +170,106 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			panic(err)
 		}
 
+		// Helper function to add an edge with a tooltip describing both nodes and dependency type
+		addEdgeWithTooltip := func(from, to *dot.Node, fromName, toName, depType string) error {
+			edge := dot.NewEdge(from, to)
+
+			if web {
+				tooltip := fmt.Sprintf("%s → %s", fromName, toName)
+				if depType != "" {
+					tooltip += fmt.Sprintf(" (%s)", depType)
+				}
+
+				if err := edge.Set("tooltip", tooltip); err != nil {
+					return err
+				}
+			}
+
+			_, err := out.AddEdge(edge)
+			return err
+		}
+
 		file := dot.NewNode(configFile)
 		if _, err := out.AddNode(file); err != nil {
 			panic(err)
 		}
 
 		for _, pkg := range ic.Contents.Packages {
-			n := dot.NewNode(pkg)
-			if _, err := out.AddNode(n); err != nil {
-				panic(err)
+			var n *dot.Node
+			if existing, ok := addedNodes[pkg]; ok {
+				n = existing
+			} else {
+				n = dot.NewNode(pkg)
+				addedNodes[pkg] = n
+				if _, err := out.AddNode(n); err != nil {
+					panic(err)
+				}
 			}
-			if _, err := out.AddEdge(dot.NewEdge(file, n)); err != nil {
+
+			if err := addEdgeWithTooltip(file, n, configFile, pkg, "required"); err != nil {
 				panic(err)
 			}
 			if before, _, ok := strings.Cut(pkg, "="); ok {
-				p := dot.NewNode(before)
-				if _, err := out.AddNode(p); err != nil {
+				var p *dot.Node
+				if existing, ok := addedNodes[before]; ok {
+					p = existing
+				} else {
+					p = dot.NewNode(before)
+					addedNodes[before] = p
+					if _, err := out.AddNode(p); err != nil {
+						panic(err)
+					}
+				}
+				if err := addEdgeWithTooltip(n, p, pkg, before, "exact version"); err != nil {
 					panic(err)
 				}
-				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
-					panic(err)
+
+				// Set URL on the constraint node to point to the same package
+				if web {
+					if targetPkg, ok := pkgMap[before]; ok {
+						url := extURL(targetPkg)
+						if err := n.Set("URL", url); err != nil {
+							panic(err)
+						}
+						if err := n.Set("target", "_blank"); err != nil {
+							panic(err)
+						}
+						if err := n.Set("tooltip", targetPkg.Description); err != nil {
+							panic(err)
+						}
+					}
 				}
 
 				deps[before] = struct{}{}
 			} else if before, _, ok := strings.Cut(pkg, "~"); ok {
-				p := dot.NewNode(before)
-				if _, err := out.AddNode(p); err != nil {
+				var p *dot.Node
+				if existing, ok := addedNodes[before]; ok {
+					p = existing
+				} else {
+					p = dot.NewNode(before)
+					addedNodes[before] = p
+					if _, err := out.AddNode(p); err != nil {
+						panic(err)
+					}
+				}
+				if err := addEdgeWithTooltip(n, p, pkg, before, "compatible version"); err != nil {
 					panic(err)
 				}
-				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
-					panic(err)
+
+				// Set URL on the constraint node to point to the same package
+				if web {
+					if targetPkg, ok := pkgMap[before]; ok {
+						url := extURL(targetPkg)
+						if err := n.Set("URL", url); err != nil {
+							panic(err)
+						}
+						if err := n.Set("target", "_blank"); err != nil {
+							panic(err)
+						}
+						if err := n.Set("tooltip", targetPkg.Description); err != nil {
+							panic(err)
+						}
+					}
 				}
 
 				deps[before] = struct{}{}
@@ -204,17 +279,33 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		}
 
 		renderDeps := func(pkg *apk.RepositoryPackage) {
-			n := dot.NewNode(pkg.Name)
-			if err := n.Set("label", pkgver(pkg)); err != nil {
-				panic(err)
-			}
-			if web {
-				if err := n.Set("URL", link(args, pkg.Name)); err != nil {
+			var n *dot.Node
+			if existing, ok := addedNodes[pkg.Name]; ok {
+				// Node already exists, use it
+				n = existing
+			} else {
+				// Create new node
+				n = dot.NewNode(pkg.Name)
+				addedNodes[pkg.Name] = n
+				if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
 					panic(err)
 				}
 			}
-			if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+
+			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
+			}
+			if err := n.Set("tooltip", pkg.Description); err != nil {
+				panic(err)
+			}
+			if web {
+				url := extURL(pkg)
+				if err := n.Set("URL", url); err != nil {
+					panic(err)
+				}
+				if err := n.Set("target", "_blank"); err != nil {
+					panic(err)
+				}
 			}
 
 			for _, dep := range dmap[pkg.Name] {
@@ -223,21 +314,41 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 				} else if before, _, ok := strings.Cut(dep, "~"); ok {
 					dep = before
 				}
-				d := dot.NewNode(dep)
-				if web {
-					if !strings.Contains(dep, ":") {
-						if err := d.Set("URL", link(args, dep)); err != nil {
-							panic(err)
-						}
+
+				var d *dot.Node
+				if existing, ok := addedNodes[dep]; ok {
+					d = existing
+				} else {
+					d = dot.NewNode(dep)
+					addedNodes[dep] = d
+					if _, err := out.AddNode(d); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+						panic(err)
 					}
 				}
-				if _, err := out.AddNode(d); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
-					panic(err)
+
+				if web {
+					if !strings.Contains(dep, ":") {
+						if depPkg, ok := pkgMap[dep]; ok {
+							if err := d.Set("URL", extURL(depPkg)); err != nil {
+								panic(err)
+							}
+							if err := d.Set("target", "_blank"); err != nil {
+								panic(err)
+							}
+							if err := d.Set("tooltip", depPkg.Description); err != nil {
+								panic(err)
+							}
+						} else {
+							// Don't set a URL for dependencies not in the package map (e.g., virtual dependencies, provides).
+							// Setting a local link would cause a panic when clicked since the package doesn't exist.
+							log.Debugf("Dependency %s not in package map, skipping URL", dep)
+						}
+					}
 				}
 				if _, ok := edges[dep]; !ok || !span {
 					// This check is stupid but otherwise cycles render dumb.
 					if pkg.Name != dep {
-						if _, err := out.AddEdge(dot.NewEdge(n, d)); err != nil {
+						if err := addEdgeWithTooltip(n, d, pkg.Name, dep, "dependency"); err != nil {
 							panic(err)
 						}
 						edges[dep] = struct{}{}
@@ -265,42 +376,67 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 		}
 
 		renderProvs := func(pkg *apk.RepositoryPackage) {
-			n := dot.NewNode(pkg.Name)
+			var n *dot.Node
+			if existing, ok := addedNodes[pkg.Name]; ok {
+				n = existing
+			} else {
+				n = dot.NewNode(pkg.Name)
+				addedNodes[pkg.Name] = n
+				if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+					panic(err)
+				}
+			}
 			if err := n.Set("label", pkgver(pkg)); err != nil {
 				panic(err)
 			}
-			if _, err := out.AddNode(n); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
-				panic(err)
+			if pkg.Description != "" {
+				if err := n.Set("tooltip", pkg.Description); err != nil {
+					panic(err)
+				}
+			} else {
+				log.Debugf("No description for package %s", pkg.Name)
 			}
 
 			for _, prov := range pmap[pkg.Name] {
 				if _, ok := deps[prov]; !ok {
 					if before, _, ok := strings.Cut(prov, "="); ok {
 						if _, ok := deps[before]; ok {
-							p := dot.NewNode(before)
+							var p *dot.Node
+							if existing, ok := addedNodes[before]; ok {
+								p = existing
+							} else {
+								p = dot.NewNode(before)
+								addedNodes[before] = p
+								if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+									panic(err)
+								}
+							}
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
-								panic(err)
-							}
 
-							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+							if err := addEdgeWithTooltip(p, n, before, pkg.Name, "provides"); err != nil {
 								panic(err)
 							}
 						}
 						continue
 					} else if before, _, ok := strings.Cut(prov, "~"); ok {
 						if _, ok := deps[before]; ok {
-							p := dot.NewNode(before)
+							var p *dot.Node
+							if existing, ok := addedNodes[before]; ok {
+								p = existing
+							} else {
+								p = dot.NewNode(before)
+								addedNodes[before] = p
+								if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+									panic(err)
+								}
+							}
 							if err := p.Set("shape", "rect"); err != nil {
 								panic(err)
 							}
-							if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
-								panic(err)
-							}
 
-							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+							if err := addEdgeWithTooltip(p, n, before, pkg.Name, "provides"); err != nil {
 								panic(err)
 							}
 						}
@@ -309,12 +445,18 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						continue
 					}
 				}
-				p := dot.NewNode(prov)
-				if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
-					panic(err)
+				var p *dot.Node
+				if existing, ok := addedNodes[prov]; ok {
+					p = existing
+				} else {
+					p = dot.NewNode(prov)
+					addedNodes[prov] = p
+					if _, err := out.AddNode(p); err != nil && !errors.Is(err, dot.ErrDuplicateNode) {
+						panic(err)
+					}
 				}
 				if _, ok := edges[pkg.Name]; !ok || !span {
-					if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+					if err := addEdgeWithTooltip(p, n, prov, pkg.Name, "provides"); err != nil {
 						panic(err)
 					}
 					edges[pkg.Name] = struct{}{}
@@ -352,6 +494,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 	}
 
 	if web {
+		log.Infof("Prefixing node links with registry-explorer: %s", extRegistryViewer)
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/" {
 				return
@@ -367,10 +510,22 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			log.Infof("%s: rendering %v", r.URL, nodes)
 			cmd := exec.Command("dot", "-Tsvg")
 			cmd.Stdin = strings.NewReader(out.String())
-			cmd.Stdout = w
+
+			var svgBuf strings.Builder
+			cmd.Stdout = &svgBuf
 
 			if err := cmd.Run(); err != nil {
 				fmt.Fprintf(w, "error rendering %v: %v", nodes, err)
+				return
+			}
+
+			// Post-process SVG to remove the graph-level tooltip
+			svg := svgBuf.String()
+			// Remove the constant "images" tooltip from the SVG
+			svg = strings.ReplaceAll(svg, `<title>images</title>`, "")
+
+			if _, err := w.Write([]byte(svg)); err != nil {
+				log.Errorf("error writing SVG response: %v", err)
 			}
 		})
 
@@ -414,18 +569,25 @@ func pkgver(pkg *apk.RepositoryPackage) string {
 	return fmt.Sprintf("%s-%s", pkg.Name, pkg.Version)
 }
 
-func link(args []string, pkg string) string {
-	filtered := []string{}
-	for _, a := range args {
-		if a != pkg {
-			filtered = append(filtered, a)
-		}
+func extURL(pkg *apk.RepositoryPackage) string {
+	// Get the package URL like: https://packages.wolfi.dev/repo/arch/package-version.apk
+	pkgURL := pkg.URL()
+
+	// Replace protocol :// with /
+	pkgURL = strings.ReplaceAll(pkgURL, "://", "/")
+
+	// Replace any remaining : with /
+	pkgURL = strings.ReplaceAll(pkgURL, ":", "/")
+
+	// Normalize multiple consecutive slashes to single slash
+	for strings.Contains(pkgURL, "//") {
+		pkgURL = strings.ReplaceAll(pkgURL, "//", "/")
 	}
-	ret := "/?node=" + pkg
-	if len(filtered) > 0 {
-		ret += "&node=" + strings.Join(filtered, "&node=")
-	}
-	return ret
+
+	// Build the final chaindag URL
+	result := fmt.Sprintf("https://%s/%s", extRegistryViewer, pkgURL)
+	log.Debugf("Package %s -> URL: %s", pkg.Name, result)
+	return result
 }
 
 type unwrapper interface {
