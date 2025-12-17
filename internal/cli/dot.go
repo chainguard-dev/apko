@@ -170,6 +170,25 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			panic(err)
 		}
 
+		// Helper function to add an edge with a tooltip describing both nodes and dependency type
+		addEdgeWithTooltip := func(from, to *dot.Node, fromName, toName, depType string) error {
+			edge := dot.NewEdge(from, to)
+
+			if web {
+				tooltip := fmt.Sprintf("%s → %s", fromName, toName)
+				if depType != "" {
+					tooltip += fmt.Sprintf(" (%s)", depType)
+				}
+
+				if err := edge.Set("tooltip", tooltip); err != nil {
+					return err
+				}
+			}
+
+			_, err := out.AddEdge(edge)
+			return err
+		}
+
 		file := dot.NewNode(configFile)
 		if _, err := out.AddNode(file); err != nil {
 			panic(err)
@@ -187,7 +206,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 				}
 			}
 
-			if _, err := out.AddEdge(dot.NewEdge(file, n)); err != nil {
+			if err := addEdgeWithTooltip(file, n, configFile, pkg, "required"); err != nil {
 				panic(err)
 			}
 			if before, _, ok := strings.Cut(pkg, "="); ok {
@@ -201,7 +220,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						panic(err)
 					}
 				}
-				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
+				if err := addEdgeWithTooltip(n, p, pkg, before, "exact version"); err != nil {
 					panic(err)
 				}
 
@@ -233,7 +252,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 						panic(err)
 					}
 				}
-				if _, err := out.AddEdge(dot.NewEdge(n, p)); err != nil {
+				if err := addEdgeWithTooltip(n, p, pkg, before, "compatible version"); err != nil {
 					panic(err)
 				}
 
@@ -329,7 +348,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 				if _, ok := edges[dep]; !ok || !span {
 					// This check is stupid but otherwise cycles render dumb.
 					if pkg.Name != dep {
-						if _, err := out.AddEdge(dot.NewEdge(n, d)); err != nil {
+						if err := addEdgeWithTooltip(n, d, pkg.Name, dep, "dependency"); err != nil {
 							panic(err)
 						}
 						edges[dep] = struct{}{}
@@ -396,7 +415,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 								panic(err)
 							}
 
-							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+							if err := addEdgeWithTooltip(p, n, before, pkg.Name, "provides"); err != nil {
 								panic(err)
 							}
 						}
@@ -417,7 +436,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 								panic(err)
 							}
 
-							if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+							if err := addEdgeWithTooltip(p, n, before, pkg.Name, "provides"); err != nil {
 								panic(err)
 							}
 						}
@@ -437,7 +456,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 					}
 				}
 				if _, ok := edges[pkg.Name]; !ok || !span {
-					if _, err := out.AddEdge(dot.NewEdge(p, n)); err != nil {
+					if err := addEdgeWithTooltip(p, n, prov, pkg.Name, "provides"); err != nil {
 						panic(err)
 					}
 					edges[pkg.Name] = struct{}{}
