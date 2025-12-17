@@ -18,16 +18,20 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
@@ -169,6 +173,10 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		})
 	}
 
+	// Discover and add auto-discovered keys from repositories
+	discoveredKeys := discoverKeysForLock(ctx, ic, archs)
+	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
+
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
 		log := log.With("arch", arch.ToAPK())
@@ -236,6 +244,12 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
+
+	// Sort keyrings by name for reproducible lock files
+	sort.Slice(lock.Contents.Keyrings, func(i, j int) bool {
+		return lock.Contents.Keyrings[i].Name < lock.Contents.Keyrings[j].Name
+	})
+
 	return lock.SaveToFile(output)
 }
 
@@ -261,4 +275,95 @@ func stripURLScheme(url string) string {
 		strings.TrimPrefix(url, "https://"),
 		"http://",
 	)
+}
+
+// discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) []pkglock.LockKeyring {
+	log := clog.FromContext(ctx)
+
+	// Collect all unique repositories
+	repoSet := make(map[string]struct{})
+	for _, repo := range ic.Contents.BuildRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.RuntimeOnlyRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.Repositories {
+		repoSet[repo] = struct{}{}
+	}
+
+	// Map to track discovered keys by URL to avoid duplicates
+	discoveredKeyMap := make(map[string]pkglock.LockKeyring)
+
+	// Fetch Alpine releases once (cached by HTTP client)
+	client := &http.Client{}
+	var alpineReleases *apk.Releases
+
+	// Discover keys for each repository and architecture
+	for repo := range repoSet {
+		// Try Alpine-style key discovery
+		if ver, ok := apk.ParseAlpineVersion(repo); ok {
+			// Fetch releases.json if not already fetched
+			if alpineReleases == nil {
+				releases, err := apk.FetchAlpineReleases(ctx, client)
+				if err != nil {
+					log.Warnf("Failed to fetch Alpine releases: %v", err)
+					continue
+				}
+				alpineReleases = releases
+			}
+
+			branch := alpineReleases.GetReleaseBranch(ver)
+			if branch == nil {
+				log.Debugf("Alpine version %s not found in releases", ver)
+				continue
+			}
+
+			// Get keys for each architecture
+			for _, arch := range archs {
+				log.Debugf("Discovering Alpine keys for %s (version %s, arch %s)", repo, ver, arch.ToAPK())
+				urls := branch.KeysFor(arch.ToAPK(), time.Now())
+				if len(urls) == 0 {
+					log.Debugf("No keys found for arch %s and version %s", arch.ToAPK(), ver)
+					continue
+				}
+
+				// Add discovered key URLs to the map
+				for _, u := range urls {
+					discoveredKeyMap[u] = pkglock.LockKeyring{
+						Name: stripURLScheme(u),
+						URL:  u,
+					}
+				}
+			}
+		}
+
+		// Try Chainguard-style key discovery
+		log.Debugf("Attempting Chainguard-style key discovery for %s", repo)
+		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo)
+		if err != nil {
+			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
+		} else if len(keys) > 0 {
+			log.Debugf("Discovered %d Chainguard-style keys for %s", len(keys), repo)
+			// For each JWKS key, emit a URL: repository + "/" + KeyID
+			repoBase := strings.TrimSuffix(repo, "/")
+			for _, key := range keys {
+				keyURL := repoBase + "/" + key.ID
+				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
+					Name: stripURLScheme(keyURL),
+					URL:  keyURL,
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	discoveredKeys := make([]pkglock.LockKeyring, 0, len(discoveredKeyMap))
+	for _, key := range discoveredKeyMap {
+		discoveredKeys = append(discoveredKeys, key)
+	}
+
+	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
+	return discoveredKeys
 }
