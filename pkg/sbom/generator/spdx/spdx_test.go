@@ -185,6 +185,50 @@ func TestSPDX_Generate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "describes-relationship",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Package: apk.Package{
+							Name:    "test-pkg-describes",
+							Version: "1.0.0-r0",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "both-describes-methods",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Package: apk.Package{
+							Name:    "test-pkg-both",
+							Version: "1.0.0-r0",
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

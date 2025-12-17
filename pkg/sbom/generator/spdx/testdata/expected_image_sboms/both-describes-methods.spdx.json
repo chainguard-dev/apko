@@ -1,0 +1,106 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "0001-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.16"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-",
+      "name": "",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: unknown",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/image?mediaType=\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-OperatingSystem-unknown",
+      "name": "unknown",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: unknown",
+      "primaryPackagePurpose": "OPERATING_SYSTEM"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-test-pkg-both-1.0.0-r0",
+      "name": "test-pkg-both",
+      "versionInfo": "1.0.0-r0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Test",
+      "supplier": "Organization: Test",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/test-pkg-both@1.0.0-r0?arch=x86_64\u0026distro=wolfi",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-dep-from-array-1.0.0",
+      "name": "dep-from-array",
+      "versionInfo": "1.0.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "https://example.com/dep-from-array-1.0.0.tar.gz",
+      "originator": "Organization: Test",
+      "supplier": "Organization: Test"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-dep-from-relationship-2.0.0",
+      "name": "dep-from-relationship",
+      "versionInfo": "2.0.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: unknown",
+      "supplier": "Organization: unknown",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:golang/github.com/example/dep-from-relationship@v2.0.0",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-test-pkg-both-1.0.0-r0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-dep-from-array-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-test-pkg-both-1.0.0-r0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-dep-from-relationship-2.0.0"
+    }
+  ]
+}
