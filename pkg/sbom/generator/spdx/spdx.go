@@ -215,9 +215,20 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipk
 	}
 
 	// Cycle the top level elements...
+	// Find elements described by the document - check both documentDescribes array
+	// and DESCRIBES relationships (from SPDXRef-DOCUMENT)
 	idsDescribedByAPKSBOM := map[string]struct{}{}
+
+	// First check documentDescribes array
 	for _, elementID := range apkSBOMDoc.DocumentDescribes {
 		idsDescribedByAPKSBOM[elementID] = struct{}{}
+	}
+
+	// Also check for DESCRIBES relationships from SPDXRef-DOCUMENT
+	for _, rel := range apkSBOMDoc.Relationships {
+		if rel.Element == "SPDXRef-DOCUMENT" && rel.Type == "DESCRIBES" {
+			idsDescribedByAPKSBOM[rel.Related] = struct{}{}
+		}
 	}
 
 	// ... searching for a 1st level package
