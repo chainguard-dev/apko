@@ -491,10 +491,22 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			log.Infof("%s: rendering %v", r.URL, nodes)
 			cmd := exec.Command("dot", "-Tsvg")
 			cmd.Stdin = strings.NewReader(out.String())
-			cmd.Stdout = w
+
+			var svgBuf strings.Builder
+			cmd.Stdout = &svgBuf
 
 			if err := cmd.Run(); err != nil {
 				fmt.Fprintf(w, "error rendering %v: %v", nodes, err)
+				return
+			}
+
+			// Post-process SVG to remove the graph-level tooltip
+			svg := svgBuf.String()
+			// Remove the constant "images" tooltip from the SVG
+			svg = strings.ReplaceAll(svg, `<title>images</title>`, "")
+
+			if _, err := w.Write([]byte(svg)); err != nil {
+				log.Errorf("error writing SVG response: %v", err)
 			}
 		})
 
