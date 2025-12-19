@@ -57,10 +57,15 @@ func AdvertiseCachedFile(src, dst string) error {
 	}
 	// Create the symlink.
 	if err := os.Symlink(rel, dst); err != nil {
-		// Ignore already exists errors. We don't even want to do clean up here even when
-		// the symlink is pointing somewhere else, to avoid relying too much on file system
-		// remantics/eventual consistency, etc.
 		if errors.Is(err, os.ErrExist) {
+			// When we get here, that means the symlink is broken and pointing to nowhere.
+			// We remove it and rerun the advertising process.
+			if err := os.Remove(dst); err != nil {
+				return fmt.Errorf("removing existing symlink %s: %w", dst, err)
+			}
+			if err := AdvertiseCachedFile(src, dst); err != nil {
+				return fmt.Errorf("recreating symlink %s to %s: %w", rel, dst, err)
+			}
 			return nil
 		}
 		return fmt.Errorf("linking (cached) %s to %s: %w", rel, dst, err)
