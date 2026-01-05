@@ -35,6 +35,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 )
 
@@ -361,8 +362,7 @@ func TestUpdateScriptsTar(t *testing.T) {
 		".post-upgrade": []byte("echo 'post upgrade'"),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -379,7 +379,6 @@ func TestUpdateScriptsTar(t *testing.T) {
 	})
 	_, _ = tw.Write([]byte(pkginfo))
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
@@ -450,8 +449,7 @@ func TestUpdateTriggers(t *testing.T) {
 		".PKGINFO":      []byte(pkginfo),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -461,11 +459,12 @@ func TestUpdateTriggers(t *testing.T) {
 		_, _ = tw.Write(content)
 	}
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
-	err = a.updateTriggers(pkg, r)
+	fs, err := tarfs.New(r, int64(buf.Len()))
+	require.NoError(t, err, "unable to create tarfs: %v", err)
+	err = a.updateTriggers(pkg, fs)
 	require.NoError(t, err, "unable to update triggers: %v", err)
 
 	// successfully wrote it; not check that it was written correctly
