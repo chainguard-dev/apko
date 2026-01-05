@@ -47,21 +47,29 @@ func AdvertiseCachedFile(src, dst string) error {
 	if err != nil {
 		rel = src
 	}
-	// Check if the destination already exists.
-	if _, err := os.Stat(dst); err == nil {
-		// Since `src` is unadvertised, it is safe to remove it. Ideally we want this to succeeds,
-		// but we don't want to fail a build just because we couldn't clean up. This will be
-		// left for background clean up process based on age.
-		_ = os.Remove(src)
-		return nil
+
+	// Check what exists at dst using Lstat (doesn't follow symlinks).
+	// This lets us distinguish between "nothing exists" and "broken symlink".
+	if _, err := os.Lstat(dst); err == nil {
+		// Something exists at dst. Check if it's a valid symlink by following it.
+		if _, err := os.Stat(dst); err == nil {
+			// Valid symlink exists - another process already advertised.
+			// Clean up src since it's unadvertised and return.
+			_ = os.Remove(src)
+			return nil
+		}
+		// Broken symlink (Lstat succeeded but Stat failed) - remove it.
+		if err := os.Remove(dst); err != nil {
+			return fmt.Errorf("removing broken symlink %s: %w", dst, err)
+		}
 	}
+
 	// Create the symlink.
 	if err := os.Symlink(rel, dst); err != nil {
-		// Ignore already exists errors. We don't even want to do clean up here even when
-		// the symlink is pointing somewhere else, to avoid relying too much on file system
-		// remantics/eventual consistency, etc.
 		if errors.Is(err, os.ErrExist) {
-			return nil
+			// Race condition: something appeared between our Lstat check and Symlink.
+			// Re-run to handle it properly.
+			return AdvertiseCachedFile(src, dst)
 		}
 		return fmt.Errorf("linking (cached) %s to %s: %w", rel, dst, err)
 	}
