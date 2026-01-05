@@ -38,7 +38,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -63,7 +62,7 @@ import (
 // This is terrible but simpler than plumbing around a cache for now.
 // We just hold the expanded APK in memory rather than re-parsing it every time,
 // which is expensive. This also dedupes simultaneous fetches.
-var globalApkCache = &apkCache{}
+var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
 
 type APK struct {
 	arch               string
@@ -1260,42 +1259,6 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 	return &exp, nil
 }
 
-type apkResult struct {
-	exp *expandapk.APKExpanded
-	err error
-}
-
-type apkCache struct {
-	// url -> func() apkResult (from sync.OnceValue(...))
-	onces sync.Map
-}
-
-func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	u := pkg.URL()
-	// Do all the expensive things inside sync.OnceValue()
-	fn := func() apkResult {
-		exp, err := expandPackage(ctx, a, pkg)
-		return apkResult{
-			exp: exp,
-			err: err,
-		}
-	}
-	once, cached := c.onces.LoadOrStore(u, sync.OnceValue(fn))
-	result := once.(func() apkResult)()
-	if cached && result.exp != nil {
-		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
-		// If it references a non-existent file, we should act as though this was a cache miss and expand the
-		// APK again.
-		if !result.exp.IsValid() {
-			newValue := sync.OnceValue(fn)
-			c.onces.Store(u, newValue)
-			result = newValue()
-		}
-	}
-
-	return result.exp, result.err
-}
-
 func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
 	if a.cache == nil {
 		// If we don't have a cache configured, don't use the global cache.
@@ -1305,7 +1268,26 @@ func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expan
 		return expandPackage(ctx, a, pkg)
 	}
 
-	return globalApkCache.get(ctx, a, pkg)
+	cached := true
+	val, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
+		cached = false
+		return expandPackage(ctx, a, pkg)
+	})
+	if !cached {
+		// We've just executed the callback - either successfully cached or
+		// failed (errors aren't cached). Either way, no validation needed.
+		return val, err
+	}
+	if val != nil {
+		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
+		// If it references a non-existent file, we should act as though this was a cache miss and expand the
+		// APK again.
+		if !val.IsValid() {
+			globalApkCache.Forget(pkg.URL())
+			return a.expandPackage(ctx, pkg)
+		}
+	}
+	return val, err
 }
 
 func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
