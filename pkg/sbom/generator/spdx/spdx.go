@@ -32,8 +32,15 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
+
+func init() {
+	generator.RegisterGenerator("spdx", func() generator.Generator {
+		return New()
+	})
+}
 
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
@@ -45,8 +52,7 @@ const (
 	apkSBOMdir           = "/var/lib/db/sbom"
 )
 
-type SPDX struct {
-}
+type SPDX struct{}
 
 func New() *SPDX {
 	return &SPDX{}

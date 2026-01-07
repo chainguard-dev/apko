@@ -42,6 +42,8 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom"
+
+	_ "chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestPublish(t *testing.T) {

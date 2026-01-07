@@ -16,8 +16,8 @@ package generator
 
 import (
 	"context"
+	"sync"
 
-	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -28,11 +28,31 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
+// GeneratorFactory is a function that creates a new SBOM Generator.
+type GeneratorFactory func() Generator
+
+var (
+	registryMu sync.RWMutex
+	registry   = make(map[string]GeneratorFactory)
+)
+
+// RegisterGenerator registers a custom generator factory under the given key.
+// This allows external systems to plug in their own SBOM generator types.
+// If a generator with the same key already exists, it will be overwritten.
+func RegisterGenerator(key string, factory GeneratorFactory) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry[key] = factory
+}
+
 func Generators() map[string]Generator {
 	generators := map[string]Generator{}
 
-	sx := spdx.New()
-	generators[sx.Key()] = sx
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	for key, factory := range registry {
+		generators[key] = factory()
+	}
 
 	return generators
 }
