@@ -37,7 +37,7 @@ type Options struct {
 	ImageInfo ImageInfo
 
 	// Working directory,inherited from build context
-	FS fs.FullFS
+	FS fs.ReaderFS
 
 	// The reference of the generated image. Used for naming and purls
 	ImageReference string

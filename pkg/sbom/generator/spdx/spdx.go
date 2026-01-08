@@ -172,7 +172,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 // locateApkSBOM returns the path to the SBOM in the given filesystem, using the
 // given Package's name and version. It returns an empty string if the SBOM is
 // not found.
-func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error) {
+func locateApkSBOM(fsys apkfs.ReaderFS, ipkg *apk.InstalledPackage) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
 		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),

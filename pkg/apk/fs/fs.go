@@ -19,32 +19,37 @@ import (
 	"time"
 )
 
-// FullFS is a filesystem that supports all filesystem operations.
-type FullFS interface {
-	Mkdir(path string, perm fs.FileMode) error
-	MkdirAll(path string, perm fs.FileMode) error
+// ReaderFS is a filesystem that supports read-only operations.
+type ReaderFS interface {
 	Open(name string) (fs.File, error)
 	OpenReaderAt(name string) (File, error)
 	OpenFile(name string, flag int, perm fs.FileMode) (File, error)
 	ReadFile(name string) ([]byte, error)
-	WriteFile(name string, b []byte, mode fs.FileMode) error
 	ReadDir(name string) ([]fs.DirEntry, error)
-	Mknod(path string, mode uint32, dev int) error
 	Readnod(name string) (dev int, err error)
-	Symlink(oldname, newname string) error
-	Link(oldname, newname string) error
 	Readlink(name string) (target string, err error)
 	Stat(path string) (fs.FileInfo, error)
 	Lstat(path string) (fs.FileInfo, error)
+	GetXattr(path string, attr string) ([]byte, error)
+	ListXattrs(path string) (map[string][]byte, error)
+}
+
+// FullFS is a filesystem that supports all filesystem operations.
+type FullFS interface {
+	ReaderFS
+	Mkdir(path string, perm fs.FileMode) error
+	MkdirAll(path string, perm fs.FileMode) error
+	WriteFile(name string, b []byte, mode fs.FileMode) error
+	Mknod(path string, mode uint32, dev int) error
+	Symlink(oldname, newname string) error
+	Link(oldname, newname string) error
 	Create(name string) (File, error)
 	Remove(name string) error
 	Chmod(path string, perm fs.FileMode) error
 	Chown(path string, uid int, gid int) error
 	Chtimes(path string, atime time.Time, mtime time.Time) error
 	SetXattr(path string, attr string, data []byte) error
-	GetXattr(path string, attr string) ([]byte, error)
 	RemoveXattr(path string, attr string) error
-	ListXattrs(path string) (map[string][]byte, error)
 	Sub(path string) (FullFS, error)
 }
 
