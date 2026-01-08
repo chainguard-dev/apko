@@ -66,6 +66,10 @@ func (sx *SPDX) Ext() string {
 	return "spdx.json"
 }
 
+func (sx *SPDX) PredicateType() string {
+	return "https://spdx.dev/Document"
+}
+
 func stringToIdentifier(in string) (out string) {
 	in = strings.ReplaceAll(in, ":", "-")
 	return validIDCharsRe.ReplaceAllStringFunc(in, func(s string) string {
