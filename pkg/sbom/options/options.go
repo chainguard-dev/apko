@@ -48,9 +48,6 @@ type Options struct {
 	// FileName is the base name for the sboms, the proper extension will get appended
 	FileName string
 
-	// Formats dictates which SBOM formats we will output
-	Formats []string
-
 	// Packages is a list of packages which will be listed in the SBOM
 	Packages []*apk.InstalledPackage
 }

@@ -26,6 +26,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom/generator"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -110,9 +111,20 @@ func WithSBOM(path string) Option {
 	}
 }
 
+// WithSBOMFormats sets the SBOM generators to use.
+//
+// Deprecated: use WithSBOMGenerators instead.
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
-		bc.o.SBOMFormats = formats
+		bc.o.SBOMGenerators = generator.Generators(formats...)
+		return nil
+	}
+}
+
+// WithSBOMGenerators sets the SBOM generators to use.
+func WithSBOMGenerators(generators ...generator.Generator) Option {
+	return func(bc *Context) error {
+		bc.o.SBOMGenerators = generators
 		return nil
 	}
 }

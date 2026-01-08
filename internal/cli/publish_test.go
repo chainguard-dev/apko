@@ -41,7 +41,7 @@ import (
 	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestPublish(t *testing.T) {
@@ -72,7 +72,7 @@ func TestPublish(t *testing.T) {
 	opts := []build.Option{
 		build.WithConfig(config, []string{}),
 		build.WithTags(dst),
-		build.WithSBOMFormats(sbom.DefaultOptions.Formats),
+		build.WithSBOMGenerators(spdx.New()),
 		build.WithAnnotations(map[string]string{"foo": "bar"}),
 	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
@@ -146,7 +146,7 @@ func TestPublishLayering(t *testing.T) {
 	opts := []build.Option{
 		build.WithConfig(config, []string{}),
 		build.WithTags(dst),
-		build.WithSBOMFormats(sbom.DefaultOptions.Formats),
+		build.WithSBOMGenerators(spdx.New()),
 		build.WithAnnotations(map[string]string{"foo": "bar"}),
 	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}

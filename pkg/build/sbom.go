@@ -38,7 +38,6 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom"
-	"chainguard.dev/apko/pkg/sbom/generator"
 	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
@@ -60,7 +59,6 @@ func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types
 	}
 
 	sopt.ImageInfo.SourceDateEpoch = bde
-	sopt.Formats = o.SBOMFormats
 	sopt.ImageInfo.VCSUrl = ic.VCSUrl
 	sopt.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
 
@@ -125,20 +123,14 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.ImageInfo.Arch = arch
 
 	var sboms = make([]types.SBOM, 0)
-	generators := generator.Generators()
-	for _, format := range s.Formats {
-		gen, ok := generators[format]
-		if !ok {
-			return nil, fmt.Errorf("unable to generate sboms: no generator available for format %s", format)
-		}
-
+	for _, gen := range bc.o.SBOMGenerators {
 		filename := filepath.Join(s.OutputDir, s.FileName+"."+gen.Ext())
 		if err := gen.Generate(ctx, &s, filename); err != nil {
-			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
 			Path:   filename,
-			Format: format,
+			Format: gen.Key(),
 			Arch:   arch.String(),
 			Digest: h,
 		})
@@ -212,7 +204,7 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
 
-	if len(o.SBOMFormats) == 0 {
+	if len(o.SBOMGenerators) == 0 {
 		log.Warn("skipping SBOM generation")
 		return nil, nil
 	}
@@ -238,14 +230,8 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 		return archs[i].String() < archs[j].String()
 	})
 
-	generators := generator.Generators()
-	var sboms = make([]types.SBOM, 0, len(generators))
-	for _, format := range s.Formats {
-		gen, ok := generators[format]
-		if !ok {
-			return nil, fmt.Errorf("unable to generate sboms: no generator available for format %s", format)
-		}
-
+	var sboms = make([]types.SBOM, 0, len(o.SBOMGenerators))
+	for _, gen := range o.SBOMGenerators {
 		archImageInfos := make([]soptions.ArchImageInfo, 0, len(archs))
 		for _, arch := range archs {
 			i := imgs[arch]
@@ -270,11 +256,11 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 
 		filename := filepath.Join(s.OutputDir, "sbom-index."+gen.Ext())
 		if err := gen.GenerateIndex(&s, filename); err != nil {
-			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
 			Path:   filename,
-			Format: format,
+			Format: gen.Key(),
 			Digest: h,
 		})
 	}

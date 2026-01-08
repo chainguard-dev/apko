@@ -21,6 +21,9 @@ import (
 	"os/signal"
 
 	"chainguard.dev/apko/internal/cli"
+
+	// Import spdx generator to register it.
+	_ "chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func main() {

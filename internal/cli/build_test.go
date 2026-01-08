@@ -30,6 +30,7 @@ import (
 	"chainguard.dev/apko/internal/cli"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestBuild(t *testing.T) {
@@ -43,7 +44,7 @@ func TestBuild(t *testing.T) {
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	opts := []build.Option{
 		build.WithConfig(config, []string{}),
-		build.WithSBOMFormats([]string{"spdx"}),
+		build.WithSBOMGenerators(spdx.New()),
 		build.WithTags("golden:latest"),
 		build.WithAnnotations(map[string]string{
 			"org.opencontainers.image.vendor": "Vendor",
@@ -126,7 +127,7 @@ func TestBuildWithBase(t *testing.T) {
 	lockfile := filepath.Join("testdata", "image_on_top.apko.lock.json")
 
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
+	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMGenerators(spdx.New()), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
 
 	sbomPath := filepath.Join(tmp, "sboms")
 	err := os.MkdirAll(sbomPath, 0o750)
