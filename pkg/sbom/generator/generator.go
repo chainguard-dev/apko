@@ -17,8 +17,6 @@ package generator
 import (
 	"context"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
-
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
@@ -30,11 +28,11 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
-func Generators(fsys apkfs.FullFS) map[string]Generator {
+func Generators() map[string]Generator {
 	generators := map[string]Generator{}
 
-	sx := spdx.New(fsys)
-	generators[sx.Key()] = &sx
+	sx := spdx.New()
+	generators[sx.Key()] = sx
 
 	return generators
 }
