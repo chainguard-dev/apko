@@ -25,6 +25,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom/generator"
 )
 
 type Options struct {
@@ -32,31 +33,31 @@ type Options struct {
 	// ImageConfigFile might, but does not have to be a filename. It might be any abstract configuration identifier.
 	ImageConfigFile string `json:"imageConfigFile,omitempty"`
 	// ImageConfigChecksum (when set) allows to detect mismatch between configuration and the lockfile.
-	ImageConfigChecksum     string             `json:"configChecksum,omitempty"`
-	TarballPath             string             `json:"tarballPath,omitempty"`
-	Tags                    []string           `json:"tags,omitempty"`
-	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`
-	SBOMPath                string             `json:"sbomPath,omitempty"`
-	SBOMFormats             []string           `json:"sbomFormats,omitempty"`
-	ExtraKeyFiles           []string           `json:"extraKeyFiles,omitempty"`
-	ExtraBuildRepos         []string           `json:"extraBuildRepos,omitempty"`
-	ExtraRepos              []string           `json:"extraRepos,omitempty"`
-	ExtraPackages           []string           `json:"extraPackages,omitempty"`
-	Arch                    types.Architecture `json:"arch,omitempty"`
-	TempDirPath             string             `json:"tempDirPath,omitempty"`
-	PackageVersionTag       string             `json:"packageVersionTag,omitempty"`
-	PackageVersionTagStem   bool               `json:"packageVersionTagStem,omitempty"`
-	PackageVersionTagPrefix string             `json:"packageVersionTagPrefix,omitempty"`
-	TagSuffix               string             `json:"tagSuffix,omitempty"`
-	Local                   bool               `json:"local,omitempty"`
-	CacheDir                string             `json:"cacheDir,omitempty"`
-	Offline                 bool               `json:"offline,omitempty"`
-	SharedCache             *apk.Cache         `json:"-"`
-	Lockfile                string             `json:"lockfile,omitempty"`
-	Auth                    auth.Authenticator `json:"-"`
-	IncludePaths            []string           `json:"includePaths,omitempty"`
-	IgnoreSignatures        bool               `json:"ignoreSignatures,omitempty"`
-	Transport               http.RoundTripper  `json:"-"`
+	ImageConfigChecksum     string                `json:"configChecksum,omitempty"`
+	TarballPath             string                `json:"tarballPath,omitempty"`
+	Tags                    []string              `json:"tags,omitempty"`
+	SourceDateEpoch         time.Time             `json:"sourceDateEpoch,omitempty"`
+	SBOMPath                string                `json:"sbomPath,omitempty"`
+	SBOMGenerators          []generator.Generator `json:"-"`
+	ExtraKeyFiles           []string              `json:"extraKeyFiles,omitempty"`
+	ExtraBuildRepos         []string              `json:"extraBuildRepos,omitempty"`
+	ExtraRepos              []string              `json:"extraRepos,omitempty"`
+	ExtraPackages           []string              `json:"extraPackages,omitempty"`
+	Arch                    types.Architecture    `json:"arch,omitempty"`
+	TempDirPath             string                `json:"tempDirPath,omitempty"`
+	PackageVersionTag       string                `json:"packageVersionTag,omitempty"`
+	PackageVersionTagStem   bool                  `json:"packageVersionTagStem,omitempty"`
+	PackageVersionTagPrefix string                `json:"packageVersionTagPrefix,omitempty"`
+	TagSuffix               string                `json:"tagSuffix,omitempty"`
+	Local                   bool                  `json:"local,omitempty"`
+	CacheDir                string                `json:"cacheDir,omitempty"`
+	Offline                 bool                  `json:"offline,omitempty"`
+	SharedCache             *apk.Cache            `json:"-"`
+	Lockfile                string                `json:"lockfile,omitempty"`
+	Auth                    auth.Authenticator    `json:"-"`
+	IncludePaths            []string              `json:"includePaths,omitempty"`
+	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`
+	Transport               http.RoundTripper     `json:"-"`
 }
 
 type Auth struct{ User, Pass string }

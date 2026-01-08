@@ -21,6 +21,7 @@ import (
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
+// Generator defines the interface for SBOM generators.
 type Generator interface {
 	Key() string
 	Ext() string
@@ -28,7 +29,7 @@ type Generator interface {
 	GenerateIndex(*options.Options, string) error
 }
 
-// GeneratorFactory is a function that creates a new SBOM Generator.
+// GeneratorFactory is a function that creates a Generator.
 type GeneratorFactory func() Generator
 
 var (
@@ -45,13 +46,25 @@ func RegisterGenerator(key string, factory GeneratorFactory) {
 	registry[key] = factory
 }
 
-func Generators() map[string]Generator {
-	generators := map[string]Generator{}
+// Generators returns a map of registered generators.
+// If names are provided, only generators with those keys will be returned.
+func Generators(names ...string) []Generator {
+	generators := []Generator{}
+
+	nameIdx := map[string]bool{}
+	for _, n := range names {
+		nameIdx[n] = true
+	}
+	// If no names are provided, return all generators.
+	all := len(nameIdx) == 0
 
 	registryMu.RLock()
 	defer registryMu.RUnlock()
+
 	for key, factory := range registry {
-		generators[key] = factory()
+		if all || nameIdx[key] {
+			generators = append(generators, factory())
+		}
 	}
 
 	return generators
