@@ -33,43 +33,45 @@ import (
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
-// TODO: clean this up and make consistent with the other test cases
-var testOpts = &options.Options{
-	ImageInfo: options.ImageInfo{
-		Layers: []v1.Descriptor{{}},
-	},
-	OS: options.OSInfo{
-		Name:    "unknown",
-		ID:      "unknown",
-		Version: "3.0",
-	},
-	FileName: "sbom",
-	Packages: []*apk.InstalledPackage{
-		{
-			Package: apk.Package{
-				Name:        "musl",
-				Version:     "1.2.2-r7",
-				Arch:        "x86_64",
-				Description: "the musl c library (libc) implementation",
-				License:     "MIT",
-				Origin:      "musl",
-				Maintainer:  "Pkg Author <user@domain.com>",
-				Checksum: []byte{
-					0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
-					0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
+func testOpts(fsys apkfs.FullFS) *options.Options {
+	return &options.Options{
+		FS: fsys,
+		ImageInfo: options.ImageInfo{
+			Layers: []v1.Descriptor{{}},
+		},
+		OS: options.OSInfo{
+			Name:    "unknown",
+			ID:      "unknown",
+			Version: "3.0",
+		},
+		FileName: "sbom",
+		Packages: []*apk.InstalledPackage{
+			{
+				Package: apk.Package{
+					Name:        "musl",
+					Version:     "1.2.2-r7",
+					Arch:        "x86_64",
+					Description: "the musl c library (libc) implementation",
+					License:     "MIT",
+					Origin:      "musl",
+					Maintainer:  "Pkg Author <user@domain.com>",
+					Checksum: []byte{
+						0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
+						0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
+					},
 				},
 			},
 		},
-	},
+	}
 }
 
-// TODO: clean this up and make consistent with the other test cases
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(t.Context(), testOpts, path)
+	opts := testOpts(fsys)
+	sx := New()
+	path := filepath.Join(dir, opts.FileName+"."+sx.Ext())
+	err := sx.Generate(t.Context(), opts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 }
@@ -234,6 +236,7 @@ func TestSPDX_Generate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fsys := apkfs.NewMemFS()
+			tt.opts.FS = fsys
 			sbomDir := path.Join("var", "lib", "db", "sbom")
 			err := fsys.MkdirAll(sbomDir, 0750)
 			require.NoError(t, err)
@@ -249,7 +252,7 @@ func TestSPDX_Generate(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			sx := New(fsys)
+			sx := New()
 			imageSBOMName := fmt.Sprintf("%s.spdx.json", tt.name)
 			imageSBOMDestPath := filepath.Join(t.TempDir(), imageSBOMName)
 			err = sx.Generate(t.Context(), tt.opts, imageSBOMDestPath)
@@ -292,11 +295,12 @@ func TestReproducible(t *testing.T) {
 	// they are identical
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
+	opts := testOpts(fsys)
+	sx := New()
 	d := [][]byte{}
 	for i := range 2 {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
-		require.NoError(t, sx.Generate(t.Context(), testOpts, path))
+		require.NoError(t, sx.Generate(t.Context(), opts, path))
 		require.FileExists(t, path)
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -317,9 +321,10 @@ func TestValidateSPDX(t *testing.T) {
 	}
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(t.Context(), testOpts, path)
+	opts := testOpts(fsys)
+	sx := New()
+	path := filepath.Join(dir, opts.FileName+"."+sx.Ext())
+	err := sx.Generate(t.Context(), opts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 	require.NoError(t, command.New(

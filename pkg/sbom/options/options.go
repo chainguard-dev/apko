@@ -16,7 +16,6 @@ package options
 
 import (
 	"fmt"
-	"io/fs"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -28,6 +27,7 @@ import (
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -37,7 +37,7 @@ type Options struct {
 	ImageInfo ImageInfo
 
 	// Working directory,inherited from build context
-	FS fs.FS
+	FS fs.FullFS
 
 	// The reference of the generated image. Used for naming and purls
 	ImageReference string

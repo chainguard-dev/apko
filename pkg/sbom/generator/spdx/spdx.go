@@ -46,11 +46,10 @@ const (
 )
 
 type SPDX struct {
-	fs apkfs.FullFS
 }
 
-func New(fs apkfs.FullFS) SPDX {
-	return SPDX{fs}
+func New() *SPDX {
+	return &SPDX{}
 }
 
 func (sx *SPDX) Key() string {
@@ -198,7 +197,7 @@ func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error
 
 func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, ipkg)
+	path, err := locateApkSBOM(opts.FS, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
@@ -333,7 +332,7 @@ func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
 // ParseInternalSBOM opens an SBOM inside apks and
 func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
-	data, err := sx.fs.ReadFile(path)
+	data, err := opts.FS.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
