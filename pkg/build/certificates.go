@@ -103,7 +103,9 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		existingBundles = append(existingBundles, file)
 	}
 
-	// Load all existing Java truststores to append to.
+	// Load all existing Java truststores to append to. This will be empty for
+	// images that have no Java truststore installed, so the processes below
+	// will be no-ops in that case.
 	existingTruststores, err := bc.loadJavaTruststores()
 	if err != nil {
 		return fmt.Errorf("failed to load Java truststores: %w", err)
@@ -177,6 +179,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 }
 
 // loadJavaTruststores loads all existing Java truststores from the configured paths.
+// It is ok if no truststores exist; in that case, an empty slice is returned.
 func (bc *Context) loadJavaTruststores() ([]loadedTruststore, error) {
 	truststores := make([]loadedTruststore, 0, len(javaTruststorePaths))
 	for _, truststorePath := range javaTruststorePaths {
