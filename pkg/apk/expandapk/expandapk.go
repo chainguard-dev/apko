@@ -102,7 +102,45 @@ type APKExpanded struct {
 	SignatureSize int64
 
 	sync.Mutex
-	controlData []byte
+	parsedPkgInfo map[string][]string
+	controlData   []byte
+}
+
+// PkgInfo parses and returns the .PKGINFO file as a map of keys to values.
+func (a *APKExpanded) PkgInfo() (map[string][]string, error) {
+	a.Lock()
+	defer a.Unlock()
+	if a.parsedPkgInfo != nil {
+		return a.parsedPkgInfo, nil
+	}
+
+	f, err := a.ControlFS.Open(".PKGINFO")
+	if err != nil {
+		return nil, fmt.Errorf("opening .PKGINFO: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	mapping := make(map[string][]string)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		values := mapping[key]
+		values = append(values, value)
+		mapping[key] = values
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading .PKGINFO: %w", err)
+	}
+
+	a.parsedPkgInfo = mapping
+	return a.parsedPkgInfo, nil
 }
 
 func (a *APKExpanded) ControlData() ([]byte, error) {
