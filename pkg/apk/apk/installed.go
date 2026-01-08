@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,32 +189,13 @@ func (a *APK) readScriptsTar() (io.ReadCloser, error) {
 	return a.fs.Open(scriptsFilePath)
 }
 
-// TODO: We should probably parse control section on the first pass and reuse it.
-func (a *APK) controlValue(controlFs fs.FS, want string) ([]string, error) {
-	mapping, err := controlValue(controlFs, want)
-	if err != nil {
-		return nil, err
-	}
-
-	values, ok := mapping[want]
-	if !ok {
-		return []string{}, nil
-	}
-	return values, nil
-}
-
 // updateTriggers insert the triggers into the triggers file
-func (a *APK) updateTriggers(pkg *Package, controlFs fs.FS) error {
+func (a *APK) updateTriggers(pkg *Package, values []string) error {
 	triggers, err := a.fs.OpenFile(triggersFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("unable to open triggers file %s: %w", triggersFilePath, err)
 	}
 	defer triggers.Close()
-
-	values, err := a.controlValue(controlFs, "triggers")
-	if err != nil {
-		return fmt.Errorf("updating triggers for %s: %w", pkg.Name, err)
-	}
 
 	for _, value := range values {
 		if _, err := fmt.Fprintf(triggers, "Q1%s %s\n", base64.StdEncoding.EncodeToString(pkg.Checksum), value); err != nil {

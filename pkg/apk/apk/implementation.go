@@ -1223,10 +1223,15 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureHash = signatureHash[:]
 	}
 
-	datahash, err := a.datahash(exp.ControlFS)
+	pkgInfo, err := exp.PkgInfo()
 	if err != nil {
-		return nil, fmt.Errorf("datahash for %s: %w", pkg, err)
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg, err)
 	}
+	datahashVals := pkgInfo["datahash"]
+	if len(datahashVals) != 1 {
+		return nil, fmt.Errorf("saw %d datahash values", len(datahashVals))
+	}
+	datahash := datahashVals[0]
 
 	dat := filepath.Join(cacheDir, datahash+".dat.tar.gz")
 	df, err := os.Stat(dat)
@@ -1484,24 +1489,15 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the triggers
-	if err := a.updateTriggers(pkg, expanded.ControlFS); err != nil {
+	pkgInfo, err := expanded.PkgInfo()
+	if err != nil {
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
+	}
+	if err := a.updateTriggers(pkg, pkgInfo["triggers"]); err != nil {
 		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
 	}
 
 	return installedFiles, nil
-}
-
-func (a *APK) datahash(controlFS fs.FS) (string, error) {
-	values, err := a.controlValue(controlFS, "datahash")
-	if err != nil {
-		return "", fmt.Errorf("reading datahash from control: %w", err)
-	}
-
-	if len(values) != 1 {
-		return "", fmt.Errorf("saw %d datahash values", len(values))
-	}
-
-	return values[0], nil
 }
 
 func packageRefs(pkgs []*RepositoryPackage) []string {
