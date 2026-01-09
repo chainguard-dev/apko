@@ -163,7 +163,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 			seenIDs[doc.Packages[i].ID] = struct{}{}
 			dedupedPackages = append(dedupedPackages, doc.Packages[i])
 		} else {
-			clog.FromContext(ctx).Info("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
+			clog.FromContext(ctx).Debug("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
 		}
 	}
 	doc.Packages = dedupedPackages
