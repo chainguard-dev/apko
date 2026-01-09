@@ -141,7 +141,9 @@ type cache struct {
 	dir     string
 	offline bool
 
-	shared *Cache
+	shared          *Cache
+	resolverCache   *resolverCache
+	disqualifyCache *disqualifyCache
 }
 
 // client return an http.Client that knows how to read from and write to the cache
