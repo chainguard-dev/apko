@@ -15,6 +15,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -27,6 +28,7 @@ import (
 	"chainguard.dev/apko/pkg/options"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
 const (
@@ -143,11 +145,36 @@ func TestInstallCertificates(t *testing.T) {
 	epoch := time.Unix(1337, 0)
 	t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
 
+	createTruststore := func(certs map[string]string) []byte {
+		ks := keystore.New(keystore.WithOrderedAliases())
+		for name, content := range certs {
+			cert, err := parseCertificates(content)
+			if err != nil {
+				t.Fatalf("failed to parse certificate: %v", err)
+			}
+			entry := keystore.TrustedCertificateEntry{
+				CreationTime: epoch,
+				Certificate: keystore.Certificate{
+					Type:    "X.509",
+					Content: cert.structured.Raw,
+				},
+			}
+			if err := ks.SetTrustedCertificateEntry(name, entry); err != nil {
+				t.Fatalf("failed to add certificate to truststore: %v", err)
+			}
+		}
+		var buf bytes.Buffer
+		if err := ks.Store(&buf, javaTruststorePassword); err != nil {
+			t.Fatalf("failed to store truststore: %v", err)
+		}
+		return buf.Bytes()
+	}
+
 	tests := []struct {
 		name          string
 		cfg           *types.ImageCertificates
-		existingFiles map[string]string
-		wantFiles     map[string]string
+		existingFiles map[string][]byte
+		wantFiles     map[string][]byte
 		wantErr       bool
 	}{{
 		name: "nil certificates config",
@@ -159,9 +186,9 @@ func TestInstallCertificates(t *testing.T) {
 				{Name: "test-cert", Content: testCertPEM},
 			},
 		},
-		existingFiles: map[string]string{},
-		wantFiles: map[string]string{
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): testCertPEM,
+		existingFiles: map[string][]byte{},
+		wantFiles: map[string][]byte{
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 		},
 	}, {
 		name: "multiple certificate entries only one existing bundle",
@@ -171,13 +198,13 @@ func TestInstallCertificates(t *testing.T) {
 				{Name: "test-cert-2", Content: testCertPEM2},
 			},
 		},
-		existingFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n",
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
 		},
-		wantFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n",
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-1-%s.crt", testCertPEMFingerprint)):  testCertPEM,
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-2-%s.crt", testCertPEM2Fingerprint)): testCertPEM2,
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-1-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-2-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
 		},
 	}, {
 		name: "multiple certificate entries with multiple existing bundles",
@@ -187,15 +214,15 @@ func TestInstallCertificates(t *testing.T) {
 				{Name: "test-cert-2", Content: testCertPEM2},
 			},
 		},
-		existingFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n",
-			caBundlePaths[1]: "# Another CA Bundle\n",
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
+			caBundlePaths[1]: []byte("# Another CA Bundle\n"),
 		},
-		wantFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n",
-			caBundlePaths[1]: "# Another CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n",
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-1-%s.crt", testCertPEMFingerprint)):  testCertPEM,
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-2-%s.crt", testCertPEM2Fingerprint)): testCertPEM2,
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n"),
+			caBundlePaths[1]: []byte("# Another CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-1-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-2-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
 		},
 	}, {
 		name: "multiple certificate entries with identical names",
@@ -205,13 +232,13 @@ func TestInstallCertificates(t *testing.T) {
 				{Name: "test-cert", Content: testCertPEM2},
 			},
 		},
-		existingFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n",
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
 		},
-		wantFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n",
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)):  testCertPEM,
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEM2Fingerprint)): testCertPEM2,
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
 		},
 	}, {
 		name: "certificate with additional metadata",
@@ -220,12 +247,57 @@ func TestInstallCertificates(t *testing.T) {
 				{Name: "test-cert", Content: "additional text\n" + testCertPEM},
 			},
 		},
-		existingFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n",
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
 		},
-		wantFiles: map[string]string{
-			caBundlePaths[0]: "# Existing CA Bundle\n" + testCertPEM + "\n",
-			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): testCertPEM,
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
+		},
+	}, {
+		name: "certificate with existing Java truststore",
+		cfg: &types.ImageCertificates{
+			Additional: []types.AdditionalCertificateEntry{
+				{Name: "test-cert", Content: testCertPEM},
+			},
+		},
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
+			javaTruststorePaths[0]: createTruststore(map[string]string{
+				"existing": testCertPEM2,
+			}),
+		},
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
+			javaTruststorePaths[0]: createTruststore(map[string]string{
+				"existing":                            testCertPEM2,
+				"test-cert-" + testCertPEMFingerprint: testCertPEM,
+			}),
+		},
+	}, {
+		name: "multiple certificates with existing Java truststore",
+		cfg: &types.ImageCertificates{
+			Additional: []types.AdditionalCertificateEntry{
+				{Name: "test-cert-1", Content: testCertPEM},
+				{Name: "test-cert-2", Content: testCertPEM2},
+			},
+		},
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n"),
+			javaTruststorePaths[0]: createTruststore(map[string]string{
+				"existing": testCertPEM2,
+			}),
+		},
+		wantFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing CA Bundle\n" + testCertPEM + "\n" + testCertPEM2 + "\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-1-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-2-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
+			javaTruststorePaths[0]: createTruststore(map[string]string{
+				"existing":                               testCertPEM2,
+				"test-cert-1-" + testCertPEMFingerprint:  testCertPEM,
+				"test-cert-2-" + testCertPEM2Fingerprint: testCertPEM2,
+			}),
 		},
 	}}
 
@@ -246,7 +318,7 @@ func TestInstallCertificates(t *testing.T) {
 				if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 					t.Fatalf("failed to create directory for existing file %s: %v", path, err)
 				}
-				if err := fsys.WriteFile(path, []byte(content), 0o644); err != nil {
+				if err := fsys.WriteFile(path, content, 0o644); err != nil {
 					t.Fatalf("failed to write existing file %s: %v", path, err)
 				}
 			}
@@ -284,8 +356,8 @@ func TestInstallCertificates(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to read expected file %s: %v", path, err)
 				}
-				gotContent := string(data)
-				if diff := cmp.Diff(wantContent, gotContent); diff != "" {
+
+				if diff := cmp.Diff(wantContent, data); diff != "" {
 					t.Errorf("file content mismatch for %s (-want +got):\n%s", path, diff)
 				}
 

@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
 )
 
@@ -42,12 +43,28 @@ var (
 		"etc/ssl/certs/ca-certificates.crt",                        // Alpine default.
 		"var/lib/ecs/deps/execute-command/certs/tls-ca-bundle.pem", // AWS ECS-specific.
 	}
+
+	// Common paths for Java truststores.
+	javaTruststorePaths = []string{
+		"etc/ssl/certs/java/cacerts", // Common location for Java cacerts.
+	}
+
+	// Default password for Java cacerts truststore.
+	javaTruststorePassword = []byte("changeit")
 )
 
 // parsedCertificate represents a parsed certificate with its metadata.
 type parsedCertificate struct {
+	structured  *x509.Certificate
 	pem         []byte
 	fingerprint string
+}
+
+// loadedTruststore represents a Java truststore loaded into memory.
+type loadedTruststore struct {
+	path string
+	mode fs.FileMode
+	ks   keystore.KeyStore
 }
 
 // installCertificates installs inline certificates into the build context.
@@ -86,6 +103,14 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		existingBundles = append(existingBundles, file)
 	}
 
+	// Load all existing Java truststores to append to. This will be empty for
+	// images that have no Java truststore installed, so the processes below
+	// will be no-ops in that case.
+	existingTruststores, err := bc.loadJavaTruststores()
+	if err != nil {
+		return fmt.Errorf("failed to load Java truststores: %w", err)
+	}
+
 	for _, additional := range bc.ic.Certificates.Additional {
 		cert, err := parseCertificates(additional.Content)
 		if err != nil {
@@ -103,7 +128,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			return fmt.Errorf("failed to change times on certificate file %s: %w", certPath, err)
 		}
 
-		// Append to all existing bundles.
+		// Append to all existing CA bundles.
 		for _, bundle := range existingBundles {
 			if _, err := bundle.Write(cert.pem); err != nil {
 				return fmt.Errorf("failed to append certificate to bundle: %w", err)
@@ -111,6 +136,21 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			// Put newlines in-between certificates to mimic update-ca-certificates behavior.
 			if _, err := bundle.Write([]byte("\n")); err != nil {
 				return fmt.Errorf("failed to append newline to bundle: %w", err)
+			}
+		}
+
+		// Append to all existing Java truststores.
+		for _, ts := range existingTruststores {
+			entry := keystore.TrustedCertificateEntry{
+				CreationTime: builtTime,
+				Certificate: keystore.Certificate{
+					Type:    "X.509",
+					Content: cert.structured.Raw,
+				},
+			}
+			alias := fmt.Sprintf("%s-%s", additional.Name, cert.fingerprint)
+			if err := ts.ks.SetTrustedCertificateEntry(alias, entry); err != nil {
+				return fmt.Errorf("failed to add certificate to Java truststore: %w", err)
 			}
 		}
 	}
@@ -121,7 +161,56 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 	}
 
+	// Write all modified Java truststores back to disk.
+	for _, ts := range existingTruststores {
+		var buf bytes.Buffer
+		if err := ts.ks.Store(&buf, javaTruststorePassword); err != nil {
+			return fmt.Errorf("failed to encode Java truststore %s: %w", ts.path, err)
+		}
+		if err := bc.fs.WriteFile(ts.path, buf.Bytes(), ts.mode); err != nil {
+			return fmt.Errorf("failed to write Java truststore %s: %w", ts.path, err)
+		}
+		if err := bc.fs.Chtimes(ts.path, builtTime, builtTime); err != nil {
+			return fmt.Errorf("failed to change times on Java truststore %s: %w", ts.path, err)
+		}
+	}
+
 	return nil
+}
+
+// loadJavaTruststores loads all existing Java truststores from the configured paths.
+// It is ok if no truststores exist; in that case, an empty slice is returned.
+func (bc *Context) loadJavaTruststores() ([]loadedTruststore, error) {
+	truststores := make([]loadedTruststore, 0, len(javaTruststorePaths))
+	for _, truststorePath := range javaTruststorePaths {
+		stat, err := bc.fs.Stat(truststorePath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// If the truststore doesn't exist, nothing to do, we just ignore that.
+				continue
+			}
+			return nil, fmt.Errorf("failed to stat Java truststore %s: %w", truststorePath, err)
+		}
+
+		file, err := bc.fs.Open(truststorePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open Java truststore %s: %w", truststorePath, err)
+		}
+		defer file.Close()
+
+		// WithOrderedAliases to ensure deterministic output.
+		ks := keystore.New(keystore.WithOrderedAliases())
+		if err := ks.Load(file, javaTruststorePassword); err != nil {
+			return nil, fmt.Errorf("failed to load Java truststore %s: %w", truststorePath, err)
+		}
+
+		truststores = append(truststores, loadedTruststore{
+			path: truststorePath,
+			mode: stat.Mode(),
+			ks:   ks,
+		})
+	}
+	return truststores, nil
 }
 
 // parseCertificates parses a string as a PEM-encoded certificate and returns
@@ -148,7 +237,7 @@ func parseCertificates(pemData string) (*parsedCertificate, error) {
 		}
 
 		// Parse the certificate to validate it
-		_, err := x509.ParseCertificate(block.Bytes)
+		parsed, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse certificate: %w", err)
 		}
@@ -164,6 +253,7 @@ func parseCertificates(pemData string) (*parsedCertificate, error) {
 		}
 
 		cert = &parsedCertificate{
+			structured:  parsed,
 			pem:         pemBuf.Bytes(),
 			fingerprint: fingerprint,
 		}

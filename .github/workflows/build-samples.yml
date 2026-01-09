@@ -239,7 +239,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Gets all certificate fingerprints from a PEM file, sorted, so two files can
+          # Gets all certificate fingerprints from a PEM stream, sorted, so two outputs can
           # be semantically compared.
           get_fingerprints() {
               local cert=""
@@ -254,7 +254,24 @@ jobs:
                       *)
                           [[ -n "$cert" ]] && cert+="$line"$'\n' || true ;;
                   esac
-              done < "$1" | sort
+              done | sort
+          }
+
+          # Verifies that fingerprints file contains at least N certs and the two additional test certs.
+          verify_fingerprints() {
+              local file="$1"
+              local min_count="$2"
+              local name="$3"
+
+              local count=$(wc -l < "$file")
+              if [ "$count" -lt "$min_count" ]; then
+                  echo "Expected at least $min_count certificates in $name, found $count"
+                  exit 1
+              fi
+
+              grep "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" "$file"
+              grep "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" "$file"
+              echo "$name contains the additional certificates."
           }
 
           make apko
@@ -263,25 +280,21 @@ jobs:
           ./apko build ./examples/certificates.yaml certificates:build /tmp/certificates.tar --arch amd64
           docker load < /tmp/certificates.tar
 
-          # Get the appended certificates from the image.
-          docker run --rm certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" > /tmp/combined-certs.pem
-          get_fingerprints /tmp/combined-certs.pem > /tmp/combined-fingerprints.txt
+          # Get fingerprints from CA bundle and Java truststore before update-ca-certificates.
+          docker run --rm certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" | get_fingerprints > /tmp/ca-bundle-fingerprints.txt
+          docker run --rm certificates:build-amd64 "trust extract --filter=ca-anchors --purpose=server-auth --format=pem-bundle /tmp/certs.pem && cat /tmp/certs.pem" | get_fingerprints > /tmp/java-truststore-fingerprints.txt
 
-          # Verify that a few more certificates are present. We're just adding 2.
-          BASE_CERT_COUNT=$(cat /tmp/combined-fingerprints.txt | wc -l)
-          if [ "$BASE_CERT_COUNT" -lt 10 ]; then
-              echo "Expected at least 10 base certificates, found $BASE_CERT_COUNT"
-              exit 1
-          fi
+          # Verify both stores contain base certs and the additional certificates.
+          verify_fingerprints /tmp/ca-bundle-fingerprints.txt 10 "CA bundle"
+          verify_fingerprints /tmp/java-truststore-fingerprints.txt 10 "Java truststore"
 
-          # Verify that the additional certificates are present.
-          grep "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" /tmp/combined-fingerprints.txt
-          grep "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" /tmp/combined-fingerprints.txt
+          # Run update-ca-certificates and get fingerprints from both stores after.
+          docker run --rm certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" | get_fingerprints > /tmp/ca-bundle-updated-fingerprints.txt
+          docker run --rm certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && trust extract --filter=ca-anchors --purpose=server-auth --format=pem-bundle /tmp/certs.pem && cat /tmp/certs.pem" | get_fingerprints > /tmp/java-truststore-updated-fingerprints.txt
 
-          # Run update-ca-certificates to verify no errors occur.
-          docker run --rm certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" > /tmp/updated-certs.pem
-          get_fingerprints /tmp/updated-certs.pem > /tmp/updated-fingerprints.txt
+          # Verify that the stores are semantically identical before and after update-ca-certificates.
+          diff /tmp/ca-bundle-fingerprints.txt /tmp/ca-bundle-updated-fingerprints.txt
+          echo "CA bundles before and after update-ca-certificates are identical."
 
-          # Verify that the files are semantically identical.
-          diff /tmp/combined-fingerprints.txt /tmp/updated-fingerprints.txt
-          echo "Certificate bundles before and after update-ca-certificates are identical."
+          diff /tmp/java-truststore-fingerprints.txt /tmp/java-truststore-updated-fingerprints.txt
+          echo "Java truststores before and after update-ca-certificates are identical."
