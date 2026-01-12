@@ -21,8 +21,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"chainguard.dev/apko/internal/tarfs"
+	"chainguard.dev/apko/pkg/apk/types"
 	"github.com/klauspost/compress/gzip"
 
 	"go.opentelemetry.io/otel"
@@ -102,12 +104,12 @@ type APKExpanded struct {
 	SignatureSize int64
 
 	sync.Mutex
-	parsedPkgInfo map[string][]string
+	parsedPkgInfo *types.Package
 	controlData   []byte
 }
 
-// PkgInfo parses and returns the .PKGINFO file as a map of keys to values.
-func (a *APKExpanded) PkgInfo() (map[string][]string, error) {
+// PkgInfo parses and returns the .PKGINFO file.
+func (a *APKExpanded) PkgInfo() (*types.Package, error) {
 	a.Lock()
 	defer a.Unlock()
 	if a.parsedPkgInfo != nil {
@@ -120,26 +122,36 @@ func (a *APKExpanded) PkgInfo() (map[string][]string, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	mapping := make(map[string][]string)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		values := mapping[key]
-		values = append(values, value)
-		mapping[key] = values
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading .PKGINFO: %w", err)
+	pkginfo, err := types.ParsePackageInfo(f)
+	if err != nil {
+		return nil, fmt.Errorf("parsing .PKGINFO: %w", err)
 	}
 
-	a.parsedPkgInfo = mapping
+	pkg := &types.Package{
+		Name:             pkginfo.Name,
+		Version:          pkginfo.Version,
+		Arch:             pkginfo.Arch,
+		Description:      pkginfo.Description,
+		License:          pkginfo.License,
+		Origin:           pkginfo.Origin,
+		Maintainer:       pkginfo.Maintainer,
+		URL:              pkginfo.URL,
+		Checksum:         a.ControlHash,
+		Dependencies:     pkginfo.Dependencies,
+		Provides:         pkginfo.Provides,
+		InstallIf:        pkginfo.InstallIf,
+		Size:             uint64(a.Size),
+		InstalledSize:    pkginfo.Size,
+		ProviderPriority: pkginfo.ProviderPriority,
+		BuildTime:        time.Unix(pkginfo.BuildDate, 0).UTC(),
+		BuildDate:        pkginfo.BuildDate,
+		RepoCommit:       pkginfo.RepoCommit,
+		Replaces:         pkginfo.Replaces,
+		DataHash:         pkginfo.DataHash,
+		Triggers:         pkginfo.Triggers,
+	}
+
+	a.parsedPkgInfo = pkg
 	return a.parsedPkgInfo, nil
 }
 
