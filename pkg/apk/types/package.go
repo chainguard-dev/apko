@@ -1,3 +1,17 @@
+// Copyright 2026 Chainguard, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package types
 
 import (
@@ -51,7 +65,6 @@ func (pkginfo *PackageInfo) AsPackage(controlHash []byte, size uint64) *Package 
 		RepoCommit:       pkginfo.RepoCommit,
 		Replaces:         pkginfo.Replaces,
 		DataHash:         pkginfo.DataHash,
-		Triggers:         pkginfo.Triggers,
 
 		BuildTime: time.Unix(pkginfo.BuildDate, 0).UTC(),
 		Checksum:  controlHash,
@@ -82,7 +95,6 @@ type Package struct {
 	RepoCommit       string   `ini:"commit"`
 	Replaces         []string `ini:"replaces,,allowshadow"`
 	DataHash         string   `ini:"datahash"`
-	Triggers         []string `ini:"triggers,,allowshadow"`
 }
 
 func (p *Package) String() string {
@@ -109,7 +121,7 @@ func ParsePackageInfo(info io.Reader) (*PackageInfo, error) {
 		return nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
 	}
 
-	pkg := new(PackageInfo)
+	pkg := &PackageInfo{}
 	if err = cfg.MapTo(pkg); err != nil {
 		return nil, fmt.Errorf("cfg.MapTo(): %w", err)
 	}

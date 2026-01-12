@@ -434,7 +434,6 @@ func TestUpdateTriggers(t *testing.T) {
 	}
 	triggers := "/bin /usr/bin /foo /bar/*"
 
-	require.NoError(t, err, "unable to create tarfs: %v", err)
 	err = a.updateTriggers(pkg, []string{triggers})
 	require.NoError(t, err, "unable to update triggers: %v", err)
 
