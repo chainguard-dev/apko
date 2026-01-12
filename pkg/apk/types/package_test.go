@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -78,4 +79,58 @@ datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAsPackage(t *testing.T) {
+	controlHash := []byte{0x01, 0x02, 0x03, 0x04}
+	size := uint64(123456)
+
+	pkginfo := &PackageInfo{
+		Name:             "testpkg",
+		Version:          "1.0.0",
+		Arch:             "amd64",
+		Description:      "A test package",
+		License:          "MIT",
+		Origin:           "testorigin",
+		Maintainer:       "Test Maintainer <test@example.com>",
+		URL:              "https://example.com/testpkg",
+		Dependencies:     []string{"libc", "libssl"},
+		Provides:         []string{"testcmd"},
+		InstallIf:        []string{"ifpkg"},
+		Size:             2048,
+		ProviderPriority: 50,
+		BuildDate:        1625078400,
+		RepoCommit:       "abcdef1234567890",
+		Replaces:         []string{"oldtestpkg"},
+		DataHash:         "deadbeef",
+		Triggers:         []string{"trigger1", "trigger2"},
+	}
+
+	want := &Package{
+		Name:             "testpkg",
+		Version:          "1.0.0",
+		Arch:             "amd64",
+		Description:      "A test package",
+		License:          "MIT",
+		Origin:           "testorigin",
+		Maintainer:       "Test Maintainer <test@example.com>",
+		URL:              "https://example.com/testpkg",
+		Dependencies:     []string{"libc", "libssl"},
+		Provides:         []string{"testcmd"},
+		InstallIf:        []string{"ifpkg"},
+		InstalledSize:    2048,
+		ProviderPriority: 50,
+		BuildDate:        1625078400,
+		RepoCommit:       "abcdef1234567890",
+		Replaces:         []string{"oldtestpkg"},
+		DataHash:         "deadbeef",
+		Triggers:         []string{"trigger1", "trigger2"},
+
+		BuildTime: time.Unix(1625078400, 0).UTC(),
+		Checksum:  controlHash,
+		Size:      size,
+	}
+
+	got := pkginfo.AsPackage(controlHash, size)
+	require.Equal(t, want, got)
 }

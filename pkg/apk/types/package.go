@@ -31,6 +31,34 @@ type PackageInfo struct {
 	Triggers         []string `ini:"triggers,,allowshadow"`
 }
 
+// AsPackage converts PackageInfo to a Package struct with the given controlHash and size.
+func (pkginfo *PackageInfo) AsPackage(controlHash []byte, size uint64) *Package {
+	return &Package{
+		Name:             pkginfo.Name,
+		Version:          pkginfo.Version,
+		Arch:             pkginfo.Arch,
+		Description:      pkginfo.Description,
+		License:          pkginfo.License,
+		Origin:           pkginfo.Origin,
+		Maintainer:       pkginfo.Maintainer,
+		URL:              pkginfo.URL,
+		Dependencies:     pkginfo.Dependencies,
+		Provides:         pkginfo.Provides,
+		InstallIf:        pkginfo.InstallIf,
+		InstalledSize:    pkginfo.Size,
+		ProviderPriority: pkginfo.ProviderPriority,
+		BuildDate:        pkginfo.BuildDate,
+		RepoCommit:       pkginfo.RepoCommit,
+		Replaces:         pkginfo.Replaces,
+		DataHash:         pkginfo.DataHash,
+		Triggers:         pkginfo.Triggers,
+
+		BuildTime: time.Unix(pkginfo.BuildDate, 0).UTC(),
+		Checksum:  controlHash,
+		Size:      size,
+	}
+}
+
 // Package represents a single package with the information present in an
 // APKINDEX.
 type Package struct {

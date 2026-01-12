@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
@@ -104,12 +103,12 @@ type APKExpanded struct {
 	SignatureSize int64
 
 	sync.Mutex
-	parsedPkgInfo *types.Package
+	parsedPkgInfo *types.PackageInfo
 	controlData   []byte
 }
 
 // PkgInfo parses and returns the .PKGINFO file.
-func (a *APKExpanded) PkgInfo() (*types.Package, error) {
+func (a *APKExpanded) PkgInfo() (*types.PackageInfo, error) {
 	a.Lock()
 	defer a.Unlock()
 	if a.parsedPkgInfo != nil {
@@ -127,31 +126,7 @@ func (a *APKExpanded) PkgInfo() (*types.Package, error) {
 		return nil, fmt.Errorf("parsing .PKGINFO: %w", err)
 	}
 
-	pkg := &types.Package{
-		Name:             pkginfo.Name,
-		Version:          pkginfo.Version,
-		Arch:             pkginfo.Arch,
-		Description:      pkginfo.Description,
-		License:          pkginfo.License,
-		Origin:           pkginfo.Origin,
-		Maintainer:       pkginfo.Maintainer,
-		URL:              pkginfo.URL,
-		Checksum:         a.ControlHash,
-		Dependencies:     pkginfo.Dependencies,
-		Provides:         pkginfo.Provides,
-		InstallIf:        pkginfo.InstallIf,
-		Size:             uint64(a.Size),
-		InstalledSize:    pkginfo.Size,
-		ProviderPriority: pkginfo.ProviderPriority,
-		BuildTime:        time.Unix(pkginfo.BuildDate, 0).UTC(),
-		BuildDate:        pkginfo.BuildDate,
-		RepoCommit:       pkginfo.RepoCommit,
-		Replaces:         pkginfo.Replaces,
-		DataHash:         pkginfo.DataHash,
-		Triggers:         pkginfo.Triggers,
-	}
-
-	a.parsedPkgInfo = pkg
+	a.parsedPkgInfo = pkginfo
 	return a.parsedPkgInfo, nil
 }
 

@@ -786,9 +786,10 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				if err != nil {
 					return fmt.Errorf("failed to read .PKGINFO for %s: %w", pkg, err)
 				}
-				infos[i] = pkgInfo
+				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
+				infos[i] = asPackage
 
-				installedFiles, err := a.installPackage(ctx, pkgInfo, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, asPackage, exp, sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}

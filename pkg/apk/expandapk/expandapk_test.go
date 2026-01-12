@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,13 +12,10 @@ import (
 )
 
 func TestPkgInfo(t *testing.T) {
-	controlHash := []byte{0x01, 0x02, 0x03, 0x04}
-	size := int64(123456)
-
 	tests := []struct {
 		name    string
 		content string
-		want    *types.Package
+		want    *types.PackageInfo
 	}{{
 		// See example at https://wiki.alpinelinux.org/wiki/Apk_spec
 		name: "example",
@@ -49,7 +45,7 @@ provides = cmd:sh=1.35.0-r18
 depend = so:libc.musl-x86_64.so.1
 datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 `,
-		want: &types.Package{
+		want: &types.PackageInfo{
 			Name:             "busybox",
 			Version:          "1.35.0-r18",
 			Arch:             "x86_64",
@@ -61,16 +57,13 @@ datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 			Dependencies:     []string{"so:libc.musl-x86_64.so.1"},
 			Provides:         []string{"/bin/sh", "cmd:busybox=1.35.0-r18", "cmd:sh=1.35.0-r18"},
 			InstallIf:        nil,
-			Size:             uint64(size),
+			Size:             958464,
 			ProviderPriority: 100,
 			BuildDate:        1657134589,
 			RepoCommit:       "332d2fff53cd4537d415e15e55e8ceb6fe6eaedb",
 			Replaces:         []string{"busybox-initscripts"},
 			DataHash:         "7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7",
 			Triggers:         []string{"/bin /usr/bin /sbin /usr/sbin /lib/modules/*"},
-			Checksum:         controlHash,
-			InstalledSize:    958464,
-			BuildTime:        time.Unix(1657134589, 0).UTC(),
 		},
 	}}
 
@@ -91,11 +84,7 @@ datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 			controlFs, err := tarfs.New(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 			require.NoError(t, err)
 
-			exp := &APKExpanded{
-				ControlHash: controlHash,
-				ControlFS:   controlFs,
-				Size:        size,
-			}
+			exp := &APKExpanded{ControlFS: controlFs}
 
 			got, err := exp.PkgInfo()
 			if err != nil {
