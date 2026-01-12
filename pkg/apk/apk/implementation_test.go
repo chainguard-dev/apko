@@ -490,7 +490,8 @@ func TestSetRepositories_Empty(t *testing.T) {
 
 func TestInitKeyring(t *testing.T) {
 	src := apkfs.NewMemFS()
-	a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	tr := &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}
+	a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithTransport(tr))
 	require.NoError(t, err)
 
 	dir, err := os.MkdirTemp("", "go-apk")
@@ -504,10 +505,6 @@ func TestInitKeyring(t *testing.T) {
 	keyfiles := []string{
 		keyPath, "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
 	}
-	// ensure we send things from local
-	a.SetClient(&http.Client{
-		Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-	})
 
 	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
 	// InitKeyring should have copied the local key and remote key to the right place
@@ -533,9 +530,7 @@ func TestInitKeyring(t *testing.T) {
 	keyfiles = []string{
 		"https://user:pass@alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
 	}
-	a.SetClient(&http.Client{
-		Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, requireBasicAuth: true},
-	})
+	tr.requireBasicAuth = true
 	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
 
 	t.Run("auth", func(t *testing.T) {
@@ -675,12 +670,12 @@ func TestFetchPackage(t *testing.T) {
 		pkg      = NewRepositoryPackage(&testPkg, repoWithIndex)
 		ctx      = context.Background()
 	)
-	prepLayout := func(t *testing.T, cache string) *APK {
+	prepLayout := func(t *testing.T, tr http.RoundTripper, cache string) *APK {
 		src := apkfs.NewMemFS()
 		err := src.MkdirAll("usr/lib/apk/db", 0o755)
 		require.NoError(t, err, "unable to mkdir /usr/lib/apk/db")
 
-		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
+		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithTransport(tr)}
 		if cache != "" {
 			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
@@ -693,10 +688,7 @@ func TestFetchPackage(t *testing.T) {
 		return a
 	}
 	t.Run("no cache", func(t *testing.T) {
-		a := prepLayout(t, "")
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, "")
 		_, err := a.FetchPackage(ctx, pkg)
 		require.NoErrorf(t, err, "unable to install package")
 	})
@@ -704,16 +696,13 @@ func TestFetchPackage(t *testing.T) {
 		// we use a transport that always returns a 404 so we know we're not hitting the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{fail: true},
-		})
+		a := prepLayout(t, &testLocalTransport{fail: true}, tmpDir)
 		_, err := a.FetchPackage(ctx, pkg)
 		require.Error(t, err, "should fail when no cache and no network")
 	})
 	t.Run("cache miss network should fill cache", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, tmpDir)
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
@@ -721,10 +710,6 @@ func TestFetchPackage(t *testing.T) {
 
 		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
 		cacheApkDir := strings.TrimSuffix(cacheApkFile, ".apk")
-
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
 
 		_, err = a.expandPackage(ctx, pkg)
 		require.NoErrorf(t, err, "unable to install pkg")
@@ -755,7 +740,7 @@ func TestFetchPackage(t *testing.T) {
 	})
 	t.Run("handle missing cache files when expanding APK", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
+		a := prepLayout(t, http.DefaultTransport, tmpDir)
 
 		// Fill the cache
 		exp, err := a.expandPackage(ctx, pkg)
@@ -793,7 +778,9 @@ func TestFetchPackage(t *testing.T) {
 	})
 	t.Run("cache hit no etag", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
+		a := prepLayout(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
+			tmpDir)
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
@@ -805,10 +792,6 @@ func TestFetchPackage(t *testing.T) {
 		err = os.WriteFile(cacheApkFile, contents, 0o644) //nolint:gosec // we're writing a test file
 		require.NoError(t, err, "unable to write cache apk file")
 
-		a.SetClient(&http.Client{
-			// use a different root, so we get a different file
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		_, err = a.FetchPackage(ctx, pkg)
 		require.NoErrorf(t, err, "unable to install pkg")
 		// check that the package file is in place
@@ -821,7 +804,9 @@ func TestFetchPackage(t *testing.T) {
 	})
 	t.Run("cache hit etag match", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
+		a := prepLayout(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
+			tmpDir)
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
@@ -835,10 +820,6 @@ func TestFetchPackage(t *testing.T) {
 		err = os.WriteFile(cacheApkFile+".etag", []byte(testEtag), 0o644) //nolint:gosec // we're writing a test file
 		require.NoError(t, err, "unable to write etag")
 
-		a.SetClient(&http.Client{
-			// use a different root, so we get a different file
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		_, err = a.FetchPackage(ctx, pkg)
 		require.NoErrorf(t, err, "unable to install pkg")
 		// check that the package file is in place
@@ -851,7 +832,9 @@ func TestFetchPackage(t *testing.T) {
 	})
 	t.Run("cache hit etag miss", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir)
+		a := prepLayout(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "abcdefg"}}},
+			tmpDir)
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
@@ -865,10 +848,6 @@ func TestFetchPackage(t *testing.T) {
 		err = os.WriteFile(cacheApkFile+".etag", []byte(testEtag), 0o644) //nolint:gosec // we're writing a test file
 		require.NoError(t, err, "unable to write etag")
 
-		a.SetClient(&http.Client{
-			// use a different root, so we get a different file
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "abcdefg"}}},
-		})
 		_, err = a.FetchPackage(ctx, pkg)
 		require.NoErrorf(t, err, "unable to install pkg")
 		// check that the package file is in place

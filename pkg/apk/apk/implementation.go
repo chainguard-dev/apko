@@ -184,14 +184,6 @@ var initDeviceFiles = []deviceFile{
 	{"/dev/console", 5, 1, 0o620},
 }
 
-// SetClient set the http client to use for downloading packages.
-// In general, you can leave this unset, and it will use the default http.Client.
-// It is useful for fine-grained control, for proxying, or for setting alternate
-// paths.
-func (a *APK) SetClient(client *http.Client) {
-	a.client = client
-}
-
 // ListInitFiles list the files that are installed during the InitDB phase.
 func (a *APK) ListInitFiles() []tar.Header {
 	headers := make([]tar.Header, 0, 20)
