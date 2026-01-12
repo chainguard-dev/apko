@@ -120,6 +120,7 @@ type PackageInfo struct {
 	RepoCommit       string   `ini:"commit"`
 	Replaces         []string `ini:"replaces,,allowshadow"`
 	DataHash         string   `ini:"datahash"`
+	Triggers         []string `ini:"triggers,,allowshadow"`
 }
 
 // Package represents a single package with the information present in an
@@ -145,6 +146,7 @@ type Package struct {
 	RepoCommit       string   `ini:"commit"`
 	Replaces         []string `ini:"replaces,,allowshadow"`
 	DataHash         string   `ini:"datahash"`
+	Triggers         []string `ini:"triggers,,allowshadow"`
 }
 
 func (p *Package) String() string {
@@ -191,6 +193,7 @@ func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Pack
 		RepoCommit:       pkginfo.RepoCommit,
 		Replaces:         pkginfo.Replaces,
 		DataHash:         pkginfo.DataHash,
+		Triggers:         pkginfo.Triggers,
 	}, nil
 }
 
