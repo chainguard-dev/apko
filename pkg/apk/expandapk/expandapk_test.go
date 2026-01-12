@@ -87,9 +87,7 @@ datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 			exp := &APKExpanded{ControlFS: controlFs}
 
 			got, err := exp.PkgInfo()
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
