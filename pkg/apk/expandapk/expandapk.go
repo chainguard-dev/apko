@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"chainguard.dev/apko/internal/tarfs"
+	"chainguard.dev/apko/pkg/apk/types"
 	"github.com/klauspost/compress/gzip"
 
 	"go.opentelemetry.io/otel"
@@ -102,7 +103,31 @@ type APKExpanded struct {
 	SignatureSize int64
 
 	sync.Mutex
-	controlData []byte
+	parsedPkgInfo *types.PackageInfo
+	controlData   []byte
+}
+
+// PkgInfo parses and returns the .PKGINFO file.
+func (a *APKExpanded) PkgInfo() (*types.PackageInfo, error) {
+	a.Lock()
+	defer a.Unlock()
+	if a.parsedPkgInfo != nil {
+		return a.parsedPkgInfo, nil
+	}
+
+	f, err := a.ControlFS.Open(".PKGINFO")
+	if err != nil {
+		return nil, fmt.Errorf("opening .PKGINFO: %w", err)
+	}
+	defer f.Close()
+
+	pkginfo, err := types.ParsePackageInfo(f)
+	if err != nil {
+		return nil, fmt.Errorf("parsing .PKGINFO: %w", err)
+	}
+
+	a.parsedPkgInfo = pkginfo
+	return a.parsedPkgInfo, nil
 }
 
 func (a *APKExpanded) ControlData() ([]byte, error) {

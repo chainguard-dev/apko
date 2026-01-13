@@ -48,7 +48,6 @@ import (
 	"go.step.sm/crypto/jose"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"gopkg.in/ini.v1"
 
 	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
@@ -783,13 +782,14 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				}
 
 				// The data in .PKGINFO is more complete than what is in APKINDEX.
-				pkgInfo, err := packageInfo(exp)
+				pkgInfo, err := exp.PkgInfo()
 				if err != nil {
 					return fmt.Errorf("failed to read .PKGINFO for %s: %w", pkg, err)
 				}
-				infos[i] = pkgInfo
+				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
+				infos[i] = asPackage
 
-				installedFiles, err := a.installPackage(ctx, pkgInfo, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, asPackage, exp, sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
@@ -1223,12 +1223,12 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 		exp.SignatureHash = signatureHash[:]
 	}
 
-	datahash, err := a.datahash(exp.ControlFS)
+	pkgInfo, err := exp.PkgInfo()
 	if err != nil {
-		return nil, fmt.Errorf("datahash for %s: %w", pkg, err)
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg, err)
 	}
 
-	dat := filepath.Join(cacheDir, datahash+".dat.tar.gz")
+	dat := filepath.Join(cacheDir, pkgInfo.DataHash+".dat.tar.gz")
 	df, err := os.Stat(dat)
 	if err != nil {
 		return nil, err
@@ -1237,7 +1237,7 @@ func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDi
 	exp.PackageSize = df.Size()
 	exp.Size += df.Size()
 
-	exp.PackageHash, err = hex.DecodeString(datahash)
+	exp.PackageHash, err = hex.DecodeString(pkgInfo.DataHash)
 	if err != nil {
 		return nil, err
 	}
@@ -1411,30 +1411,6 @@ type WriteHeaderer interface {
 	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
 }
 
-func packageInfo(exp *expandapk.APKExpanded) (*Package, error) {
-	f, err := exp.ControlFS.Open(".PKGINFO")
-	if err != nil {
-		return nil, fmt.Errorf("opening .PKGINFO in %s: %w", exp.ControlFile, err)
-	}
-	defer f.Close()
-
-	cfg, err := ini.ShadowLoad(f)
-	if err != nil {
-		return nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
-	}
-
-	pkg := new(Package)
-	if err = cfg.MapTo(pkg); err != nil {
-		return nil, fmt.Errorf("cfg.MapTo(): %w", err)
-	}
-	pkg.BuildTime = time.Unix(pkg.BuildDate, 0).UTC()
-	pkg.InstalledSize = pkg.Size
-	pkg.Size = uint64(exp.Size)
-	pkg.Checksum = exp.ControlHash
-
-	return pkg, nil
-}
-
 // installPackage installs a single package and updates installed db.
 func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expandapk.APKExpanded, sourceDateEpoch *time.Time) ([]tar.Header, error) {
 	log := clog.FromContext(ctx)
@@ -1484,24 +1460,15 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the triggers
-	if err := a.updateTriggers(pkg, expanded.ControlFS); err != nil {
+	pkgInfo, err := expanded.PkgInfo()
+	if err != nil {
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
+	}
+	if err := a.updateTriggers(pkg, pkgInfo.Triggers); err != nil {
 		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
 	}
 
 	return installedFiles, nil
-}
-
-func (a *APK) datahash(controlFS fs.FS) (string, error) {
-	values, err := a.controlValue(controlFS, "datahash")
-	if err != nil {
-		return "", fmt.Errorf("reading datahash from control: %w", err)
-	}
-
-	if len(values) != 1 {
-		return "", fmt.Errorf("saw %d datahash values", len(values))
-	}
-
-	return values[0], nil
 }
 
 func packageRefs(pkgs []*RepositoryPackage) []string {
