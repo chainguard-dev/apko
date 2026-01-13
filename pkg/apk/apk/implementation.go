@@ -1384,7 +1384,7 @@ func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCl
 		}
 
 		// This will return a body that retries requests using Range requests if Read() hits an error.
-		rrt := newRangeRetryTransport(ctx, client)
+		rrt := NewRangeRetryTransport(client.Transport)
 		res, err := rrt.RoundTrip(req)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get package apk at %s: %w", u, err)
