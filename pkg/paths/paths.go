@@ -60,6 +60,11 @@ func AdvertiseCachedFile(src, dst string) error {
 		}
 		// Broken symlink (Lstat succeeded but Stat failed) - remove it.
 		if err := os.Remove(dst); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// Race condition: something removed it between our Lstat and Remove.
+				// Re-run to handle it properly.
+				return AdvertiseCachedFile(src, dst)
+			}
 			return fmt.Errorf("removing broken symlink %s: %w", dst, err)
 		}
 	}
