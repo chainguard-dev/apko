@@ -321,7 +321,7 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 	}
 
 	// This will return a body that retries requests using Range requests if Read() hits an error.
-	rrt := newRangeRetryTransport(ctx, client)
+	rrt := NewRangeRetryTransport(client.Transport)
 	res, err := rrt.RoundTrip(req)
 	if err != nil {
 		return nil, err

@@ -16,7 +16,6 @@ package apk
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -166,7 +165,7 @@ func TestTransport(t *testing.T) {
 				ranges: tc.ranges,
 			}
 
-			rt := newRangeRetryTransport(context.Background(), &http.Client{Transport: tt})
+			rt := NewRangeRetryTransport(tt)
 
 			req := &http.Request{
 				URL:    &url.URL{},
