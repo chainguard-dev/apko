@@ -1,6 +1,6 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "sbom",
+  "name": "sbom-sha256:abc123def456",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
     "created": "0001-01-01T00:00:00Z",
@@ -13,32 +13,33 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-"
+    "SPDXRef-Package-sha256-abc123def456"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-",
-      "name": "",
+      "SPDXID": "SPDXRef-Package-sha256-abc123def456",
+      "name": "sha256:abc123def456",
+      "versionInfo": "sha256:abc123def456",
       "filesAnalyzed": false,
       "description": "apko operating system layer",
       "downloadLocation": "NOASSERTION",
-      "supplier": "Organization: Apko Images, Plc",
+      "supplier": "Organization: unknown",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/image?mediaType=\u0026os=linux",
+          "referenceLocator": "pkg:oci/image@sha256%3Aabc123def456?mediaType=\u0026os=linux",
           "referenceType": "purl"
         }
       ]
     },
     {
-      "SPDXID": "SPDXRef-OperatingSystem-apko-images",
-      "name": "apko-images",
+      "SPDXID": "SPDXRef-OperatingSystem-unknown",
+      "name": "unknown",
       "versionInfo": "3.0",
       "filesAnalyzed": false,
       "description": "Operating System",
       "downloadLocation": "NOASSERTION",
-      "supplier": "Organization: Apko Images, Plc",
+      "supplier": "Organization: unknown",
       "primaryPackagePurpose": "OPERATING_SYSTEM"
     },
     {
@@ -49,8 +50,8 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "GPL-2.0-or-later",
       "downloadLocation": "NOASSERTION",
-      "originator": "Organization: Apko Images, Plc",
-      "supplier": "Organization: Apko Images, Plc",
+      "originator": "Organization: unknown",
+      "supplier": "Organization: unknown",
       "copyrightText": "TODO\n",
       "externalRefs": [
         {

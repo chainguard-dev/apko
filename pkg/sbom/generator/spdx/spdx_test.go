@@ -231,6 +231,33 @@ func TestSPDX_Generate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "layer-with-digest",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{
+						Digest: v1.Hash{
+							Algorithm: "sha256",
+							Hex:       "abc123def456",
+						},
+					}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Package: apk.Package{
+							Name:    "libattr1",
+							Version: "2.5.1-r2",
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

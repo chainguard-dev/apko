@@ -427,13 +427,13 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 
 // LayerPackage returns a package describing the layer
 func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Package {
-	layerPackageName := hashToString(layer.Digest)
-	mainPkgID := stringToIdentifier(layerPackageName)
+	layerDigest := hashToString(layer.Digest)
+	mainPkgID := stringToIdentifier(layerDigest)
 
 	return &Package{
 		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
-		Name:             layerPackageName,
-		Version:          opts.OS.Version,
+		Name:             layerDigest,
+		Version:          layerDigest,
 		FilesAnalyzed:    false,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
