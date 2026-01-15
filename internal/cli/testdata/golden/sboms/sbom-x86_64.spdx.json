@@ -152,9 +152,19 @@
       "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
     },
     {
+      "spdxElementId": "SPDXRef-Package-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
+    },
+    {
       "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
       "relationshipType": "DESCRIBED_BY",
       "relatedSpdxElement": "SPDXRef-Package-replayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
     }
   ]
 }

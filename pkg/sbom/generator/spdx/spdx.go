@@ -264,6 +264,19 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipk
 		return fmt.Errorf("merging LicensingInfos: %w", err)
 	}
 
+	// Add CONTAINS relationships from the document root package to all top-level elements from the internal SBOM.
+	// This ensures they are reachable from the document root for tools that traverse the SBOM graph.
+	if len(doc.DocumentDescribes) > 0 {
+		rootPkgID := doc.DocumentDescribes[0]
+		for elementID := range targetElementIDs {
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: rootPkgID,
+				Type:    "CONTAINS",
+				Related: elementID,
+			})
+		}
+	}
+
 	return nil
 }
 
