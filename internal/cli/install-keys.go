@@ -2,13 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/spf13/cobra"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/apk/keyring"
 )
 
 func installKeys() *cobra.Command {
@@ -19,7 +17,6 @@ func installKeys() *cobra.Command {
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			log := clog.FromContext(ctx)
 
 			a, err := apk.New(ctx)
 			if err != nil {
@@ -29,24 +26,15 @@ func installKeys() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, repo := range repos {
-				keys, err := a.DiscoverKeys(ctx, repo)
-				if err != nil {
-					return err
-				}
 
-				if err := os.MkdirAll("/etc/apk/keys", 0755); err != nil {
-					return err
-				}
-				for _, key := range keys {
-					fn := filepath.Join("/etc/apk/keys", key.ID)
-					if err := os.WriteFile(fn, key.Bytes, 0o644); err != nil { //nolint: gosec
-						return fmt.Errorf("failed to write key %s: %w", key.ID, err)
-					}
-					log.With("repo", repo).Infof("wrote %s", fn)
-				}
+			keyRing, err := keyring.NewKeyRing(
+				keyring.AddRepositories(repos...),
+			)
+			if err != nil {
+				return fmt.Errorf("creating keyring: %w", err)
 			}
-			return nil
+
+			return a.DownloadAndStoreKeys(ctx, keyRing)
 		},
 	}
 }
