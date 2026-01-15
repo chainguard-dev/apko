@@ -497,16 +497,16 @@ func cachePathFromURL(root string, u url.URL) (string, error) {
 	u2.ForceQuery = false
 	u2.RawFragment = ""
 	u2.RawQuery = ""
-	filename := filepath.Base(u2.Path)
-	archDir := filepath.Dir(u2.Path)
-	dir := filepath.Base(archDir)
-	repoDir := filepath.Dir(archDir)
-	// include the hostname
-	u2.Path = repoDir
 
-	// url encode it so it can be a single directory
-	repoDir = url.QueryEscape(u2.String())
-	cacheFile := filepath.Join(root, repoDir, dir, filename)
+	// Use the full path as the cache structure to handle both top-level and nested files uniformly
+	cachePath := strings.TrimPrefix(filepath.Clean(u2.Path), "/")
+	baseURL := u2
+	baseURL.Path = ""
+
+	// url encode the base URL so it can be a single directory
+	baseDir := url.QueryEscape(baseURL.String())
+	cacheFile := filepath.Join(root, baseDir, cachePath)
+
 	// validate it is within root
 	cacheFile = filepath.Clean(cacheFile)
 	cleanroot := filepath.Clean(root)

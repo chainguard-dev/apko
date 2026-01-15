@@ -172,7 +172,9 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			},
 		}, tmpDir, []string{testAlpineRepos})
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		repoURL, _ := url.Parse(testAlpineRepos)
+		baseDir := url.QueryEscape(repoURL.Scheme + "://" + repoURL.Host)
+		repoDir := filepath.Join(tmpDir, baseDir, strings.TrimPrefix(repoURL.Path, "/"), testArch)
 
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")

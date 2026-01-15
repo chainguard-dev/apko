@@ -704,7 +704,10 @@ func TestFetchPackage(t *testing.T) {
 		tmpDir := t.TempDir()
 		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, tmpDir)
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		// New cache structure uses full path: https%3A%2F%2Fhost/path/to/arch/file
+		repoURL, _ := url.Parse(testAlpineRepos)
+		baseDir := url.QueryEscape(repoURL.Scheme + "://" + repoURL.Host)
+		repoDir := filepath.Join(tmpDir, baseDir, strings.TrimPrefix(repoURL.Path, "/"), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
 		require.NoError(t, err, "unable to mkdir cache")
 
@@ -782,7 +785,9 @@ func TestFetchPackage(t *testing.T) {
 			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
 			tmpDir)
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		repoURL, _ := url.Parse(testAlpineRepos)
+		baseDir := url.QueryEscape(repoURL.Scheme + "://" + repoURL.Host)
+		repoDir := filepath.Join(tmpDir, baseDir, strings.TrimPrefix(repoURL.Path, "/"), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
 		require.NoError(t, err, "unable to mkdir cache")
 
@@ -808,7 +813,9 @@ func TestFetchPackage(t *testing.T) {
 			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
 			tmpDir)
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		repoURL, _ := url.Parse(testAlpineRepos)
+		baseDir := url.QueryEscape(repoURL.Scheme + "://" + repoURL.Host)
+		repoDir := filepath.Join(tmpDir, baseDir, strings.TrimPrefix(repoURL.Path, "/"), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
 		require.NoError(t, err, "unable to mkdir cache")
 
@@ -836,7 +843,9 @@ func TestFetchPackage(t *testing.T) {
 			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "abcdefg"}}},
 			tmpDir)
 		// fill the cache
-		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		repoURL, _ := url.Parse(testAlpineRepos)
+		baseDir := url.QueryEscape(repoURL.Scheme + "://" + repoURL.Host)
+		repoDir := filepath.Join(tmpDir, baseDir, strings.TrimPrefix(repoURL.Path, "/"), testArch)
 		err := os.MkdirAll(repoDir, 0o755)
 		require.NoError(t, err, "unable to mkdir cache")
 
