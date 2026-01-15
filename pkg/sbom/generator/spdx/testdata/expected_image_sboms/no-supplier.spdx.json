@@ -62,5 +62,11 @@
       ]
     }
   ],
-  "relationships": []
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-libattr1-2.5.1-r2"
+    }
+  ]
 }

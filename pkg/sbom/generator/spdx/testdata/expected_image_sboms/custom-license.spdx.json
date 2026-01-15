@@ -62,7 +62,13 @@
       ]
     }
   ],
-  "relationships": [],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-font-ubuntu-0.869-r1"
+    }
+  ],
   "hasExtractedLicensingInfos": [
     {
       "licenseId": "LicenseRef-ubuntu-font",

@@ -101,6 +101,11 @@
       "spdxElementId": "SPDXRef-Package-test-pkg-both-1.0.0-r0",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-dep-from-relationship-2.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-test-pkg-both-1.0.0-r0"
     }
   ]
 }

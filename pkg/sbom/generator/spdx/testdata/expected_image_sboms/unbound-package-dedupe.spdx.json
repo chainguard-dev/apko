@@ -148,6 +148,11 @@
       "relatedSpdxElement": "SPDXRef-Package-github.com-NLnetLabs-unbound-release-1.23.0-30c13d0351abd2edc3d6dc76365f576c87b9736e-0"
     },
     {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-unbound-libs-1.23.0-r0"
+    },
+    {
       "spdxElementId": "SPDXRef-Package-unbound-1.23.0-r0",
       "relationshipType": "DESCRIBED_BY",
       "relatedSpdxElement": "SPDXRef-Package-unbound.yaml-23e8ff8479b39f3f2e97fdca28d814f0c434c39b"
@@ -158,6 +163,11 @@
       "relatedSpdxElement": "SPDXRef-Package-github.com-NLnetLabs-unbound-release-1.23.0-30c13d0351abd2edc3d6dc76365f576c87b9736e-0"
     },
     {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-unbound-1.23.0-r0"
+    },
+    {
       "spdxElementId": "SPDXRef-Package-unbound-config-1.23.0-r0",
       "relationshipType": "DESCRIBED_BY",
       "relatedSpdxElement": "SPDXRef-Package-unbound.yaml-23e8ff8479b39f3f2e97fdca28d814f0c434c39b"
@@ -166,6 +176,11 @@
       "spdxElementId": "SPDXRef-Package-unbound-config-1.23.0-r0",
       "relationshipType": "GENERATED_FROM",
       "relatedSpdxElement": "SPDXRef-Package-github.com-NLnetLabs-unbound-release-1.23.0-30c13d0351abd2edc3d6dc76365f576c87b9736e-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-unbound-config-1.23.0-r0"
     }
   ]
 }
