@@ -248,3 +248,12 @@ func WithTransport(t http.RoundTripper) Option {
 		return nil
 	}
 }
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg apk.PackageGetter) Option {
+	return func(bc *Context) error {
+		bc.o.PackageGetter = pg
+		return nil
+	}
+}
