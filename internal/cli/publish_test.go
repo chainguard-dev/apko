@@ -38,7 +38,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
-	"chainguard.dev/apko/internal/tarfs"
+	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/sbom/generator/spdx"
