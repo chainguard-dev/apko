@@ -72,6 +72,10 @@ func (r *rangeRetryReader) reset(oerr error) (*http.Response, error) {
 		return resp, nil
 	}
 
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		// Redirects should be handed back as-is so the client can deal with them.
+		return resp, nil
+	}
 	if resp.StatusCode == http.StatusOK {
 		// If the upstream doesn't support Range requests for some reason and only returns 200,
 		// we need to discard anything we've already Read().
