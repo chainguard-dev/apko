@@ -110,7 +110,12 @@ func TestTransport(t *testing.T) {
 		StatusCode: http.StatusInternalServerError,
 	}
 
-	for i, tc := range []struct {
+	redirect := &http.Response{
+		StatusCode: http.StatusSeeOther,
+		Header:     map[string][]string{"Location": {"foobar"}},
+	}
+
+	for _, tc := range []struct {
 		name    string
 		readers []io.Reader
 		resps   []*http.Response
@@ -155,9 +160,14 @@ func TestTransport(t *testing.T) {
 		resps:   []*http.Response{ok(2), ok(2)}, //nolint:bodyclose
 		ranges:  []int{0, size},
 		want:    mr(cr(), cr()),
+	}, {
+		name:    "redirect response from server",
+		readers: []io.Reader{http.NoBody, mr(cr(), cr())},
+		resps:   []*http.Response{redirect, ok(2)}, //nolint:bodyclose
+		ranges:  []int{0, 0, size},
+		want:    mr(cr(), cr()),
 	}} {
-		name := fmt.Sprintf("[%d]", i)
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			tr := &testReader{tc.readers, 0}
 			tt := &testTransport{
 				rc:     tr,
@@ -165,14 +175,16 @@ func TestTransport(t *testing.T) {
 				ranges: tc.ranges,
 			}
 
-			rt := NewRangeRetryTransport(tt)
+			client := &http.Client{
+				Transport: NewRangeRetryTransport(tt),
+			}
 
 			req := &http.Request{
 				URL:    &url.URL{},
 				Header: map[string][]string{},
 			}
 
-			resp, err := rt.RoundTrip(req)
+			resp, err := client.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
