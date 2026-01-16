@@ -31,9 +31,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
+	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/paths"
 
 	"github.com/chainguard-dev/clog"
