@@ -48,7 +48,6 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
-	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 
 	"github.com/chainguard-dev/clog"
