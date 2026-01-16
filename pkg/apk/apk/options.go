@@ -37,6 +37,7 @@ type opts struct {
 	auth               auth.Authenticator
 	ignoreSignatures   bool
 	transport          http.RoundTripper
+	packageGetter      PackageGetter
 }
 
 type Option func(*opts) error
@@ -140,6 +141,15 @@ func WithTransport(t http.RoundTripper) Option {
 		if t != nil {
 			o.transport = t
 		}
+		return nil
+	}
+}
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg PackageGetter) Option {
+	return func(o *opts) error {
+		o.packageGetter = pg
 		return nil
 	}
 }

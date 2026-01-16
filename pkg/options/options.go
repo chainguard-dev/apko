@@ -58,6 +58,7 @@ type Options struct {
 	IncludePaths            []string              `json:"includePaths,omitempty"`
 	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`
 	Transport               http.RoundTripper     `json:"-"`
+	PackageGetter           apk.PackageGetter     `json:"-"`
 }
 
 type Auth struct{ User, Pass string }

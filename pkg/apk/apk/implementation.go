@@ -19,10 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -49,19 +46,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
-	"chainguard.dev/apko/pkg/paths"
 
 	"github.com/chainguard-dev/clog"
 )
-
-// This is terrible but simpler than plumbing around a cache for now.
-// We just hold the expanded APK in memory rather than re-parsing it every time,
-// which is expensive. This also dedupes simultaneous fetches.
-var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
 
 type APK struct {
 	arch               string
@@ -74,6 +64,7 @@ type APK struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
+	packageGetter      PackageGetter
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -101,8 +92,16 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	client.HTTPClient = &http.Client{Transport: opt.transport}
 	client.Logger = clog.FromContext(ctx)
 
+	httpClient := client.StandardClient()
+
+	// Create default PackageGetter if none provided
+	packageGetter := opt.packageGetter
+	if packageGetter == nil {
+		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth)
+	}
+
 	return &APK{
-		client:             client.StandardClient(),
+		client:             httpClient,
 		fs:                 opt.fs,
 		arch:               opt.arch,
 		executor:           opt.executor,
@@ -113,6 +112,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
+		packageGetter:      packageGetter,
 	}, nil
 }
 
@@ -631,7 +631,7 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	// concurrently fetch and expand all our APKs.
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
-			expanded, err := a.expandPackage(ctx, pkg)
+			expanded, err := a.packageGetter.GetPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
 			}
@@ -798,7 +798,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
 			defer func() { close(done[i]) }()
-			exp, err := a.expandPackage(ctx, pkg)
+			exp, err := a.packageGetter.GetPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg, err)
 			}
@@ -1096,237 +1096,6 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	return nil
 }
 
-func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "cachePackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	// Rename exp's temp files to content-addressable identifiers in the cache.
-
-	ctlHex := hex.EncodeToString(exp.ControlHash)
-	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
-
-	if err := paths.AdvertiseCachedFile(exp.ControlFile, ctlDst); err != nil {
-		return nil, err
-	}
-
-	exp.ControlFile = ctlDst
-
-	if exp.SignatureFile != "" {
-		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
-
-		if err := paths.AdvertiseCachedFile(exp.SignatureFile, sigDst); err != nil {
-			return nil, err
-		}
-
-		exp.SignatureFile = sigDst
-	}
-
-	datHex := hex.EncodeToString(exp.PackageHash)
-	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
-
-	if err := paths.AdvertiseCachedFile(exp.PackageFile, datDst); err != nil {
-		return nil, err
-	}
-
-	exp.PackageFile = datDst
-
-	if err := exp.TarFS.Close(); err != nil {
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
-
-	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
-
-	if err := paths.AdvertiseCachedFile(exp.TarFile, tarDst); err != nil {
-		return nil, err
-	}
-
-	exp.TarFile = tarDst
-
-	// Re-initialize the tarfs with the renamed file.
-	// TODO: Split out the tarfs Index creation from the FS.
-	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	data, err := exp.PackageData()
-	if err != nil {
-		return nil, err
-	}
-	info, err := data.Stat()
-	if err != nil {
-		return nil, err
-	}
-	exp.TarFS, err = tarfs.New(data, info.Size())
-	if err != nil {
-		return nil, err
-	}
-
-	return exp, nil
-}
-
-func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDir string) (*expandapk.APKExpanded, error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "cachedPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	chk := pkg.ChecksumString()
-	if !strings.HasPrefix(chk, "Q1") {
-		return nil, fmt.Errorf("unexpected checksum: %q", chk)
-	}
-
-	checksum, err := base64.StdEncoding.DecodeString(chk[2:])
-	if err != nil {
-		return nil, err
-	}
-
-	pkgHexSum := hex.EncodeToString(checksum)
-
-	exp := expandapk.APKExpanded{}
-
-	ctl := filepath.Join(cacheDir, pkgHexSum+".ctl.tar.gz")
-	cf, err := os.Stat(ctl)
-	if err != nil {
-		return nil, err
-	}
-	exp.ControlFile = ctl
-	exp.ControlHash = checksum
-	exp.ControlSize = cf.Size()
-
-	control, err := exp.ControlData()
-	if err != nil {
-		return nil, err
-	}
-
-	exp.ControlFS, err = tarfs.New(bytes.NewReader(control), int64(len(control)))
-	if err != nil {
-		return nil, fmt.Errorf("indexing %q: %w", exp.ControlFile, err)
-	}
-
-	exp.Size += cf.Size()
-
-	sig := filepath.Join(cacheDir, pkgHexSum+".sig.tar.gz")
-	sf, err := os.Stat(sig)
-	if err == nil {
-		exp.SignatureFile = sig
-		exp.Signed = true
-		exp.Size += sf.Size()
-		exp.SignatureSize = sf.Size()
-		signatureData, err := os.ReadFile(sig)
-		if err != nil {
-			return nil, err
-		}
-		signatureHash := sha1.Sum(signatureData) //nolint:gosec // this is what apk tools is using
-		exp.SignatureHash = signatureHash[:]
-	}
-
-	pkgInfo, err := exp.PkgInfo()
-	if err != nil {
-		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg, err)
-	}
-
-	dat := filepath.Join(cacheDir, pkgInfo.DataHash+".dat.tar.gz")
-	df, err := os.Stat(dat)
-	if err != nil {
-		return nil, err
-	}
-	exp.PackageFile = dat
-	exp.PackageSize = df.Size()
-	exp.Size += df.Size()
-
-	exp.PackageHash, err = hex.DecodeString(pkgInfo.DataHash)
-	if err != nil {
-		return nil, err
-	}
-
-	exp.TarFile = strings.TrimSuffix(exp.PackageFile, ".gz")
-	data, err := exp.PackageData()
-	if err != nil {
-		return nil, err
-	}
-	info, err := data.Stat()
-	if err != nil {
-		return nil, err
-	}
-	exp.TarFS, err = tarfs.New(data, info.Size())
-	if err != nil {
-		return nil, err
-	}
-
-	return &exp, nil
-}
-
-func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	if a.cache == nil {
-		// If we don't have a cache configured, don't use the global cache.
-		// Calling APKExpanded.Close() will clean up a tempdir.
-		// This is fine when we have a cache because we move all the backing files into the cache.
-		// This is not fine when we don't have a cache because the tempdir contains all our state.
-		return expandPackage(ctx, a, pkg)
-	}
-
-	cached := true
-	val, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
-		cached = false
-		return expandPackage(ctx, a, pkg)
-	})
-	if !cached {
-		// We've just executed the callback - either successfully cached or
-		// failed (errors aren't cached). Either way, no validation needed.
-		return val, err
-	}
-	if val != nil {
-		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
-		// If it references a non-existent file, we should act as though this was a cache miss and expand the
-		// APK again.
-		if !val.IsValid() {
-			globalApkCache.Forget(pkg.URL())
-			return a.expandPackage(ctx, pkg)
-		}
-	}
-	return val, err
-}
-
-func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	log := clog.FromContext(ctx)
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "expandPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	cacheDir := ""
-	if a.cache != nil {
-		var err error
-		cacheDir, err = cacheDirForPackage(a.cache.dir, pkg)
-		if err != nil {
-			return nil, err
-		}
-
-		exp, err := a.cachedPackage(ctx, pkg, cacheDir)
-		if err == nil {
-			log.Debugf("cache hit (%s)", pkg.PackageName())
-			return exp, nil
-		}
-
-		log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
-
-		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-			return nil, fmt.Errorf("unable to create cache directory %q: %w", cacheDir, err)
-		}
-	}
-
-	rc, err := a.FetchPackage(ctx, pkg)
-	if err != nil {
-		return nil, fmt.Errorf("fetching package %q: %w", pkg.PackageName(), err)
-	}
-	defer rc.Close()
-
-	exp, err := expandapk.ExpandApk(ctx, rc, cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
-	}
-
-	// If we don't have a cache, we're done.
-	if a.cache == nil {
-		return exp, nil
-	}
-
-	return a.cachePackage(ctx, pkg, exp, cacheDir)
-}
-
 func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
@@ -1344,59 +1113,6 @@ func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
 	}
 
 	return url.Parse(string(asURI))
-}
-
-func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
-	log := clog.FromContext(ctx)
-	log.Debugf("fetching %s", pkg)
-
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	u := pkg.URL()
-
-	// Normalize the repo as a URI, so that local paths
-	// are translated into file:// URLs, allowing them to be parsed
-	// into a url.URL{}.
-	asURL, err := packageAsURL(pkg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse package as URL: %w", err)
-	}
-
-	switch asURL.Scheme {
-	case "file":
-		f, err := os.Open(u)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read repository package apk %s: %w", u, err)
-		}
-		return f, nil
-	case "https", "http":
-		client := a.client
-		if a.cache != nil {
-			client = a.cache.client(client, false)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return nil, err
-		}
-		if err := a.auth.AddAuth(ctx, req); err != nil {
-			return nil, err
-		}
-
-		// This will return a body that retries requests using Range requests if Read() hits an error.
-		rrt := NewRangeRetryTransport(client.Transport)
-		res, err := rrt.RoundTrip(req)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get package apk at %s: %w", u, err)
-		}
-		if res.StatusCode != http.StatusOK {
-			res.Body.Close()
-			return nil, fmt.Errorf("unable to get package apk at %s: %v", u, res.Status)
-		}
-		return res.Body, nil
-	default:
-		return nil, fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
-	}
 }
 
 type WriteHeaderer interface {
