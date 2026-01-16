@@ -42,7 +42,7 @@
     {
       "SPDXID": "SPDXRef-Package-sha256-b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
       "name": "sha256:b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
-      "versionInfo": "1.0.0",
+      "versionInfo": "sha256:b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
       "filesAnalyzed": false,
       "description": "apko operating system layer",
       "downloadLocation": "NOASSERTION",
