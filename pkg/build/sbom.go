@@ -129,10 +129,11 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
-			Path:   filename,
-			Format: gen.Key(),
-			Arch:   arch.String(),
-			Digest: h,
+			Path:          filename,
+			Format:        gen.Key(),
+			PredicateType: gen.PredicateType(),
+			Arch:          arch.String(),
+			Digest:        h,
 		})
 	}
 	return sboms, nil
@@ -259,9 +260,10 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
-			Path:   filename,
-			Format: gen.Key(),
-			Digest: h,
+			Path:          filename,
+			Format:        gen.Key(),
+			PredicateType: gen.PredicateType(),
+			Digest:        h,
 		})
 	}
 

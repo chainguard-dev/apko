@@ -429,10 +429,11 @@ func ParseArchitectures(in []string) []Architecture {
 }
 
 type SBOM struct {
-	Arch   string
-	Path   string
-	Format string
-	Digest v1.Hash
+	Arch          string
+	Path          string
+	Format        string
+	PredicateType string
+	Digest        v1.Hash
 }
 
 type Layering struct {
