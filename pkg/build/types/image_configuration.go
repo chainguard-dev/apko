@@ -249,6 +249,9 @@ func (ic *ImageConfiguration) Validate() error {
 // a service bundle.
 func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	ic.Entrypoint.Command = "/bin/s6-svscan /sv"
+	if _, err := os.Stat("/usr/bin/s6-svscan"); err == nil {
+		ic.Entrypoint.Command = "/usr/bin/s6-svscan /sv"
+	}
 
 	// It's harmless to have a duplicate entry in /etc/apk/world,
 	// apk will fix it up when the fixate op happens.
