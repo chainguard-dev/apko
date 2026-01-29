@@ -307,9 +307,9 @@ func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) 
 		}
 	} else {
 		if f.caseSensitiveOnDisk(name) {
-			fullpath, err := f.sanitizePath(name)
-			if err != nil {
-				return nil, err
+			fullpath, sanErr := f.sanitizePath(name)
+			if sanErr != nil {
+				return nil, sanErr
 			}
 			file, err = os.OpenFile(fullpath, flag, perm)
 		} else {
