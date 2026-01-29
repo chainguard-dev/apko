@@ -19,16 +19,16 @@
         "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub"
       },
       {
+        "name": "apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub"
+      },
+      {
         "name": "apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub",
         "url": "https://apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub"
       },
       {
         "name": "apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub",
         "url": "https://apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub"
-      },
-      {
-        "name": "apk.cgr.dev/chainguard/chainguard-a87b67b52e9fa08414a5535a99adc7b66643536ccd52f4da66057b67adf21363.rsa.pub",
-        "url": "https://apk.cgr.dev/chainguard/chainguard-a87b67b52e9fa08414a5535a99adc7b66643536ccd52f4da66057b67adf21363.rsa.pub"
       }
     ],
     "build_repositories": [],
