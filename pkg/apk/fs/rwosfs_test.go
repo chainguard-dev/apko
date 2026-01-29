@@ -454,3 +454,101 @@ func TestScriptsTarPattern(t *testing.T) {
 	require.NoError(t, err, "ReadFile final should succeed")
 	require.Equal(t, combinedData, finalData, "ReadFile should return combined data, not zeros")
 }
+
+func TestSanitizePath(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		base    string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "empty base",
+			base:    "",
+			wantErr: true,
+		},
+		{
+			name: "empty path returns base",
+			base: "/tmp/1",
+			want: "/tmp/1",
+		},
+		{
+			name: "root path returns base",
+			base: "/tmp/1",
+			path: "/",
+			want: "/tmp/1",
+		},
+		{
+			name: "dot path returns base (plus dot)",
+			base: "/tmp/1",
+			path: ".",
+			want: "/tmp/1/.",
+		},
+		{
+			name: "base has valid traversal",
+			base: "../",
+			path: ".",
+			want: "../.",
+		},
+		{
+			name: "base has valid traversal (no trailing slash)",
+			base: "..",
+			path: ".",
+			want: "../.",
+		},
+		{
+			name:    "invalid path with traversal",
+			base:    "/tmp/1",
+			path:    "../",
+			wantErr: true,
+		},
+		{
+			name: "path with traversal even within base is valid",
+			base: "/tmp/1",
+			path: "a/b/c/../../b",
+			want: "/tmp/1/a/b/c/../../b",
+		},
+		{
+			name: "path with trailing dotdot stays within base",
+			base: "/tmp/1",
+			path: "a/b/c/..",
+			want: "/tmp/1/a/b/c/..",
+		},
+		{
+			name: "path starting with dotdot but resolving within base",
+			base: "/tmp/1",
+			path: "../1/a",
+			want: "/tmp/1/../1/a",
+		},
+		{
+			name: "path with multiple dotdot stays within base",
+			base: "/tmp/1",
+			path: "a/b/../x/../z",
+			want: "/tmp/1/a/b/../x/../z",
+		},
+		{
+			name:    "relative base with path that escapes",
+			base:    "../",
+			path:    "../..",
+			wantErr: true,
+		},
+		{
+			name:    "path with null byte",
+			base:    "/tmp/1",
+			path:    "test\x00file",
+			wantErr: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &dirFS{base: tt.base}
+			got, err := f.sanitizePath(tt.path)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

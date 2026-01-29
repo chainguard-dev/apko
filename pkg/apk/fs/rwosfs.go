@@ -102,6 +102,7 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 		// find a file that does not exist
 		for i := 0; ; i++ {
 			filename := fmt.Sprintf("test-dirfs-%d", i)
+			// filepath.Join below here is considered safe since we control filename
 			if _, err := os.Stat(filepath.Join(dir, filename)); err == nil {
 				continue
 			}
@@ -150,7 +151,11 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 			err = f.overrides.Mkdir(path, fullPerm)
 		case fs.ModeSymlink:
 			var target string
-			target, err = os.Readlink(filepath.Join(dir, path))
+			target, err = f.sanitizePath(path)
+			if err != nil {
+				return err
+			}
+			target, err = os.Readlink(target)
 			if err == nil {
 				err = f.overrides.Symlink(target, path)
 			}
@@ -291,14 +296,22 @@ func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) 
 		// do we create it on disk?
 		if f.createOnDisk(name) {
 			_ = file.Close()
-			file, err = os.OpenFile(filepath.Join(f.base, name), flag, perm)
+			fullpath, err := f.sanitizePath(name)
+			if err != nil {
+				return nil, err
+			}
+			file, err = os.OpenFile(fullpath, flag, perm)
 			if err != nil {
 				return nil, err
 			}
 		}
 	} else {
 		if f.caseSensitiveOnDisk(name) {
-			file, err = os.OpenFile(filepath.Join(f.base, name), flag, perm)
+			fullpath, err := f.sanitizePath(name)
+			if err != nil {
+				return nil, err
+			}
+			file, err = os.OpenFile(fullpath, flag, perm)
 		} else {
 			file, err = f.overrides.OpenFile(name, flag, perm)
 		}
@@ -323,7 +336,11 @@ func (f *dirFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	if f.caseSensitiveOnDisk(name) {
-		fi, err = os.Stat(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return nil, err
+		}
+		fi, err = os.Stat(fullpath)
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +371,11 @@ func (f *dirFS) Create(name string) (File, error) {
 	if f.createOnDisk(name) {
 		// close the memory one
 		_ = file.Close()
-		file, err = os.Create(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return nil, err
+		}
+		file, err = os.Create(fullpath)
 		if err != nil {
 			return nil, err
 		}
@@ -368,7 +389,11 @@ func (f *dirFS) Remove(name string) error {
 		return err
 	}
 	if f.removeOnDisk(name) {
-		return os.Remove(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return err
+		}
+		return os.Remove(fullpath)
 	}
 	return nil
 }
@@ -380,7 +405,11 @@ func (f *dirFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		err           error
 	)
 	if f.caseSensitiveOnDisk(name) {
-		onDisk, err = os.ReadDir(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return nil, err
+		}
+		onDisk, err = os.ReadDir(fullpath)
 		if err != nil {
 			return nil, err
 		}
@@ -418,13 +447,21 @@ func (f *dirFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 func (f *dirFS) ReadFile(name string) ([]byte, error) {
 	if f.caseSensitiveOnDisk(name) {
-		return os.ReadFile(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(fullpath)
 	}
 	return f.overrides.ReadFile(name)
 }
 func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	if f.createOnDisk(name) {
-		if err := os.WriteFile(filepath.Join(f.base, name), b, mode); err != nil {
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(fullpath, b, mode); err != nil {
 			return err
 		}
 	}
@@ -436,7 +473,11 @@ func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 
 func (f *dirFS) Readnod(name string) (dev int, err error) {
 	if f.caseSensitiveOnDisk(name) {
-		_, err = os.Stat(filepath.Join(f.base, name))
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return 0, err
+		}
+		_, err = os.Stat(fullpath)
 		if err != nil {
 			return 0, err
 		}
@@ -445,15 +486,22 @@ func (f *dirFS) Readnod(name string) (dev int, err error) {
 }
 
 func (f *dirFS) Link(oldname, newname string) error {
+	fullpath, err := f.sanitizePath(oldname)
+	if err != nil {
+		return err
+	}
 	// for hardlink, we cannot take target as is, as it might be outside of the base.
 	// So we must sanitize it. It should point to a file that is within the filesystem.
-	target := filepath.Join(f.base, oldname)
-	target = filepath.Clean(target)
+	target := filepath.Clean(fullpath)
 	if !strings.HasPrefix(target, f.base) {
 		return fmt.Errorf("hardlink target %s is outside of the filesystem", target)
 	}
 	if f.createOnDisk(newname) {
-		if err := os.Link(target, filepath.Join(f.base, newname)); err != nil {
+		fullpath, err := f.sanitizePath(newname)
+		if err != nil {
+			return err
+		}
+		if err := os.Link(target, fullpath); err != nil {
 			return err
 		}
 	}
@@ -465,7 +513,11 @@ func (f *dirFS) Symlink(oldname, newname string) error {
 	// If it is outside of the base, it will be resolved by Readlink.
 	// This enables proper symlink behaviour.
 	if f.createOnDisk(newname) {
-		if err := os.Symlink(oldname, filepath.Join(f.base, newname)); err != nil {
+		fullpath, err := f.sanitizePath(newname)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(oldname, fullpath); err != nil {
 			return err
 		}
 	}
@@ -476,7 +528,11 @@ func (f *dirFS) MkdirAll(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
 	if f.createOnDisk(name) {
-		if err := os.MkdirAll(filepath.Join(f.base, name), fullPerm); err != nil {
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(fullpath, fullPerm); err != nil {
 			return err
 		}
 	}
@@ -487,7 +543,11 @@ func (f *dirFS) Mkdir(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
 	if f.createOnDisk(name) {
-		if err := os.Mkdir(filepath.Join(f.base, name), fullPerm); err != nil {
+		fullpath, err := f.sanitizePath(name)
+		if err != nil {
+			return err
+		}
+		if err := os.Mkdir(fullpath, fullPerm); err != nil {
 			return err
 		}
 	}
@@ -496,22 +556,34 @@ func (f *dirFS) Mkdir(name string, perm fs.FileMode) error {
 
 func (f *dirFS) Chmod(path string, perm fs.FileMode) error {
 	if f.caseSensitiveOnDisk(path) {
+		fullpath, err := f.sanitizePath(path)
+		if err != nil {
+			return err
+		}
 		// ignore error, as we track it in memory anyways, and disk filesystem might not support it
-		_ = os.Chmod(filepath.Join(f.base, path), perm)
+		_ = os.Chmod(fullpath, perm)
 	}
 	return f.overrides.Chmod(path, perm)
 }
 
 func (f *dirFS) Chown(path string, uid, gid int) error {
 	if f.caseSensitiveOnDisk(path) {
+		fullpath, err := f.sanitizePath(path)
+		if err != nil {
+			return err
+		}
 		// ignore error, as we track it in memory anyways, and disk filesystem might not support it
-		_ = os.Chown(filepath.Join(f.base, path), uid, gid)
+		_ = os.Chown(fullpath, uid, gid)
 	}
 	return f.overrides.Chown(path, uid, gid)
 }
 
 func (f *dirFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
-	if err := os.Chtimes(filepath.Join(f.base, path), atime, mtime); err != nil {
+	fullpath, err := f.sanitizePath(path)
+	if err != nil {
+		return err
+	}
+	if err := os.Chtimes(fullpath, atime, mtime); err != nil {
 		return fmt.Errorf("unable to change times: %w", err)
 	}
 	return f.overrides.Chtimes(path, atime, mtime)
@@ -519,10 +591,17 @@ func (f *dirFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 
 func (f *dirFS) Mknod(name string, mode uint32, dev int) error {
 	if f.caseSensitiveOnDisk(name) {
-		err := unix.Mknod(filepath.Join(f.base, name), mode, dev)
-		// what if we could not create it? Just create a regular file there, and memory will override
+		fullpath, err := f.sanitizePath(name)
 		if err != nil {
-			if err := os.WriteFile(filepath.Join(f.base, name), nil, 0); err != nil {
+			return err
+		}
+		// what if we could not create it? Just create a regular file there, and memory will override
+		if err := unix.Mknod(fullpath, mode, dev); err != nil {
+			fullpath, err = f.sanitizePath(name)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(fullpath, nil, 0); err != nil {
 				return err
 			}
 		}
@@ -548,17 +627,35 @@ func (f *dirFS) Sub(path string) (FullFS, error) {
 	return f.overrides.Sub(path)
 }
 
-// sanitize ensures that we never go beyond the root of the filesystem
-func (f *dirFS) sanitizePath(p string) (v string, err error) {
-	return sanitizePath(f.base, p)
-}
-func sanitizePath(base, p string) (v string, err error) {
-	v = filepath.Join(base, p)
-	if strings.HasPrefix(filepath.Clean(v), base) {
-		return v, nil
+const pathSeparator = string(os.PathSeparator)
+
+// sanitizePath joins base and p safely, preventing path traversal outside base.
+// It allows ".." components in the path as long as the resolved path stays within base.
+func (f *dirFS) sanitizePath(p string) (string, error) {
+	if f.base == "" {
+		return "", fmt.Errorf("empty base")
 	}
 
-	return "", fmt.Errorf("%s: %s", "content filepath is tainted", p)
+	clean := strings.TrimSuffix(strings.TrimPrefix(p, pathSeparator), pathSeparator)
+	if clean == "" {
+		return f.base, nil
+	}
+
+	if strings.Contains(clean, "\x00") {
+		return "", fmt.Errorf("path contains null byte")
+	}
+
+	// Resolve the path and check if it escapes base using filepath.Rel
+	resolved := filepath.Clean(filepath.Join(f.base, clean))
+	rel, err := filepath.Rel(filepath.Clean(f.base), resolved)
+	if err != nil || strings.HasPrefix(rel, ".."+pathSeparator) || rel == ".." {
+		return "", fmt.Errorf("%s: %s", "content filepath is tainted", p)
+	}
+
+	if os.IsPathSeparator(f.base[len(f.base)-1]) {
+		return f.base + clean, nil
+	}
+	return f.base + pathSeparator + clean, nil
 }
 
 func (f *dirFS) caseSensitiveOnDisk(p string) bool {
