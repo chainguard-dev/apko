@@ -24,6 +24,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
+	"chainguard.dev/apko/pkg/limitio"
 	"github.com/klauspost/compress/gzip"
 
 	"go.opentelemetry.io/otel"
@@ -102,6 +103,9 @@ type APKExpanded struct {
 	PackageSize   int64
 	SignatureSize int64
 
+	// opts contains the options used during expansion
+	opts *Options
+
 	sync.Mutex
 	parsedPkgInfo *types.PackageInfo
 	controlData   []byte
@@ -145,7 +149,12 @@ func (a *APKExpanded) ControlData() ([]byte, error) {
 			return nil, err
 		}
 
-		a.controlData, err = io.ReadAll(zr)
+		// Apply limit: use opts.MaxControlSize if set, otherwise default.
+		var maxSize int64
+		if a.opts != nil {
+			maxSize = a.opts.MaxControlSize
+		}
+		a.controlData, err = io.ReadAll(limitio.NewLimitedReaderWithDefault(zr, maxSize, DefaultMaxControlSize))
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +194,14 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 	buf := pooledSlice()
 	defer slicePool.Put(buf)
 
-	if _, err := io.CopyBuffer(uf, zr, buf); err != nil {
+	// Wrap the gzip reader with a limit to protect against decompression bombs
+	var maxSize int64
+	if a.opts != nil {
+		maxSize = a.opts.MaxDataSize
+	}
+	limitedZr := limitio.NewLimitedReaderWithDefault(zr, maxSize, DefaultMaxDataSize)
+
+	if _, err := io.CopyBuffer(uf, limitedZr, buf); err != nil {
 		return nil, fmt.Errorf("decompressing %q: %w", a.PackageFile, err)
 	}
 
@@ -422,6 +438,19 @@ func (r *expandApkReader) EnableFastRead() {
 // Returns an APKExpanded struct containing references to the file. You *must* call APKExpanded.Close()
 // when finished to clean up the various files.
 func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpanded, error) {
+	return ExpandApkWithOptions(ctx, source, cacheDir)
+}
+
+// ExpandApkWithOptions is like ExpandApk but accepts functional options to configure
+// size limits for APK sections.
+func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string, opts ...Option) (*APKExpanded, error) {
+	options := DefaultOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return nil, fmt.Errorf("applying option: %w", err)
+		}
+	}
+
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "ExpandApk")
 	defer span.End()
 
@@ -473,7 +502,7 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 		if !maxStreamsReached {
 			gzi.Multistream(false)
 
-			if _, err := io.Copy(io.Discard, gzi); err != nil {
+			if _, err := io.Copy(io.Discard, limitio.NewLimitedReaderWithDefault(gzi, options.MaxControlSize, DefaultMaxControlSize)); err != nil {
 				return nil, fmt.Errorf("expandApk error 3: %w", err)
 			}
 
@@ -489,7 +518,9 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 			bw := pooledBufioWriter(tarfile)
 			defer writerPool.Put(bw)
 
-			tr := io.TeeReader(gzi, bw)
+			// Wrap the gzip reader with a limit to protect against decompression bombs
+			limitedGzi := limitio.NewLimitedReaderWithDefault(gzi, options.MaxDataSize, DefaultMaxDataSize)
+			tr := io.TeeReader(limitedGzi, bw)
 
 			if err := checkSums(ctx, tr); err != nil {
 				return nil, fmt.Errorf("checking sums: %w", err)
@@ -561,6 +592,8 @@ func ExpandApk(ctx context.Context, source io.Reader, cacheDir string) (*APKExpa
 		PackageFile: gzipStreams[packageIndex],
 		PackageHash: hashes[packageIndex],
 		PackageSize: sizes[packageIndex],
+
+		opts: options,
 	}
 	if signed {
 		expanded.SignatureFile = gzipStreams[signatureIndex]

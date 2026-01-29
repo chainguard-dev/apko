@@ -26,6 +26,7 @@ import (
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/tarfs"
 )
 
@@ -38,6 +39,7 @@ func buildMinirootFS() *cobra.Command {
 	var extraBuildRepos []string
 	var extraRepos []string
 	var extraPackages []string
+	var sizeLimits options.SizeLimits
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -57,6 +59,7 @@ func buildMinirootFS() *cobra.Command {
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
 				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithSizeLimits(sizeLimits),
 			)
 		},
 	}
@@ -69,6 +72,7 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
+	addClientLimitFlags(cmd, &sizeLimits)
 
 	return cmd
 }

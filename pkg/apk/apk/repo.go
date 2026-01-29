@@ -182,10 +182,14 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	if a.cache != nil {
 		httpClient = a.cache.client(httpClient, true)
 	}
-	opts := []IndexOption{WithIgnoreSignatures(ignoreSignatures),
+	opts := []IndexOption{
+		WithIgnoreSignatures(ignoreSignatures),
 		WithIgnoreSignatureForIndexes(a.noSignatureIndexes...),
 		WithHTTPClient(httpClient),
 		WithIndexAuthenticator(a.auth),
+	}
+	if sz := a.apkIndexDecompressedMaxSize(); sz != 0 {
+		opts = append(opts, WithIndexDecompressedMaxSize(sz))
 	}
 	return GetRepositoryIndexes(ctx, repos, keys, arch, opts...)
 }

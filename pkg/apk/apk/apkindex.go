@@ -14,10 +14,16 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"chainguard.dev/apko/pkg/limitio"
 )
 
 const apkIndexFilename = "APKINDEX"
 const descriptionFilename = "DESCRIPTION"
+
+// DefaultMaxAPKIndexDecompressedSize is the maximum decompressed size for APKINDEX archives (100 MB).
+// This protects against gzip bombs where a small compressed file expands to a huge size.
+const DefaultMaxAPKIndexDecompressedSize = 100 << 20
 
 // Go template for generating the APKINDEX file from an ApkIndex struct
 var apkIndexTemplate = template.Must(template.New(apkIndexFilename).Funcs(
@@ -197,7 +203,29 @@ func ParsePackageIndex(apkIndexUnpacked io.Reader) ([]*Package, error) {
 	return packages, indexScanner.Err()
 }
 
-func IndexFromArchive(archive io.ReadCloser) (*APKIndex, error) {
+// IndexFromArchiveOption configures IndexFromArchive behavior.
+type IndexFromArchiveOption func(*indexFromArchiveOpts)
+
+type indexFromArchiveOpts struct {
+	decompressedMaxSize int64
+}
+
+// WithDecompressedMaxSize sets the maximum decompressed size for the APKINDEX archive.
+// Use 0 for default, or < 0 for unlimited.
+func WithDecompressedMaxSize(size int64) IndexFromArchiveOption {
+	return func(o *indexFromArchiveOpts) {
+		o.decompressedMaxSize = size
+	}
+}
+
+// IndexFromArchive parses an APKINDEX archive. Options can be used to configure
+// size limits to protect against gzip bombs.
+func IndexFromArchive(archive io.ReadCloser, opts ...IndexFromArchiveOption) (*APKIndex, error) {
+	o := &indexFromArchiveOpts{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
 	gzipReader, err := gzip.NewReader(archive)
 	if err != nil {
 		return nil, err
@@ -205,7 +233,9 @@ func IndexFromArchive(archive io.ReadCloser) (*APKIndex, error) {
 
 	defer gzipReader.Close()
 
-	tarReader := tar.NewReader(gzipReader)
+	// Wrap gzipReader with size limit, then create tar reader on top.
+	// The limit protects against tar bombs where file headers claim huge sizes.
+	tarReader := tar.NewReader(limitio.NewLimitedReaderWithDefault(gzipReader, o.decompressedMaxSize, DefaultMaxAPKIndexDecompressedSize))
 	apkindex := &APKIndex{}
 
 	for {

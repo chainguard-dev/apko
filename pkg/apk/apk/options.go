@@ -38,6 +38,15 @@ type opts struct {
 	ignoreSignatures   bool
 	transport          http.RoundTripper
 	packageGetter      PackageGetter
+	sizeLimits         *SizeLimits
+}
+
+// SizeLimits configures maximum sizes for various APK operations.
+type SizeLimits struct {
+	APKIndexDecompressedMaxSize int64
+	APKControlMaxSize           int64
+	APKDataMaxSize              int64
+	HTTPResponseMaxSize         int64
 }
 
 type Option func(*opts) error
@@ -150,6 +159,14 @@ func WithTransport(t http.RoundTripper) Option {
 func WithPackageGetter(pg PackageGetter) Option {
 	return func(o *opts) error {
 		o.packageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets size limits for APK operations.
+func WithSizeLimits(limits *SizeLimits) Option {
+	return func(o *opts) error {
+		o.sizeLimits = limits
 		return nil
 	}
 }
