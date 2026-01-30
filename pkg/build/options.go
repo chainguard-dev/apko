@@ -26,6 +26,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom/generator"
 
 	"github.com/chainguard-dev/clog"
@@ -254,6 +255,14 @@ func WithTransport(t http.RoundTripper) Option {
 func WithPackageGetter(pg apk.PackageGetter) Option {
 	return func(bc *Context) error {
 		bc.o.PackageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets the size limits for various operations.
+func WithSizeLimits(limits options.SizeLimits) Option {
+	return func(bc *Context) error {
+		bc.o.SizeLimits = limits
 		return nil
 	}
 }

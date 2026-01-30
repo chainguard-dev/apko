@@ -457,7 +457,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		}
 	}
 	// with a valid signature, convert it to an ApkIndex
-	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b)))
+	var archiveOpts []IndexFromArchiveOption
+	if opts.indexDecompressedMaxSize != 0 {
+		archiveOpts = append(archiveOpts, WithDecompressedMaxSize(opts.indexDecompressedMaxSize))
+	}
+	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b)), archiveOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
 	}
@@ -466,10 +470,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 }
 
 type indexOpts struct {
-	ignoreSignatures   bool
-	noSignatureIndexes []string
-	httpClient         *http.Client
-	auth               auth.Authenticator
+	ignoreSignatures         bool
+	noSignatureIndexes       []string
+	httpClient               *http.Client
+	auth                     auth.Authenticator
+	indexDecompressedMaxSize int64
 }
 type IndexOption func(*indexOpts)
 
@@ -494,6 +499,12 @@ func WithHTTPClient(c *http.Client) IndexOption {
 func WithIndexAuthenticator(a auth.Authenticator) IndexOption {
 	return func(o *indexOpts) {
 		o.auth = a
+	}
+}
+
+func WithIndexDecompressedMaxSize(size int64) IndexOption {
+	return func(o *indexOpts) {
+		o.indexDecompressedMaxSize = size
 	}
 }
 

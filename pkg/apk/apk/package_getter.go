@@ -54,18 +54,41 @@ var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
 // defaultPackageGetter implements the standard disk-caching behavior
 // with in-memory singleflight deduplication using a global cache.
 type defaultPackageGetter struct {
-	client *http.Client
-	cache  *cache
-	auth   auth.Authenticator
+	client            *http.Client
+	cache             *cache
+	auth              auth.Authenticator
+	apkControlMaxSize int64
+	apkDataMaxSize    int64
+}
+
+// packageGetterOption is a functional option for configuring defaultPackageGetter.
+type packageGetterOption func(*defaultPackageGetter)
+
+// withAPKControlMaxSize sets the maximum decompressed size for APK control sections.
+func withAPKControlMaxSize(size int64) packageGetterOption {
+	return func(d *defaultPackageGetter) {
+		d.apkControlMaxSize = size
+	}
+}
+
+// withAPKDataMaxSize sets the maximum decompressed size for APK data sections.
+func withAPKDataMaxSize(size int64) packageGetterOption {
+	return func(d *defaultPackageGetter) {
+		d.apkDataMaxSize = size
+	}
 }
 
 // newDefaultPackageGetter creates a new defaultPackageGetter with the given configuration.
-func newDefaultPackageGetter(client *http.Client, cache *cache, authenticator auth.Authenticator) *defaultPackageGetter {
-	return &defaultPackageGetter{
+func newDefaultPackageGetter(client *http.Client, cache *cache, authenticator auth.Authenticator, opts ...packageGetterOption) *defaultPackageGetter {
+	d := &defaultPackageGetter{
 		client: client,
 		cache:  cache,
 		auth:   authenticator,
 	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // GetPackage fetches and returns an expanded package.
@@ -135,7 +158,14 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 	}
 	defer rc.Close()
 
-	exp, err := expandapk.ExpandApk(ctx, rc, cacheDir)
+	var expandOpts []expandapk.Option
+	if d.apkControlMaxSize != 0 {
+		expandOpts = append(expandOpts, expandapk.WithMaxControlSize(d.apkControlMaxSize))
+	}
+	if d.apkDataMaxSize != 0 {
+		expandOpts = append(expandOpts, expandapk.WithMaxDataSize(d.apkDataMaxSize))
+	}
+	exp, err := expandapk.ExpandApkWithOptions(ctx, rc, cacheDir, expandOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
 	}

@@ -28,6 +28,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/cpio"
+	"chainguard.dev/apko/pkg/options"
 )
 
 func buildCPIO() *cobra.Command {
@@ -38,6 +39,7 @@ func buildCPIO() *cobra.Command {
 	var extraBuildRepos []string
 	var extraRepos []string
 	var extraPackages []string
+	var sizeLimits options.SizeLimits
 
 	cmd := &cobra.Command{
 		Use:     "build-cpio",
@@ -56,6 +58,7 @@ func buildCPIO() *cobra.Command {
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
+				build.WithSizeLimits(sizeLimits),
 			)
 		},
 	}
@@ -67,6 +70,7 @@ func buildCPIO() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
+	addClientLimitFlags(cmd, &sizeLimits)
 
 	return cmd
 }

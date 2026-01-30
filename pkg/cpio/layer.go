@@ -24,6 +24,7 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 )
 
+// FromLayer converts a container layer to CPIO format.
 func FromLayer(layer v1.Layer, dest io.Writer) error {
 	// Open the filesystem layer to walk through the file.
 	u, err := layer.Uncompressed()
@@ -31,6 +32,7 @@ func FromLayer(layer v1.Layer, dest io.Writer) error {
 		return err
 	}
 	defer u.Close()
+
 	tarReader := tar.NewReader(u)
 
 	w := cpio.NewDedupWriter(cpio.Newc.Writer(dest))

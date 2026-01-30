@@ -28,6 +28,31 @@ import (
 	"chainguard.dev/apko/pkg/sbom/generator"
 )
 
+// SizeLimits configures maximum sizes for various operations to prevent unbounded reads.
+// A value of 0 means use the default, and a value of -1 means no limit.
+type SizeLimits struct {
+	// APKIndexDecompressedMaxSize is the maximum decompressed size for APKINDEX archives (default: 100 MB).
+	// This protects against gzip bombs.
+	APKIndexDecompressedMaxSize int64 `json:"apkIndexDecompressedMaxSize,omitempty"`
+	// APKControlMaxSize is the maximum decompressed size for APK control sections (default: 10 MB).
+	APKControlMaxSize int64 `json:"apkControlMaxSize,omitempty"`
+	// APKDataMaxSize is the maximum decompressed size for APK data sections (default: 4 GB).
+	// This protects against gzip bombs.
+	APKDataMaxSize int64 `json:"apkDataMaxSize,omitempty"`
+	// HTTPResponseMaxSize is the maximum size for HTTP responses (default: 2 GB).
+	HTTPResponseMaxSize int64 `json:"httpResponseMaxSize,omitempty"`
+}
+
+// DefaultSizeLimits returns SizeLimits with sensible default values.
+func DefaultSizeLimits() SizeLimits {
+	return SizeLimits{
+		APKIndexDecompressedMaxSize: 100 << 20, // 100 MB
+		APKControlMaxSize:           10 << 20,  // 10 MB
+		APKDataMaxSize:              4 << 30,   // 4 GB
+		HTTPResponseMaxSize:         2 << 30,   // 2 GB
+	}
+}
+
 type Options struct {
 	WithVCS bool `json:"withVCS,omitempty"`
 	// ImageConfigFile might, but does not have to be a filename. It might be any abstract configuration identifier.
@@ -59,6 +84,7 @@ type Options struct {
 	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`
 	Transport               http.RoundTripper     `json:"-"`
 	PackageGetter           apk.PackageGetter     `json:"-"`
+	SizeLimits              SizeLimits            `json:"sizeLimits,omitempty"`
 }
 
 type Auth struct{ User, Pass string }
@@ -68,6 +94,7 @@ var Default = Options{
 	SourceDateEpoch: time.Unix(0, 0).UTC(),
 	Auth:            auth.DefaultAuthenticators,
 	SharedCache:     apk.NewCache(false),
+	SizeLimits:      DefaultSizeLimits(),
 }
 
 // Tempdir returns the temporary directory where apko will create

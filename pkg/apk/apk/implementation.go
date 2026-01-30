@@ -53,6 +53,11 @@ import (
 	"github.com/chainguard-dev/clog"
 )
 
+const (
+	// DefaultHTTPResponseSize is the default maximum size for HTTP responses (2 GB).
+	DefaultHTTPResponseSize = 2 << 30
+)
+
 type APK struct {
 	arch               string
 	version            string
@@ -65,6 +70,7 @@ type APK struct {
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	packageGetter      PackageGetter
+	sizeLimits         *SizeLimits
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -72,6 +78,14 @@ type APK struct {
 	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
 	// It's stuffed here to avoid plumbing it across every method, but it's optional.
 	ByArch map[string]*APK
+}
+
+// apkIndexDecompressedMaxSize returns the configured max decompressed APK index size or 0 for default.
+func (a *APK) apkIndexDecompressedMaxSize() int64 {
+	if a.sizeLimits != nil && a.sizeLimits.APKIndexDecompressedMaxSize != 0 {
+		return a.sizeLimits.APKIndexDecompressedMaxSize
+	}
+	return 0 // use default
 }
 
 func New(ctx context.Context, options ...Option) (*APK, error) {
@@ -87,9 +101,16 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		opt.fs = apkfs.DirFS(ctx, "/")
 	}
 
-	client := retryablehttp.NewClient()
+	// Wrap transport with response size limiter
+	transport := opt.transport
+	var httpResponseMaxSize int64
+	if opt.sizeLimits != nil {
+		httpResponseMaxSize = opt.sizeLimits.HTTPResponseMaxSize
+	}
+	transport = newLimitedResponseTransport(transport, httpResponseMaxSize)
 
-	client.HTTPClient = &http.Client{Transport: opt.transport}
+	client := retryablehttp.NewClient()
+	client.HTTPClient = &http.Client{Transport: transport}
 	client.Logger = clog.FromContext(ctx)
 
 	httpClient := client.StandardClient()
@@ -97,7 +118,16 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	// Create default PackageGetter if none provided
 	packageGetter := opt.packageGetter
 	if packageGetter == nil {
-		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth)
+		var getterOpts []packageGetterOption
+		if opt.sizeLimits != nil {
+			if opt.sizeLimits.APKControlMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKControlMaxSize(opt.sizeLimits.APKControlMaxSize))
+			}
+			if opt.sizeLimits.APKDataMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKDataMaxSize(opt.sizeLimits.APKDataMaxSize))
+			}
+		}
+		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
 	}
 
 	return &APK{
@@ -113,6 +143,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
 		packageGetter:      packageGetter,
+		sizeLimits:         opt.sizeLimits,
 	}, nil
 }
 

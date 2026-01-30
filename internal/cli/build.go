@@ -37,6 +37,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/tarfs"
 )
@@ -58,6 +59,7 @@ func buildCmd() *cobra.Command {
 	var lockfile string
 	var includePaths []string
 	var ignoreSignatures bool
+	var sizeLimits options.SizeLimits
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -116,6 +118,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithTempDir(tmp),
 				build.WithIncludePaths(includePaths),
 				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithSizeLimits(sizeLimits),
 			)
 		},
 	}
@@ -136,6 +139,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append.")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	addClientLimitFlags(cmd, &sizeLimits)
 	return cmd
 }
 

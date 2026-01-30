@@ -17,12 +17,19 @@ package expandapk
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"context"
+	"errors"
+	"io"
+	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
+	"chainguard.dev/apko/pkg/limitio"
 )
 
 func TestPkgInfo(t *testing.T) {
@@ -125,4 +132,316 @@ datahash = 7d3351ac6c3ebaf18182efb5390061f50d077ce5ade60a15909d91278f70ada7
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestSizeLimitExceededError(t *testing.T) {
+	err := &limitio.SizeLimitExceededError{Limit: 1024}
+	want := "size limit exceeded: limit is 1024 bytes"
+	if diff := cmp.Diff(want, err.Error()); diff != "" {
+		t.Errorf("SizeLimitExceededError.Error() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestExpandApkWithOptions(t *testing.T) {
+	file := "testdata/hello-wolfi-2.12.1-r0.apk"
+
+	t.Run("default limits work", func(t *testing.T) {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		exp, err := ExpandApkWithOptions(context.Background(), f, t.TempDir())
+		if err != nil {
+			t.Fatalf("ExpandApkWithOptions() with defaults failed: %v", err)
+		}
+		defer exp.Close()
+
+		if exp.SignatureFile == "" {
+			t.Error("expected SignatureFile to be set")
+		}
+		if exp.ControlFile == "" {
+			t.Error("expected ControlFile to be set")
+		}
+		if exp.PackageFile == "" {
+			t.Error("expected PackageFile to be set")
+		}
+	})
+
+	t.Run("max size limit exceeded", func(t *testing.T) {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		// Set max size to 1 byte - should fail on first stream
+		_, err = ExpandApkWithOptions(context.Background(), f, t.TempDir(),
+			WithMaxControlSize(1))
+
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected limitio.SizeLimitExceededError, got %T: %v", err, err)
+		}
+		if sizeErr.Limit != 1 {
+			t.Errorf("expected limit 1, got %d", sizeErr.Limit)
+		}
+	})
+
+	t.Run("unlimited with negative one", func(t *testing.T) {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		// -1 means unlimited - should succeed
+		exp, err := ExpandApkWithOptions(context.Background(), f, t.TempDir(),
+			WithMaxControlSize(-1))
+		if err != nil {
+			t.Fatalf("ExpandApkWithOptions() with unlimited failed: %v", err)
+		}
+		defer exp.Close()
+	})
+}
+
+func TestSplitWithOptions(t *testing.T) {
+	file := "testdata/hello-wolfi-2.12.1-r0.apk"
+
+	t.Run("default limits work", func(t *testing.T) {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		parts, err := SplitWithOptions(f)
+		if err != nil {
+			t.Fatalf("SplitWithOptions() with defaults failed: %v", err)
+		}
+		if len(parts) != 3 {
+			t.Errorf("expected 3 parts, got %d", len(parts))
+		}
+	})
+
+	t.Run("max size limit exceeded", func(t *testing.T) {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		_, err = SplitWithOptions(f, WithMaxControlSize(1))
+
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected limitio.SizeLimitExceededError, got %T: %v", err, err)
+		}
+		if sizeErr.Limit != 1 {
+			t.Errorf("expected limit 1, got %d", sizeErr.Limit)
+		}
+	})
+}
+
+func TestLimitedReader(t *testing.T) {
+	t.Run("reads up to limit", func(t *testing.T) {
+		data := []byte("hello world")
+		r := limitio.NewLimitedReader(bytes.NewReader(data), 5)
+
+		buf := make([]byte, 10)
+		n, err := r.Read(buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if n != 5 {
+			t.Errorf("expected to read 5 bytes, got %d", n)
+		}
+		if diff := cmp.Diff("hello", string(buf[:n])); diff != "" {
+			t.Errorf("content mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("returns error when limit exceeded", func(t *testing.T) {
+		data := []byte("hello world")
+		r := limitio.NewLimitedReader(bytes.NewReader(data), 5)
+
+		buf := make([]byte, 10)
+		_, _ = r.Read(buf) // read first 5 bytes
+
+		_, err := r.Read(buf)
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected limitio.SizeLimitExceededError, got %T: %v", err, err)
+		}
+		if sizeErr.Limit != 5 {
+			t.Errorf("expected limit 5, got %d", sizeErr.Limit)
+		}
+	})
+}
+
+// TestTarBombProtection tests that the size limits protect against tar bombs.
+// A tar bomb is a tar archive with file headers claiming extremely large sizes,
+// combined with highly compressible content (zeros) that creates a small compressed file.
+func TestTarBombProtection(t *testing.T) {
+	// Create a tar bomb: a file that's 10MB of zeros (compresses very small)
+	// inside a tar inside gzip. This tests that the decompressed size limit works.
+	const decompressedSize = 10 * 1024 * 1024 // 10 MB of zeros
+	const sizeLimit = 1 * 1024 * 1024         // 1 MB limit
+
+	t.Run("ExpandApk catches tar bomb in data section", func(t *testing.T) {
+		// Create a minimal APK-like structure with a tar containing large zero-filled file
+		var apkData bytes.Buffer
+
+		// Create control section with minimal .PKGINFO
+		var controlBuf bytes.Buffer
+		controlGz := gzip.NewWriter(&controlBuf)
+		controlTar := tar.NewWriter(controlGz)
+
+		pkginfo := []byte("pkgname = test\npkgver = 1.0.0-r0\n")
+		require.NoError(t, controlTar.WriteHeader(&tar.Header{
+			Name: ".PKGINFO",
+			Mode: 0644,
+			Size: int64(len(pkginfo)),
+		}))
+		_, err := controlTar.Write(pkginfo)
+		require.NoError(t, err)
+		require.NoError(t, controlTar.Close())
+		require.NoError(t, controlGz.Close())
+
+		apkData.Write(controlBuf.Bytes())
+
+		// Create data section with tar bomb - large file of zeros
+		var dataBuf bytes.Buffer
+		dataGz := gzip.NewWriter(&dataBuf)
+		dataTar := tar.NewWriter(dataGz)
+
+		// Create zeros buffer
+		zeros := make([]byte, decompressedSize)
+
+		// Write a large file of zeros (compresses extremely well)
+		require.NoError(t, dataTar.WriteHeader(&tar.Header{
+			Name: "hugefile",
+			Mode: 0644,
+			Size: int64(decompressedSize),
+		}))
+		_, err = dataTar.Write(zeros)
+		require.NoError(t, err)
+		require.NoError(t, dataTar.Close())
+		require.NoError(t, dataGz.Close())
+
+		apkData.Write(dataBuf.Bytes())
+
+		t.Logf("Tar bomb: %d bytes decompressed in tar, %d bytes compressed total (ratio: %.0fx)",
+			decompressedSize, apkData.Len(), float64(decompressedSize)/float64(apkData.Len()))
+
+		// Try to expand with a small limit
+		tmpDir := t.TempDir()
+		_, err = ExpandApkWithOptions(context.Background(), bytes.NewReader(apkData.Bytes()), tmpDir,
+			WithMaxDataSize(sizeLimit))
+
+		// Should fail with size limit error
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected SizeLimitExceededError, got %T: %v", err, err)
+		}
+		t.Logf("Successfully caught tar bomb with limit %d", sizeErr.Limit)
+	})
+}
+
+// TestGzipBombProtection tests that the size limits protect against gzip bombs.
+// A gzip bomb is highly compressible data that expands to a huge size.
+func TestGzipBombProtection(t *testing.T) {
+	// Create a gzip bomb: 10MB of zeros compresses to ~10KB but expands to 10MB
+	// We'll set a limit of 1MB to trigger the protection
+	const decompressedSize = 10 * 1024 * 1024 // 10 MB when decompressed
+	const sizeLimit = 1 * 1024 * 1024         // 1 MB limit
+
+	// Create the gzip bomb data (zeros compress extremely well)
+	var bombData bytes.Buffer
+	gzw := gzip.NewWriter(&bombData)
+	zeros := make([]byte, decompressedSize)
+	_, err := gzw.Write(zeros)
+	require.NoError(t, err)
+	require.NoError(t, gzw.Close())
+
+	t.Logf("Gzip bomb: %d bytes compressed -> %d bytes decompressed (ratio: %.0fx)",
+		bombData.Len(), decompressedSize, float64(decompressedSize)/float64(bombData.Len()))
+
+	// Test that NewLimitedReaderWithDefault catches the bomb
+	t.Run("limitio catches gzip bomb", func(t *testing.T) {
+		gzr, err := gzip.NewReader(bytes.NewReader(bombData.Bytes()))
+		require.NoError(t, err)
+		defer gzr.Close()
+
+		limited := limitio.NewLimitedReaderWithDefault(gzr, sizeLimit, sizeLimit)
+
+		// Try to read all data - should fail with size limit error
+		_, err = io.ReadAll(limited)
+
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected SizeLimitExceededError, got %T: %v", err, err)
+		}
+		if sizeErr.Limit != sizeLimit {
+			t.Errorf("expected limit %d, got %d", sizeLimit, sizeErr.Limit)
+		}
+	})
+
+	// Test with a fake APK structure containing a gzip bomb in the data section
+	t.Run("ExpandApk catches gzip bomb in data section", func(t *testing.T) {
+		// Create a minimal APK-like structure:
+		// 1. Control section (small, valid)
+		// 2. Data section (gzip bomb)
+
+		var apkData bytes.Buffer
+
+		// Create control section with minimal .PKGINFO
+		var controlBuf bytes.Buffer
+		controlGz := gzip.NewWriter(&controlBuf)
+		controlTar := tar.NewWriter(controlGz)
+
+		pkginfo := []byte("pkgname = test\npkgver = 1.0.0-r0\n")
+		require.NoError(t, controlTar.WriteHeader(&tar.Header{
+			Name: ".PKGINFO",
+			Mode: 0644,
+			Size: int64(len(pkginfo)),
+		}))
+		_, err := controlTar.Write(pkginfo)
+		require.NoError(t, err)
+		require.NoError(t, controlTar.Close())
+		require.NoError(t, controlGz.Close())
+
+		apkData.Write(controlBuf.Bytes())
+
+		// Create data section with gzip bomb (large file of zeros)
+		var dataBuf bytes.Buffer
+		dataGz := gzip.NewWriter(&dataBuf)
+		dataTar := tar.NewWriter(dataGz)
+
+		// Write a large file of zeros
+		require.NoError(t, dataTar.WriteHeader(&tar.Header{
+			Name: "bigfile",
+			Mode: 0644,
+			Size: int64(decompressedSize),
+		}))
+		_, err = dataTar.Write(zeros)
+		require.NoError(t, err)
+		require.NoError(t, dataTar.Close())
+		require.NoError(t, dataGz.Close())
+
+		apkData.Write(dataBuf.Bytes())
+
+		// Try to expand with a small limit
+		tmpDir := t.TempDir()
+		_, err = ExpandApkWithOptions(context.Background(), bytes.NewReader(apkData.Bytes()), tmpDir,
+			WithMaxDataSize(sizeLimit))
+
+		// Should fail with size limit error
+		var sizeErr *limitio.SizeLimitExceededError
+		if !errors.As(err, &sizeErr) {
+			t.Fatalf("expected SizeLimitExceededError, got %T: %v", err, err)
+		}
+		t.Logf("Successfully caught gzip bomb with limit %d", sizeErr.Limit)
+	})
 }
