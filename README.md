@@ -4,13 +4,13 @@ Build and publish [OCI container images](https://opencontainers.org/) built from
 
 apko has the following key features:
 
- - **Fully reproducible by default.** Run apko twice and you will get exactly the same binary.
- - **Fast.** apko aims to build images in ms.
- - **Small.** apko generated images only contain what's needed by the application,
-   in the style of [distroless](https://github.com/GoogleContainerTools/distroless).
- - **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
- - **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
-   in a container without reaping or signalling issues.
+- **Fully reproducible by default.** Run apko twice and you will get exactly the same binary.
+- **Fast.** apko aims to build images in ms.
+- **Small.** apko generated images only contain what's needed by the application,
+  in the style of [distroless](https://github.com/GoogleContainerTools/distroless).
+- **SBOM Support.** apko produces a Software Bill of Materials (SBOM) for images, detailing all the packages inside.
+- **Services.** apko supports using the [s6 supervision suite](https://skarnet.org/software/s6) to run multiple processes
+  in a container without reaping or signalling issues.
 
 Please note that apko is a work in progress and details are subject to change!
 
@@ -58,11 +58,13 @@ entrypoint:
 environment:
   PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 ```
+
 We can build this with apko from any environment with apk tooling:
 
 ```shell
 apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
+
 ```
 ...
 2022/04/08 13:22:31 apko (aarch64): generating SBOM
@@ -83,12 +85,15 @@ You can then load the generated tar image into a Docker environment:
 ```shell
 docker load < apko-alpine.tar
 ```
+
 ```shell
 Loaded image: apko-alpine:test
 ```
+
 ```shell
 docker run -it apko-alpine:test
 ```
+
 ```
 e289dc84c4ad:/# echo boo!
 boo!
