@@ -447,6 +447,7 @@ func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Packag
 		FilesAnalyzed:    false,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		Originator:       "",
 		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
