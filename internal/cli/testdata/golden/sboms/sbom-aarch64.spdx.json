@@ -47,6 +47,7 @@
       "description": "apko operating system layer",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: Replaces",
+      "primaryPackagePurpose": "CONTAINER",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
