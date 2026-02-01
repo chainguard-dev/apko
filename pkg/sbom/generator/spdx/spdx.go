@@ -407,7 +407,7 @@ func supplier(opts *options.Options) string {
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
+			"SPDXRef-Package-Image-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
@@ -441,7 +441,7 @@ func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Packag
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	return &Package{
-		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
+		ID:               fmt.Sprintf("SPDXRef-Package-ImageLayer-%s", mainPkgID),
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
