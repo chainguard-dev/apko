@@ -13,11 +13,11 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a"
+    "SPDXRef-Package-Image-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
+      "SPDXID": "SPDXRef-Package-Image-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "name": "sha256:462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "versionInfo": "sha256:462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "filesAnalyzed": false,
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-sha256-b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
+      "SPDXID": "SPDXRef-Package-ImageLayer-sha256-b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
       "name": "sha256:b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f",
       "versionInfo": "1.0.0",
       "filesAnalyzed": false,
@@ -143,9 +143,9 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-sha256-b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f"
+      "relatedSpdxElement": "SPDXRef-Package-ImageLayer-sha256-b075b4a14ed0c1e236bac3448fa494c77772feb140cfad4033450e45010da27f"
     },
     {
       "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
@@ -153,7 +153,7 @@
       "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
     },
     {
-      "spdxElementId": "SPDXRef-Package-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
     },
@@ -163,7 +163,7 @@
       "relatedSpdxElement": "SPDXRef-Package-replayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
     },
     {
-      "spdxElementId": "SPDXRef-Package-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-462b8caeb0369dd5ec14eb4f698cddd327f26ba65720561497217ffad2e96d6a",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
     }

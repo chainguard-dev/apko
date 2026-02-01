@@ -13,11 +13,11 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-"
+    "SPDXRef-Package-ImageLayer-"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-",
+      "SPDXID": "SPDXRef-Package-ImageLayer-",
       "name": "",
       "versionInfo": "3.0",
       "filesAnalyzed": false,
@@ -65,7 +65,7 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-",
+      "spdxElementId": "SPDXRef-Package-ImageLayer-",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-libattr1-2.5.1-r2"
     }
