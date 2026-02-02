@@ -1146,6 +1146,23 @@ func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
 	return url.Parse(string(asURI))
 }
 
+// FetchPackage fetches the given package and returns a ReadCloser for its contents.
+// This is only kept for backwards compatibility, prefer using packageGetter.GetPackage instead.
+func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
+	// To keep existing behavior, this always uses the default package getter.
+	var getterOpts []packageGetterOption
+	if a.sizeLimits != nil {
+		if a.sizeLimits.APKControlMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKControlMaxSize(a.sizeLimits.APKControlMaxSize))
+		}
+		if a.sizeLimits.APKDataMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKDataMaxSize(a.sizeLimits.APKDataMaxSize))
+		}
+	}
+	getter := newDefaultPackageGetter(a.client, a.cache, a.auth, getterOpts...)
+	return getter.fetchPackage(ctx, pkg)
+}
+
 type WriteHeaderer interface {
 	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
 }
