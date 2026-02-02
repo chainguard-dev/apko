@@ -180,6 +180,15 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 
 // fetchPackage fetches a package from the network or local filesystem.
 func (d *defaultPackageGetter) fetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
+	client := d.client
+	if d.cache != nil {
+		client = d.cache.client(client, false)
+	}
+	return fetchPackage(ctx, pkg, client, d.auth)
+}
+
+// fetchPackage fetches a package from the network or local filesystem.
+func fetchPackage(ctx context.Context, pkg FetchablePackage, client *http.Client, auth auth.Authenticator) (io.ReadCloser, error) {
 	log := clog.FromContext(ctx)
 	log.Debugf("fetching %s", pkg)
 
@@ -204,15 +213,11 @@ func (d *defaultPackageGetter) fetchPackage(ctx context.Context, pkg FetchablePa
 		}
 		return f, nil
 	case "https", "http":
-		client := d.client
-		if d.cache != nil {
-			client = d.cache.client(client, false)
-		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return nil, err
 		}
-		if err := d.auth.AddAuth(ctx, req); err != nil {
+		if err := auth.AddAuth(ctx, req); err != nil {
 			return nil, err
 		}
 

@@ -1146,6 +1146,16 @@ func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
 	return url.Parse(string(asURI))
 }
 
+// FetchPackage fetches the given package and returns a ReadCloser for its contents.
+// This is only kept for backwards compatibility, prefer using packageGetter.GetPackage instead.
+func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
+	client := a.client
+	if a.cache != nil {
+		client = a.cache.client(client, false)
+	}
+	return fetchPackage(ctx, pkg, client, a.auth)
+}
+
 type WriteHeaderer interface {
 	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
 }
