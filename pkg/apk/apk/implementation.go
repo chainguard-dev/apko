@@ -1159,7 +1159,7 @@ func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCl
 			getterOpts = append(getterOpts, withAPKDataMaxSize(a.sizeLimits.APKDataMaxSize))
 		}
 	}
-	getter := newDefaultPackageGetter(a.client, a.cache, a.auth)
+	getter := newDefaultPackageGetter(a.client, a.cache, a.auth, getterOpts...)
 	return getter.fetchPackage(ctx, pkg)
 }
 
