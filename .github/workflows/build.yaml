@@ -42,7 +42,7 @@ jobs:
           cosign-release: "v2.6.1"
 
       - name: Setup crane (needed in CI tests)
-        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+        uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
 
       - name: Run CI tests in hack/ci/
         run: |
