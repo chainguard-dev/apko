@@ -17,8 +17,8 @@ package expandapk
 // DefaultMaxControlSize is the default maximum decompressed size for control sections (10 MB).
 const DefaultMaxControlSize int64 = 10 << 20
 
-// DefaultMaxDataSize is the default maximum decompressed size for data sections (8 GB).
-const DefaultMaxDataSize int64 = 8 << 30
+// DefaultMaxDataSize is the default maximum decompressed size for data sections (~17 GB).
+const DefaultMaxDataSize int64 = 16 << 30
 
 // Options configures the behavior of APK expansion operations.
 type Options struct {
