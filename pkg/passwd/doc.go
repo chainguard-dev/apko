@@ -13,5 +13,5 @@
 // limitations under the License.
 
 // Package passwd implements simple functions to parse and manipulate
-// /etc/passwd and /etc/group files
+// /etc/passwd, /etc/group, /etc/shadow, and /etc/gshadow files
 package passwd
