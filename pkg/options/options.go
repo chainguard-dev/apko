@@ -48,7 +48,7 @@ func DefaultSizeLimits() SizeLimits {
 	return SizeLimits{
 		APKIndexDecompressedMaxSize: 100 << 20, // 100 MB
 		APKControlMaxSize:           10 << 20,  // 10 MB
-		APKDataMaxSize:              8 << 30,   // 8 GB
+		APKDataMaxSize:              16 << 30,  // ~17 GB
 		HTTPResponseMaxSize:         2 << 30,   // 2 GB
 	}
 }
