@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build/types"
 	pkglock "chainguard.dev/apko/pkg/lock"
 )
@@ -35,9 +36,19 @@ import (
 // architecture that could not be locked. Using the "index" architecture is equivalent to what
 // this used to return prior to supporting per-arch locked configs.
 func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[string]*types.ImageConfiguration, map[string][]string, error) {
+	ics, missing, _, err := LockImageConfigurationWithPackages(ctx, ic, opts...)
+	return ics, missing, err
+}
+
+// LockImageConfigurationWithPackages is like LockImageConfiguration but additionally returns
+// the resolved package metadata per architecture. The returned map contains the full
+// RepositoryPackage objects as resolved by the solver.
+// When a lockfile is used, the resolved packages map will be nil as the full package metadata
+// is not available from lockfiles.
+func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[string]*types.ImageConfiguration, map[string][]string, map[types.Architecture][]*apk.RepositoryPackage, error) {
 	o, input, err := NewOptions(append(opts, WithImageConfiguration(ic))...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
@@ -46,31 +57,33 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 
 	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Determine the exact versions of our transitive packages and lock them
 	// down in the "resolved" configuration, so that this build may be
 	// reproduced exactly.
 	var pls map[string][]string
+	var resolvedPkgs map[types.Architecture][]*apk.RepositoryPackage
 	missing := map[string][]string{}
 	if o.Lockfile == "" {
-		archs, err := resolvePackageList(ctx, mc)
+		archs, pkgs, err := resolvePackageList(ctx, mc)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
+		resolvedPkgs = pkgs
 		pls, missing, err = unify(input.Contents.Packages, archs)
 		if err != nil {
-			return nil, missing, err
+			return nil, missing, nil, err
 		}
 	} else {
 		l, err := pkglock.FromFile(o.Lockfile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, bc := range mc.Contexts {
 			if err := bc.VerifyLockfileConsistency(ctx, l.Config); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 		pls = l.Arch2LockedPackages(input.Archs)
@@ -82,7 +95,7 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		// Create a defensive copy of "input".
 		copied := types.ImageConfiguration{}
 		if err := input.MergeInto(&copied); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		copied.Contents.Packages = pl
@@ -95,15 +108,15 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 		ics[arch] = &copied
 	}
 
-	return ics, missing, nil
+	return ics, missing, resolvedPkgs, nil
 }
 
-func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, error) {
+func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, map[types.Architecture][]*apk.RepositoryPackage, error) {
 	archs := make([]resolved, 0, len(mc.Contexts))
 
 	toInstalls, err := mc.BuildPackageLists(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for arch, pkgs := range toInstalls {
 		r := resolved{
@@ -133,7 +146,7 @@ func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, error) 
 		}
 		archs = append(archs, r)
 	}
-	return archs, nil
+	return archs, toInstalls, nil
 }
 
 type resolved struct {
