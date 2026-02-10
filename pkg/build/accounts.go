@@ -1,4 +1,4 @@
-// Copyright 2022, 2023 Chainguard, Inc.
+// Copyright 2022-2026 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,6 +37,25 @@ func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEn
 	return append(groups, ge)
 }
 
+func userToShadowEntry(user types.User) passwd.ShadowEntry {
+	return passwd.ShadowEntry{
+		UserName: user.UserName,
+		Password: "!*",
+		// Leave all numeric fields as nil (empty)
+		// This creates a locked account with invalid password hash
+		// Administrator must set password before account can be used
+	}
+}
+
+func groupToGShadowEntry(group types.Group) passwd.GShadowEntry {
+	return passwd.GShadowEntry{
+		GroupName:      group.GroupName,
+		Password:       "!*",
+		Administrators: []string{""},
+		Members:        group.Members,
+	}
+}
+
 func userToUserEntry(user types.User) passwd.UserEntry {
 	if user.Shell == "" {
 		user.Shell = "/bin/sh"
@@ -64,7 +83,7 @@ func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {
-		// Mutate the /etc/groups file
+		// Mutate the /etc/group file
 		eg.Go(func() error {
 			path := filepath.Join("etc", "group")
 
@@ -75,6 +94,27 @@ func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 
 			for _, g := range ic.Accounts.Groups {
 				gf.Entries = appendGroup(gf.Entries, g)
+			}
+
+			if err := gf.WriteFile(fsys, path); err != nil {
+				return err
+			}
+
+			return nil
+		})
+
+		// Mutate the /etc/gshadow file
+		eg.Go(func() error {
+			path := filepath.Join("etc", "gshadow")
+
+			gf, err := passwd.ReadOrCreateGShadowFile(fsys, path)
+			if err != nil {
+				return err
+			}
+
+			for _, g := range ic.Accounts.Groups {
+				ge := groupToGShadowEntry(g)
+				gf.Entries = append(gf.Entries, ge)
 			}
 
 			if err := gf.WriteFile(fsys, path); err != nil {
@@ -145,6 +185,27 @@ func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 					break
 				}
 			}
+		}
+
+		return nil
+	})
+
+	// Mutate the /etc/shadow file
+	eg.Go(func() error {
+		path := filepath.Join("etc", "shadow")
+
+		sf, err := passwd.ReadOrCreateShadowFile(fsys, path)
+		if err != nil {
+			return err
+		}
+
+		for _, u := range ic.Accounts.Users {
+			se := userToShadowEntry(u)
+			sf.Entries = append(sf.Entries, se)
+		}
+
+		if err := sf.WriteFile(fsys, path); err != nil {
+			return err
 		}
 
 		return nil
