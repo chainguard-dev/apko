@@ -437,6 +437,9 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 		}
 
 		parsed := cachedResolvePackageNameVersionPin(constraint)
+		if parsed.Err != nil {
+			return fmt.Errorf("invalid version constraint for %q: %w", constraint, parsed.Err)
+		}
 		if parsed.dep == versionAny {
 			continue
 		}
@@ -642,6 +645,9 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 // returns multiple in case you need to see all potential matches.
 func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]string) ([]*RepositoryPackage, error) {
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
+	if constraint.Err != nil {
+		return nil, fmt.Errorf("invalid version constraint for %q: %w", pkgName, constraint.Err)
+	}
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 	pkgsWithVersions, ok := p.nameMap[name]
 	if !ok {
@@ -668,6 +674,9 @@ func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // This is like ResolvePackage but we only care about the best match and not all matches.
 func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]string) (*RepositoryPackage, error) {
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
+	if constraint.Err != nil {
+		return nil, fmt.Errorf("invalid version constraint for %q: %w", pkgName, constraint.Err)
+	}
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 
 	pkgsWithVersions, ok := p.nameMap[name]
