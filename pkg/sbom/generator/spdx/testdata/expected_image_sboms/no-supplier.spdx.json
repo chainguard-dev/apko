@@ -8,22 +8,23 @@
       "Tool: apko (devel)",
       "Organization: Chainguard, Inc"
     ],
-    "licenseListVersion": "3.16"
+    "licenseListVersion": "3.27"
   },
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-"
+    "SPDXRef-Package-ImageLayer-"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-",
+      "SPDXID": "SPDXRef-Package-ImageLayer-",
       "name": "",
       "versionInfo": "3.0",
       "filesAnalyzed": false,
       "description": "apko operating system layer",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: Apko Images, Plc",
+      "primaryPackagePurpose": "CONTAINER",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -64,7 +65,7 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-",
+      "spdxElementId": "SPDXRef-Package-ImageLayer-",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-libattr1-2.5.1-r2"
     }

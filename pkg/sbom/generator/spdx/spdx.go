@@ -104,7 +104,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
 		DataLicense:    "CC0-1.0",
 		Namespace:      "https://spdx.org/spdxdocs/apko/",
@@ -407,7 +407,7 @@ func supplier(opts *options.Options) string {
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
+			"SPDXRef-Package-Image-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
@@ -441,12 +441,13 @@ func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Packag
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	return &Package{
-		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
+		ID:               fmt.Sprintf("SPDXRef-Package-ImageLayer-%s", mainPkgID),
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		Originator:       "",
 		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
@@ -566,7 +567,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
