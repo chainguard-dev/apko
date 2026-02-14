@@ -46,7 +46,7 @@ GitVersion:
 GitCommit:     unknown
 GitTreeState:  unknown
 BuildDate:     unknown
-GoVersion:     go1.18
+GoVersion:     go1.25
 Compiler:      gc
 Platform:      linux/amd64
 
@@ -59,7 +59,7 @@ about your experience in the development shell and any ideas you may have!
 ## Linting and Tests
 
 Before submitting a pull request, make sure tests and lints do not complain. 
-Make sure you have go 1.18 and
+Make sure you have go 1.25 or later and
 [golangci-lint](https://golangci-lint.run/welcome/install/) installed and try
 running the linter and tests:
 
