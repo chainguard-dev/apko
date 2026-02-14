@@ -104,6 +104,10 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 	return checksum, nil
 }
 
+func (m *memFS) String() string {
+	return "tarfs"
+}
+
 func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
