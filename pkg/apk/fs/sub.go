@@ -2,6 +2,7 @@ package fs
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"time"
@@ -10,6 +11,10 @@ import (
 type SubFS struct {
 	FS   FullFS
 	Root string
+}
+
+func (s *SubFS) String() string {
+	return fmt.Sprintf("%s:%s", s.FS, s.Root)
 }
 
 func (s *SubFS) Open(path string) (fs.File, error) {

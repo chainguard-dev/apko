@@ -212,6 +212,10 @@ type dirFS struct {
 	caseMapMutex sync.Mutex
 }
 
+func (f *dirFS) String() string {
+	return fmt.Sprintf("dirfs:%s", f.base)
+}
+
 func (f *dirFS) Readlink(name string) (string, error) {
 	// The underlying filesystem might not support symlinks, and it might be case-insensitive, so just
 	// use the one in memory.
