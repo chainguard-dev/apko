@@ -8,22 +8,23 @@
       "Tool: apko (devel)",
       "Organization: Chainguard, Inc"
     ],
-    "licenseListVersion": "3.16"
+    "licenseListVersion": "3.27"
   },
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-"
+    "SPDXRef-Package-ImageLayer-"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-",
+      "SPDXID": "SPDXRef-Package-ImageLayer-",
       "name": "",
       "versionInfo": "3.0",
       "filesAnalyzed": false,
       "description": "apko operating system layer",
       "downloadLocation": "NOASSERTION",
       "supplier": "Organization: unknown",
+      "primaryPackagePurpose": "CONTAINER",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -129,7 +130,7 @@
       "relatedSpdxElement": "SPDXRef-Package-github.com-elastic-logstash-v8.15.3-8364c8e89cfb113e38ec3f966df7eb1e9abe9d33-0"
     },
     {
-      "spdxElementId": "SPDXRef-Package-",
+      "spdxElementId": "SPDXRef-Package-ImageLayer-",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-logstash-8-8.15.3-r4"
     },
@@ -144,7 +145,7 @@
       "relatedSpdxElement": "SPDXRef-Package-github.com-elastic-logstash-v8.15.3-8364c8e89cfb113e38ec3f966df7eb1e9abe9d33-0"
     },
     {
-      "spdxElementId": "SPDXRef-Package-",
+      "spdxElementId": "SPDXRef-Package-ImageLayer-",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-logstash-8-compat-8.15.3-r4"
     }
