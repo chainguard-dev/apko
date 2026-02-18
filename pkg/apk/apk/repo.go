@@ -225,10 +225,6 @@ func (p *PkgResolver) Clone() *PkgResolver {
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
 // The indexes are anything that implements NamedIndex.
 func NewPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
-	return globalResolverCache.Get(ctx, indexes)
-}
-
-func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
@@ -489,12 +485,15 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
-func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, allArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, dq map[*RepositoryPackage]string) (toInstall []*RepositoryPackage, conflicts []string, err error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
 	defer span.End()
 
-	// Tracks all the packages we have disqualified and the reason we disqualified them.
-	dq := globalDisqualifyCache.Get(ctx, allArchs)
+	if dq == nil {
+		// Make sure we have a map to avoid panics. The code below mutates this map, so we need
+		// it to not be nil in all cases.
+		dq = map[*RepositoryPackage]string{}
+	}
 
 	// We're going to mutate this as our set of input packages to install, so make a copy.
 	constraints := slices.Clone(packages)
@@ -1140,7 +1139,7 @@ func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) e
 	return errors.New("not in indexes")
 }
 
-func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
+func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex, resolverCache *resolverCache) map[*RepositoryPackage]string {
 	dq := map[*RepositoryPackage]string{}
 
 	if len(byArch) == 1 {
@@ -1168,7 +1167,7 @@ func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) m
 	}
 
 	for arch := range allowablePackages {
-		p := globalResolverCache.Get(ctx, byArch[arch])
+		p := resolverCache.get(ctx, byArch[arch])
 		for otherArch, allowed := range allowablePackages {
 			if otherArch == arch {
 				continue

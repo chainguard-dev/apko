@@ -998,8 +998,9 @@ func TestDisqualifyingOtherArchitectures(t *testing.T) {
 		"x86_64":  testNamedRepositoryFromIndexes(index),
 		"aarch64": armIndex,
 	}
+	dq := disqualifyDifference(context.Background(), byArch, globalResolverCache)
 
 	resolver := NewPkgResolver(context.Background(), armIndex)
-	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, byArch)
+	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, dq)
 	require.ErrorContains(t, err, "package \"onlyinarm64-1.0.0.apk\" not available for arch \"x86_64\"")
 }
