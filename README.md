@@ -109,7 +109,7 @@ See the [docs](./docs/apko_file.md) for details of the file format and the [exam
 
 ## Why
 
-apko was created by [Chainguard](https://www.chainguard.dev), who require secure and reproducible
+apko was created by [Chainguard](https://www.chainguard.dev), who requires secure and reproducible
 container images for their tooling. Speed is also a critical factor; Chainguard require images to be
 rebuilt constantly in response to new versions and patches.
 
