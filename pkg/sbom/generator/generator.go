@@ -25,6 +25,7 @@ import (
 type Generator interface {
 	Key() string
 	Ext() string
+	PredicateType() string
 	Generate(context.Context, *options.Options, string) error
 	GenerateIndex(*options.Options, string) error
 }
