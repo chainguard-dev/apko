@@ -15,7 +15,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/klauspost/compress v1.18.4
 	github.com/klauspost/pgzip v1.2.6
-	github.com/package-url/packageurl-go v0.1.3
+	github.com/package-url/packageurl-go v0.1.4
 	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.10.2
