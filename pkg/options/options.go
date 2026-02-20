@@ -36,10 +36,10 @@ type SizeLimits struct {
 	APKIndexDecompressedMaxSize int64 `json:"apkIndexDecompressedMaxSize,omitempty"`
 	// APKControlMaxSize is the maximum decompressed size for APK control sections (default: 10 MB).
 	APKControlMaxSize int64 `json:"apkControlMaxSize,omitempty"`
-	// APKDataMaxSize is the maximum decompressed size for APK data sections (default: 4 GB).
+	// APKDataMaxSize is the maximum decompressed size for APK data sections (default: ~17 GB).
 	// This protects against gzip bombs.
 	APKDataMaxSize int64 `json:"apkDataMaxSize,omitempty"`
-	// HTTPResponseMaxSize is the maximum size for HTTP responses (default: 2 GB).
+	// HTTPResponseMaxSize is the maximum size for HTTP responses (default: ~9 GB).
 	HTTPResponseMaxSize int64 `json:"httpResponseMaxSize,omitempty"`
 }
 
@@ -49,7 +49,7 @@ func DefaultSizeLimits() SizeLimits {
 		APKIndexDecompressedMaxSize: 100 << 20, // 100 MB
 		APKControlMaxSize:           10 << 20,  // 10 MB
 		APKDataMaxSize:              16 << 30,  // ~17 GB
-		HTTPResponseMaxSize:         2 << 30,   // 2 GB
+		HTTPResponseMaxSize:         8 << 30,   // ~9 GB
 	}
 }
 
