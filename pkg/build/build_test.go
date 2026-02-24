@@ -42,7 +42,7 @@ func TestBuildLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	layers, _, err := bc.BuildLayers(ctx)
+	layers, err := bc.BuildLayers(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestBuildLayersWithEmptyLayering(t *testing.T) {
 	}
 
 	// Should build successfully and return a single layer
-	layers, _, err := bc.BuildLayers(ctx)
+	layers, err := bc.BuildLayers(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

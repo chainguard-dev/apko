@@ -38,10 +38,10 @@ import (
 )
 
 func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
-	return BuildImageFromLayers(ctx, baseImage, []v1.Layer{layer}, nil, oic, created, arch)
+	return BuildImageFromLayers(ctx, baseImage, []v1.Layer{layer}, oic, created, arch)
 }
 
-func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.Layer, perLayerAnnotations []map[string]string, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
+func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
 	log := clog.FromContext(ctx)
 
 	// Create a copy to avoid modifying the original ImageConfiguration.
@@ -62,7 +62,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 	}
 
 	adds := make([]mutate.Addendum, 0, len(layers))
-	for i, layer := range layers {
+	for _, layer := range layers {
 		digest, err := layer.Digest()
 		if err != nil {
 			return nil, fmt.Errorf("could not calculate layer digest: %w", err)
@@ -76,16 +76,10 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		log.Infof("layer digest: %v", digest)
 		log.Infof("layer diffID: %v", diffid)
 
-		// Build layer descriptor annotations from uniform + per-layer sources.
+		// Apply uniform layer annotations if configured.
 		var layerAnns map[string]string
-		if len(ic.LayerAnnotations) > 0 || (i < len(perLayerAnnotations) && len(perLayerAnnotations[i]) > 0) {
-			layerAnns = make(map[string]string)
-			maps.Copy(layerAnns, ic.LayerAnnotations)
-			if i < len(perLayerAnnotations) {
-				maps.Copy(layerAnns, perLayerAnnotations[i])
-				// Include layer digest only when auto-annotate is active (per-layer annotations present).
-				layerAnns["dev.chainguard.layer.digest"] = digest.String()
-			}
+		if len(ic.LayerAnnotations) > 0 {
+			layerAnns = maps.Clone(ic.LayerAnnotations)
 		}
 
 		adds = append(adds, mutate.Addendum{

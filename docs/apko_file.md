@@ -100,7 +100,6 @@ layer-annotations:
 layering:
   strategy: origin
   budget: 10
-  auto-annotate: true
 ```
 
 Details of each field can be found below.
@@ -275,9 +274,5 @@ It contains the following children:
 
  - `strategy`: The strategy to employ (currently, only "origin" is valid).
  - `budget`: The number of additional layers apko will use for layering.
- - `auto-annotate`: When set to `true`, automatically generates per-layer annotations with package
-   metadata using the `dev.chainguard.layer.packages` key. Each layer's annotation lists the
-   `name=version` pairs of all packages in that layer. Only meaningful when a layering strategy is
-   configured. This is opt-in because it changes the manifest digest.
 
 See [layering.md](layering.md) for more information.

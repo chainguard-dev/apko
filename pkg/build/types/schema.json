@@ -253,9 +253,6 @@
         },
         "budget": {
           "type": "integer"
-        },
-        "auto-annotate": {
-          "type": "boolean"
         }
       },
       "additionalProperties": false,

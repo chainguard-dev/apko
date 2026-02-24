@@ -439,9 +439,8 @@ type SBOM struct {
 }
 
 type Layering struct {
-	Strategy     string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
-	Budget       int    `json:"budget,omitempty" yaml:"budget,omitempty"`
-	AutoAnnotate bool   `json:"auto-annotate,omitempty" yaml:"auto-annotate,omitempty"`
+	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
+	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
 }
 
 type AdditionalCertificateEntry struct {

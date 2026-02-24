@@ -25,7 +25,6 @@ import (
 	"os"
 	"path"
 	"slices"
-	"strings"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -34,21 +33,21 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
-func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, []map[string]string, error) {
+func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	log := clog.FromContext(ctx)
 
 	if strategy := bc.ic.Layering.Strategy; strategy != "origin" {
-		return nil, nil, fmt.Errorf("unrecognized layering strategy %q", strategy)
+		return nil, fmt.Errorf("unrecognized layering strategy %q", strategy)
 	}
 
 	if bc.ic.Contents.BaseImage != nil {
-		return nil, nil, fmt.Errorf("layering with %q is unsupported", "baseimage")
+		return nil, fmt.Errorf("layering with %q is unsupported", "baseimage")
 	}
 
 	// Build a single fs.FS, the normal way (this writes to bc.fs).
 	diffs, err := bc.buildImage(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building filesystem: %w", err)
+		return nil, fmt.Errorf("building filesystem: %w", err)
 	}
 
 	pkgs := make([]*apk.Package, 0, len(diffs))
@@ -67,13 +66,13 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, []map[string]st
 	//
 	// TODO: Clean this up when time permits.
 	if err := bc.postBuildSetApk(ctx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Use our layering strategy to partition packages into a set of Budget groups.
 	groups, err := groupByOriginAndSize(pkgs, bc.ic.Layering.Budget)
 	if err != nil {
-		return nil, nil, fmt.Errorf("grouping packages: %w", err)
+		return nil, fmt.Errorf("grouping packages: %w", err)
 	}
 	log.Infof("Building %d layers with budget %d", len(groups), bc.ic.Layering.Budget)
 
@@ -88,34 +87,10 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, []map[string]st
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
 	layers, err := splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Generate per-layer annotations when auto-annotate is enabled.
-	var perLayerAnnotations []map[string]string
-	if bc.ic.Layering.AutoAnnotate {
-		perLayerAnnotations = autoAnnotateLayers(groups)
-	}
-
-	return layers, perLayerAnnotations, nil
-}
-
-// autoAnnotateLayers generates per-layer annotation maps from package groups.
-// The returned slice has one entry per group (package layer); the top layer
-// (appended by splitLayers) is not included and gets no auto-annotations.
-func autoAnnotateLayers(groups []*group) []map[string]string {
-	annotations := make([]map[string]string, len(groups))
-	for i, g := range groups {
-		names := make([]string, 0, len(g.pkgs))
-		for _, pkg := range g.pkgs {
-			names = append(names, pkg.Name+"="+pkg.Version)
-		}
-		slices.Sort(names)
-		annotations[i] = map[string]string{
-			"dev.chainguard.layer.packages": strings.Join(names, ","),
-		}
-	}
-	return annotations
+	return layers, nil
 }
 
 func replacesGroup(rep string, g *group) (bool, error) {

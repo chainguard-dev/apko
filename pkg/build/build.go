@@ -141,8 +141,7 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 }
 
 // BuildLayers is like BuildLayer but has the potential to return multiple layers.
-// The second return value contains per-layer annotations (may be nil).
-func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, []map[string]string, error) {
+func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
 	defer span.End()
 
@@ -152,10 +151,10 @@ func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, []map[string]st
 	if bc.ic.Layering == nil || (bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
 		_, layer, err := bc.BuildLayer(ctx)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		return []v1.Layer{layer}, nil, nil
+		return []v1.Layer{layer}, nil
 	}
 
 	return bc.buildLayers(ctx)

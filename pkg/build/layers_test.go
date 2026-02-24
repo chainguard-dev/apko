@@ -215,32 +215,6 @@ func TestAlignStacks(t *testing.T) {
 	}
 }
 
-func TestAutoAnnotateLayers(t *testing.T) {
-	pkg1 := &apk.Package{Name: "glibc", Version: "2.38-r14"}
-	pkg2 := &apk.Package{Name: "glibc-locale-posix", Version: "2.38-r14"}
-	pkg3 := &apk.Package{Name: "crane", Version: "0.19.0-r1"}
-
-	groups := []*group{
-		{pkgs: []*apk.Package{pkg1, pkg2}},
-		{pkgs: []*apk.Package{pkg3}},
-	}
-
-	got := autoAnnotateLayers(groups)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 annotation maps, got %d", len(got))
-	}
-
-	want0 := "glibc-locale-posix=2.38-r14,glibc=2.38-r14"
-	if got[0]["dev.chainguard.layer.packages"] != want0 {
-		t.Errorf("layer 0 packages: got %q, want %q", got[0]["dev.chainguard.layer.packages"], want0)
-	}
-
-	want1 := "crane=0.19.0-r1"
-	if got[1]["dev.chainguard.layer.packages"] != want1 {
-		t.Errorf("layer 1 packages: got %q, want %q", got[1]["dev.chainguard.layer.packages"], want1)
-	}
-}
-
 // NB: this only cares about path
 func compareStacks(a, b []*file) error {
 	if len(a) != len(b) {
