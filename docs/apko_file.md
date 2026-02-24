@@ -92,10 +92,15 @@ annotations:
   foo: bar
   bar: baz
 
+# optional layer descriptor annotations
+layer-annotations:
+  dev.chainguard.layer.source: apko
+
 # optional layering strategy
 layering:
   strategy: origin
   budget: 10
+  auto-annotate: true
 ```
 
 Details of each field can be found below.
@@ -247,6 +252,21 @@ Patches to improve the parsing to make it more flexible are welcome.
 
 `annotations` defines the set of annotations that should be applied to images and indexes.
 
+### Layer Annotations
+
+`layer-annotations` defines the set of annotations that should be applied to every layer descriptor
+in the image manifest. This is useful for attaching metadata to layers for provenance tracking or
+tooling integration.
+
+Example:
+
+```yaml
+layer-annotations:
+  dev.chainguard.layer.source: apko
+```
+
+Layer annotations can also be set via the `--layer-annotations` CLI flag using `key:value` format.
+
 ### Layering
 
 `layering` defines a strategy for splitting the filesystem contents into layers.
@@ -255,5 +275,9 @@ It contains the following children:
 
  - `strategy`: The strategy to employ (currently, only "origin" is valid).
  - `budget`: The number of additional layers apko will use for layering.
+ - `auto-annotate`: When set to `true`, automatically generates per-layer annotations with package
+   metadata using the `dev.chainguard.layer.packages` key. Each layer's annotation lists the
+   `name=version` pairs of all packages in that layer. Only meaningful when a layering strategy is
+   configured. This is opt-in because it changes the manifest digest.
 
 See [layering.md](layering.md) for more information.

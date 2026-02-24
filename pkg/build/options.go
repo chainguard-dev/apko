@@ -202,6 +202,18 @@ func WithAnnotations(annotations map[string]string) Option {
 	}
 }
 
+// WithLayerAnnotations adds layer annotations from commandline to those in the config.
+// Commandline layer annotations take precedence.
+func WithLayerAnnotations(annotations map[string]string) Option {
+	return func(bc *Context) error {
+		if bc.ic.LayerAnnotations == nil {
+			bc.ic.LayerAnnotations = make(map[string]string)
+		}
+		maps.Copy(bc.ic.LayerAnnotations, annotations)
+		return nil
+	}
+}
+
 // WithCache set the cache directory to use
 func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	return func(bc *Context) error {
