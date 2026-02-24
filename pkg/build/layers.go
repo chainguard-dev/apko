@@ -85,12 +85,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
-	layers, err := splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
-	if err != nil {
-		return nil, err
-	}
-
-	return layers, nil
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 }
 
 func replacesGroup(rep string, g *group) (bool, error) {
