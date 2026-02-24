@@ -113,7 +113,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@4ed96e952ef2982fe89a50f3c40e9643bb9fe803 # v1.6.3
+      - uses: chainguard-dev/actions/setup-registry@eab208ef2d05b13404296a5e194a6b237e8bb213 # v1.6.4
         with:
           port: 5000
 
@@ -155,7 +155,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@4ed96e952ef2982fe89a50f3c40e9643bb9fe803 # v1.6.3
+      - uses: chainguard-dev/actions/setup-registry@eab208ef2d05b13404296a5e194a6b237e8bb213 # v1.6.4
         with:
           port: 5000
 
@@ -198,7 +198,7 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
       - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
-      - uses: chainguard-dev/actions/setup-registry@4ed96e952ef2982fe89a50f3c40e9643bb9fe803 # v1.6.3
+      - uses: chainguard-dev/actions/setup-registry@eab208ef2d05b13404296a5e194a6b237e8bb213 # v1.6.4
         with:
           port: 5000
       - run: |
