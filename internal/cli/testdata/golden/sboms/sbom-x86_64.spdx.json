@@ -1,6 +1,6 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "sbom-sha256:622ca92e75385bab9884a8c8c65c3f4a4c3dd0eafbd2a57f2762bafcb393a456",
+  "name": "sbom-sha256:c7557730da0e2d7fb242d8d1ac6dcf7e3a2439732aa5981270b4f3a02454b738",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
     "created": "1970-01-01T00:00:00Z",
@@ -13,13 +13,13 @@
   "dataLicense": "CC0-1.0",
   "documentNamespace": "https://spdx.org/spdxdocs/apko/",
   "documentDescribes": [
-    "SPDXRef-Package-Image-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a"
+    "SPDXRef-Package-Image-sha256-69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4"
   ],
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-Image-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
-      "name": "sha256:3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
-      "versionInfo": "sha256:3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "SPDXID": "SPDXRef-Package-Image-sha256-69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
+      "name": "sha256:69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
+      "versionInfo": "sha256:69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
       "filesAnalyzed": false,
       "description": "apko container image",
       "downloadLocation": "NOASSERTION",
@@ -28,20 +28,20 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a"
+          "checksumValue": "69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4"
         }
       ],
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/golden@sha256%3A3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
+          "referenceLocator": "pkg:oci/golden@sha256:69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.manifest.v1%2Bjson\u0026os=linux",
           "referenceType": "purl"
         }
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-ImageLayer-sha256-622ca92e75385bab9884a8c8c65c3f4a4c3dd0eafbd2a57f2762bafcb393a456",
-      "name": "sha256:622ca92e75385bab9884a8c8c65c3f4a4c3dd0eafbd2a57f2762bafcb393a456",
+      "SPDXID": "SPDXRef-Package-ImageLayer-sha256-c7557730da0e2d7fb242d8d1ac6dcf7e3a2439732aa5981270b4f3a02454b738",
+      "name": "sha256:c7557730da0e2d7fb242d8d1ac6dcf7e3a2439732aa5981270b4f3a02454b738",
       "versionInfo": "1.0.0",
       "filesAnalyzed": false,
       "description": "apko operating system layer",
@@ -51,7 +51,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/golden@sha256%3A622ca92e75385bab9884a8c8c65c3f4a4c3dd0eafbd2a57f2762bafcb393a456?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.layer.v1.tar%2Bgzip\u0026os=linux",
+          "referenceLocator": "pkg:oci/golden@sha256:c7557730da0e2d7fb242d8d1ac6dcf7e3a2439732aa5981270b4f3a02454b738?arch=amd64\u0026mediaType=application%2Fvnd.oci.image.layer.v1.tar%2Bgzip\u0026os=linux",
           "referenceType": "purl"
         }
       ]
@@ -67,7 +67,7 @@
       "primaryPackagePurpose": "OPERATING_SYSTEM"
     },
     {
-      "SPDXID": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
+      "SPDXID": "SPDXRef-Package-apk-pretend-baselayout-1.0.0-r0",
       "name": "pretend-baselayout",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": false,
@@ -77,6 +77,7 @@
       "originator": "Organization: Unknown",
       "supplier": "Organization: Unknown",
       "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -86,25 +87,26 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-pretend-baselayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491",
+      "SPDXID": "SPDXRef-Package-Melange-pretend-baselayout.melange.yaml-326e0ed687bdfeadac839dc9b25686e4442c9d04",
       "name": "pretend-baselayout.melange.yaml",
-      "versionInfo": "8e7230fc2d8afd47a5341ca0ba9b63f93bda5491",
+      "versionInfo": "326e0ed687bdfeadac839dc9b25686e4442c9d04",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "originator": "Organization: Unknown",
       "supplier": "Organization: Unknown",
+      "primaryPackagePurpose": "INSTALL",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:github/https%3A/%2Funknown%2Funknown%2Funknown@8e7230fc2d8afd47a5341ca0ba9b63f93bda5491#pretend-baselayout.melange.yaml",
+          "referenceLocator": "pkg:github/https:/%2Funknown%2Funknown%2Funknown@326e0ed687bdfeadac839dc9b25686e4442c9d04#pretend-baselayout.melange.yaml",
           "referenceType": "purl"
         }
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-replayout-1.0.0-r0",
+      "SPDXID": "SPDXRef-Package-apk-replayout-1.0.0-r0",
       "name": "replayout",
       "versionInfo": "1.0.0-r0",
       "filesAnalyzed": false,
@@ -114,6 +116,7 @@
       "originator": "Organization: Unknown",
       "supplier": "Organization: Unknown",
       "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
@@ -123,19 +126,20 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-Package-replayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491",
+      "SPDXID": "SPDXRef-Package-Melange-replayout.melange.yaml-326e0ed687bdfeadac839dc9b25686e4442c9d04",
       "name": "replayout.melange.yaml",
-      "versionInfo": "8e7230fc2d8afd47a5341ca0ba9b63f93bda5491",
+      "versionInfo": "326e0ed687bdfeadac839dc9b25686e4442c9d04",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "originator": "Organization: Unknown",
       "supplier": "Organization: Unknown",
+      "primaryPackagePurpose": "INSTALL",
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:github/https%3A/%2Funknown%2Funknown%2Funknown@8e7230fc2d8afd47a5341ca0ba9b63f93bda5491#replayout.melange.yaml",
+          "referenceLocator": "pkg:github/https:/%2Funknown%2Funknown%2Funknown@326e0ed687bdfeadac839dc9b25686e4442c9d04#replayout.melange.yaml",
           "referenceType": "purl"
         }
       ]
@@ -143,29 +147,29 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-Image-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
       "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-ImageLayer-sha256-622ca92e75385bab9884a8c8c65c3f4a4c3dd0eafbd2a57f2762bafcb393a456"
+      "relatedSpdxElement": "SPDXRef-Package-ImageLayer-sha256-c7557730da0e2d7fb242d8d1ac6dcf7e3a2439732aa5981270b4f3a02454b738"
     },
     {
-      "spdxElementId": "SPDXRef-Package-pretend-baselayout-1.0.0-r0",
+      "spdxElementId": "SPDXRef-Package-apk-pretend-baselayout-1.0.0-r0",
       "relationshipType": "DESCRIBED_BY",
-      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
+      "relatedSpdxElement": "SPDXRef-Package-Melange-pretend-baselayout.melange.yaml-326e0ed687bdfeadac839dc9b25686e4442c9d04"
     },
     {
-      "spdxElementId": "SPDXRef-Package-Image-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
       "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-pretend-baselayout-1.0.0-r0"
+      "relatedSpdxElement": "SPDXRef-Package-apk-pretend-baselayout-1.0.0-r0"
     },
     {
-      "spdxElementId": "SPDXRef-Package-replayout-1.0.0-r0",
+      "spdxElementId": "SPDXRef-Package-apk-replayout-1.0.0-r0",
       "relationshipType": "DESCRIBED_BY",
-      "relatedSpdxElement": "SPDXRef-Package-replayout.melange.yaml-8e7230fc2d8afd47a5341ca0ba9b63f93bda5491"
+      "relatedSpdxElement": "SPDXRef-Package-Melange-replayout.melange.yaml-326e0ed687bdfeadac839dc9b25686e4442c9d04"
     },
     {
-      "spdxElementId": "SPDXRef-Package-Image-sha256-3fa87a64fb699f65953caad1adcba9f5d3f25134bfff43f92a1ed097712cd79a",
+      "spdxElementId": "SPDXRef-Package-Image-sha256-69f0237c7f8cf0b8a329d1bf1d6870c870c4ec323e39d3a6da59596632d0f2f4",
       "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-Package-replayout-1.0.0-r0"
+      "relatedSpdxElement": "SPDXRef-Package-apk-replayout-1.0.0-r0"
     }
   ]
 }
