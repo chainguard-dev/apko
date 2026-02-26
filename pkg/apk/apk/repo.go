@@ -444,16 +444,39 @@ type resolverSnapshot struct {
 	selected        map[string]*RepositoryPackage
 	dq              map[*RepositoryPackage]string
 	existing        map[string]*RepositoryPackage
-	existingOrigins map[string]bool
+	existingOrigins map[string]map[string]bool
 	depsLen         int
 	conflictsLen    int
+}
+
+// cloneExistingOrigins deep-clones the existingOrigins map so that snapshot
+// restoration does not share inner maps with the live state.
+func cloneExistingOrigins(m map[string]map[string]bool) map[string]map[string]bool {
+	clone := make(map[string]map[string]bool, len(m))
+	for k, v := range m {
+		clone[k] = maps.Clone(v)
+	}
+	return clone
+}
+
+// addExistingOrigin records that a package with the given origin and version
+// has been selected, so that comparePackages can prefer same-origin/same-version
+// providers when later resolving virtual dependencies.
+func addExistingOrigin(m map[string]map[string]bool, origin, version string) {
+	if origin == "" {
+		return
+	}
+	if m[origin] == nil {
+		m[origin] = map[string]bool{}
+	}
+	m[origin][version] = true
 }
 
 // snapshotState captures the current mutable state for later restoration.
 func (p *PkgResolver) snapshotState(
 	dq map[*RepositoryPackage]string,
 	existing map[string]*RepositoryPackage,
-	existingOrigins map[string]bool,
+	existingOrigins map[string]map[string]bool,
 	deps []*RepositoryPackage,
 	conflicts []string,
 ) resolverSnapshot {
@@ -461,7 +484,7 @@ func (p *PkgResolver) snapshotState(
 		selected:        maps.Clone(p.selected),
 		dq:              maps.Clone(dq),
 		existing:        maps.Clone(existing),
-		existingOrigins: maps.Clone(existingOrigins),
+		existingOrigins: cloneExistingOrigins(existingOrigins),
 		depsLen:         len(deps),
 		conflictsLen:    len(conflicts),
 	}
@@ -477,7 +500,7 @@ func (p *PkgResolver) restoreState(
 ) (
 	dq map[*RepositoryPackage]string,
 	existing map[string]*RepositoryPackage,
-	existingOrigins map[string]bool,
+	existingOrigins map[string]map[string]bool,
 	restoredDeps []*RepositoryPackage,
 	restoredConflicts []string,
 ) {
@@ -709,11 +732,11 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
 	parents := make(map[string]bool)
 	localExisting := make(map[string]*RepositoryPackage, len(existing))
-	existingOrigins := map[string]bool{}
+	existingOrigins := map[string]map[string]bool{}
 	for k, v := range existing {
 		localExisting[k] = v
-		if v != nil && v.Origin != "" {
-			existingOrigins[v.Origin] = true
+		if v != nil {
+			addExistingOrigin(existingOrigins, v.Origin, v.Version)
 		}
 	}
 
@@ -852,7 +875,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, context.Cause(ctx)
 	}
@@ -1069,7 +1092,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 			conflicts = append(conflicts, confs...)
 			for _, dep := range subDeps {
 				existing[dep.Name] = dep
-				existingOrigins[dep.Origin] = true
+				addExistingOrigin(existingOrigins, dep.Origin, dep.Version)
 			}
 			succeeded = true
 			break
@@ -1118,11 +1141,11 @@ func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 // For example, if the original search was for package "a", then pkgs may contain some that
 // are named "a", but others that provided "a". In that case, we should look not at the
 // version of the package, but the version of "a" that the package provides.
-func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) {
+func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) {
 	slices.SortFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
 }
 
-func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
+func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
 	return func(a, b *repositoryPackage) int {
 		// determine versions
 		iVersionStr := p.getDepVersionForName(a, name)
@@ -1164,9 +1187,22 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 		}
 		// both matched, so keep looking
 
-		// see if an origin already is installed
-		iOriginMatched := existingOrigins[a.Origin]
-		jOriginMatched := existingOrigins[b.Origin]
+		// Prefer providers from the same origin AND same package version as an
+		// already-selected package. This ensures that, e.g., libpq-15=15.3-r1 is
+		// preferred over libpq-15=15.4-r0 when postgresql-15=15.3-r1 is already
+		// in the install set: packages built together are most likely compatible.
+		iExactOriginMatch := existingOrigins[a.Origin][a.Version]
+		jExactOriginMatch := existingOrigins[b.Origin][b.Version]
+		if iExactOriginMatch && !jExactOriginMatch {
+			return -1
+		}
+		if jExactOriginMatch && !iExactOriginMatch {
+			return 1
+		}
+
+		// see if an origin already is installed (any version)
+		_, iOriginMatched := existingOrigins[a.Origin]
+		_, jOriginMatched := existingOrigins[b.Origin]
 		if iOriginMatched && !jOriginMatched {
 			return -1
 		}
@@ -1226,7 +1262,7 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 	}
 }
 
-func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) *repositoryPackage {
+func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) *repositoryPackage {
 	if len(pkgs) == 0 {
 		return nil
 	}

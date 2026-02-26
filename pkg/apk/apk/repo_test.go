@@ -764,7 +764,7 @@ func TestSortPackages(t *testing.T) {
 				pkgs            []*RepositoryPackage
 				pkg             *RepositoryPackage
 				existing        = map[string]*RepositoryPackage{}
-				existingOrigins = map[string]bool{}
+				existingOrigins = map[string]map[string]bool{}
 			)
 			for _, pkg := range tt.pkgs {
 				// we cheat and use the InstalledSize for the preferred order, so that it gets carried around.
@@ -778,7 +778,7 @@ func TestSortPackages(t *testing.T) {
 			}
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = NewRepositoryPackage(pkg.pkg, &RepositoryWithIndex{Repository: &Repository{URI: pkg.repo}})
-				existingOrigins[pkg.pkg.Origin] = true
+				addExistingOrigin(existingOrigins, pkg.pkg.Origin, pkg.pkg.Version)
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
 			pr := NewPkgResolver(context.Background(), []NamedIndex{})
@@ -1332,4 +1332,79 @@ func TestThreeProvidersOneUnversionedSelectsHighest(t *testing.T) {
 	require.Contains(t, names, "provider-high-3.0.apk")
 	require.NotContains(t, names, "provider-mid-2.0.apk")
 	require.NotContains(t, names, "provider-unversioned-1.0.apk")
+}
+
+// TestSameOriginVersionPreferredOverNewer is a unit test for the sort tier that
+// prefers an exact origin+version match over a newer package from the same origin.
+//
+// Two candidates both provide "libpq" and share origin "postgresql":
+//   - libpq-15=15.3-r1: exact version match with the already-selected postgresql-15=15.3-r1
+//   - libpq-15=15.4-r0: newer version, same origin, no exact match
+//
+// Without the new tier the greedy version sort would pick 15.4-r0 (higher version).
+// With the new tier 15.3-r1 must sort first.
+func TestSameOriginVersionPreferredOverNewer(t *testing.T) {
+	const origin = "postgresql"
+	const selectedVersion = "15.3-r1"
+
+	// Two candidates for virtual "libpq", both from origin "postgresql".
+	matchedPkg := NewRepositoryPackage(
+		&Package{Name: "libpq-15", Version: selectedVersion, Origin: origin},
+		&RepositoryWithIndex{Repository: &Repository{URI: "http://repo"}},
+	)
+	newerPkg := NewRepositoryPackage(
+		&Package{Name: "libpq-15", Version: "15.4-r0", Origin: origin},
+		&RepositoryWithIndex{Repository: &Repository{URI: "http://repo"}},
+	)
+
+	// Simulate postgresql-15=15.3-r1 already being in the install set.
+	existingOrigins := map[string]map[string]bool{}
+	addExistingOrigin(existingOrigins, origin, selectedVersion)
+
+	candidates := testNamedPackageFromPackages([]*RepositoryPackage{newerPkg, matchedPkg})
+	pr := NewPkgResolver(context.Background(), []NamedIndex{})
+	pr.sortPackages(candidates, nil, "libpq", map[string]*RepositoryPackage{}, existingOrigins, "")
+
+	// The version-matched candidate must rank first.
+	require.Equal(t, selectedVersion, candidates[0].Version,
+		"exact origin+version match should rank before newer package from same origin")
+}
+
+// TestSameOriginVersionEndToEnd exercises the full resolver flow: postgresql-15 is
+// a top-level package that gets resolved before pkg-b, so its origin+version end up
+// in existingOrigins when libpq providers are sorted for pkg-b's dependency.
+//
+// Two libpq providers share origin "postgresql":
+//   - libpq-15=15.3-r1 (same version as postgresql-15) — must be selected
+//   - libpq-15=15.4-r0 (newer)                          — must not be selected
+func TestSameOriginVersionEndToEnd(t *testing.T) {
+	const origin = "postgresql"
+
+	// Build packages manually so we can set the Origin field.
+	allPkgs := []*Package{
+		{Name: "postgresql-15", Version: "15.3-r1", Origin: origin},
+		{Name: "libpq-15", Version: "15.3-r1", Origin: origin, Provides: []string{"libpq=1"}},
+		{Name: "libpq-15", Version: "15.4-r0", Origin: origin, Provides: []string{"libpq=1"}},
+		{Name: "pkg-a", Version: "1.0", Dependencies: []string{"postgresql-15"}},
+		{Name: "pkg-b", Version: "1.0", Dependencies: []string{"libpq"}},
+	}
+	repo := Repository{}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: allPkgs})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{repoWithIndex}))
+
+	// pkg-a is listed first so postgresql-15 lands in dependenciesMap before
+	// pkg-b is resolved, giving existingOrigins the postgresql/15.3-r1 entry.
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "postgresql-15-15.3-r1.apk")
+	require.Contains(t, names, "libpq-15-15.3-r1.apk")
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.NotContains(t, names, "libpq-15-15.4-r0.apk")
 }
