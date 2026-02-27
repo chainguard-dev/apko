@@ -33,7 +33,7 @@ require (
 	google.golang.org/api v0.269.0
 	gopkg.in/ini.v1 v1.67.1
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.35.1
+	k8s.io/apimachinery v0.35.2
 	sigs.k8s.io/release-utils v0.12.3
 )
 
