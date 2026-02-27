@@ -10,3 +10,9 @@ set -ex
   melange build --arch arm64 --arch amd64 -r https://packages.wolfi.dev/os -k https://packages.wolfi.dev/os/wolfi-signing.rsa.pub --signing-key ./melange.rsa replayout.melange.yaml)
 (cd internal/cli &&
   apko lock ./testdata/apko.yaml)
+
+(cd pkg/build/testdata && \
+  melange build --arch arm64 --arch amd64 -r https://packages.wolfi.dev/os -k https://packages.wolfi.dev/os/wolfi-signing.rsa.pub --signing-key ./melange.rsa pretend-baselayout.melange.yaml && \
+  melange build --arch arm64 --arch amd64 -r https://packages.wolfi.dev/os -k https://packages.wolfi.dev/os/wolfi-signing.rsa.pub --signing-key ./melange.rsa replayout.melange.yaml && \
+  melange build --arch arm64 --arch amd64 -r https://packages.wolfi.dev/os -k https://packages.wolfi.dev/os/wolfi-signing.rsa.pub --signing-key ./melange.rsa custom-ca-certs-1.melange.yaml && \
+  melange build --arch arm64 --arch amd64 -r https://packages.wolfi.dev/os -k https://packages.wolfi.dev/os/wolfi-signing.rsa.pub --signing-key ./melange.rsa custom-ca-certs-2.melange.yaml)

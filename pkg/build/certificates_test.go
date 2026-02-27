@@ -15,15 +15,19 @@
 package build
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	apktypes "chainguard.dev/apko/pkg/apk/types"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
 
@@ -86,6 +90,38 @@ vbtH7QiVzeKCOTQPINyRql6P
 -----END CERTIFICATE-----
 `
 	testCertPEM2Fingerprint = "9b2a339fe6a3e85585c4cd75536cb8c1cf7cd603b9a64bec2521858ae48da85d"
+
+	// Self-signed test certificate 3 (EC P-256, CN=Test CA Certificate 3).
+	testCertPEM3 = `-----BEGIN CERTIFICATE-----
+MIIBwjCCAWegAwIBAgIUBKZDifzRAz30jwlcoQLIOxkBPLMwCgYIKoZIzj0EAwIw
+NTEeMBwGA1UEAwwVVGVzdCBDQSBDZXJ0aWZpY2F0ZSAzMRMwEQYDVQQKDApUZXN0
+IE9yZyAzMCAXDTI2MDIyNzIwMzk1OVoYDzIxMjYwMjAzMjAzOTU5WjA1MR4wHAYD
+VQQDDBVUZXN0IENBIENlcnRpZmljYXRlIDMxEzARBgNVBAoMClRlc3QgT3JnIDMw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARx/10O/q2rOnQtpBXHjARAUryfNWjD
+UXeshzFk44hrv45loTsGQcyb5vAL6h3FSdBN91njUch4eF1NEYLKoR3Qo1MwUTAd
+BgNVHQ4EFgQUhLbWEa0IUIixKPBVvuKxhK6UMnMwHwYDVR0jBBgwFoAUhLbWEa0I
+UIixKPBVvuKxhK6UMnMwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBG
+AiEAqgTlOPOiNJLPJhMjRl9Zpaq6TTGfh+awe7N3fcEdHVICIQDfgVRRkuv1KTWk
+44YBh2/IaTSFwFo8cd39Fnv7CYi/2g==
+-----END CERTIFICATE-----
+`
+	testCertPEM3Fingerprint = "347537af7a09d403f19f58f83c3568912af24b7c12e745f1d5557079708c91ad"
+
+	// Self-signed test certificate 4 (EC P-256, CN=Test CA Certificate 4).
+	testCertPEM4 = `-----BEGIN CERTIFICATE-----
+MIIBwTCCAWegAwIBAgIUPrm4YvABD98JhdU93qPsAgryo0UwCgYIKoZIzj0EAwIw
+NTEeMBwGA1UEAwwVVGVzdCBDQSBDZXJ0aWZpY2F0ZSA0MRMwEQYDVQQKDApUZXN0
+IE9yZyA0MCAXDTI2MDIyNzIwNDAwMFoYDzIxMjYwMjAzMjA0MDAwWjA1MR4wHAYD
+VQQDDBVUZXN0IENBIENlcnRpZmljYXRlIDQxEzARBgNVBAoMClRlc3QgT3JnIDQw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQbR9hBg7/IeSBYJzUvBUxnnaNmoOJj
+ESG5CiOa2980CC5aixcLof5kk/9K16B+OLIGSUE+Ya98N0vNP8KmDmvBo1MwUTAd
+BgNVHQ4EFgQU6ZlpZtkvodhxZX1aRsM44dY0SJ8wHwYDVR0jBBgwFoAU6ZlpZtkv
+odhxZX1aRsM44dY0SJ8wDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBF
+AiARCNSY4WZ7Tl1oAmWghJz0Sxzi57JY4pdrvzyzYQNrhgIhAPMAzTOf33fVRhaX
+wB7TKj2HAGTDpoliTH80SMWJN3jK
+-----END CERTIFICATE-----
+`
+	testCertPEM4Fingerprint = "12ae34999aa64dcd1a6947e838a53aababfcfaca45abca8dc0cbb8dcb7bd063c"
 )
 
 func TestParseCertificates(t *testing.T) {
@@ -189,6 +225,7 @@ func TestInstallCertificates(t *testing.T) {
 		existingFiles: map[string][]byte{},
 		wantFiles: map[string][]byte{
 			filepath.Join(caCertsDir, fmt.Sprintf("test-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
+			caBundlePaths[0]: []byte(testCertPEM + "\n"),
 		},
 	}, {
 		name: "multiple certificate entries only one existing bundle",
@@ -371,6 +408,307 @@ func TestInstallCertificates(t *testing.T) {
 				}
 				return nil
 			})
+		})
+	}
+}
+
+func TestInstallPackageCertificates(t *testing.T) {
+	epoch := time.Unix(1337, 0)
+	t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
+
+	createTruststore := func(certs map[string]string) []byte {
+		ks := keystore.New(keystore.WithOrderedAliases())
+		for name, content := range certs {
+			cert, err := parseCertificates(content)
+			if err != nil {
+				t.Fatalf("failed to parse certificate: %v", err)
+			}
+			entry := keystore.TrustedCertificateEntry{
+				CreationTime: epoch,
+				Certificate: keystore.Certificate{
+					Type:    "X.509",
+					Content: cert.structured.Raw,
+				},
+			}
+			if err := ks.SetTrustedCertificateEntry(name, entry); err != nil {
+				t.Fatalf("failed to add certificate to truststore: %v", err)
+			}
+		}
+		var buf bytes.Buffer
+		if err := ks.Store(&buf, javaTruststorePassword); err != nil {
+			t.Fatalf("failed to store truststore: %v", err)
+		}
+		return buf.Bytes()
+	}
+
+	// setupAPK creates a MemFS, initializes the APK DB, and registers packages.
+	setupAPK := func(t *testing.T, pkgs []struct {
+		pkg   apktypes.Package
+		files []tar.Header
+	}, certData map[string][]byte, existingFiles map[string][]byte) (apkfs.FullFS, *apk.APK) {
+		t.Helper()
+		ctx := context.Background()
+		fsys := apkfs.NewMemFS()
+
+		apkInst, err := apk.New(ctx, apk.WithFS(fsys), apk.WithIgnoreMknodErrors(true))
+		if err != nil {
+			t.Fatalf("failed to create APK: %v", err)
+		}
+		if err := apkInst.InitDB(ctx); err != nil {
+			t.Fatalf("failed to init APK DB: %v", err)
+		}
+
+		for _, p := range pkgs {
+			if _, err := apkInst.AddInstalledPackage(&p.pkg, p.files); err != nil {
+				t.Fatalf("failed to add installed package %s: %v", p.pkg.Name, err)
+			}
+		}
+
+		// Write actual cert file contents to the filesystem.
+		for path, data := range certData {
+			if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("failed to create dir for %s: %v", path, err)
+			}
+			if err := fsys.WriteFile(path, data, 0o644); err != nil {
+				t.Fatalf("failed to write cert file %s: %v", path, err)
+			}
+		}
+
+		// Write any pre-existing files (CA bundles, truststores).
+		for path, data := range existingFiles {
+			if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("failed to create dir for %s: %v", path, err)
+			}
+			if err := fsys.WriteFile(path, data, 0o644); err != nil {
+				t.Fatalf("failed to write existing file %s: %v", path, err)
+			}
+		}
+
+		return fsys, apkInst
+	}
+
+	tests := []struct {
+		name string
+		pkgs []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}
+		certData      map[string][]byte
+		existingFiles map[string][]byte
+		wantBundle    string // expected contents of primary CA bundle
+		wantErr       bool
+	}{{
+		name: "no packages with custom-ca-certificates",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "some-package", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{"something-else"},
+			},
+		}},
+	}, {
+		name: "package with cert files but without custom-ca-certificates provide is ignored",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "not-a-ca-pkg", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{"something-else"},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/sneaky-cert.crt", Mode: 0o644},
+			},
+		}},
+		certData: map[string][]byte{
+			"usr/local/share/ca-certificates/sneaky-cert.crt": []byte(testCertPEM),
+		},
+	}, {
+		name: "single package with two certs creates bundle",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{customCACertsProvides},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/custom-1-cert-a.crt", Mode: 0o644},
+				{Name: "usr/local/share/ca-certificates/custom-1-cert-b.crt", Mode: 0o644},
+			},
+		}},
+		certData: map[string][]byte{
+			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/custom-1-cert-b.crt": []byte(testCertPEM2),
+		},
+		wantBundle: testCertPEM + "\n" + testCertPEM2 + "\n",
+	}, {
+		name: "two packages with certs each appends to existing bundle",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{customCACertsProvides},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/custom-1-cert-a.crt", Mode: 0o644},
+			},
+		}, {
+			pkg: apktypes.Package{
+				Name: "ca-certs-2", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{customCACertsProvides},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/custom-2-cert-c.crt", Mode: 0o644},
+			},
+		}},
+		certData: map[string][]byte{
+			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM3),
+			"usr/local/share/ca-certificates/custom-2-cert-c.crt": []byte(testCertPEM4),
+		},
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: []byte("# Existing Bundle\n"),
+		},
+		wantBundle: "# Existing Bundle\n" + testCertPEM3 + "\n" + testCertPEM4 + "\n",
+	}, {
+		name: "non-cert files are ignored",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{customCACertsProvides},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/custom-1-cert-a.crt", Mode: 0o644},
+				{Name: "usr/local/share/ca-certificates/custom-1-README.md", Mode: 0o644},
+			},
+		}},
+		certData: map[string][]byte{
+			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/custom-1-README.md":  []byte("not a cert"),
+		},
+		wantBundle: testCertPEM + "\n",
+	}, {
+		name: "with existing Java truststore",
+		pkgs: []struct {
+			pkg   apktypes.Package
+			files []tar.Header
+		}{{
+			pkg: apktypes.Package{
+				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
+				Provides: []string{customCACertsProvides},
+			},
+			files: []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/custom-1-cert-a.crt", Mode: 0o644},
+			},
+		}},
+		certData: map[string][]byte{
+			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
+		},
+		existingFiles: map[string][]byte{
+			javaTruststorePaths[0]: createTruststore(map[string]string{
+				"existing": testCertPEM2,
+			}),
+		},
+		wantBundle: testCertPEM + "\n",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys, apkInst := setupAPK(t, tt.pkgs, tt.certData, tt.existingFiles)
+			bc := &Context{
+				o: options.Options{
+					SourceDateEpoch: epoch,
+				},
+				ic:  types.ImageConfiguration{},
+				fs:  fsys,
+				apk: apkInst,
+			}
+
+			err := bc.installCertificates(context.Background())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("installPackageCertificates() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			if tt.wantBundle == "" {
+				// No bundle expected (no-op case). Check that the primary bundle
+				// was NOT created.
+				if _, err := fsys.Stat(caBundlePaths[0]); err == nil {
+					t.Errorf("expected no CA bundle to be created, but %s exists", caBundlePaths[0])
+				}
+				return
+			}
+
+			// Verify the primary CA bundle contents.
+			bundleData, err := fsys.ReadFile(caBundlePaths[0])
+			if err != nil {
+				t.Fatalf("failed to read CA bundle %s: %v", caBundlePaths[0], err)
+			}
+			if diff := cmp.Diff(tt.wantBundle, string(bundleData)); diff != "" {
+				t.Errorf("CA bundle mismatch (-want +got):\n%s", diff)
+			}
+
+			// Verify timestamp on CA bundle.
+			stat, err := fsys.Stat(caBundlePaths[0])
+			if err != nil {
+				t.Fatalf("failed to stat CA bundle: %v", err)
+			}
+			if !stat.ModTime().Equal(epoch) {
+				t.Errorf("CA bundle mod time = %v, want %v", stat.ModTime(), epoch)
+			}
+
+			// For the Java truststore test case, verify the truststore was updated.
+			if tt.existingFiles != nil {
+				if _, ok := tt.existingFiles[javaTruststorePaths[0]]; ok {
+					tsData, err := fsys.ReadFile(javaTruststorePaths[0])
+					if err != nil {
+						t.Fatalf("failed to read Java truststore: %v", err)
+					}
+					ks := keystore.New(keystore.WithOrderedAliases())
+					if err := ks.Load(bytes.NewReader(tsData), javaTruststorePassword); err != nil {
+						t.Fatalf("failed to load Java truststore: %v", err)
+					}
+					// Should have the existing cert plus the new one(s).
+					aliases := ks.Aliases()
+					if !strings.Contains(strings.Join(aliases, ","), "pkg-") {
+						t.Errorf("Java truststore missing pkg- alias, got aliases: %v", aliases)
+					}
+				}
+			}
 		})
 	}
 }
