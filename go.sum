@@ -257,8 +257,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tmc/dot v0.2.0 h1:AoRmIMCseJd6oA9SAo2FnPzYShe22cmV9bzCpBLym0E=
 github.com/tmc/dot v0.2.0/go.mod h1:kKjiVNmuiZAXsD+lzpvIt/USiPhA5UhKjWKVWFDjWZA=
-github.com/u-root/u-root v0.15.0 h1:8JXfjAA/Vs8EXfZUA2ftvoHbiYYLdaU8umJ461aq+Jw=
-github.com/u-root/u-root v0.15.0/go.mod h1:/0Qr7qJeDwWxoKku2xKQ4Szc+SwBE3g9VE8jNiamsmc=
+github.com/u-root/u-root v0.16.0 h1:wY40O83MBVks97+Is0WlFlOPSwKQMIrWP9R1IsrExg8=
+github.com/u-root/u-root v0.16.0/go.mod h1:yL/XdSSW27PdGLgUh4MNRBy54mKM+TBLzpwiB4nwj90=
 github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 h1:pyC9PaHYZFgEKFdlp3G8RaCKgVpHZnecvArXvPXcFkM=
 github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701/go.mod h1:P3a5rG4X7tI17Nn3aOIAYr5HbIMukwXG0urG0WuL8OA=
 github.com/vbatts/tar-split v0.12.2 h1:w/Y6tjxpeiFMR47yzZPlPj/FcPLpXbTUi/9H7d3CPa4=
