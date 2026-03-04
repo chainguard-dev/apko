@@ -132,6 +132,13 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 	}
 
 	fsys := fs.NewMemFS()
+
+	// Pre-create the CA bundle file (in a real image, the ca-certificates
+	// package provides this). installCertificates only appends to existing
+	// bundles.
+	require.NoError(t, fsys.MkdirAll("etc/ssl/certs", 0o755))
+	require.NoError(t, fsys.WriteFile("etc/ssl/certs/ca-certificates.crt", []byte{}, 0o644))
+
 	bc, err := build.New(ctx, fsys, opts...)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +156,7 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 	// Should have pretend-baselayout + custom-ca-certs-1 + custom-ca-certs-2.
 	require.Len(t, installed, 3)
 
-	// Verify the CA bundle was created and contains all 4 certificates.
+	// Verify the CA bundle contains all 4 certificates.
 	bundlePath := "etc/ssl/certs/ca-certificates.crt"
 	bundleData, err := fsys.ReadFile(bundlePath)
 	require.NoError(t, err, "CA bundle should exist at %s", bundlePath)

@@ -530,7 +530,7 @@ func TestInstallPackageCertificates(t *testing.T) {
 			"usr/local/share/ca-certificates/sneaky-cert.crt": []byte(testCertPEM),
 		},
 	}, {
-		name: "single package with two certs creates bundle",
+		name: "single package with two certs appends to bundle",
 		pkgs: []struct {
 			pkg   apktypes.Package
 			files []tar.Header
@@ -551,6 +551,9 @@ func TestInstallPackageCertificates(t *testing.T) {
 		certData: map[string][]byte{
 			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
 			"usr/local/share/ca-certificates/custom-1-cert-b.crt": []byte(testCertPEM2),
+		},
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: {},
 		},
 		wantBundle: testCertPEM + "\n" + testCertPEM2 + "\n",
 	}, {
@@ -614,6 +617,9 @@ func TestInstallPackageCertificates(t *testing.T) {
 			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
 			"usr/local/share/ca-certificates/custom-1-README.md":  []byte("not a cert"),
 		},
+		existingFiles: map[string][]byte{
+			caBundlePaths[0]: {},
+		},
 		wantBundle: testCertPEM + "\n",
 	}, {
 		name: "with existing Java truststore",
@@ -637,6 +643,7 @@ func TestInstallPackageCertificates(t *testing.T) {
 			"usr/local/share/ca-certificates/custom-1-cert-a.crt": []byte(testCertPEM),
 		},
 		existingFiles: map[string][]byte{
+			caBundlePaths[0]: {},
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing": testCertPEM2,
 			}),

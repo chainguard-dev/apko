@@ -166,38 +166,21 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 	}
 
-	// Open CA bundle file handles. For the primary bundle path, create it if
-	// package certs are present (this is the core use case: assembling the bundle
-	// from package-provided cert files). For all other paths, only open if they
-	// already exist.
+	// Open handles for all existing CA bundles to append to.
 	type bundleHandle struct {
 		path string
 		file io.WriteCloser
 	}
 
-	// Open handles for all CA bundles to append to. The primary bundle
-	// (index 0) is always created when certificates need to be installed;
-	// secondary bundles are only appended to if they already exist.
 	existingBundles := make([]bundleHandle, 0, len(caBundlePaths))
-	for i, caBundlePath := range caBundlePaths {
+	for _, caBundlePath := range caBundlePaths {
 		file, err := bc.fs.OpenFile(caBundlePath, os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				if i == 0 {
-					// Always create the primary CA bundle when certs need to be installed.
-					if err := bc.fs.MkdirAll(filepath.Dir(caBundlePath), 0o755); err != nil {
-						return fmt.Errorf("failed to create directory for CA bundle: %w", err)
-					}
-					file, err = bc.fs.OpenFile(caBundlePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-					if err != nil {
-						return fmt.Errorf("failed to create CA bundle %s: %w", caBundlePath, err)
-					}
-				} else {
-					continue
-				}
-			} else {
-				return fmt.Errorf("failed to open CA bundle for appending: %w", err)
+				// If the bundle doesn't exist, nothing to do, we just ignore that.
+				continue
 			}
+			return fmt.Errorf("failed to open CA bundle for appending: %w", err)
 		}
 		defer file.Close()
 
