@@ -392,9 +392,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
+			caCertsConfPath:  []byte("# existing\n"),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n" + testCertPEM2 + "\n"),
+			caCertsConfPath:  []byte("# existing\ncustom-1/cert-a.crt\ncustom-1/cert-b.crt\n"),
 		},
 	}, {
 		name: "two packages with certs each appends to existing bundle",
@@ -429,9 +431,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n"),
+			caCertsConfPath:  []byte("# existing\n"),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM3 + "\n" + testCertPEM4 + "\n"),
+			caCertsConfPath:  []byte("# existing\ncustom-1/cert-a.crt\ncustom-2/cert-c.crt\n"),
 		},
 	}, {
 		name: "non-cert files in package are ignored",
@@ -455,9 +459,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
+			caCertsConfPath:  {},
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
+			caCertsConfPath:  []byte("custom-1/cert-a.crt\n"),
 		},
 	}, {
 		name: "package certs with existing Java truststore",
@@ -479,12 +485,14 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
+			caCertsConfPath:  {},
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing": testCertPEM2,
 			}),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
+			caCertsConfPath:  []byte("custom-1/cert-a.crt\n"),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                      testCertPEM2,
 				"pkg-" + testCertPEMFingerprint: testCertPEM,
@@ -516,6 +524,7 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n"),
+			caCertsConfPath:  []byte("# existing\n"),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing": testCertPEM2,
 			}),
@@ -523,6 +532,7 @@ func TestInstallCertificates(t *testing.T) {
 		wantFiles: map[string][]byte{
 			// Inline certs are processed first, then package certs.
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM + "\n" + testCertPEM3 + "\n"),
+			caCertsConfPath:  []byte("# existing\ncustom-1/cert.crt\n"),
 			filepath.Join(caCertsDir, fmt.Sprintf("inline-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                              testCertPEM2,
