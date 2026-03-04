@@ -204,6 +204,9 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		existingBundles = append(existingBundles, bundleHandle{path: caBundlePath, file: file})
 	}
 
+	// Load all existing Java truststores to append to. This will be empty for
+	// images that have no Java truststore installed, so the processes below
+	// will be no-ops in that case.
 	existingTruststores, err := bc.loadJavaTruststores()
 	if err != nil {
 		return fmt.Errorf("failed to load Java truststores: %w", err)
@@ -224,6 +227,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			}
 		}
 
+		// Append to all existing CA bundles.
 		for _, b := range existingBundles {
 			if _, err := b.file.Write(c.cert.pem); err != nil {
 				return fmt.Errorf("failed to append certificate to bundle %s: %w", b.path, err)
@@ -234,6 +238,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			}
 		}
 
+		// Append to all existing Java truststores.
 		for _, ts := range existingTruststores {
 			entry := keystore.TrustedCertificateEntry{
 				CreationTime: builtTime,
