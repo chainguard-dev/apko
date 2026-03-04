@@ -171,12 +171,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 
 	// Open handles for all existing CA bundles to append to.
-	type bundleHandle struct {
-		path string
-		file io.WriteCloser
-	}
-
-	existingBundles := make([]bundleHandle, 0, len(caBundlePaths))
+	existingBundles := make([]io.WriteCloser, 0, len(caBundlePaths))
 	for _, caBundlePath := range caBundlePaths {
 		file, err := bc.fs.OpenFile(caBundlePath, os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -188,7 +183,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 		defer file.Close()
 
-		existingBundles = append(existingBundles, bundleHandle{path: caBundlePath, file: file})
+		existingBundles = append(existingBundles, file)
 	}
 
 	// Load all existing Java truststores to append to. This will be empty for
@@ -203,12 +198,12 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	for _, c := range certs {
 		// Append to all existing CA bundles.
 		for _, b := range existingBundles {
-			if _, err := b.file.Write(c.cert.pem); err != nil {
-				return fmt.Errorf("failed to append certificate to bundle %s: %w", b.path, err)
+			if _, err := b.Write(c.cert.pem); err != nil {
+				return fmt.Errorf("failed to append certificate to bundle: %w", err)
 			}
 			// Put newlines in-between certificates to mimic update-ca-certificates behavior.
-			if _, err := b.file.Write([]byte("\n")); err != nil {
-				return fmt.Errorf("failed to append newline to bundle %s: %w", b.path, err)
+			if _, err := b.Write([]byte("\n")); err != nil {
+				return fmt.Errorf("failed to append newline to bundle: %w", err)
 			}
 		}
 
@@ -228,9 +223,9 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 
 	// Update timestamps on all open CA bundle files.
-	for _, b := range existingBundles {
-		if err := bc.fs.Chtimes(b.path, builtTime, builtTime); err != nil {
-			return fmt.Errorf("failed to change times on CA bundle %s: %w", b.path, err)
+	for _, caBundlePath := range caBundlePaths {
+		if err := bc.fs.Chtimes(caBundlePath, builtTime, builtTime); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to change times on CA bundle %s: %w", caBundlePath, err)
 		}
 	}
 
