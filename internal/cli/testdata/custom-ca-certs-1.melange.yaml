@@ -17,8 +17,8 @@ environment:
 pipeline:
   - name: Install certificates
     runs: |
-      mkdir -p ${{targets.destdir}}/usr/local/share/ca-certificates
-      cat >${{targets.destdir}}/usr/local/share/ca-certificates/custom-1-cert-a.crt <<'CERTEOF'
+      mkdir -p ${{targets.destdir}}/usr/share/ca-certificates
+      cat >${{targets.destdir}}/usr/share/ca-certificates/custom-1/cert-a.crt <<'CERTEOF'
       -----BEGIN CERTIFICATE-----
       MIIFmDCCA4CgAwIBAgIQU9C87nMpOIFKYpfvOHFHFDANBgkqhkiG9w0BAQsFADBm
       MQswCQYDVQQGEwJVUzEzMDEGA1UEChMqKFNUQUdJTkcpIEludGVybmV0IFNlY3Vy
@@ -52,7 +52,7 @@ pipeline:
       7DiA+/9Qdp9RBWJpTS9i/mDnJg1xvo8Xz49mrrgfmcAXTCJqXi24NatI3Oc=
       -----END CERTIFICATE-----
       CERTEOF
-      cat >${{targets.destdir}}/usr/local/share/ca-certificates/custom-1-cert-b.crt <<'CERTEOF'
+      cat >${{targets.destdir}}/usr/share/ca-certificates/custom-1/cert-b.crt <<'CERTEOF'
       -----BEGIN CERTIFICATE-----
       MIICTjCCAdSgAwIBAgIRAIPgc3k5LlLVLtUUvs4K/QcwCgYIKoZIzj0EAwMwaDEL
       MAkGA1UEBhMCVVMxMzAxBgNVBAoTKihTVEFHSU5HKSBJbnRlcm5ldCBTZWN1cml0
