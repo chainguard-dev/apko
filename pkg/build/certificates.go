@@ -84,27 +84,43 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	defer span.End()
 
 	// certToWrite pairs a parsed certificate with the metadata needed to write it.
-	// certFile is non-empty only for config certs, which get their own individual file.
 	type certToWrite struct {
-		cert     *parsedCertificate
-		alias    string // Java truststore alias
-		certFile string // path for individual cert file; empty for package certs
+		cert  *parsedCertificate
+		alias string // Java truststore alias
 	}
 
 	var certs []certToWrite
 
-	// Collect inline certificates from the image configuration.
-	if bc.ic.Certificates != nil {
+	builtTime, err := bc.GetBuildDateEpoch()
+	if err != nil {
+		return fmt.Errorf("failed to get build date epoch: %w", err)
+	}
+
+	// Write inline certificates from the image configuration to individual files
+	// and collect them for downstream bundle/truststore appending.
+	if bc.ic.Certificates != nil && len(bc.ic.Certificates.Additional) > 0 {
+		// Create the ca-certificates directory
+		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
+		}
 		for _, additional := range bc.ic.Certificates.Additional {
 			cert, err := parseCertificates(additional.Content)
 			if err != nil {
 				return fmt.Errorf("failed to parse certificate %s: %w", additional.Name, err)
 			}
-			certFile := filepath.Join(caCertsDir, fmt.Sprintf("%s-%s.crt", additional.Name, cert.fingerprint))
+			// Write individual certificate file for update-ca-certificates to pick up.
+			// Name is validated not to do any path shenanigans on configuration validation.
+			// The fingerprint is controlled to be a hash and so also doesn't allow shenanigans.
+			certPath := filepath.Join(caCertsDir, fmt.Sprintf("%s-%s.crt", additional.Name, cert.fingerprint))
+			if err := bc.fs.WriteFile(certPath, cert.pem, 0o644); err != nil {
+				return fmt.Errorf("failed to write certificate file %s: %w", certPath, err)
+			}
+			if err := bc.fs.Chtimes(certPath, builtTime, builtTime); err != nil {
+				return fmt.Errorf("failed to change times on certificate file %s: %w", certPath, err)
+			}
 			certs = append(certs, certToWrite{
-				cert:     cert,
-				alias:    fmt.Sprintf("%s-%s", additional.Name, cert.fingerprint),
-				certFile: certFile,
+				cert:  cert,
+				alias: fmt.Sprintf("%s-%s", additional.Name, cert.fingerprint),
 			})
 		}
 	}
@@ -154,18 +170,6 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		return nil
 	}
 
-	builtTime, err := bc.GetBuildDateEpoch()
-	if err != nil {
-		return fmt.Errorf("failed to get build date epoch: %w", err)
-	}
-
-	// Create the ca-certificates directory for individual cert files (config certs only).
-	if bc.ic.Certificates != nil && len(bc.ic.Certificates.Additional) > 0 {
-		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
-		}
-	}
-
 	// Open handles for all existing CA bundles to append to.
 	type bundleHandle struct {
 		path string
@@ -195,21 +199,8 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		return fmt.Errorf("failed to load Java truststores: %w", err)
 	}
 
-	// Write all collected certificates to their individual files (if any), all
-	// open CA bundles, and all loaded Java truststores.
+	// Append all collected certificates to open CA bundles and Java truststores.
 	for _, c := range certs {
-		if c.certFile != "" {
-			// Write individual certificate file for update-ca-certificates to pick up.
-			// Name is validated not to do any path shenanigans on configuration validation.
-			// The fingerprint is controlled to be a hash and so also doesn't allow shenanigans.
-			if err := bc.fs.WriteFile(c.certFile, c.cert.pem, 0o644); err != nil {
-				return fmt.Errorf("failed to write certificate file %s: %w", c.certFile, err)
-			}
-			if err := bc.fs.Chtimes(c.certFile, builtTime, builtTime); err != nil {
-				return fmt.Errorf("failed to change times on certificate file %s: %w", c.certFile, err)
-			}
-		}
-
 		// Append to all existing CA bundles.
 		for _, b := range existingBundles {
 			if _, err := b.file.Write(c.cert.pem); err != nil {
