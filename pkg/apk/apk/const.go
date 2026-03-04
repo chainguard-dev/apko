@@ -30,8 +30,5 @@ const (
 	// which PAX record we use in the tar header
 	paxRecordsChecksumKey = "APK-TOOLS.checksum.SHA1"
 
-	// for fetching the alpine keys
-	alpineReleasesURL = "https://alpinelinux.org/releases.json"
-
 	xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 )
