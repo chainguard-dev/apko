@@ -197,12 +197,12 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	// Append all collected certificates to open CA bundles and Java truststores.
 	for _, c := range certs {
 		// Append to all existing CA bundles.
-		for _, b := range existingBundles {
-			if _, err := b.Write(c.cert.pem); err != nil {
+		for _, bundle := range existingBundles {
+			if _, err := bundle.Write(c.cert.pem); err != nil {
 				return fmt.Errorf("failed to append certificate to bundle: %w", err)
 			}
 			// Put newlines in-between certificates to mimic update-ca-certificates behavior.
-			if _, err := b.Write([]byte("\n")); err != nil {
+			if _, err := bundle.Write([]byte("\n")); err != nil {
 				return fmt.Errorf("failed to append newline to bundle: %w", err)
 			}
 		}
