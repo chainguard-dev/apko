@@ -298,3 +298,88 @@ jobs:
 
           diff /tmp/java-truststore-fingerprints.txt /tmp/java-truststore-updated-fingerprints.txt
           echo "Java truststores before and after update-ca-certificates are identical."
+
+  package-certificates:
+    name: package-certificates
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+      - name: test package-provided certificates
+        run: |
+          set -euo pipefail
+
+          # Gets all certificate fingerprints from a PEM stream, sorted, so two outputs can
+          # be semantically compared.
+          get_fingerprints() {
+              local cert=""
+              while IFS= read -r line; do
+                  case "$line" in
+                      "-----BEGIN CERTIFICATE-----")
+                          cert="$line"$'\n' ;;
+                      "-----END CERTIFICATE-----")
+                          cert+="$line"
+                          echo "$cert" | openssl x509 -noout -fingerprint -sha256 2>/dev/null
+                          cert="" ;;
+                      *)
+                          [[ -n "$cert" ]] && cert+="$line"$'\n' || true ;;
+                  esac
+              done | sort
+          }
+
+          # Verifies that fingerprints file contains at least N certs and all four test certs.
+          verify_fingerprints() {
+              local file="$1"
+              local min_count="$2"
+              local name="$3"
+
+              local count=$(wc -l < "$file")
+              if [ "$count" -lt "$min_count" ]; then
+                  echo "Expected at least $min_count certificates in $name, found $count"
+                  exit 1
+              fi
+
+              grep "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" "$file"
+              grep "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" "$file"
+              grep "34:75:37:AF:7A:09:D4:03:F1:9F:58:F8:3C:35:68:91:2A:F2:4B:7C:12:E7:45:F1:D5:55:70:79:70:8C:91:AD" "$file"
+              grep "12:AE:34:99:9A:A6:4D:CD:1A:69:47:E8:38:A5:3A:AB:AB:FC:FA:CA:45:AB:CA:8D:C0:CB:B8:DC:B7:BD:06:3C" "$file"
+              echo "$name contains all four package-provided certificates."
+          }
+
+          make apko
+
+          # Build the package-certificates image.
+          ./apko build ./examples/package-certificates.yaml package-certificates:build /tmp/package-certificates.tar --arch amd64
+          docker load < /tmp/package-certificates.tar
+
+          # Get fingerprints from CA bundle and Java truststore before update-ca-certificates.
+          docker run --rm package-certificates:build-amd64 "cat /etc/ssl/certs/ca-certificates.crt" | get_fingerprints > /tmp/ca-bundle-fingerprints.txt
+          docker run --rm package-certificates:build-amd64 "trust extract --filter=ca-anchors --purpose=server-auth --format=pem-bundle /tmp/certs.pem && cat /tmp/certs.pem" | get_fingerprints > /tmp/java-truststore-fingerprints.txt
+
+          # Verify both stores contain base certs and all four package-provided certificates.
+          verify_fingerprints /tmp/ca-bundle-fingerprints.txt 10 "CA bundle"
+          verify_fingerprints /tmp/java-truststore-fingerprints.txt 10 "Java truststore"
+
+          # Run update-ca-certificates and get fingerprints from both stores after.
+          docker run --rm package-certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && cat /etc/ssl/certs/ca-certificates.crt" | get_fingerprints > /tmp/ca-bundle-updated-fingerprints.txt
+          docker run --rm package-certificates:build-amd64 "apk add ca-certificates && update-ca-certificates && trust extract --filter=ca-anchors --purpose=server-auth --format=pem-bundle /tmp/certs.pem && cat /tmp/certs.pem" | get_fingerprints > /tmp/java-truststore-updated-fingerprints.txt
+
+          # Verify that the stores are semantically identical before and after update-ca-certificates.
+          diff /tmp/ca-bundle-fingerprints.txt /tmp/ca-bundle-updated-fingerprints.txt
+          echo "CA bundles before and after update-ca-certificates are identical."
+
+          diff /tmp/java-truststore-fingerprints.txt /tmp/java-truststore-updated-fingerprints.txt
+          echo "Java truststores before and after update-ca-certificates are identical."

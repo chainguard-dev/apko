@@ -1,0 +1,20 @@
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    - ./internal/cli/testdata/melange.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+    - ./internal/cli/testdata/packages
+  packages:
+    - ca-certificates-bundle
+    - busybox
+    - apk-tools
+    - java-cacerts
+    - custom-ca-certs-1
+    - custom-ca-certs-2
+
+entrypoint:
+  command: /bin/sh -c
+
+archs:
+  - amd64
