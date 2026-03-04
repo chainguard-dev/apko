@@ -168,12 +168,12 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 	certCount := strings.Count(bundle, "-----BEGIN CERTIFICATE-----")
 	require.Equal(t, 4, certCount, "expected 4 certificates in the CA bundle, got %d", certCount)
 
-	// Verify individual cert files exist in the filesystem.
+	// Verify individual cert files exist in the filesystem (installed by packages).
 	certPaths := []string{
-		"usr/local/share/ca-certificates/custom-1-cert-a.crt",
-		"usr/local/share/ca-certificates/custom-1-cert-b.crt",
-		"usr/local/share/ca-certificates/custom-2-cert-c.crt",
-		"usr/local/share/ca-certificates/custom-2-cert-d.crt",
+		"usr/share/ca-certificates/custom-1/cert-a.crt",
+		"usr/share/ca-certificates/custom-1/cert-b.crt",
+		"usr/share/ca-certificates/custom-2/cert-c.crt",
+		"usr/share/ca-certificates/custom-2/cert-d.crt",
 	}
 	for _, p := range certPaths {
 		_, err := fsys.Stat(p)

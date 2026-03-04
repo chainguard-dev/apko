@@ -17,7 +17,7 @@ environment:
 pipeline:
   - name: Install certificates
     runs: |
-      mkdir -p ${{targets.destdir}}/usr/share/ca-certificates
+      mkdir -p ${{targets.destdir}}/usr/share/ca-certificates/custom-2
       cat >${{targets.destdir}}/usr/share/ca-certificates/custom-2/cert-c.crt <<'CERTEOF'
       -----BEGIN CERTIFICATE-----
       MIIBwjCCAWegAwIBAgIUBKZDifzRAz30jwlcoQLIOxkBPLMwCgYIKoZIzj0EAwIw
