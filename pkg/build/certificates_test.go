@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -524,7 +525,7 @@ func TestInstallCertificates(t *testing.T) {
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM + "\n" + testCertPEM3 + "\n"),
 			filepath.Join(caCertsDir, fmt.Sprintf("inline-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
-				"existing":                            testCertPEM2,
+				"existing":                              testCertPEM2,
 				"inline-cert-" + testCertPEMFingerprint: testCertPEM,
 				"pkg-" + testCertPEM3Fingerprint:        testCertPEM3,
 			}),
@@ -615,23 +616,35 @@ func TestInstallCertificates(t *testing.T) {
 				}
 			}
 
-			// For non-package tests, walk the entire filesystem to catch
-			// unexpected files (package tests create APK DB files that are
-			// not part of the certificate output).
-			if len(tt.pkgs) == 0 {
-				fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-					if err != nil {
-						t.Fatalf("error walking to %s: %v", path, err)
-					}
-					if d.IsDir() {
-						return nil
-					}
-					if _, ok := tt.wantFiles[path]; !ok {
-						t.Errorf("unexpected file created: %s", path)
-					}
-					return nil
-				})
+			// Build a set of files that exist on the filesystem but are
+			// not certificate output: APK DB files from InitDB and
+			// package cert source files written during test setup.
+			setupFiles := map[string]bool{}
+			if apkInst != nil {
+				for _, h := range apkInst.ListInitFiles() {
+					setupFiles[strings.TrimPrefix(h.Name, "/")] = true
+				}
 			}
+			for path := range tt.certData {
+				setupFiles[path] = true
+			}
+
+			// Walk the entire filesystem to catch unexpected files.
+			fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					t.Fatalf("error walking to %s: %v", path, err)
+				}
+				if d.IsDir() {
+					return nil
+				}
+				if setupFiles[path] {
+					return nil
+				}
+				if _, ok := tt.wantFiles[path]; !ok {
+					t.Errorf("unexpected file created: %s", path)
+				}
+				return nil
+			})
 		})
 	}
 }
