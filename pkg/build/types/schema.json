@@ -158,6 +158,13 @@
           "type": "array",
           "description": "Optional: A list of volumes to configure\n\nThis is _not_ the same as Paths, but refers to the OCI spec \"volumes\"\nfield used by some container runtimes (docker) to create volumes at\nruntime. For most use cases, this is not needed, but consider using this\nwhen the image requires special volume configuration at runtime for\nsupported container runtimes."
         },
+        "layer-annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Optional: Annotations to apply to individual layer descriptors"
+        },
         "layering": {
           "$ref": "#/$defs/Layering",
           "description": "Optional: Configuration to control layering of the OCI image."
@@ -165,6 +172,10 @@
         "certificates": {
           "$ref": "#/$defs/ImageCertificates",
           "description": "Optional: Certificates to install in the container image"
+        },
+        "xpkg": {
+          "type": "object",
+          "description": "Optional: Crossplane xpkg base layer content, written directly as package.yaml"
         }
       },
       "additionalProperties": false,
