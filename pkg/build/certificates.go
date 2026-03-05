@@ -184,7 +184,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		// Register package-provided certificates in ca-certificates.conf so
 		// that update-ca-certificates includes them when rebuilding the bundle.
 		if len(confEntries) > 0 {
-			confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND, 0o644)
+			confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 			if err != nil {
 				return fmt.Errorf("failed to open %s: %w", caCertsConfPath, err)
 			}
