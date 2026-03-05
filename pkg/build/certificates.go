@@ -185,18 +185,17 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		// that update-ca-certificates includes them when rebuilding the bundle.
 		if len(confEntries) > 0 {
 			confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND, 0o644)
-			if err == nil {
-				defer confFile.Close()
-				for _, entry := range confEntries {
-					if _, err := fmt.Fprintf(confFile, "%s\n", entry); err != nil {
-						return fmt.Errorf("failed to write to %s: %w", caCertsConfPath, err)
-					}
-				}
-				if err := bc.fs.Chtimes(caCertsConfPath, builtTime, builtTime); err != nil {
-					return fmt.Errorf("failed to change times on %s: %w", caCertsConfPath, err)
-				}
-			} else if !errors.Is(err, fs.ErrNotExist) {
+			if err != nil {
 				return fmt.Errorf("failed to open %s: %w", caCertsConfPath, err)
+			}
+			defer confFile.Close()
+			for _, entry := range confEntries {
+				if _, err := fmt.Fprintf(confFile, "%s\n", entry); err != nil {
+					return fmt.Errorf("failed to write to %s: %w", caCertsConfPath, err)
+				}
+			}
+			if err := bc.fs.Chtimes(caCertsConfPath, builtTime, builtTime); err != nil {
+				return fmt.Errorf("failed to change times on %s: %w", caCertsConfPath, err)
 			}
 		}
 	}
