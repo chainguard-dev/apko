@@ -372,10 +372,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 	}, {
 		name: "single package with two certs appends to bundle",
+		cfg:  &types.ImageCertificates{Providers: []string{"custom-ca-certificates"}},
 		pkgs: []pkgEntry{{
 			pkg: apktypes.Package{
 				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
@@ -400,10 +401,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 	}, {
 		name: "two packages with certs each appends to existing bundle",
+		cfg:  &types.ImageCertificates{Providers: []string{"custom-ca-certificates"}},
 		pkgs: []pkgEntry{{
 			pkg: apktypes.Package{
 				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
@@ -415,7 +417,7 @@ func TestInstallCertificates(t *testing.T) {
 		}, {
 			pkg: apktypes.Package{
 				Name: "ca-certs-2", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
@@ -439,10 +441,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 	}, {
 		name: "non-cert files in package are ignored",
+		cfg:  &types.ImageCertificates{Providers: []string{"custom-ca-certificates"}},
 		pkgs: []pkgEntry{{
 			pkg: apktypes.Package{
 				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
@@ -467,10 +470,11 @@ func TestInstallCertificates(t *testing.T) {
 		},
 	}, {
 		name: "package certs with existing Java truststore",
+		cfg:  &types.ImageCertificates{Providers: []string{"custom-ca-certificates"}},
 		pkgs: []pkgEntry{{
 			pkg: apktypes.Package{
 				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
@@ -505,11 +509,12 @@ func TestInstallCertificates(t *testing.T) {
 			Additional: []types.AdditionalCertificateEntry{
 				{Name: "inline-cert", Content: testCertPEM},
 			},
+			Providers: []string{"custom-ca-certificates"},
 		},
 		pkgs: []pkgEntry{{
 			pkg: apktypes.Package{
 				Name: "ca-certs-1", Version: "1.0.0", Arch: "x86_64",
-				Provides: []string{customCACertsProvides},
+				Provides: []string{"custom-ca-certificates"},
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},

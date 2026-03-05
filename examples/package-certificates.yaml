@@ -13,6 +13,10 @@ contents:
     - custom-ca-certs-1
     - custom-ca-certs-2
 
+certificates:
+  providers:
+    - custom-ca-certificates
+
 entrypoint:
   command: /bin/sh -c
 

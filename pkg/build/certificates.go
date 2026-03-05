@@ -48,11 +48,6 @@ const (
 	// Certificates under this path must be registered in caCertsConfPath
 	// for update-ca-certificates to include them.
 	systemCaCertsDir = "usr/share/ca-certificates/"
-
-	// customCACertsProvides is the virtual package name that identifies
-	// packages containing CA certificate files to be assembled into the
-	// system CA bundle.
-	customCACertsProvides = "custom-ca-certificates"
 )
 
 var (
@@ -142,8 +137,14 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			return fmt.Errorf("failed to get installed packages: %w", err)
 		}
 		var pkgCertFiles []string
+		var certProviders []string
+		if bc.ic.Certificates != nil {
+			certProviders = bc.ic.Certificates.Providers
+		}
 		for _, pkg := range installed {
-			if !slices.Contains(pkg.Provides, customCACertsProvides) {
+			if !slices.ContainsFunc(certProviders, func(p string) bool {
+				return slices.Contains(pkg.Provides, p)
+			}) {
 				continue
 			}
 			for _, f := range pkg.Files {
