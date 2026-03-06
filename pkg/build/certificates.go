@@ -88,6 +88,10 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	_, span := otel.Tracer("apko").Start(ctx, "installCertificates")
 	defer span.End()
 
+	if bc.ic.Certificates == nil {
+		return nil
+	}
+
 	// certToWrite pairs a parsed certificate with the metadata needed to write it.
 	type certToWrite struct {
 		cert  *parsedCertificate
@@ -103,7 +107,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 
 	// Write inline certificates from the image configuration to individual files
 	// and collect them for downstream bundle/truststore appending.
-	if bc.ic.Certificates != nil && len(bc.ic.Certificates.Additional) > 0 {
+	if len(bc.ic.Certificates.Additional) > 0 {
 		// Create the ca-certificates directory
 		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
@@ -137,10 +141,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			return fmt.Errorf("failed to get installed packages: %w", err)
 		}
 		var pkgCertFiles []string
-		var certProviders []string
-		if bc.ic.Certificates != nil {
-			certProviders = bc.ic.Certificates.Providers
-		}
+		certProviders := bc.ic.Certificates.Providers
 		for _, pkg := range installed {
 			if !slices.ContainsFunc(certProviders, func(p string) bool {
 				return slices.Contains(pkg.Provides, p)
