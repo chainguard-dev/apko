@@ -98,7 +98,7 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		alias string // Java truststore alias
 	}
 
-	var certs []certToWrite
+	certs := make([]certToWrite, 0, len(bc.ic.Certificates.Additional))
 
 	builtTime, err := bc.GetBuildDateEpoch()
 	if err != nil {
