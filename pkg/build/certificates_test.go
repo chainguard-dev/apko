@@ -550,30 +550,25 @@ func TestInstallCertificates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fsys := apkfs.NewMemFS()
-			var apkInst *apk.APK
 
-			// Initialize APK DB and register packages when testing package certs.
-			if len(tt.pkgs) > 0 {
-				var err error
-				apkInst, err = apk.New(context.Background(), apk.WithFS(fsys), apk.WithIgnoreMknodErrors(true))
-				if err != nil {
-					t.Fatalf("failed to create APK: %v", err)
+			apkInst, err := apk.New(context.Background(), apk.WithFS(fsys), apk.WithIgnoreMknodErrors(true))
+			if err != nil {
+				t.Fatalf("failed to create APK: %v", err)
+			}
+			if err := apkInst.InitDB(context.Background()); err != nil {
+				t.Fatalf("failed to init APK DB: %v", err)
+			}
+			for _, p := range tt.pkgs {
+				if _, err := apkInst.AddInstalledPackage(&p.pkg, p.files); err != nil {
+					t.Fatalf("failed to add installed package %s: %v", p.pkg.Name, err)
 				}
-				if err := apkInst.InitDB(context.Background()); err != nil {
-					t.Fatalf("failed to init APK DB: %v", err)
+			}
+			for path, data := range tt.certData {
+				if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatalf("failed to create dir for %s: %v", path, err)
 				}
-				for _, p := range tt.pkgs {
-					if _, err := apkInst.AddInstalledPackage(&p.pkg, p.files); err != nil {
-						t.Fatalf("failed to add installed package %s: %v", p.pkg.Name, err)
-					}
-				}
-				for path, data := range tt.certData {
-					if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-						t.Fatalf("failed to create dir for %s: %v", path, err)
-					}
-					if err := fsys.WriteFile(path, data, 0o644); err != nil {
-						t.Fatalf("failed to write cert file %s: %v", path, err)
-					}
+				if err := fsys.WriteFile(path, data, 0o644); err != nil {
+					t.Fatalf("failed to write cert file %s: %v", path, err)
 				}
 			}
 
@@ -597,7 +592,7 @@ func TestInstallCertificates(t *testing.T) {
 				apk: apkInst,
 			}
 
-			err := bc.installCertificates(context.Background())
+			err = bc.installCertificates(context.Background())
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("installCertificates() error = %v, wantErr %v", err, tt.wantErr)
 			}

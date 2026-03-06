@@ -135,70 +135,68 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 
 	// Collect certificate files from installed packages providing custom-ca-certificates.
-	if bc.apk != nil {
-		installed, err := bc.apk.GetInstalled()
+	installed, err := bc.apk.GetInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to get installed packages: %w", err)
+	}
+	var pkgCertFiles []string
+	certProviders := bc.ic.Certificates.Providers
+	for _, pkg := range installed {
+		if !slices.ContainsFunc(certProviders, func(p string) bool {
+			return slices.Contains(pkg.Provides, p)
+		}) {
+			continue
+		}
+		for _, f := range pkg.Files {
+			// Directories are explicitly marked; regular files from ParseInstalled
+			// have Typeflag == 0 (not tar.TypeReg).
+			if f.Typeflag == tar.TypeDir {
+				continue
+			}
+			ext := filepath.Ext(f.Name)
+			if ext == ".crt" || ext == ".pem" {
+				pkgCertFiles = append(pkgCertFiles, f.Name)
+			}
+		}
+	}
+	// Sort for deterministic, reproducible builds.
+	sort.Strings(pkgCertFiles)
+	var confEntries []string
+	for _, certPath := range pkgCertFiles {
+		data, err := bc.fs.ReadFile(certPath)
 		if err != nil {
-			return fmt.Errorf("failed to get installed packages: %w", err)
+			return fmt.Errorf("failed to read certificate file %s: %w", certPath, err)
 		}
-		var pkgCertFiles []string
-		certProviders := bc.ic.Certificates.Providers
-		for _, pkg := range installed {
-			if !slices.ContainsFunc(certProviders, func(p string) bool {
-				return slices.Contains(pkg.Provides, p)
-			}) {
-				continue
-			}
-			for _, f := range pkg.Files {
-				// Directories are explicitly marked; regular files from ParseInstalled
-				// have Typeflag == 0 (not tar.TypeReg).
-				if f.Typeflag == tar.TypeDir {
-					continue
-				}
-				ext := filepath.Ext(f.Name)
-				if ext == ".crt" || ext == ".pem" {
-					pkgCertFiles = append(pkgCertFiles, f.Name)
-				}
-			}
+		cert, err := parseCertificates(string(data))
+		if err != nil {
+			continue
 		}
-		// Sort for deterministic, reproducible builds.
-		sort.Strings(pkgCertFiles)
-		var confEntries []string
-		for _, certPath := range pkgCertFiles {
-			data, err := bc.fs.ReadFile(certPath)
-			if err != nil {
-				return fmt.Errorf("failed to read certificate file %s: %w", certPath, err)
-			}
-			cert, err := parseCertificates(string(data))
-			if err != nil {
-				continue
-			}
-			certs = append(certs, certToWrite{
-				cert:  cert,
-				alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
-			})
-			// Track certs under the system ca-certificates directory for
-			// registration in ca-certificates.conf.
-			if rel, ok := strings.CutPrefix(certPath, systemCaCertsDir); ok {
-				confEntries = append(confEntries, rel)
-			}
+		certs = append(certs, certToWrite{
+			cert:  cert,
+			alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
+		})
+		// Track certs under the system ca-certificates directory for
+		// registration in ca-certificates.conf.
+		if rel, ok := strings.CutPrefix(certPath, systemCaCertsDir); ok {
+			confEntries = append(confEntries, rel)
 		}
+	}
 
-		// Register package-provided certificates in ca-certificates.conf so
-		// that update-ca-certificates includes them when rebuilding the bundle.
-		if len(confEntries) > 0 {
-			confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
-			if err != nil {
-				return fmt.Errorf("failed to open %s: %w", caCertsConfPath, err)
+	// Register package-provided certificates in ca-certificates.conf so
+	// that update-ca-certificates includes them when rebuilding the bundle.
+	if len(confEntries) > 0 {
+		confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open %s: %w", caCertsConfPath, err)
+		}
+		defer confFile.Close()
+		for _, entry := range confEntries {
+			if _, err := fmt.Fprintf(confFile, "%s\n", entry); err != nil {
+				return fmt.Errorf("failed to write to %s: %w", caCertsConfPath, err)
 			}
-			defer confFile.Close()
-			for _, entry := range confEntries {
-				if _, err := fmt.Fprintf(confFile, "%s\n", entry); err != nil {
-					return fmt.Errorf("failed to write to %s: %w", caCertsConfPath, err)
-				}
-			}
-			if err := bc.fs.Chtimes(caCertsConfPath, builtTime, builtTime); err != nil {
-				return fmt.Errorf("failed to change times on %s: %w", caCertsConfPath, err)
-			}
+		}
+		if err := bc.fs.Chtimes(caCertsConfPath, builtTime, builtTime); err != nil {
+			return fmt.Errorf("failed to change times on %s: %w", caCertsConfPath, err)
 		}
 	}
 
