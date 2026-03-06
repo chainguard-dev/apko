@@ -124,6 +124,63 @@ func TestBuildImage(t *testing.T) {
 	require.Equal(t, installed[1].Version, "1.0.0-r0")
 }
 
+func TestBuildImageWithCertPackages(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("apko-certs.yaml", []string{"testdata"}),
+	}
+
+	fsys := fs.NewMemFS()
+
+	// Pre-create the CA bundle file (in a real image, the ca-certificates
+	// package provides this). installCertificates only appends to existing
+	// bundles.
+	require.NoError(t, fsys.MkdirAll("etc/ssl/certs", 0o755))
+	require.NoError(t, fsys.WriteFile("etc/ssl/certs/ca-certificates.crt", []byte{}, 0o644))
+
+	bc, err := build.New(ctx, fsys, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.BuildImage(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	installed, err := bc.InstalledPackages()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have pretend-baselayout + custom-ca-certs-1 + custom-ca-certs-2.
+	require.Len(t, installed, 3)
+
+	// Verify the CA bundle contains all 4 certificates.
+	bundlePath := "etc/ssl/certs/ca-certificates.crt"
+	bundleData, err := fsys.ReadFile(bundlePath)
+	require.NoError(t, err, "CA bundle should exist at %s", bundlePath)
+
+	bundle := string(bundleData)
+	require.Contains(t, bundle, "-----BEGIN CERTIFICATE-----")
+
+	// Count the number of certificates in the bundle.
+	certCount := strings.Count(bundle, "-----BEGIN CERTIFICATE-----")
+	require.Equal(t, 4, certCount, "expected 4 certificates in the CA bundle, got %d", certCount)
+
+	// Verify individual cert files exist in the filesystem (installed by packages).
+	certPaths := []string{
+		"usr/share/ca-certificates/custom-1/cert-a.crt",
+		"usr/share/ca-certificates/custom-1/cert-b.crt",
+		"usr/share/ca-certificates/custom-2/cert-c.crt",
+		"usr/share/ca-certificates/custom-2/cert-d.crt",
+	}
+	for _, p := range certPaths {
+		_, err := fsys.Stat(p)
+		require.NoError(t, err, "cert file %s should exist", p)
+	}
+}
+
 func TestBuildImageFromLockFile(t *testing.T) {
 	ctx := context.Background()
 
