@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
@@ -143,6 +144,10 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			if f.Typeflag == tar.TypeDir {
 				continue
 			}
+			// Only consider pem/crt files under the caCertsDir
+			if !strings.HasPrefix(f.Name, caCertsDir+"/") {
+				continue
+			}
 			ext := filepath.Ext(f.Name)
 			if ext == ".crt" || ext == ".pem" {
 				pkgCertFiles = append(pkgCertFiles, f.Name)
@@ -164,22 +169,6 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			cert:  cert,
 			alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
 		})
-		// Only copy the certificate to the ca-certificates directory if it's
-		// not already there (e.g., installed to a different path by the package).
-		// Avoid creating duplicates that would cause update-ca-certificates to
-		// add the same certificate twice.
-		if filepath.Dir(certPath) != caCertsDir {
-			if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
-				return fmt.Errorf("failed to create ca-certificates directory: %w", err)
-			}
-			destPath := filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", cert.fingerprint))
-			if err := bc.fs.WriteFile(destPath, cert.pem, 0o644); err != nil {
-				return fmt.Errorf("failed to write certificate file %s: %w", destPath, err)
-			}
-			if err := bc.fs.Chtimes(destPath, builtTime, builtTime); err != nil {
-				return fmt.Errorf("failed to change times on certificate file %s: %w", destPath, err)
-			}
-		}
 	}
 
 	if len(certs) == 0 {
