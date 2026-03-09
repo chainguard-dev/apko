@@ -170,10 +170,10 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 
 	// Verify individual cert files exist in the filesystem (installed by packages).
 	certPaths := []string{
-		"usr/share/ca-certificates/custom-1/cert-a.crt",
-		"usr/share/ca-certificates/custom-1/cert-b.crt",
-		"usr/share/ca-certificates/custom-2/cert-c.crt",
-		"usr/share/ca-certificates/custom-2/cert-d.crt",
+		"usr/local/share/ca-certificates/cert-a.crt",
+		"usr/local/share/ca-certificates/cert-b.crt",
+		"usr/local/share/ca-certificates/cert-c.crt",
+		"usr/local/share/ca-certificates/cert-d.crt",
 	}
 	for _, p := range certPaths {
 		_, err := fsys.Stat(p)

@@ -361,14 +361,14 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/sneaky", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/sneaky/sneaky-cert.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/sneaky-cert.crt", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/sneaky/sneaky-cert.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/sneaky-cert.crt": []byte(testCertPEM),
 		},
 	}, {
 		name: "single package with two certs appends to bundle",
@@ -380,24 +380,24 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1/cert-a.crt", Mode: 0o644},
-				{Name: "usr/share/ca-certificates/custom-1/cert-b.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert-a.crt", Mode: 0o644},
+				{Name: "usr/local/share/ca-certificates/cert-b.crt", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/custom-1/cert-a.crt": []byte(testCertPEM),
-			"usr/share/ca-certificates/custom-1/cert-b.crt": []byte(testCertPEM2),
+			"usr/local/share/ca-certificates/cert-a.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/cert-b.crt": []byte(testCertPEM2),
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
-			caCertsConfPath:  []byte("# existing\n"),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n" + testCertPEM2 + "\n"),
-			caCertsConfPath:  []byte("# existing\ncustom-1/cert-a.crt\ncustom-1/cert-b.crt\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
 		},
 	}, {
 		name: "two packages with certs each appends to existing bundle",
@@ -409,10 +409,10 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1/cert-a.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert-a.crt", Mode: 0o644},
 			},
 		}, {
 			pkg: apktypes.Package{
@@ -421,23 +421,23 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-2", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-2/cert-c.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert-c.crt", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/custom-1/cert-a.crt": []byte(testCertPEM3),
-			"usr/share/ca-certificates/custom-2/cert-c.crt": []byte(testCertPEM4),
+			"usr/local/share/ca-certificates/cert-a.crt": []byte(testCertPEM3),
+			"usr/local/share/ca-certificates/cert-c.crt": []byte(testCertPEM4),
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n"),
-			caCertsConfPath:  []byte("# existing\n"),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM3 + "\n" + testCertPEM4 + "\n"),
-			caCertsConfPath:  []byte("# existing\ncustom-1/cert-a.crt\ncustom-2/cert-c.crt\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM3Fingerprint)): []byte(testCertPEM3),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM4Fingerprint)): []byte(testCertPEM4),
 		},
 	}, {
 		name: "non-cert files in package are ignored",
@@ -449,24 +449,23 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1/cert-a.crt", Mode: 0o644},
-				{Name: "usr/share/ca-certificates/custom-1/README.md", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert-a.crt", Mode: 0o644},
+				{Name: "usr/local/share/ca-certificates/README.md", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/custom-1/cert-a.crt": []byte(testCertPEM),
-			"usr/share/ca-certificates/custom-1/README.md":  []byte("not a cert"),
+			"usr/local/share/ca-certificates/cert-a.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/README.md":  []byte("not a cert"),
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
-			caCertsConfPath:  {},
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
-			caCertsConfPath:  []byte("custom-1/cert-a.crt\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 		},
 	}, {
 		name: "package certs with existing Java truststore",
@@ -478,25 +477,24 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1/cert-a.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert-a.crt", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/custom-1/cert-a.crt": []byte(testCertPEM),
+			"usr/local/share/ca-certificates/cert-a.crt": []byte(testCertPEM),
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: {},
-			caCertsConfPath:  {},
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing": testCertPEM2,
 			}),
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
-			caCertsConfPath:  []byte("custom-1/cert-a.crt\n"),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                      testCertPEM2,
 				"pkg-" + testCertPEMFingerprint: testCertPEM,
@@ -518,18 +516,17 @@ func TestInstallCertificates(t *testing.T) {
 			},
 			files: []tar.Header{
 				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1", Typeflag: tar.TypeDir, Mode: 0o755},
-				{Name: "usr/share/ca-certificates/custom-1/cert.crt", Mode: 0o644},
+				{Name: "usr/local", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/local/share/ca-certificates/cert.crt", Mode: 0o644},
 			},
 		}},
 		certData: map[string][]byte{
-			"usr/share/ca-certificates/custom-1/cert.crt": []byte(testCertPEM3),
+			"usr/local/share/ca-certificates/cert.crt": []byte(testCertPEM3),
 		},
 		existingFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n"),
-			caCertsConfPath:  []byte("# existing\n"),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing": testCertPEM2,
 			}),
@@ -537,8 +534,8 @@ func TestInstallCertificates(t *testing.T) {
 		wantFiles: map[string][]byte{
 			// Inline certs are processed first, then package certs.
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM + "\n" + testCertPEM3 + "\n"),
-			caCertsConfPath:  []byte("# existing\ncustom-1/cert.crt\n"),
 			filepath.Join(caCertsDir, fmt.Sprintf("inline-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
+			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM3Fingerprint)):        []byte(testCertPEM3),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                              testCertPEM2,
 				"inline-cert-" + testCertPEMFingerprint: testCertPEM,

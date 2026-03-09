@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 
 	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
@@ -39,15 +38,6 @@ import (
 const (
 	// Directory for individual certificate files (used by update-ca-certificates).
 	caCertsDir = "usr/local/share/ca-certificates"
-
-	// caCertsConfPath is the path to the ca-certificates configuration file
-	// that lists certificate paths relative to systemCaCertsDir.
-	caCertsConfPath = "etc/ca-certificates.conf"
-
-	// systemCaCertsDir is the base directory for system CA certificates.
-	// Certificates under this path must be registered in caCertsConfPath
-	// for update-ca-certificates to include them.
-	systemCaCertsDir = "usr/share/ca-certificates/"
 )
 
 var (
@@ -161,7 +151,11 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 	// Sort for deterministic, reproducible builds.
 	sort.Strings(pkgCertFiles)
-	var confEntries []string
+	if len(pkgCertFiles) > 0 {
+		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
+		}
+	}
 	for _, certPath := range pkgCertFiles {
 		data, err := bc.fs.ReadFile(certPath)
 		if err != nil {
@@ -175,28 +169,13 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			cert:  cert,
 			alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
 		})
-		// Track certs under the system ca-certificates directory for
-		// registration in ca-certificates.conf.
-		if rel, ok := strings.CutPrefix(certPath, systemCaCertsDir); ok {
-			confEntries = append(confEntries, rel)
+		// Write package-provided certificate to the ca-certificates directory.
+		destPath := filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", cert.fingerprint))
+		if err := bc.fs.WriteFile(destPath, cert.pem, 0o644); err != nil {
+			return fmt.Errorf("failed to write certificate file %s: %w", destPath, err)
 		}
-	}
-
-	// Register package-provided certificates in ca-certificates.conf so
-	// that update-ca-certificates includes them when rebuilding the bundle.
-	if len(confEntries) > 0 {
-		confFile, err := bc.fs.OpenFile(caCertsConfPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to open %s: %w", caCertsConfPath, err)
-		}
-		defer confFile.Close()
-		for _, entry := range confEntries {
-			if _, err := fmt.Fprintf(confFile, "%s\n", entry); err != nil {
-				return fmt.Errorf("failed to write to %s: %w", caCertsConfPath, err)
-			}
-		}
-		if err := bc.fs.Chtimes(caCertsConfPath, builtTime, builtTime); err != nil {
-			return fmt.Errorf("failed to change times on %s: %w", caCertsConfPath, err)
+		if err := bc.fs.Chtimes(destPath, builtTime, builtTime); err != nil {
+			return fmt.Errorf("failed to change times on certificate file %s: %w", destPath, err)
 		}
 	}
 
