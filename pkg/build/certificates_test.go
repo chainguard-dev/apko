@@ -396,8 +396,6 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n" + testCertPEM2 + "\n"),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)):  []byte(testCertPEM),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM2Fingerprint)): []byte(testCertPEM2),
 		},
 	}, {
 		name: "two packages with certs each appends to existing bundle",
@@ -436,8 +434,6 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM3 + "\n" + testCertPEM4 + "\n"),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM3Fingerprint)): []byte(testCertPEM3),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM4Fingerprint)): []byte(testCertPEM4),
 		},
 	}, {
 		name: "non-cert files in package are ignored",
@@ -465,7 +461,6 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 		},
 	}, {
 		name: "package certs with existing Java truststore",
@@ -494,7 +489,6 @@ func TestInstallCertificates(t *testing.T) {
 		},
 		wantFiles: map[string][]byte{
 			caBundlePaths[0]: []byte(testCertPEM + "\n"),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                      testCertPEM2,
 				"pkg-" + testCertPEMFingerprint: testCertPEM,
@@ -535,7 +529,6 @@ func TestInstallCertificates(t *testing.T) {
 			// Inline certs are processed first, then package certs.
 			caBundlePaths[0]: []byte("# Existing Bundle\n" + testCertPEM + "\n" + testCertPEM3 + "\n"),
 			filepath.Join(caCertsDir, fmt.Sprintf("inline-cert-%s.crt", testCertPEMFingerprint)): []byte(testCertPEM),
-			filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", testCertPEM3Fingerprint)):        []byte(testCertPEM3),
 			javaTruststorePaths[0]: createTruststore(map[string]string{
 				"existing":                              testCertPEM2,
 				"inline-cert-" + testCertPEMFingerprint: testCertPEM,

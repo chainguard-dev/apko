@@ -151,11 +151,6 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 	// Sort for deterministic, reproducible builds.
 	sort.Strings(pkgCertFiles)
-	if len(pkgCertFiles) > 0 {
-		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
-		}
-	}
 	for _, certPath := range pkgCertFiles {
 		data, err := bc.fs.ReadFile(certPath)
 		if err != nil {
@@ -169,13 +164,21 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 			cert:  cert,
 			alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
 		})
-		// Write package-provided certificate to the ca-certificates directory.
-		destPath := filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", cert.fingerprint))
-		if err := bc.fs.WriteFile(destPath, cert.pem, 0o644); err != nil {
-			return fmt.Errorf("failed to write certificate file %s: %w", destPath, err)
-		}
-		if err := bc.fs.Chtimes(destPath, builtTime, builtTime); err != nil {
-			return fmt.Errorf("failed to change times on certificate file %s: %w", destPath, err)
+		// Only copy the certificate to the ca-certificates directory if it's
+		// not already there (e.g., installed to a different path by the package).
+		// Avoid creating duplicates that would cause update-ca-certificates to
+		// add the same certificate twice.
+		if filepath.Dir(certPath) != caCertsDir {
+			if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
+				return fmt.Errorf("failed to create ca-certificates directory: %w", err)
+			}
+			destPath := filepath.Join(caCertsDir, fmt.Sprintf("pkg-%s.crt", cert.fingerprint))
+			if err := bc.fs.WriteFile(destPath, cert.pem, 0o644); err != nil {
+				return fmt.Errorf("failed to write certificate file %s: %w", destPath, err)
+			}
+			if err := bc.fs.Chtimes(destPath, builtTime, builtTime); err != nil {
+				return fmt.Errorf("failed to change times on certificate file %s: %w", destPath, err)
+			}
 		}
 	}
 
