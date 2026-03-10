@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
 )
@@ -126,19 +127,24 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	}
 
 	if len(bc.ic.Certificates.Providers) > 0 {
-		// Collect certificate files from installed packages providing custom-ca-certificates.
+		// Filter installed packages to find those that provide certificates
 		installed, err := bc.apk.GetInstalled()
 		if err != nil {
 			return fmt.Errorf("failed to get installed packages: %w", err)
 		}
-		var pkgCertFiles []string
-		certProviders := bc.ic.Certificates.Providers
+		var providerPkgs []*apk.InstalledPackage
 		for _, pkg := range installed {
-			if !slices.ContainsFunc(certProviders, func(p string) bool {
-				return slices.Contains(pkg.Provides, p)
-			}) {
-				continue
+			for _, p := range pkg.Provides {
+				if slices.Contains(bc.ic.Certificates.Providers, p) {
+					providerPkgs = append(providerPkgs, pkg)
+					break
+				}
 			}
+		}
+
+		// Collect certificate files from provider packages
+		var pkgCertFiles []string
+		for _, pkg := range providerPkgs {
 			for _, f := range pkg.Files {
 				// Directories are explicitly marked; regular files from ParseInstalled
 				// have Typeflag == 0 (not tar.TypeReg).
