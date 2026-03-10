@@ -455,4 +455,7 @@ type AdditionalCertificateEntry struct {
 type ImageCertificates struct {
 	// Additional certificates to install in the image
 	Additional []AdditionalCertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
+	// Providers is a list of virtual package names that identify packages
+	// containing CA certificate files to be assembled into the system CA bundle.
+	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
 }

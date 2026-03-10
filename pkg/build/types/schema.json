@@ -84,6 +84,13 @@
           },
           "type": "array",
           "description": "Additional certificates to install in the image"
+        },
+        "providers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Providers is a list of virtual package names that identify packages\ncontaining CA certificate files to be assembled into the system CA bundle."
         }
       },
       "additionalProperties": false,

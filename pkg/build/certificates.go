@@ -15,6 +15,7 @@
 package build
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -27,9 +28,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
 
 	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 )
 
 const (
@@ -67,28 +73,119 @@ type loadedTruststore struct {
 	ks   keystore.KeyStore
 }
 
-// installCertificates installs inline certificates into the build context.
+// installCertificates installs certificates from two sources into the build context:
+//  1. Inline certificates from the image configuration (bc.ic.Certificates.Additional).
+//  2. Certificate files from installed packages that provide "custom-ca-certificates",
+//     replacing the role of update-ca-certificates post-install scripts.
 func (bc *Context) installCertificates(ctx context.Context) error {
 	_, span := otel.Tracer("apko").Start(ctx, "installCertificates")
 	defer span.End()
 
-	if bc.ic.Certificates == nil || len(bc.ic.Certificates.Additional) == 0 {
-		// No configuration, nothing to do.
+	if bc.ic.Certificates == nil {
 		return nil
 	}
+
+	// certToWrite pairs a parsed certificate with the metadata needed to write it.
+	type certToWrite struct {
+		cert  *parsedCertificate
+		alias string // Java truststore alias
+	}
+
+	certs := make([]certToWrite, 0, len(bc.ic.Certificates.Additional))
 
 	builtTime, err := bc.GetBuildDateEpoch()
 	if err != nil {
 		return fmt.Errorf("failed to get build date epoch: %w", err)
 	}
 
-	// Create the ca-certificates directory if it doesn't exist
-	if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create ca-certificates directory: %w", err)
+	// Write inline certificates from the image configuration to individual files
+	// and collect them for downstream bundle/truststore appending.
+	if len(bc.ic.Certificates.Additional) > 0 {
+		// Create the ca-certificates directory
+		if err := bc.fs.MkdirAll(caCertsDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create ca-certificates directory: %w", err)
+		}
+		for _, additional := range bc.ic.Certificates.Additional {
+			cert, err := parseCertificates(additional.Content)
+			if err != nil {
+				return fmt.Errorf("failed to parse certificate %s: %w", additional.Name, err)
+			}
+			// Write individual certificate file for update-ca-certificates to pick up.
+			// Name is validated not to do any path shenanigans on configuration validation.
+			// The fingerprint is controlled to be a hash and so also doesn't allow shenanigans.
+			certPath := filepath.Join(caCertsDir, fmt.Sprintf("%s-%s.crt", additional.Name, cert.fingerprint))
+			if err := bc.fs.WriteFile(certPath, cert.pem, 0o644); err != nil {
+				return fmt.Errorf("failed to write certificate file %s: %w", certPath, err)
+			}
+			if err := bc.fs.Chtimes(certPath, builtTime, builtTime); err != nil {
+				return fmt.Errorf("failed to change times on certificate file %s: %w", certPath, err)
+			}
+			certs = append(certs, certToWrite{
+				cert:  cert,
+				alias: fmt.Sprintf("%s-%s", additional.Name, cert.fingerprint),
+			})
+		}
+	}
+
+	if len(bc.ic.Certificates.Providers) > 0 {
+		// Filter installed packages to find those that provide certificates
+		installed, err := bc.apk.GetInstalled()
+		if err != nil {
+			return fmt.Errorf("failed to get installed packages: %w", err)
+		}
+		var providerPkgs []*apk.InstalledPackage
+		for _, pkg := range installed {
+			for _, p := range pkg.Provides {
+				if slices.Contains(bc.ic.Certificates.Providers, p) {
+					providerPkgs = append(providerPkgs, pkg)
+					break
+				}
+			}
+		}
+
+		// Collect certificate files from provider packages
+		var pkgCertFiles []string
+		for _, pkg := range providerPkgs {
+			for _, f := range pkg.Files {
+				// Directories are explicitly marked; regular files from ParseInstalled
+				// have Typeflag == 0 (not tar.TypeReg).
+				if f.Typeflag == tar.TypeDir {
+					continue
+				}
+				// Only consider pem/crt files under the caCertsDir
+				if !strings.HasPrefix(f.Name, caCertsDir+"/") {
+					continue
+				}
+				ext := filepath.Ext(f.Name)
+				if ext == ".crt" || ext == ".pem" {
+					pkgCertFiles = append(pkgCertFiles, f.Name)
+				}
+			}
+		}
+		// Sort for deterministic, reproducible builds.
+		sort.Strings(pkgCertFiles)
+		for _, certPath := range pkgCertFiles {
+			data, err := bc.fs.ReadFile(certPath)
+			if err != nil {
+				return fmt.Errorf("failed to read certificate file %s: %w", certPath, err)
+			}
+			cert, err := parseCertificates(string(data))
+			if err != nil {
+				continue
+			}
+			certs = append(certs, certToWrite{
+				cert:  cert,
+				alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
+			})
+		}
+	}
+
+	if len(certs) == 0 {
+		return nil
 	}
 
 	// Open handles for all existing CA bundles to append to.
-	existingBundles := make([]io.WriteSeeker, 0, len(caBundlePaths))
+	existingBundles := make([]io.WriteCloser, 0, len(caBundlePaths))
 	for _, caBundlePath := range caBundlePaths {
 		file, err := bc.fs.OpenFile(caBundlePath, os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -111,26 +208,11 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		return fmt.Errorf("failed to load Java truststores: %w", err)
 	}
 
-	for _, additional := range bc.ic.Certificates.Additional {
-		cert, err := parseCertificates(additional.Content)
-		if err != nil {
-			return fmt.Errorf("failed to parse certificate %s: %w", additional.Name, err)
-		}
-
-		// Write individual certificate file for update-ca-certificates to pick up.
-		// Name is validated not to do any path shenanigans on configuration validation.
-		// The fingerprint is controlled to be a hash and so also doesn't allow shenanigans.
-		certPath := filepath.Join(caCertsDir, fmt.Sprintf("%s-%s.crt", additional.Name, cert.fingerprint))
-		if err := bc.fs.WriteFile(certPath, cert.pem, 0o644); err != nil {
-			return fmt.Errorf("failed to write certificate file %s: %w", certPath, err)
-		}
-		if err := bc.fs.Chtimes(certPath, builtTime, builtTime); err != nil {
-			return fmt.Errorf("failed to change times on certificate file %s: %w", certPath, err)
-		}
-
+	// Append all collected certificates to open CA bundles and Java truststores.
+	for _, c := range certs {
 		// Append to all existing CA bundles.
 		for _, bundle := range existingBundles {
-			if _, err := bundle.Write(cert.pem); err != nil {
+			if _, err := bundle.Write(c.cert.pem); err != nil {
 				return fmt.Errorf("failed to append certificate to bundle: %w", err)
 			}
 			// Put newlines in-between certificates to mimic update-ca-certificates behavior.
@@ -145,16 +227,16 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 				CreationTime: builtTime,
 				Certificate: keystore.Certificate{
 					Type:    "X.509",
-					Content: cert.structured.Raw,
+					Content: c.cert.structured.Raw,
 				},
 			}
-			alias := fmt.Sprintf("%s-%s", additional.Name, cert.fingerprint)
-			if err := ts.ks.SetTrustedCertificateEntry(alias, entry); err != nil {
+			if err := ts.ks.SetTrustedCertificateEntry(c.alias, entry); err != nil {
 				return fmt.Errorf("failed to add certificate to Java truststore: %w", err)
 			}
 		}
 	}
 
+	// Update timestamps on all open CA bundle files.
 	for _, caBundlePath := range caBundlePaths {
 		if err := bc.fs.Chtimes(caBundlePath, builtTime, builtTime); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to change times on CA bundle %s: %w", caBundlePath, err)
