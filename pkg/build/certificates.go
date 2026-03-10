@@ -32,9 +32,10 @@ import (
 	"sort"
 	"strings"
 
-	"chainguard.dev/apko/pkg/apk/apk"
 	"github.com/pavlo-v-chernykh/keystore-go/v4"
 	"go.opentelemetry.io/otel"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 )
 
 const (
