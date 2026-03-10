@@ -61,7 +61,31 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		comment = title + " by " + vendor
 	}
 
-	adds := make([]mutate.Addendum, 0, len(layers))
+	adds := make([]mutate.Addendum, 0, len(layers)+1)
+
+	if ic.Xpkg != nil {
+		pkgYAML, err := generatePackageYAML(ic.Xpkg)
+		if err != nil {
+			return nil, fmt.Errorf("generating xpkg package.yaml: %w", err)
+		}
+		xpkgLayer, err := buildXpkgLayer(pkgYAML, created)
+		if err != nil {
+			return nil, fmt.Errorf("building xpkg layer: %w", err)
+		}
+		adds = append(adds, mutate.Addendum{
+			Layer: xpkgLayer,
+			Annotations: map[string]string{
+				XpkgLayerAnnotation: XpkgLayerAnnotationValue,
+			},
+			History: v1.History{
+				Author:    "apko",
+				Comment:   "Crossplane xpkg base layer",
+				CreatedBy: "apko",
+				Created:   v1.Time{Time: created},
+			},
+		})
+	}
+
 	for _, layer := range layers {
 		digest, err := layer.Digest()
 		if err != nil {
@@ -76,7 +100,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		log.Infof("layer digest: %v", digest)
 		log.Infof("layer diffID: %v", diffid)
 
-		adds = append(adds, mutate.Addendum{
+		addendum := mutate.Addendum{
 			Layer: layer,
 			History: v1.History{
 				Author:    "apko",
@@ -84,7 +108,11 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 				CreatedBy: "apko",
 				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
 			},
-		})
+		}
+		if ic.LayerAnnotations != nil {
+			addendum.Annotations = maps.Clone(ic.LayerAnnotations)
+		}
+		adds = append(adds, addendum)
 	}
 
 	// If building an OCI layer, then we should assume OCI manifest and config too
