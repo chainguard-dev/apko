@@ -125,50 +125,52 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 		}
 	}
 
-	// Collect certificate files from installed packages providing custom-ca-certificates.
-	installed, err := bc.apk.GetInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to get installed packages: %w", err)
-	}
-	var pkgCertFiles []string
-	certProviders := bc.ic.Certificates.Providers
-	for _, pkg := range installed {
-		if !slices.ContainsFunc(certProviders, func(p string) bool {
-			return slices.Contains(pkg.Provides, p)
-		}) {
-			continue
+	if len(bc.ic.Certificates.Providers) > 0 {
+		// Collect certificate files from installed packages providing custom-ca-certificates.
+		installed, err := bc.apk.GetInstalled()
+		if err != nil {
+			return fmt.Errorf("failed to get installed packages: %w", err)
 		}
-		for _, f := range pkg.Files {
-			// Directories are explicitly marked; regular files from ParseInstalled
-			// have Typeflag == 0 (not tar.TypeReg).
-			if f.Typeflag == tar.TypeDir {
+		var pkgCertFiles []string
+		certProviders := bc.ic.Certificates.Providers
+		for _, pkg := range installed {
+			if !slices.ContainsFunc(certProviders, func(p string) bool {
+				return slices.Contains(pkg.Provides, p)
+			}) {
 				continue
 			}
-			// Only consider pem/crt files under the caCertsDir
-			if !strings.HasPrefix(f.Name, caCertsDir+"/") {
+			for _, f := range pkg.Files {
+				// Directories are explicitly marked; regular files from ParseInstalled
+				// have Typeflag == 0 (not tar.TypeReg).
+				if f.Typeflag == tar.TypeDir {
+					continue
+				}
+				// Only consider pem/crt files under the caCertsDir
+				if !strings.HasPrefix(f.Name, caCertsDir+"/") {
+					continue
+				}
+				ext := filepath.Ext(f.Name)
+				if ext == ".crt" || ext == ".pem" {
+					pkgCertFiles = append(pkgCertFiles, f.Name)
+				}
+			}
+		}
+		// Sort for deterministic, reproducible builds.
+		sort.Strings(pkgCertFiles)
+		for _, certPath := range pkgCertFiles {
+			data, err := bc.fs.ReadFile(certPath)
+			if err != nil {
+				return fmt.Errorf("failed to read certificate file %s: %w", certPath, err)
+			}
+			cert, err := parseCertificates(string(data))
+			if err != nil {
 				continue
 			}
-			ext := filepath.Ext(f.Name)
-			if ext == ".crt" || ext == ".pem" {
-				pkgCertFiles = append(pkgCertFiles, f.Name)
-			}
+			certs = append(certs, certToWrite{
+				cert:  cert,
+				alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
+			})
 		}
-	}
-	// Sort for deterministic, reproducible builds.
-	sort.Strings(pkgCertFiles)
-	for _, certPath := range pkgCertFiles {
-		data, err := bc.fs.ReadFile(certPath)
-		if err != nil {
-			return fmt.Errorf("failed to read certificate file %s: %w", certPath, err)
-		}
-		cert, err := parseCertificates(string(data))
-		if err != nil {
-			continue
-		}
-		certs = append(certs, certToWrite{
-			cert:  cert,
-			alias: fmt.Sprintf("pkg-%s", cert.fingerprint),
-		})
 	}
 
 	if len(certs) == 0 {
