@@ -20,6 +20,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -280,7 +281,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 
 	// Allocate a list sufficient for holding all of our locked package versions
 	// as well as the packages we were unable to lock.
-	pl := make([]string, 0, len(acc.versions)+missing.Len())
+	allPl := make([]string, 0, len(acc.versions)+missing.Len())
 
 	// Append any missing packages with their original constraints coming in.
 	// NOTE: the originalPackages "versions" includes the remainder of the
@@ -288,42 +289,29 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 	for _, pkg := range sets.List(missing) {
 		if ver := originalPackages.versions[pkg]; ver != "" {
 			if pin := originalPackages.versions[pkg]; pin != "" {
-				pl = append(pl, fmt.Sprintf("%s%s%s", pkg, ver, pin))
+				allPl = append(allPl, fmt.Sprintf("%s%s%s", pkg, ver, pin))
 			} else {
-				pl = append(pl, fmt.Sprintf("%s%s", pkg, ver))
+				allPl = append(allPl, fmt.Sprintf("%s%s", pkg, ver))
 			}
 		} else {
-			pl = append(pl, pkg)
+			allPl = append(allPl, pkg)
 		}
 	}
 
-	// Append all of the resolved and unified packages with an exact match
-	// based on the resolved version we found.
-	for _, pkg := range sets.List(acc.packages) {
-		pkgName := fmt.Sprintf("%s=%s", pkg, acc.versions[pkg])
-		if pin := originalPackages.pinned[pkg]; pin != "" {
-			pkgName = fmt.Sprintf("%s%s", pkgName, pin)
-		}
-		pl = append(pl, pkgName)
-	}
+	allPl = slices.Concat(setPkgNames(acc, originalPackages), allPl)
+
 	// Sort the package list explicitly with the `=` included.
 	// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
 	// due to the presence or absence of the `=` character.
-	sort.Strings(pl)
+	sort.Strings(allPl)
 
 	// "index" is a sentinel value for the intersectino of all architectures.
 	// This is a reference to the OCI image index we'll be producing with it.
-	byArch["index"] = pl
+	byArch["index"] = allPl
 
 	for _, input := range inputs {
-		pl := make([]string, 0, len(input.packages))
-		for _, pkg := range sets.List(input.packages) {
-			pkgName := fmt.Sprintf("%s=%s", pkg, input.versions[pkg])
-			if pin := originalPackages.pinned[pkg]; pin != "" {
-				pkgName = fmt.Sprintf("%s%s", pkgName, pin)
-			}
-			pl = append(pl, pkgName)
-		}
+		pl := setPkgNames(input, originalPackages)
+
 		// Sort the package list explicitly with the `=` included.
 		// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
 		// due to the presence or absence of the `=` character.
@@ -345,6 +333,35 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 	}
 
 	return byArch, nil, nil
+}
+
+// setPkgNames returns a list of package names with their versions and pins
+func setPkgNames(input resolved, original resolved) []string {
+	pl := make([]string, 0, len(input.packages))
+
+	// Append all the resolved and unified packages with an exact match based on the
+	// resolved version we found.
+	for _, pkg := range sets.List(input.packages) {
+		pkgName := fmt.Sprintf("%s=%s", pkg, input.versions[pkg])
+		if pin := original.pinned[pkg]; pin != "" {
+			pkgName = fmt.Sprintf("%s%s", pkgName, pin)
+		}
+
+		// If the package provides something (such as a meta package) that has been
+		// specified with a pin, then we populate the pin based on what it provides.
+		for _, prov := range input.provided[pkg].UnsortedList() {
+			if strings.IndexAny(prov, ":") >= 0 {
+				continue
+			}
+			if pin := original.pinned[prov]; pin != "" {
+				pkgName = fmt.Sprintf("%s%s", pkgName, pin)
+				break
+			}
+		}
+
+		pl = append(pl, pkgName)
+	}
+	return pl
 }
 
 // Copied from go-apk's version.go
