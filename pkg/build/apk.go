@@ -17,7 +17,9 @@ package build
 import (
 	"context"
 	"fmt"
+	"slices"
 
+	"chainguard.dev/apko/pkg/apk/apk/keyring"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -57,21 +59,27 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 			Insert(bc.o.ExtraBuildRepos...).
 			Insert(bc.o.ExtraRepos...),
 	)
-	if err := bc.apk.InitDB(ctx, buildRepos...); err != nil {
+	if err := bc.apk.InitDB(ctx); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		keyring := sets.List(sets.New(bc.ic.Contents.Keyring...).Insert(bc.o.ExtraKeyFiles...))
-		if err := bc.apk.InitKeyring(ctx, keyring, nil); err != nil {
-			return fmt.Errorf("failed to initialize apk keyring: %w", err)
+		keys, err := keyring.NewKeyRing(
+			keyring.AddRepositories(buildRepos...),
+			keyring.AddKeyPaths(bc.ic.Contents.Keyring...),
+			keyring.AddKeyPaths(bc.o.ExtraKeyFiles...),
+		)
+		if err != nil {
+			return fmt.Errorf("creating keyring: %w", err)
 		}
-		return nil
+
+		return bc.apk.DownloadAndStoreKeys(ctx, keys)
 	})
 
 	eg.Go(func() error {
+		buildRepos := slices.Clip(buildRepos)
 		// We add auxiliary repository to resolve packages from the base image.
 		if bc.baseimg != nil {
 			buildRepos = append(buildRepos, bc.baseimg.APKIndexPath())

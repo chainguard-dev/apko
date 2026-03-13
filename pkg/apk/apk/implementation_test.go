@@ -30,6 +30,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/apk/keyring"
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
@@ -110,8 +111,9 @@ func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
 
-	err = apk.InitDB(context.Background(), "https://apk.cgr.dev/chainguard")
+	apk.InitDB(context.Background())
 	require.NoError(t, err)
+
 	// check all of the contents
 	for _, d := range initDirectories {
 		fi, err := fs.Stat(src, d.path)
@@ -136,6 +138,14 @@ func TestInitDB_ChainguardDiscovery(t *testing.T) {
 			require.Equal(t, targetPerms, actualPerms, "expected %s to have permissions %v, got %v", f.path, targetPerms, actualPerms)
 		}
 	}
+
+	keys, err := keyring.NewKeyRing(
+		keyring.AddRepositories("https://apk.cgr.dev/chainguard"),
+	)
+	require.NoError(t, err)
+
+	apk.DownloadAndStoreKeys(context.Background(), keys)
+	require.NoError(t, err)
 
 	// Confirm that we find at least one discovered key.
 	ent, err := fs.ReadDir(src, "etc/apk/keys")
@@ -501,11 +511,12 @@ func TestInitKeyring(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add a local file and a remote key
-	keyfiles := []string{
-		keyPath, "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
-	}
+	keys, err := keyring.NewKeyRing(
+		keyring.AddKeyPaths(keyPath, "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub"),
+	)
+	require.NoError(t, err)
 
-	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	require.NoError(t, a.DownloadAndStoreKeys(context.Background(), keys))
 	// InitKeyring should have copied the local key and remote key to the right place
 	fi, err := src.ReadDir(DefaultKeyRingPath)
 	// should be no error reading them
@@ -514,23 +525,26 @@ func TestInitKeyring(t *testing.T) {
 	require.Len(t, fi, 2)
 
 	// Add an invalid file
-	keyfiles = []string{
-		"/liksdjlksdjlksjlksjdl",
-	}
-	require.Error(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	keys, err = keyring.NewKeyRing(
+		keyring.AddKeyPaths("/liksdjlksdjlksjlksjdl"),
+	)
+	require.NoError(t, err)
+	require.Error(t, a.DownloadAndStoreKeys(context.Background(), keys))
 
 	// Add an invalid url
-	keyfiles = []string{
-		"http://sldkjflskdjflklksdlksdlkjslk.net",
-	}
-	require.Error(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	keys, err = keyring.NewKeyRing(
+		keyring.AddKeyPaths("http://sldkjflskdjflklksdlksdlkjslk.net"),
+	)
+	require.NoError(t, err)
+	require.Error(t, a.DownloadAndStoreKeys(context.Background(), keys))
 
 	// add a remote key with HTTP Basic Auth
-	keyfiles = []string{
-		"https://user:pass@alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
-	}
+	keys, err = keyring.NewKeyRing(
+		keyring.AddKeyPaths("https://user:pass@alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub"),
+	)
+	require.NoError(t, err)
 	tr.requireBasicAuth = true
-	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	require.NoError(t, a.DownloadAndStoreKeys(context.Background(), keys))
 
 	t.Run("auth", func(t *testing.T) {
 		called := false
@@ -557,7 +571,12 @@ func TestInitKeyring(t *testing.T) {
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
 
-			err = a.InitKeyring(ctx, []string{s.URL + "/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub"}, nil)
+			keys, err = keyring.NewKeyRing(
+				keyring.AddKeyPaths(s.URL + "/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub"),
+			)
+			require.NoError(t, err)
+
+			err = a.DownloadAndStoreKeys(ctx, keys)
 			require.NoErrorf(t, err, "unable to init keyring")
 			require.True(t, called, "did not make request")
 		})
@@ -572,7 +591,12 @@ func TestInitKeyring(t *testing.T) {
 			err = a.InitDB(ctx)
 			require.NoError(t, err)
 
-			err = a.InitKeyring(ctx, []string{s.URL + "/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub"}, nil)
+			keys, err = keyring.NewKeyRing(
+				keyring.AddKeyPaths(s.URL + "/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub"),
+			)
+			require.NoError(t, err)
+
+			err = a.DownloadAndStoreKeys(ctx, keys)
 			require.Error(t, err, "should fail with bad auth")
 			require.True(t, called, "did not make request")
 		})

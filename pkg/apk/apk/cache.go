@@ -86,8 +86,6 @@ type Cache struct {
 	etagCache  *sync.Map
 	headFlight *singleflight.Group
 	getFlight  *singleflight.Group
-
-	discoverKeys *flightCache[string, []Key]
 }
 
 // NewCache returns a new Cache, which allows us to persist the results of HEAD requests
@@ -103,9 +101,8 @@ type Cache struct {
 // requests for the same resource when passing etag=false.
 func NewCache(etag bool) *Cache {
 	c := &Cache{
-		headFlight:   &singleflight.Group{},
-		getFlight:    &singleflight.Group{},
-		discoverKeys: newFlightCache[string, []Key](),
+		headFlight: &singleflight.Group{},
+		getFlight:  &singleflight.Group{},
 	}
 
 	if etag {
