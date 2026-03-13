@@ -17,13 +17,11 @@ package tarfs
 import (
 	"archive/tar"
 	"bufio"
-	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"path"
-	"slices"
 	"sync"
 	"time"
 )
@@ -98,7 +96,6 @@ type FS struct {
 	ra    io.ReaderAt
 	files []*Entry
 	index map[string]int
-	dirs  map[string][]fs.DirEntry
 }
 
 func (fsys *FS) Readlink(name string) (string, error) {
@@ -184,15 +181,6 @@ func (fsys *FS) Stat(name string) (fs.FileInfo, error) {
 	return nil, fs.ErrNotExist
 }
 
-func (fsys *FS) ReadDir(name string) ([]fs.DirEntry, error) {
-	dirs, ok := fsys.dirs[name]
-	if !ok {
-		return []fs.DirEntry{}, nil
-	}
-
-	return dirs, nil
-}
-
 type countReader struct {
 	r io.Reader
 	n int64
@@ -209,11 +197,7 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		ra:    ra,
 		files: []*Entry{},
 		index: map[string]int{},
-		dirs:  map[string][]fs.DirEntry{},
 	}
-
-	// Number of entries in a given directory, so we know how large of a slice to allocate.
-	dirCount := map[string]int{}
 
 	// TODO: Consider caching this across builds.
 	r := io.NewSectionReader(ra, 0, size)
@@ -238,24 +222,6 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 			Offset: cr.n,
 			dir:    dir,
 			fi:     hdr.FileInfo(),
-		})
-
-		dirCount[dir]++
-	}
-
-	// Pre-generate the results of ReadDir so we don't allocate a ton if fs.WalkDir calls us.
-	// TODO: Consider doing this lazily in a sync.Once the first time we see a ReadDir.
-	for dir, count := range dirCount {
-		fsys.dirs[dir] = make([]fs.DirEntry, 0, count)
-	}
-
-	for _, f := range fsys.files {
-		fsys.dirs[f.dir] = append(fsys.dirs[f.dir], f)
-	}
-
-	for _, files := range fsys.dirs {
-		slices.SortFunc(files, func(a, b fs.DirEntry) int {
-			return cmp.Compare(a.Name(), b.Name())
 		})
 	}
 
