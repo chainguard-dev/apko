@@ -31,7 +31,7 @@ import (
 // SizeLimits configures maximum sizes for various operations to prevent unbounded reads.
 // A value of 0 means use the default, and a value of -1 means no limit.
 type SizeLimits struct {
-	// APKIndexDecompressedMaxSize is the maximum decompressed size for APKINDEX archives (default: 100 MB).
+	// APKIndexDecompressedMaxSize is the maximum decompressed size for APKINDEX archives (default: 300 MB).
 	// This protects against gzip bombs.
 	APKIndexDecompressedMaxSize int64 `json:"apkIndexDecompressedMaxSize,omitempty"`
 	// APKControlMaxSize is the maximum decompressed size for APK control sections (default: 10 MB).
@@ -46,7 +46,7 @@ type SizeLimits struct {
 // DefaultSizeLimits returns SizeLimits with sensible default values.
 func DefaultSizeLimits() SizeLimits {
 	return SizeLimits{
-		APKIndexDecompressedMaxSize: 100 << 20, // 100 MB
+		APKIndexDecompressedMaxSize: 300 << 20, // 300 MB
 		APKControlMaxSize:           10 << 20,  // 10 MB
 		APKDataMaxSize:              16 << 30,  // ~17 GB
 		HTTPResponseMaxSize:         8 << 30,   // ~9 GB
