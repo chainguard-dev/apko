@@ -21,9 +21,9 @@ import (
 const apkIndexFilename = "APKINDEX"
 const descriptionFilename = "DESCRIPTION"
 
-// DefaultMaxAPKIndexDecompressedSize is the maximum decompressed size for APKINDEX archives (100 MB).
+// DefaultMaxAPKIndexDecompressedSize is the maximum decompressed size for APKINDEX archives (300 MB).
 // This protects against gzip bombs where a small compressed file expands to a huge size.
-const DefaultMaxAPKIndexDecompressedSize = 100 << 20
+const DefaultMaxAPKIndexDecompressedSize = 300 << 20
 
 // Go template for generating the APKINDEX file from an ApkIndex struct
 var apkIndexTemplate = template.Must(template.New(apkIndexFilename).Funcs(
