@@ -35,8 +35,10 @@ import (
 )
 
 // Regex for valid certificate names. Since the name of the certificate is used
-// as a filename, we restrict it to a safe subset of characters.
-var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+// as a filename, we restrict it to a safe subset of characters. Note the first
+// character must NOT be a period (.) to avoid creating hidden files and
+// directory traversal.
+var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`)
 
 // Attempt to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
