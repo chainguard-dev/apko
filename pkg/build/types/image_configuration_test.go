@@ -279,7 +279,7 @@ func TestValidate(t *testing.T) {
 				}},
 			},
 		},
-		expectError: `configured additional certificate "trying/../../../to/break" has an invalid name, it must match ^[a-zA-Z0-9_-]+$`,
+		expectError: `configured additional certificate "trying/../../../to/break" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
 	}, {
 		name: "weird characters cert name",
 		configuration: types.ImageConfiguration{
@@ -290,13 +290,38 @@ func TestValidate(t *testing.T) {
 				}},
 			},
 		},
-		expectError: `configured additional certificate "my-cert@123!" has an invalid name, it must match ^[a-zA-Z0-9_-]+$`,
+		expectError: `configured additional certificate "my-cert@123!" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "cert name starting with period",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    ".hidden-cert",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate ".hidden-cert" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "cert name with period is valid",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "my-cert.pem",
+					Content: "test",
+				}},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.configuration.Validate()
-			require.EqualError(t, err, tt.expectError)
+			if tt.expectError != "" {
+				require.EqualError(t, err, tt.expectError)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
