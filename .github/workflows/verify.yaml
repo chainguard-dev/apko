@@ -25,9 +25,11 @@ jobs:
             *.blob.core.windows.net:443
             *.githubapp.com:443
             api.github.com:443
+            dl.google.com:443
             github.com:443
             go.dev:443
             golangci-lint.run:443
+            objects.githubusercontent.com:443
             proxy.golang.org:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
