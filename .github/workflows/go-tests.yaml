@@ -26,8 +26,10 @@ jobs:
             api.github.com:443
             apk.cgr.dev:443
             dl-cdn.alpinelinux.org:443
+            dl.google.com:443
             github.com:443
             go.dev:443
+            objects.githubusercontent.com:443
             proxy.golang.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
