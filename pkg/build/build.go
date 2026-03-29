@@ -281,6 +281,13 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithIgnoreIndexSignatures(bc.o.IgnoreSignatures),
 		apk.WithAuthenticator(bc.o.Auth),
 		apk.WithTransport(bc.o.Transport),
+		apk.WithPackageGetter(bc.o.PackageGetter),
+		apk.WithSizeLimits(&apk.SizeLimits{
+			APKIndexDecompressedMaxSize: bc.o.SizeLimits.APKIndexDecompressedMaxSize,
+			APKControlMaxSize:           bc.o.SizeLimits.APKControlMaxSize,
+			APKDataMaxSize:              bc.o.SizeLimits.APKDataMaxSize,
+			HTTPResponseMaxSize:         bc.o.SizeLimits.HTTPResponseMaxSize,
+		}),
 	}
 	// only try to pass the cache dir if one of the following is true:
 	// - the user has explicitly set a cache dir
@@ -498,7 +505,7 @@ func (bc *Context) Arch() types.Architecture {
 }
 
 func (bc *Context) WantSBOM() bool {
-	return len(bc.o.SBOMFormats) != 0
+	return len(bc.o.SBOMGenerators) != 0
 }
 
 func (bc *Context) APK() *apk.APK {

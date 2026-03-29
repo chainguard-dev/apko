@@ -16,25 +16,57 @@ package generator
 
 import (
 	"context"
+	"sync"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
-
-	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
+// Generator defines the interface for SBOM generators.
 type Generator interface {
 	Key() string
 	Ext() string
+	PredicateType() string
 	Generate(context.Context, *options.Options, string) error
 	GenerateIndex(*options.Options, string) error
 }
 
-func Generators(fsys apkfs.FullFS) map[string]Generator {
-	generators := map[string]Generator{}
+// GeneratorFactory is a function that creates a Generator.
+type GeneratorFactory func() Generator
 
-	sx := spdx.New(fsys)
-	generators[sx.Key()] = &sx
+var (
+	registryMu sync.RWMutex
+	registry   = make(map[string]GeneratorFactory)
+)
+
+// RegisterGenerator registers a custom generator factory under the given key.
+// This allows external systems to plug in their own SBOM generator types.
+// If a generator with the same key already exists, it will be overwritten.
+func RegisterGenerator(key string, factory GeneratorFactory) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry[key] = factory
+}
+
+// Generators returns a map of registered generators.
+// If names are provided, only generators with those keys will be returned.
+func Generators(names ...string) []Generator {
+	generators := []Generator{}
+
+	nameIdx := map[string]bool{}
+	for _, n := range names {
+		nameIdx[n] = true
+	}
+	// If no names are provided, return all generators.
+	all := len(nameIdx) == 0
+
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	for key, factory := range registry {
+		if all || nameIdx[key] {
+			generators = append(generators, factory())
+		}
+	}
 
 	return generators
 }

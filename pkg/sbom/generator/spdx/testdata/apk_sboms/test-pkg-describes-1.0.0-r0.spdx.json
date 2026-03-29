@@ -1,0 +1,101 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "apk-test-pkg-describes-1.0.0-r0",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2025-12-17T00:00:00Z",
+    "creators": [
+      "Tool: melange (test)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.22"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/chainguard/melange/test",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-test-pkg-describes-1.0.0-r0",
+      "name": "test-pkg-describes",
+      "versionInfo": "1.0.0-r0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Test",
+      "supplier": "Organization: Test",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/test-pkg-describes@1.0.0-r0?arch=x86_64&distro=wolfi",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-test-dependency-1.0.0",
+      "name": "test-dependency",
+      "versionInfo": "1.0.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "https://example.com/test-dependency-1.0.0.tar.gz",
+      "originator": "Organization: Test",
+      "supplier": "Organization: Test"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-golang-github.com-example-module",
+      "name": "github.com/example/module",
+      "versionInfo": "v1.2.3",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:golang/github.com/example/module@v1.2.3",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm-lodash",
+      "name": "lodash",
+      "versionInfo": "4.17.21",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:npm/lodash@4.17.21",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-test-pkg-describes-1.0.0-r0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-test-pkg-describes-1.0.0-r0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-test-dependency-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-test-pkg-describes-1.0.0-r0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-golang-github.com-example-module"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-test-pkg-describes-1.0.0-r0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-npm-lodash"
+    }
+  ]
+}

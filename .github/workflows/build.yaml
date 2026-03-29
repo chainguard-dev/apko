@@ -17,15 +17,35 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.github.com:443
+            auth.docker.io:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            goreleaser.com:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            raw.githubusercontent.com:443
+            registry-1.docker.io:443
+            rekor.sigstore.dev:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            tuf-repo-cdn.sigstore.dev:443
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
@@ -36,19 +56,19 @@ jobs:
           ./apko version
 
       - name: Setup cosign (needed in CI tests)
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
         with:
           # https://github.com/goreleaser/goreleaser/issues/6195
           cosign-release: "v2.6.1"
 
       - name: Setup crane (needed in CI tests)
-        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+        uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
 
       - name: Run CI tests in hack/ci/
         run: |
           make ci
 
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+      - uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
           install-only: true
 

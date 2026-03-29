@@ -19,10 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -38,7 +35,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -49,21 +45,18 @@ import (
 	"go.step.sm/crypto/jose"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"gopkg.in/ini.v1"
 
-	"chainguard.dev/apko/internal/tarfs"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
-	"chainguard.dev/apko/pkg/paths"
 
 	"github.com/chainguard-dev/clog"
 )
 
-// This is terrible but simpler than plumbing around a cache for now.
-// We just hold the expanded APK in memory rather than re-parsing it every time,
-// which is expensive. This also dedupes simultaneous fetches.
-var globalApkCache = &apkCache{}
+const (
+	// DefaultHTTPResponseSize is the default maximum size for HTTP responses (2 GB).
+	DefaultHTTPResponseSize = 2 << 30
+)
 
 type APK struct {
 	arch               string
@@ -76,6 +69,8 @@ type APK struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
+	packageGetter      PackageGetter
+	sizeLimits         *SizeLimits
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -83,6 +78,14 @@ type APK struct {
 	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
 	// It's stuffed here to avoid plumbing it across every method, but it's optional.
 	ByArch map[string]*APK
+}
+
+// apkIndexDecompressedMaxSize returns the configured max decompressed APK index size or 0 for default.
+func (a *APK) apkIndexDecompressedMaxSize() int64 {
+	if a.sizeLimits != nil && a.sizeLimits.APKIndexDecompressedMaxSize != 0 {
+		return a.sizeLimits.APKIndexDecompressedMaxSize
+	}
+	return 0 // use default
 }
 
 func New(ctx context.Context, options ...Option) (*APK, error) {
@@ -98,13 +101,37 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		opt.fs = apkfs.DirFS(ctx, "/")
 	}
 
-	client := retryablehttp.NewClient()
+	// Wrap transport with response size limiter
+	transport := opt.transport
+	var httpResponseMaxSize int64
+	if opt.sizeLimits != nil {
+		httpResponseMaxSize = opt.sizeLimits.HTTPResponseMaxSize
+	}
+	transport = newLimitedResponseTransport(transport, httpResponseMaxSize)
 
-	client.HTTPClient = &http.Client{Transport: opt.transport}
+	client := retryablehttp.NewClient()
+	client.HTTPClient = &http.Client{Transport: transport}
 	client.Logger = clog.FromContext(ctx)
 
+	httpClient := client.StandardClient()
+
+	// Create default PackageGetter if none provided
+	packageGetter := opt.packageGetter
+	if packageGetter == nil {
+		var getterOpts []packageGetterOption
+		if opt.sizeLimits != nil {
+			if opt.sizeLimits.APKControlMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKControlMaxSize(opt.sizeLimits.APKControlMaxSize))
+			}
+			if opt.sizeLimits.APKDataMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKDataMaxSize(opt.sizeLimits.APKDataMaxSize))
+			}
+		}
+		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
+	}
+
 	return &APK{
-		client:             client.StandardClient(),
+		client:             httpClient,
 		fs:                 opt.fs,
 		arch:               opt.arch,
 		executor:           opt.executor,
@@ -115,6 +142,8 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
+		packageGetter:      packageGetter,
+		sizeLimits:         opt.sizeLimits,
 	}, nil
 }
 
@@ -183,14 +212,6 @@ var initDeviceFiles = []deviceFile{
 	{"/dev/null", 1, 3, 0o666},
 	{"/dev/random", 1, 8, 0o666},
 	{"/dev/console", 5, 1, 0o620},
-}
-
-// SetClient set the http client to use for downloading packages.
-// In general, you can leave this unset, and it will use the default http.Client.
-// It is useful for fine-grained control, for proxying, or for setting alternate
-// paths.
-func (a *APK) SetClient(client *http.Client) {
-	a.client = client
 }
 
 // ListInitFiles list the files that are installed during the InitDB phase.
@@ -321,10 +342,10 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 
 	// Perform key discovery for the various build-time repositories.
 	for _, repo := range buildRepos {
-		if ver, ok := parseAlpineVersion(repo); ok {
+		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
-				if !errors.As(err, &nokeysErr) {
+				if !a.cache.offline && !errors.As(err, &nokeysErr) {
 					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
 				}
 				log.Debugf("ignoring missing keys: %v", err)
@@ -449,7 +470,9 @@ func (a *APK) resolveApkDB(ctx context.Context) error {
 
 var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
 
-func parseAlpineVersion(repo string) (version string, ok bool) {
+// ParseAlpineVersion parses the Alpine version from a repository URL.
+// Returns the version string (e.g., "v3.21") and true if successful.
+func ParseAlpineVersion(repo string) (version string, ok bool) {
 	parts := repoRE.FindStringSubmatch(repo)
 	if len(parts) < 2 {
 		return "", false
@@ -639,7 +662,7 @@ func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) 
 	// concurrently fetch and expand all our APKs.
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
-			expanded, err := a.expandPackage(ctx, pkg)
+			expanded, err := a.packageGetter.GetPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
 			}
@@ -782,13 +805,14 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				}
 
 				// The data in .PKGINFO is more complete than what is in APKINDEX.
-				pkgInfo, err := packageInfo(exp)
+				pkgInfo, err := exp.PkgInfo()
 				if err != nil {
 					return fmt.Errorf("failed to read .PKGINFO for %s: %w", pkg, err)
 				}
-				infos[i] = pkgInfo
+				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
+				infos[i] = asPackage
 
-				installedFiles, err := a.installPackage(ctx, pkgInfo, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, asPackage, exp, sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
@@ -805,7 +829,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 	for i, pkg := range allpkgs {
 		g.Go(func() error {
 			defer func() { close(done[i]) }()
-			exp, err := a.expandPackage(ctx, pkg)
+			exp, err := a.packageGetter.GetPackage(ctx, pkg)
 			if err != nil {
 				return fmt.Errorf("expanding %s: %w", pkg, err)
 			}
@@ -872,36 +896,45 @@ func (e *NoKeysFoundError) Error() string {
 	return fmt.Sprintf("no keys found for arch %s and releases %v", e.arch, e.releases)
 }
 
+// FetchAlpineReleases fetches and returns the Alpine releases metadata from alpinelinux.org.
+func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, error) {
+	u := alpineReleasesURL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	// NB: Not setting basic auth, since we know Alpine doesn't support it.
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unable to get alpine releases at %s: %v", u, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read alpine releases: %w", err)
+	}
+	var releases Releases
+	if err := json.Unmarshal(b, &releases); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal alpine releases: %w", err)
+	}
+	return &releases, nil
+}
+
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
 func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
 	defer span.End()
 
-	u := alpineReleasesURL
 	client := a.client
 	if a.cache != nil {
 		client = a.cache.client(client, true)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	releases, err := FetchAlpineReleases(ctx, client)
 	if err != nil {
 		return err
-	}
-	// NB: Not setting basic auth, since we know Alpine doesn't support it.
-	res, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch alpine releases: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get alpine releases at %s: %v", u, res.Status)
-	}
-	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read alpine releases: %w", err)
-	}
-	var releases Releases
-	if err := json.Unmarshal(b, &releases); err != nil {
-		return fmt.Errorf("failed to unmarshal alpine releases: %w", err)
 	}
 	var urls []string
 	// now just need to get the keys for the desired architecture and releases
@@ -1094,260 +1127,6 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	return nil
 }
 
-func (a *APK) cachePackage(ctx context.Context, pkg InstallablePackage, exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "cachePackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	// Rename exp's temp files to content-addressable identifiers in the cache.
-
-	ctlHex := hex.EncodeToString(exp.ControlHash)
-	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
-
-	if err := paths.AdvertiseCachedFile(exp.ControlFile, ctlDst); err != nil {
-		return nil, err
-	}
-
-	exp.ControlFile = ctlDst
-
-	if exp.SignatureFile != "" {
-		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
-
-		if err := paths.AdvertiseCachedFile(exp.SignatureFile, sigDst); err != nil {
-			return nil, err
-		}
-
-		exp.SignatureFile = sigDst
-	}
-
-	datHex := hex.EncodeToString(exp.PackageHash)
-	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
-
-	if err := paths.AdvertiseCachedFile(exp.PackageFile, datDst); err != nil {
-		return nil, err
-	}
-
-	exp.PackageFile = datDst
-
-	if err := exp.TarFS.Close(); err != nil {
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
-
-	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
-
-	if err := paths.AdvertiseCachedFile(exp.TarFile, tarDst); err != nil {
-		return nil, err
-	}
-
-	exp.TarFile = tarDst
-
-	// Re-initialize the tarfs with the renamed file.
-	// TODO: Split out the tarfs Index creation from the FS.
-	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	data, err := exp.PackageData()
-	if err != nil {
-		return nil, err
-	}
-	info, err := data.Stat()
-	if err != nil {
-		return nil, err
-	}
-	exp.TarFS, err = tarfs.New(data, info.Size())
-	if err != nil {
-		return nil, err
-	}
-
-	return exp, nil
-}
-
-func (a *APK) cachedPackage(ctx context.Context, pkg InstallablePackage, cacheDir string) (*expandapk.APKExpanded, error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "cachedPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	chk := pkg.ChecksumString()
-	if !strings.HasPrefix(chk, "Q1") {
-		return nil, fmt.Errorf("unexpected checksum: %q", chk)
-	}
-
-	checksum, err := base64.StdEncoding.DecodeString(chk[2:])
-	if err != nil {
-		return nil, err
-	}
-
-	pkgHexSum := hex.EncodeToString(checksum)
-
-	exp := expandapk.APKExpanded{}
-
-	ctl := filepath.Join(cacheDir, pkgHexSum+".ctl.tar.gz")
-	cf, err := os.Stat(ctl)
-	if err != nil {
-		return nil, err
-	}
-	exp.ControlFile = ctl
-	exp.ControlHash = checksum
-	exp.ControlSize = cf.Size()
-
-	control, err := exp.ControlData()
-	if err != nil {
-		return nil, err
-	}
-
-	exp.ControlFS, err = tarfs.New(bytes.NewReader(control), int64(len(control)))
-	if err != nil {
-		return nil, fmt.Errorf("indexing %q: %w", exp.ControlFile, err)
-	}
-
-	exp.Size += cf.Size()
-
-	sig := filepath.Join(cacheDir, pkgHexSum+".sig.tar.gz")
-	sf, err := os.Stat(sig)
-	if err == nil {
-		exp.SignatureFile = sig
-		exp.Signed = true
-		exp.Size += sf.Size()
-		exp.SignatureSize = sf.Size()
-		signatureData, err := os.ReadFile(sig)
-		if err != nil {
-			return nil, err
-		}
-		signatureHash := sha1.Sum(signatureData) //nolint:gosec // this is what apk tools is using
-		exp.SignatureHash = signatureHash[:]
-	}
-
-	f, err := os.Open(ctl)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	datahash, err := a.datahash(f)
-	if err != nil {
-		return nil, fmt.Errorf("datahash for %s: %w", pkg, err)
-	}
-
-	dat := filepath.Join(cacheDir, datahash+".dat.tar.gz")
-	df, err := os.Stat(dat)
-	if err != nil {
-		return nil, err
-	}
-	exp.PackageFile = dat
-	exp.PackageSize = df.Size()
-	exp.Size += df.Size()
-
-	exp.PackageHash, err = hex.DecodeString(datahash)
-	if err != nil {
-		return nil, err
-	}
-
-	exp.TarFile = strings.TrimSuffix(exp.PackageFile, ".gz")
-	data, err := exp.PackageData()
-	if err != nil {
-		return nil, err
-	}
-	info, err := data.Stat()
-	if err != nil {
-		return nil, err
-	}
-	exp.TarFS, err = tarfs.New(data, info.Size())
-	if err != nil {
-		return nil, err
-	}
-
-	return &exp, nil
-}
-
-type apkResult struct {
-	exp *expandapk.APKExpanded
-	err error
-}
-
-type apkCache struct {
-	// url -> func() apkResult (from sync.OnceValue(...))
-	onces sync.Map
-}
-
-func (c *apkCache) get(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	u := pkg.URL()
-	// Do all the expensive things inside sync.OnceValue()
-	fn := func() apkResult {
-		exp, err := expandPackage(ctx, a, pkg)
-		return apkResult{
-			exp: exp,
-			err: err,
-		}
-	}
-	once, cached := c.onces.LoadOrStore(u, sync.OnceValue(fn))
-	result := once.(func() apkResult)()
-	if cached && result.exp != nil {
-		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
-		// If it references a non-existent file, we should act as though this was a cache miss and expand the
-		// APK again.
-		if _, err := os.Stat(result.exp.TarFile); os.IsNotExist(err) {
-			newValue := sync.OnceValue(fn)
-			c.onces.Store(u, newValue)
-			result = newValue()
-		}
-	}
-
-	return result.exp, result.err
-}
-
-func (a *APK) expandPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	if a.cache == nil {
-		// If we don't have a cache configured, don't use the global cache.
-		// Calling APKExpanded.Close() will clean up a tempdir.
-		// This is fine when we have a cache because we move all the backing files into the cache.
-		// This is not fine when we don't have a cache because the tempdir contains all our state.
-		return expandPackage(ctx, a, pkg)
-	}
-
-	return globalApkCache.get(ctx, a, pkg)
-}
-
-func expandPackage(ctx context.Context, a *APK, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
-	log := clog.FromContext(ctx)
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "expandPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	cacheDir := ""
-	if a.cache != nil {
-		var err error
-		cacheDir, err = cacheDirForPackage(a.cache.dir, pkg)
-		if err != nil {
-			return nil, err
-		}
-
-		exp, err := a.cachedPackage(ctx, pkg, cacheDir)
-		if err == nil {
-			log.Debugf("cache hit (%s)", pkg.PackageName())
-			return exp, nil
-		}
-
-		log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
-
-		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-			return nil, fmt.Errorf("unable to create cache directory %q: %w", cacheDir, err)
-		}
-	}
-
-	rc, err := a.FetchPackage(ctx, pkg)
-	if err != nil {
-		return nil, fmt.Errorf("fetching package %q: %w", pkg.PackageName(), err)
-	}
-	defer rc.Close()
-
-	exp, err := expandapk.ExpandApk(ctx, rc, cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
-	}
-
-	// If we don't have a cache, we're done.
-	if a.cache == nil {
-		return exp, nil
-	}
-
-	return a.cachePackage(ctx, pkg, exp, cacheDir)
-}
-
 func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
@@ -1367,85 +1146,25 @@ func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
 	return url.Parse(string(asURI))
 }
 
+// FetchPackage fetches the given package and returns a ReadCloser for its contents.
+// This is only kept for backwards compatibility, prefer using packageGetter.GetPackage instead.
 func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
-	log := clog.FromContext(ctx)
-	log.Debugf("fetching %s", pkg)
-
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchPackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
-	defer span.End()
-
-	u := pkg.URL()
-
-	// Normalize the repo as a URI, so that local paths
-	// are translated into file:// URLs, allowing them to be parsed
-	// into a url.URL{}.
-	asURL, err := packageAsURL(pkg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse package as URL: %w", err)
+	// To keep existing behavior, this always uses the default package getter.
+	var getterOpts []packageGetterOption
+	if a.sizeLimits != nil {
+		if a.sizeLimits.APKControlMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKControlMaxSize(a.sizeLimits.APKControlMaxSize))
+		}
+		if a.sizeLimits.APKDataMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKDataMaxSize(a.sizeLimits.APKDataMaxSize))
+		}
 	}
-
-	switch asURL.Scheme {
-	case "file":
-		f, err := os.Open(u)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read repository package apk %s: %w", u, err)
-		}
-		return f, nil
-	case "https", "http":
-		client := a.client
-		if a.cache != nil {
-			client = a.cache.client(client, false)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return nil, err
-		}
-		if err := a.auth.AddAuth(ctx, req); err != nil {
-			return nil, err
-		}
-
-		// This will return a body that retries requests using Range requests if Read() hits an error.
-		rrt := newRangeRetryTransport(ctx, client)
-		res, err := rrt.RoundTrip(req)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get package apk at %s: %w", u, err)
-		}
-		if res.StatusCode != http.StatusOK {
-			res.Body.Close()
-			return nil, fmt.Errorf("unable to get package apk at %s: %v", u, res.Status)
-		}
-		return res.Body, nil
-	default:
-		return nil, fmt.Errorf("repository scheme %s not supported", asURL.Scheme)
-	}
+	getter := newDefaultPackageGetter(a.client, a.cache, a.auth, getterOpts...)
+	return getter.fetchPackage(ctx, pkg)
 }
 
 type WriteHeaderer interface {
 	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
-}
-
-func packageInfo(exp *expandapk.APKExpanded) (*Package, error) {
-	f, err := exp.ControlFS.Open(".PKGINFO")
-	if err != nil {
-		return nil, fmt.Errorf("opening .PKGINFO in %s: %w", exp.ControlFile, err)
-	}
-	defer f.Close()
-
-	cfg, err := ini.ShadowLoad(f)
-	if err != nil {
-		return nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
-	}
-
-	pkg := new(Package)
-	if err = cfg.MapTo(pkg); err != nil {
-		return nil, fmt.Errorf("cfg.MapTo(): %w", err)
-	}
-	pkg.BuildTime = time.Unix(pkg.BuildDate, 0).UTC()
-	pkg.InstalledSize = pkg.Size
-	pkg.Size = uint64(exp.Size)
-	pkg.Checksum = exp.ControlHash
-
-	return pkg, nil
 }
 
 // installPackage installs a single package and updates installed db.
@@ -1486,38 +1205,26 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the scripts.tar
-	controlData, err := os.Open(expanded.ControlFile)
+	controlData, err := expanded.ControlData()
 	if err != nil {
 		return nil, fmt.Errorf("opening control file %q: %w", expanded.ControlFile, err)
 	}
-	defer controlData.Close()
 
-	if err := a.updateScriptsTar(pkg, controlData, sourceDateEpoch); err != nil {
+	controlTar := bytes.NewReader(controlData)
+	if err := a.updateScriptsTar(pkg, controlTar, sourceDateEpoch); err != nil {
 		return nil, fmt.Errorf("unable to update scripts.tar for pkg %s: %w", pkg.Name, err)
 	}
 
 	// update the triggers
-	if _, err := controlData.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("unable to seek to start of control data for pkg %s: %w", pkg.Name, err)
+	pkgInfo, err := expanded.PkgInfo()
+	if err != nil {
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
 	}
-	if err := a.updateTriggers(pkg, controlData); err != nil {
+	if err := a.updateTriggers(pkg, pkgInfo.Triggers); err != nil {
 		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
 	}
 
 	return installedFiles, nil
-}
-
-func (a *APK) datahash(controlTarGz io.Reader) (string, error) {
-	values, err := a.controlValue(controlTarGz, "datahash")
-	if err != nil {
-		return "", fmt.Errorf("reading datahash from control: %w", err)
-	}
-
-	if len(values) != 1 {
-		return "", fmt.Errorf("saw %d datahash values", len(values))
-	}
-
-	return values[0], nil
 }
 
 func packageRefs(pkgs []*RepositoryPackage) []string {

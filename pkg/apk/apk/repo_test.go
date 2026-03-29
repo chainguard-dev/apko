@@ -92,7 +92,7 @@ guyM+Ks3c29KlRf3iX35Gt0CAwEAAQ==
 )
 
 func TestGetRepositoryIndexes(t *testing.T) {
-	prepLayout := func(t *testing.T, cache string, repos []string) *APK {
+	prepLayout := func(t *testing.T, tr http.RoundTripper, cache string, repos []string) *APK {
 		src := apkfs.NewMemFS()
 		err := src.MkdirAll("etc/apk", 0o755)
 		require.NoError(t, err, "unable to mkdir /etc/apk")
@@ -113,7 +113,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			require.NoErrorf(t, err, "unable to write repositories")
 		}
 
-		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
+		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithTransport(tr)}
 		if cache != "" {
 			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
@@ -124,19 +124,13 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		return a
 	}
 	t.Run("no cache", func(t *testing.T) {
-		a := prepLayout(t, "", nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, "", nil)
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
 	t.Run("RSA256 signed", func(t *testing.T) {
-		a := prepLayout(t, "", nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true},
-		})
+		a := prepLayout(t, &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true}, "", nil)
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -145,10 +139,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that always returns a 404 so we know we're not hitting the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{fail: true},
-		})
+		a := prepLayout(t, &testLocalTransport{fail: true}, tmpDir, nil)
 		_, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.Error(t, err, "should fail when no cache and no network")
 	})
@@ -156,11 +147,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -176,19 +164,16 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, []string{testAlpineRepos})
+		a := prepLayout(t, &testLocalTransport{
+			root:         testPrimaryPkgDir,
+			basenameOnly: true,
+			headers: map[string][]string{
+				http.CanonicalHeaderKey("etag"): {"an-etag"},
+			},
+		}, tmpDir, []string{testAlpineRepos})
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{
-				root:         testPrimaryPkgDir,
-				basenameOnly: true,
-				headers: map[string][]string{
-					http.CanonicalHeaderKey("etag"): {"an-etag"},
-				},
-			},
-		})
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -201,15 +186,12 @@ func TestGetRepositoryIndexes(t *testing.T) {
 	})
 	t.Run("repo url with http basic auth", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, []string{"https://user:pass@dl-cdn.alpinelinux.org/alpine/v3.16/main"})
+		a := prepLayout(t, &testLocalTransport{
+			root:             testPrimaryPkgDir,
+			basenameOnly:     true,
+			requireBasicAuth: true,
+		}, tmpDir, []string{"https://user:pass@dl-cdn.alpinelinux.org/alpine/v3.16/main"})
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{
-				root:             testPrimaryPkgDir,
-				basenameOnly:     true,
-				requireBasicAuth: true,
-			},
-		})
 		ctx := context.Background()
 		indexes, err := a.GetRepositoryIndexes(ctx, false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -219,13 +201,11 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
+		tr := &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}}
 
 		// get our APK struct
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, tr, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		// Use the client to fill the cache.
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -235,9 +215,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 
 		// Update the transport to serve the same etag, but different content to
 		// verify that we serve from the cache instead of the response.
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
+		tr.root = testAlternatePkgDir
+
 		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -251,13 +230,11 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
+		tr := &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}}
 
 		// get our APK struct
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, tr, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		// Use the client to fill the cache.
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -268,9 +245,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// Update the transport to serve a different etag and different content,
 		// to verify that when the etag changes we use the data from the
 		// response.
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}},
-		})
+		tr.root = testAlternatePkgDir
+		tr.headers = map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}
 
 		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -288,14 +264,11 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		eg := errgroup.Group{}
 		for i := range 100 {
 			eg.Go(func() error {
-				a := prepLayout(t, tmpDir, nil)
-				a.SetClient(&http.Client{
-					Transport: &testLocalTransport{
-						root:         testPrimaryPkgDir,
-						basenameOnly: true,
-						headers:      map[string][]string{http.CanonicalHeaderKey("etag"): {fmt.Sprint(i)}},
-					},
-				})
+				a := prepLayout(t, &testLocalTransport{
+					root:         testPrimaryPkgDir,
+					basenameOnly: true,
+					headers:      map[string][]string{http.CanonicalHeaderKey("etag"): {fmt.Sprint(i)}},
+				}, tmpDir, nil)
 				indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 				require.NoErrorf(t, err, "unable to get indexes")
 				require.Greater(t, len(indexes), 0, "no indexes found")

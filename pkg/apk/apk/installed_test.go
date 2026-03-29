@@ -361,8 +361,7 @@ func TestUpdateScriptsTar(t *testing.T) {
 		".post-upgrade": []byte("echo 'post upgrade'"),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -379,7 +378,6 @@ func TestUpdateScriptsTar(t *testing.T) {
 	})
 	_, _ = tw.Write([]byte(pkginfo))
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
@@ -434,38 +432,9 @@ func TestUpdateTriggers(t *testing.T) {
 		Version:  "1.0.0",
 		Checksum: randBytes,
 	}
-	// this is not a fully valid PKGINFO file by any stretch, but for now it is sufficient
 	triggers := "/bin /usr/bin /foo /bar/*"
-	pkginfo := strings.Join([]string{
-		fmt.Sprintf("pkgname = %s", pkg.Name),
-		fmt.Sprintf("pkgver = %s", pkg.Version),
-		fmt.Sprintf("triggers = %s", triggers),
-	}, "\n")
-	// construct the controlTarGz
-	scripts := map[string][]byte{
-		".pre-install":  []byte("echo 'pre install'"),
-		".post-install": []byte("echo 'post install'"),
-		".pre-upgrade":  []byte("echo 'pre upgrade'"),
-		".post-upgrade": []byte("echo 'post upgrade'"),
-		".PKGINFO":      []byte(pkginfo),
-	}
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-	for name, content := range scripts {
-		_ = tw.WriteHeader(&tar.Header{
-			Name: name,
-			Mode: 0o644,
-			Size: int64(len(content)),
-		})
-		_, _ = tw.Write(content)
-	}
-	tw.Close()
-	gw.Close()
 
-	// pass the controltargz to updateScriptsTar
-	r := bytes.NewReader(buf.Bytes())
-	err = a.updateTriggers(pkg, r)
+	err = a.updateTriggers(pkg, []string{triggers})
 	require.NoError(t, err, "unable to update triggers: %v", err)
 
 	// successfully wrote it; not check that it was written correctly

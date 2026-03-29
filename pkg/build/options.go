@@ -26,6 +26,8 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -110,9 +112,20 @@ func WithSBOM(path string) Option {
 	}
 }
 
+// WithSBOMFormats sets the SBOM generators to use.
+//
+// Deprecated: use WithSBOMGenerators instead.
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
-		bc.o.SBOMFormats = formats
+		bc.o.SBOMGenerators = generator.Generators(formats...)
+		return nil
+	}
+}
+
+// WithSBOMGenerators sets the SBOM generators to use.
+func WithSBOMGenerators(generators ...generator.Generator) Option {
+	return func(bc *Context) error {
+		bc.o.SBOMGenerators = generators
 		return nil
 	}
 }
@@ -233,6 +246,23 @@ func WithIgnoreSignatures(ignore bool) Option {
 func WithTransport(t http.RoundTripper) Option {
 	return func(bc *Context) error {
 		bc.o.Transport = t
+		return nil
+	}
+}
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg apk.PackageGetter) Option {
+	return func(bc *Context) error {
+		bc.o.PackageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets the size limits for various operations.
+func WithSizeLimits(limits options.SizeLimits) Option {
+	return func(bc *Context) error {
+		bc.o.SizeLimits = limits
 		return nil
 	}
 }

@@ -26,5 +26,4 @@ var DefaultOptions = options.Options{
 		Images: []options.ArchImageInfo{},
 	},
 	FileName: "sbom",
-	Formats:  []string{"spdx"},
 }

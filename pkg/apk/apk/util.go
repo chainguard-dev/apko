@@ -14,15 +14,6 @@
 
 package apk
 
-import (
-	"archive/tar"
-	"errors"
-	"fmt"
-	"io"
-	"slices"
-	"strings"
-)
-
 func uniqify[T comparable](s []T) []T {
 	seen := make(map[T]struct{}, len(s))
 	uniq := make([]T, 0, len(s))
@@ -36,50 +27,4 @@ func uniqify[T comparable](s []T) []T {
 	}
 
 	return uniq
-}
-
-func controlValue(controlTar io.Reader, want ...string) (map[string][]string, error) {
-	tr := tar.NewReader(controlTar)
-	for {
-		header, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("control file not found")
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		// ignore .PKGINFO as it is not a script
-		if header.Name != ".PKGINFO" {
-			continue
-		}
-
-		b, err := io.ReadAll(tr)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read .PKGINFO from control tar.gz file: %w", err)
-		}
-		mapping := map[string][]string{}
-		lines := strings.SplitSeq(string(b), "\n")
-		for line := range lines {
-			parts := strings.Split(line, "=")
-			if len(parts) != 2 {
-				continue
-			}
-			key := strings.TrimSpace(parts[0])
-			if !slices.Contains(want, key) {
-				continue
-			}
-
-			values, ok := mapping[key]
-			if !ok {
-				values = []string{}
-			}
-
-			value := strings.TrimSpace(parts[1])
-			values = append(values, value)
-
-			mapping[key] = values
-		}
-		return mapping, nil
-	}
 }

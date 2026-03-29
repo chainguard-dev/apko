@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/gzip"
+
+	"chainguard.dev/apko/pkg/limitio"
 )
 
 // Split takes an APK reader and splits it into its constituent parts.
@@ -22,6 +24,23 @@ import (
 // The signature and control sections are buffered in memory, while the data section is streamed
 // from the input reader.
 func Split(source io.Reader) ([]io.Reader, error) {
+	return SplitWithOptions(source)
+}
+
+// SplitWithOptions is like Split but accepts functional options to configure
+// size limits for APK sections.
+func SplitWithOptions(source io.Reader, opts ...Option) ([]io.Reader, error) {
+	options := DefaultOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return nil, fmt.Errorf("applying option: %w", err)
+		}
+	}
+
+	return splitWithOptions(source, options)
+}
+
+func splitWithOptions(source io.Reader, options *Options) ([]io.Reader, error) {
 	parts := []io.Reader{}
 
 	br := bufio.NewReader(source)
@@ -43,7 +62,7 @@ func Split(source io.Reader) ([]io.Reader, error) {
 
 	// Handle optional signature section.
 	if strings.HasPrefix(hdr.Name, ".SIGN.") {
-		if _, err := io.Copy(io.Discard, gzi); err != nil {
+		if _, err := io.Copy(io.Discard, limitio.NewLimitedReaderWithDefault(gzi, options.MaxControlSize, DefaultMaxControlSize)); err != nil {
 			return nil, fmt.Errorf("copying signature stream: %w", err)
 		}
 
@@ -60,8 +79,8 @@ func Split(source io.Reader) ([]io.Reader, error) {
 	}
 
 	// There should always be a control section.
-	if _, err := io.Copy(io.Discard, gzi); err != nil {
-		return nil, fmt.Errorf("copying signature stream: %w", err)
+	if _, err := io.Copy(io.Discard, limitio.NewLimitedReaderWithDefault(gzi, options.MaxControlSize, DefaultMaxControlSize)); err != nil {
+		return nil, fmt.Errorf("copying control stream: %w", err)
 	}
 
 	parts = append(parts, bytes.NewReader(buf.Bytes()))
@@ -71,7 +90,8 @@ func Split(source io.Reader) ([]io.Reader, error) {
 	}
 
 	// And the rest is the data section.
-	parts = append(parts, br)
+	dataReader := limitio.NewLimitedReaderWithDefault(br, options.MaxDataSize, DefaultMaxDataSize)
+	parts = append(parts, dataReader)
 
 	return parts, nil
 }

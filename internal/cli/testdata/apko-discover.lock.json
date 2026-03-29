@@ -1,0 +1,147 @@
+{
+  "version": "v1",
+  "config": {
+    "name": "apko-discover.yaml",
+    "checksum": "sha256-D1mtHLoTBln0iH+VqWZMIPQOScXMWprVolB2sihPWAk="
+  },
+  "contents": {
+    "keyring": [
+      {
+        "name": "./testdata/melange.rsa.pub",
+        "url": "./testdata/melange.rsa.pub"
+      },
+      {
+        "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub",
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub"
+      },
+      {
+        "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub",
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-6ea100e7571978828f8455393090cc468e1f22dfc771ad2d26df14e52b73c37f.rsa.pub"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub",
+        "url": "https://apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub"
+      }
+    ],
+    "build_repositories": [],
+    "runtime_repositories": [],
+    "repositories": [
+      {
+        "name": "dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/x86_64",
+        "url": "https://apk.cgr.dev/chainguard/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "./testdata/packages/x86_64",
+        "url": "./testdata/packages/x86_64/APKINDEX.tar.gz",
+        "architecture": "x86_64"
+      },
+      {
+        "name": "dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      },
+      {
+        "name": "apk.cgr.dev/chainguard/aarch64",
+        "url": "https://apk.cgr.dev/chainguard/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      },
+      {
+        "name": "./testdata/packages/aarch64",
+        "url": "./testdata/packages/aarch64/APKINDEX.tar.gz",
+        "architecture": "aarch64"
+      }
+    ],
+    "packages": [
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/x86_64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-646",
+          "checksum": "sha1-S+THz+JYZxcNzNCw2jI9YlnDnE4="
+        },
+        "control": {
+          "range": "bytes=647-1628",
+          "checksum": "sha1-m6wB0UFePGN8Drz82pC8y2uAiu8="
+        },
+        "data": {
+          "range": "bytes=1629-2929",
+          "checksum": "sha256-ckBapsaMu5EOb/e4Ei1s2l/+dZMEamHhUmaoJ8yeZwg="
+        },
+        "checksum": "Q1m6wB0UFePGN8Drz82pC8y2uAiu8="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/x86_64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "bytes=0-646",
+          "checksum": "sha1-M3D5FSI+rv4Qe3oJqVtR1CvOVKE="
+        },
+        "control": {
+          "range": "bytes=647-1660",
+          "checksum": "sha1-1/HhSewwwOXgl0r0ffb0O0BRtYc="
+        },
+        "data": {
+          "range": "bytes=1661-2960",
+          "checksum": "sha256-zmiHBvaqKHsF8CxQeHa0M4mZKwj7T4T5kRe9VpTkXUw="
+        },
+        "checksum": "Q11/HhSewwwOXgl0r0ffb0O0BRtYc="
+      },
+      {
+        "name": "pretend-baselayout",
+        "url": "./testdata/packages/aarch64/pretend-baselayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-647",
+          "checksum": "sha1-DaCiv+fkcPqYlZ1j6qUAyjvaaWQ="
+        },
+        "control": {
+          "range": "bytes=648-1628",
+          "checksum": "sha1-JQ8nfsxa27d0f6oa056sdT5IcJY="
+        },
+        "data": {
+          "range": "bytes=1629-2929",
+          "checksum": "sha256-cY5bE593kEpYKyqepLmkPc/RnAiPsIsm92XAHwi+U9I="
+        },
+        "checksum": "Q1JQ8nfsxa27d0f6oa056sdT5IcJY="
+      },
+      {
+        "name": "replayout",
+        "url": "./testdata/packages/aarch64/replayout-1.0.0-r0.apk",
+        "version": "1.0.0-r0",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "bytes=0-646",
+          "checksum": "sha1-/2EQJW+59r1Vbi3AxFA7e9brusw="
+        },
+        "control": {
+          "range": "bytes=647-1655",
+          "checksum": "sha1-u62watWiRSQgVtAIuVuYoDOaVO4="
+        },
+        "data": {
+          "range": "bytes=1656-2954",
+          "checksum": "sha256-IMtgng48z5PaYwqYWLrGUKoaZUHFmigOnKRJ7KcmTQo="
+        },
+        "checksum": "Q1u62watWiRSQgVtAIuVuYoDOaVO4="
+      }
+    ]
+  }
+}

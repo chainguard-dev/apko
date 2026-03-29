@@ -24,19 +24,42 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
       - run: |
           make apko
           ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
@@ -68,18 +91,41 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
       - run: |
           make apko
           for cfg in $(find ./examples/ -name '*.yaml'); do
@@ -89,8 +135,8 @@ jobs:
             if [ -f ${build_script} ]; then
               ${build_script} ./apko
             else
-              ./apko build ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
-              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar --arch amd64
+              ./apko build ${cfg} ${name}:build /tmp/${name}.tar
+              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar
             fi
           done
 
@@ -102,18 +148,41 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
+      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
         with:
           port: 5000
 
@@ -144,18 +213,41 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
+      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
         with:
           port: 5000
 
@@ -186,19 +278,42 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
-      - uses: chainguard-dev/actions/setup-registry@3e8a2a226fad9e1ecbf2d359b8a7697554a4ac6d # v1.5.10
+      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
+      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
         with:
           port: 5000
       - run: |
@@ -215,3 +330,101 @@ jobs:
 
           # Check per-image config labels.
           crane config --platform=linux/arm64 $ref | jq -r '.config.Labels' | grep bar
+
+  certificates:
+    name: certificates
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+      - name: test additional certificates
+        run: |
+          ./hack/test-certificates.sh ./examples/certificates.yaml \
+            "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" \
+            "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D"
+
+  package-certificates:
+    name: package-certificates
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            updates.cdn-apple.com:443
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+      - name: test package-provided certificates
+        run: |
+          ./hack/test-certificates.sh ./examples/package-certificates.yaml \
+            "E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98" \
+            "9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D" \
+            "34:75:37:AF:7A:09:D4:03:F1:9F:58:F8:3C:35:68:91:2A:F2:4B:7C:12:E7:45:F1:D5:55:70:79:70:8C:91:AD" \
+            "12:AE:34:99:9A:A6:4D:CD:1A:69:47:E8:38:A5:3A:AB:AB:FC:FA:CA:45:AB:CA:8D:C0:CB:B8:DC:B7:BD:06:3C"

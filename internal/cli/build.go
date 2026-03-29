@@ -37,7 +37,8 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/tarfs"
 )
 
@@ -58,6 +59,7 @@ func buildCmd() *cobra.Command {
 	var lockfile string
 	var includePaths []string
 	var ignoreSignatures bool
+	var sizeLimits options.SizeLimits
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -85,8 +87,9 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				return fmt.Errorf("parsing annotations from command line: %w", err)
 			}
 
-			if !writeSBOM {
-				sbomFormats = []string{}
+			var sbomGenerators []generator.Generator
+			if writeSBOM && len(sbomFormats) > 0 {
+				sbomGenerators = generator.Generators(sbomFormats...)
 			}
 
 			tmp, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
@@ -102,7 +105,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithConfig(args[0], includePaths),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
-				build.WithSBOMFormats(sbomFormats),
+				build.WithSBOMGenerators(sbomGenerators...),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
@@ -115,6 +118,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithTempDir(tmp),
 				build.WithIncludePaths(includePaths),
 				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithSizeLimits(sizeLimits),
 			)
 		},
 	}
@@ -125,7 +129,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", []string{"spdx"}, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
@@ -135,6 +139,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append.")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	addClientLimitFlags(cmd, &sizeLimits)
 	return cmd
 }
 
@@ -285,7 +290,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 			}
 
 			var outputs []types.SBOM
-			if len(o.SBOMFormats) != 0 {
+			if len(o.SBOMGenerators) != 0 {
 				outputs, err = bc.GenerateImageSBOM(ctx, arch, img)
 				if err != nil {
 					return fmt.Errorf("generating sbom for %s: %w", arch, err)
@@ -301,7 +306,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 				multiArchBDE = bde
 			}
 
-			if len(o.SBOMFormats) != 0 {
+			if len(o.SBOMGenerators) != 0 {
 				sboms = append(sboms, outputs...)
 			}
 
@@ -333,7 +338,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	}
 
 	// the sboms are saved to the same working directory as the image components
-	if len(o.SBOMFormats) != 0 {
+	if len(o.SBOMGenerators) != 0 {
 		files, err := build.GenerateIndexSBOM(ctx, *o, *ic, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
