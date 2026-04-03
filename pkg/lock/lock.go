@@ -24,12 +24,23 @@ type Config struct {
 }
 
 type LockContents struct {
-	Keyrings                []LockKeyring `json:"keyring"`
-	BuildRepositories       []LockRepo    `json:"build_repositories"`
-	RuntimeOnlyRepositories []LockRepo    `json:"runtime_repositories"`
-	Repositories            []LockRepo    `json:"repositories"`
+	Keyrings                []LockKeyring      `json:"keyring"`
+	BuildRepositories       []LockRepo         `json:"build_repositories"`
+	RuntimeOnlyRepositories []LockRepo         `json:"runtime_repositories"`
+	Repositories            []LockRepo         `json:"repositories"`
 	// Packages in order of installation -> for a single architecture.
-	Packages []LockPkg `json:"packages"`
+	Packages          []LockPkg          `json:"packages"`
+	EcosystemPackages []LockEcosystemPkg `json:"ecosystem_packages,omitempty"`
+}
+
+// LockEcosystemPkg represents a locked non-APK ecosystem package.
+type LockEcosystemPkg struct {
+	Ecosystem    string `json:"ecosystem"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	URL          string `json:"url"`
+	Checksum     string `json:"checksum"`
+	Architecture string `json:"architecture"`
 }
 
 type LockPkg struct {

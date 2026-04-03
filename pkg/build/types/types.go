@@ -104,6 +104,16 @@ type BaseImageDescriptor struct {
 	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
 }
 
+// EcosystemConfig holds configuration for a non-APK package ecosystem (e.g., pip).
+type EcosystemConfig struct {
+	// Indexes is a list of package index URLs (e.g., PyPI simple API URLs).
+	Indexes []string `json:"indexes,omitempty" yaml:"indexes,omitempty"`
+	// Packages is a list of package specifications (e.g., "flask==3.0.0").
+	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
+	// PythonVersion overrides auto-detection of the Python version (e.g., "3.12").
+	PythonVersion string `json:"python_version,omitempty" yaml:"python_version,omitempty"`
+}
+
 type ImageContents struct {
 	// A list of apk repositories to use for pulling packages at build time,
 	// which are not installed into /etc/apk/repositories in the image (to
@@ -122,6 +132,8 @@ type ImageContents struct {
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
 	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty" apko:"experimental"`
+	// Optional: Non-APK ecosystem packages to install (e.g., pip packages).
+	Ecosystems map[string]EcosystemConfig `json:"ecosystems,omitempty" yaml:"ecosystems,omitempty"`
 }
 
 // MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
@@ -136,6 +148,13 @@ func (i ImageContents) MarshalYAML() (any, error) {
 
 	if err := processRepositoryURLs(ri.Repositories); err != nil {
 		return nil, err
+	}
+
+	for name, eco := range ri.Ecosystems {
+		if err := processRepositoryURLs(eco.Indexes); err != nil {
+			return nil, err
+		}
+		ri.Ecosystems[name] = eco
 	}
 
 	for idx, key := range ri.Keyring {

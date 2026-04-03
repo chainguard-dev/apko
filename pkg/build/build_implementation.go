@@ -36,6 +36,8 @@ import (
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/ecosystem"
+	_ "chainguard.dev/apko/pkg/ecosystem/pip" // Register pip ecosystem installer.
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -174,6 +176,14 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("installing apk packages: %w", err)
+		}
+	}
+
+	// Install ecosystem packages (pip, etc.) after APK packages so that
+	// the language runtime is available for version detection.
+	if len(bc.ic.Contents.Ecosystems) > 0 {
+		if err := ecosystem.InstallAll(ctx, bc.fs, bc.ic.Contents.Ecosystems, bc.o.Arch); err != nil {
+			return nil, fmt.Errorf("installing ecosystem packages: %w", err)
 		}
 	}
 
