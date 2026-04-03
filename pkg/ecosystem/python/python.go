@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pip
+package python
 
 import (
 	"context"
@@ -70,7 +70,7 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 	if pythonVersion == "" {
 		return fmt.Errorf("no Python installation found in filesystem; install python3 via APK first")
 	}
-	log.Infof("detected Python %s for pip ecosystem install", pythonVersion)
+	log.Infof("detected Python %s for python ecosystem install", pythonVersion)
 
 	sitePackagesPath := fmt.Sprintf("usr/lib/python%s/site-packages", pythonVersion)
 	if err := fsys.MkdirAll(sitePackagesPath, 0755); err != nil {
@@ -78,7 +78,7 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 	}
 
 	for _, pkg := range packages {
-		log.Infof("installing pip package %s==%s", pkg.Name, pkg.Version)
+		log.Infof("installing python package %s==%s", pkg.Name, pkg.Version)
 
 		data, err := downloadWheel(ctx, pkg.URL)
 		if err != nil {

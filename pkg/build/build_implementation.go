@@ -37,7 +37,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/ecosystem"
-	_ "chainguard.dev/apko/pkg/ecosystem/pip" // Register pip ecosystem installer.
+	_ "chainguard.dev/apko/pkg/ecosystem/python" // Register python ecosystem installer.
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )

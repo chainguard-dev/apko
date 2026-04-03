@@ -35,7 +35,7 @@ type ResolvedPackage struct {
 
 // Installer is the interface that ecosystem package installers must implement.
 type Installer interface {
-	// Name returns the ecosystem name (e.g., "pip").
+	// Name returns the ecosystem name (e.g., "python").
 	Name() string
 	// Resolve resolves the requested packages to specific versions and URLs.
 	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture) ([]ResolvedPackage, error)

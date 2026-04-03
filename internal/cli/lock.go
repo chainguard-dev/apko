@@ -36,7 +36,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/ecosystem"
-	_ "chainguard.dev/apko/pkg/ecosystem/pip"
+	_ "chainguard.dev/apko/pkg/ecosystem/python"
 	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
