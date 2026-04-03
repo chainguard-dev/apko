@@ -25,6 +25,7 @@ import (
 	"github.com/chainguard-dev/clog"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/ecosystem"
 )
@@ -33,13 +34,28 @@ func init() {
 	ecosystem.Register("python", func() ecosystem.Installer {
 		return &installer{}
 	})
+	ecosystem.RegisterRequiredAPKPackages("python", RequiredAPKPackages)
+}
+
+// RequiredAPKPackages returns the APK packages needed for the configured
+// Python version. When python_version is set, it injects both the base
+// interpreter and the full python package so users don't need to list them
+// manually in contents.packages.
+func RequiredAPKPackages(config types.EcosystemConfig) []string {
+	if config.PythonVersion == "" {
+		return nil
+	}
+	return []string{
+		"python-" + config.PythonVersion + "-base",
+		"python-" + config.PythonVersion,
+	}
 }
 
 type installer struct{}
 
 func (i *installer) Name() string { return "python" }
 
-func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture) ([]ecosystem.ResolvedPackage, error) {
+func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
 	if len(config.Packages) == 0 {
 		return nil, nil
 	}
@@ -56,13 +72,13 @@ func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, a
 
 	pythonVersion := config.PythonVersion
 	if pythonVersion == "" {
-		pythonVersion = "3.12"
+		return nil, fmt.Errorf("python_version is required in ecosystem python config")
 	}
 
-	return resolvePackages(ctx, specs, indexes, pythonVersion, arch)
+	return resolvePackages(ctx, specs, indexes, pythonVersion, arch, a)
 }
 
-func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []ecosystem.ResolvedPackage, config types.EcosystemConfig) (map[string]string, error) {
+func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []ecosystem.ResolvedPackage, config types.EcosystemConfig, a auth.Authenticator) (map[string]string, error) {
 	log := clog.FromContext(ctx)
 
 	pythonVersion := detectPythonVersion(fsys)
@@ -90,7 +106,7 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 	for _, pkg := range packages {
 		log.Infof("installing python package %s==%s", pkg.Name, pkg.Version)
 
-		data, err := downloadWheel(ctx, pkg.URL)
+		data, err := downloadWheel(ctx, pkg.URL, a)
 		if err != nil {
 			return nil, fmt.Errorf("downloading %s: %w", pkg.Name, err)
 		}
@@ -105,6 +121,12 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 
 		if err := writeInstallerFile(fsys, sitePackagesPath, data); err != nil {
 			log.Debugf("could not write INSTALLER file for %s: %v", pkg.Name, err)
+		}
+
+		if isChainguardSource(pkg.URL) {
+			if err := writePackageSBOM(fsys, sitePackagesPath, data, pkg); err != nil {
+				log.Debugf("could not write SBOM for %s: %v", pkg.Name, err)
+			}
 		}
 	}
 
@@ -181,10 +203,16 @@ func detectPythonVersion(fsys apkfs.FullFS) string {
 }
 
 // downloadWheel downloads a wheel file from the given URL.
-func downloadWheel(ctx context.Context, url string) ([]byte, error) {
+func downloadWheel(ctx context.Context, url string, a auth.Authenticator) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, fmt.Errorf("adding auth for %s: %w", url, err)
+		}
 	}
 
 	resp, err := http.DefaultClient.Do(req)

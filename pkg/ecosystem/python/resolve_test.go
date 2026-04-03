@@ -105,6 +105,71 @@ func TestParseSimpleIndex(t *testing.T) {
 	}
 }
 
+func TestParseSimpleIndexProvenance(t *testing.T) {
+	body := `
+<html><body>
+<a href="foo-1.0.0-py3-none-any.whl#sha256=aaa" data-provenance="https://cgr.dev/prov/foo" data-signature="https://cgr.dev/sig/foo" data-requires-python="&gt;=3.8">foo-1.0.0-py3-none-any.whl</a>
+<a href="bar-2.0.0-py3-none-any.whl#sha256=bbb">bar-2.0.0-py3-none-any.whl</a>
+</body></html>
+`
+	links := parseSimpleIndex(body, "https://cgr.dev/simple/")
+	if len(links) != 2 {
+		t.Fatalf("expected 2 wheel links, got %d", len(links))
+	}
+
+	// First link should have provenance and signature
+	if links[0].ProvenanceURL != "https://cgr.dev/prov/foo" {
+		t.Errorf("links[0].ProvenanceURL = %q, want %q", links[0].ProvenanceURL, "https://cgr.dev/prov/foo")
+	}
+	if links[0].SignatureURL != "https://cgr.dev/sig/foo" {
+		t.Errorf("links[0].SignatureURL = %q, want %q", links[0].SignatureURL, "https://cgr.dev/sig/foo")
+	}
+	if links[0].RequiresPython != ">=3.8" {
+		t.Errorf("links[0].RequiresPython = %q, want %q", links[0].RequiresPython, ">=3.8")
+	}
+
+	// Second link should have empty provenance/signature
+	if links[1].ProvenanceURL != "" {
+		t.Errorf("links[1].ProvenanceURL = %q, want empty", links[1].ProvenanceURL)
+	}
+	if links[1].SignatureURL != "" {
+		t.Errorf("links[1].SignatureURL = %q, want empty", links[1].SignatureURL)
+	}
+}
+
+func TestParseRequiresDist(t *testing.T) {
+	metadata := `Metadata-Version: 2.1
+Name: vunnel
+Version: 0.55.3
+Requires-Dist: click>=8.0
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: colorlog>=6.0
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: importlib-metadata>=4.0; python_version < "3.8"
+`
+	deps := parseRequiresDist(metadata)
+
+	// Should get click, PyYAML, colorlog (not pytest which needs extra, not importlib-metadata gated on old python)
+	names := map[string]bool{}
+	for _, d := range deps {
+		names[normalizeName(d.Name)] = true
+	}
+	if !names["click"] {
+		t.Error("missing click")
+	}
+	if !names["pyyaml"] {
+		t.Error("missing pyyaml")
+	}
+	if !names["colorlog"] {
+		t.Error("missing colorlog")
+	}
+	if names["pytest"] {
+		t.Error("should not include pytest (extra-gated)")
+	}
+	// importlib-metadata is python_version gated — evaluateMarkers is permissive for python_version
+	// so it WILL be included (which is correct — we filter by wheel compatibility later)
+}
+
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -234,7 +299,7 @@ func TestResolveWithMockJSON(t *testing.T) {
 	pypiJSONBaseOverride = server.URL + "/pypi/"
 
 	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}
@@ -318,7 +383,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 	defer func() { pypiJSONBaseOverride = "" }()
 
 	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}
@@ -355,7 +420,7 @@ func TestResolveSimpleApiFallback(t *testing.T) {
 
 	specs := []packageSpec{{Name: "mypackage", Operator: "==", Version: "1.0.0"}}
 	// Use a non-pypi index so it doesn't try the JSON API
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}

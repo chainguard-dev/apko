@@ -20,17 +20,20 @@ import (
 	"sync"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
 // ResolvedPackage represents a package that has been resolved to a specific
 // version and download URL.
 type ResolvedPackage struct {
-	Ecosystem string
-	Name      string
-	Version   string
-	URL       string
-	Checksum  string // "sha256:<hex>"
+	Ecosystem     string
+	Name          string
+	Version       string
+	URL           string
+	Checksum      string // "sha256:<hex>"
+	SignatureURL  string // optional: signature bundle URL (from data-signature)
+	ProvenanceURL string // optional: provenance data URL (from data-provenance)
 }
 
 // Installer is the interface that ecosystem package installers must implement.
@@ -38,15 +41,19 @@ type Installer interface {
 	// Name returns the ecosystem name (e.g., "python").
 	Name() string
 	// Resolve resolves the requested packages to specific versions and URLs.
-	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture) ([]ResolvedPackage, error)
+	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) ([]ResolvedPackage, error)
 	// Install extracts resolved packages into the filesystem.
 	// Returns environment variables that should be set in the image configuration.
-	Install(ctx context.Context, fs apkfs.FullFS, packages []ResolvedPackage, config types.EcosystemConfig) (map[string]string, error)
+	Install(ctx context.Context, fs apkfs.FullFS, packages []ResolvedPackage, config types.EcosystemConfig, a auth.Authenticator) (map[string]string, error)
 }
 
+// RequiredAPKPackagesFunc returns APK packages that an ecosystem requires.
+type RequiredAPKPackagesFunc func(config types.EcosystemConfig) []string
+
 var (
-	registryMu sync.RWMutex
-	registry   = map[string]func() Installer{}
+	registryMu   sync.RWMutex
+	registry     = map[string]func() Installer{}
+	apkPkgsFuncs = map[string]RequiredAPKPackagesFunc{}
 )
 
 // Register registers an ecosystem installer factory.
@@ -54,6 +61,28 @@ func Register(name string, factory func() Installer) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registry[name] = factory
+}
+
+// RegisterRequiredAPKPackages registers a function that returns APK packages
+// required by the named ecosystem.
+func RegisterRequiredAPKPackages(name string, fn RequiredAPKPackagesFunc) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	apkPkgsFuncs[name] = fn
+}
+
+// RequiredPackages returns APK packages required by all configured ecosystems.
+// These should be injected into ImageContents.Packages before resolution.
+func RequiredPackages(ecosystems map[string]types.EcosystemConfig) []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	var pkgs []string
+	for name, config := range ecosystems {
+		if fn, ok := apkPkgsFuncs[name]; ok {
+			pkgs = append(pkgs, fn(config)...)
+		}
+	}
+	return pkgs
 }
 
 // Get returns an installer for the named ecosystem.
@@ -69,21 +98,21 @@ func Get(name string) (Installer, bool) {
 
 // InstallAll installs packages for all configured ecosystems.
 // Returns environment variables that should be set in the image configuration.
-func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture) (map[string]string, error) {
+func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) (map[string]string, error) {
 	env := map[string]string{}
 	for name, config := range ecosystems {
 		installer, ok := Get(name)
 		if !ok {
 			return nil, fmt.Errorf("unknown ecosystem: %s", name)
 		}
-		resolved, err := installer.Resolve(ctx, config, arch)
+		resolved, err := installer.Resolve(ctx, config, arch, a)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s packages: %w", name, err)
 		}
 		if len(resolved) == 0 {
 			continue
 		}
-		vars, err := installer.Install(ctx, fs, resolved, config)
+		vars, err := installer.Install(ctx, fs, resolved, config, a)
 		if err != nil {
 			return nil, fmt.Errorf("installing %s packages: %w", name, err)
 		}

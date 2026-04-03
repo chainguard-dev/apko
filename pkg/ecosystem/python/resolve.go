@@ -15,6 +15,8 @@
 package python
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +26,7 @@ import (
 	"regexp"
 	"strings"
 
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/ecosystem"
 
@@ -159,7 +162,7 @@ type pypiVersionsJSON struct {
 
 // resolvePackages resolves package specs to specific wheel URLs,
 // including transitive dependencies discovered via the PyPI JSON API.
-func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture) ([]ecosystem.ResolvedPackage, error) {
+func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
 	log := clog.FromContext(ctx)
 
 	if len(indexes) == 0 {
@@ -182,7 +185,7 @@ func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string,
 			continue
 		}
 
-		pkg, deps, err := resolveOneWithDeps(ctx, spec, indexes, pythonVersion, arch)
+		pkg, deps, err := resolveOneWithDeps(ctx, spec, indexes, pythonVersion, arch, a)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s: %w", spec.Name, err)
 		}
@@ -204,22 +207,22 @@ func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string,
 // resolveOneWithDeps resolves a package and returns both the resolved package
 // and its transitive dependencies. It tries the PyPI JSON API first (which
 // gives us clean metadata), falling back to the Simple API for non-PyPI indexes.
-func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	// Try PyPI JSON API first — it gives us metadata + wheel URLs in one call
 	if usesDefaultPyPI(indexes) {
-		pkg, deps, err := resolveViaJSON(ctx, spec, pythonVersion, arch)
+		pkg, deps, err := resolveViaJSON(ctx, spec, pythonVersion, arch, a)
 		if err == nil {
 			return pkg, deps, nil
 		}
 		clog.FromContext(ctx).Debugf("JSON API failed for %s, falling back to Simple API: %v", spec.Name, err)
 	}
 
-	// Fall back to Simple API
-	pkg, err := resolveViaSimple(ctx, spec, indexes, pythonVersion, arch)
+	// Fall back to Simple API (downloads wheel to extract Requires-Dist for deps)
+	pkg, deps, err := resolveViaSimple(ctx, spec, indexes, pythonVersion, arch, a)
 	if err != nil {
 		return ecosystem.ResolvedPackage{}, nil, err
 	}
-	return pkg, nil, nil
+	return pkg, deps, nil
 }
 
 func usesDefaultPyPI(indexes []string) bool {
@@ -236,17 +239,17 @@ func usesDefaultPyPI(indexes []string) bool {
 
 // resolveViaJSON resolves a package using the PyPI JSON API.
 // Returns the resolved package and its parsed Requires-Dist as deps.
-func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	name := normalizeName(spec.Name)
 
 	// If we have an exact version, fetch that directly
 	if spec.Operator == "==" {
-		return resolveJSONVersion(ctx, name, spec.Name, spec.Version, pythonVersion, arch)
+		return resolveJSONVersion(ctx, name, spec.Name, spec.Version, pythonVersion, arch, a)
 	}
 
 	// Otherwise, list all versions and pick the best
 	versionsURL := pypiJSONBase() + name + "/json"
-	data, err := httpGet(ctx, versionsURL)
+	data, err := httpGet(ctx, versionsURL, a)
 	if err != nil {
 		return ecosystem.ResolvedPackage{}, nil, err
 	}
@@ -274,13 +277,13 @@ func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string,
 		return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("no matching version for %s%s%s", spec.Name, spec.Operator, spec.Version)
 	}
 
-	return resolveJSONVersion(ctx, name, spec.Name, bestVersion, pythonVersion, arch)
+	return resolveJSONVersion(ctx, name, spec.Name, bestVersion, pythonVersion, arch, a)
 }
 
 // resolveJSONVersion fetches a specific version from the PyPI JSON API.
-func resolveJSONVersion(ctx context.Context, normalizedName, originalName, version, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveJSONVersion(ctx context.Context, normalizedName, originalName, version, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	versionURL := pypiJSONBase() + normalizedName + "/" + version + "/json"
-	data, err := httpGet(ctx, versionURL)
+	data, err := httpGet(ctx, versionURL, a)
 	if err != nil {
 		return ecosystem.ResolvedPackage{}, nil, err
 	}
@@ -372,14 +375,20 @@ type wheelLink struct {
 	URL            string
 	Checksum       string // "sha256:<hex>"
 	RequiresPython string
+	SignatureURL   string // optional: from data-signature attribute
+	ProvenanceURL  string // optional: from data-provenance attribute
 }
 
 // parseSimpleIndex parses the HTML from a PEP 503 Simple Repository API response.
 func parseSimpleIndex(body string, baseURL string) []wheelLink {
 	var links []wheelLink
 
-	linkRe := regexp.MustCompile(`<a\s+[^>]*href="([^"]*)"[^>]*>([^<]*)</a>`)
+	// Use a regex that handles '>' inside quoted attribute values (e.g., data-requires-python=">=3.0").
+	// The [^>]* approach breaks when attributes contain '>' characters.
+	linkRe := regexp.MustCompile(`<a\s+(?:[^>"]*(?:"[^"]*")?)*href="([^"]*)"(?:[^>"]*(?:"[^"]*")?)*>([^<]*)</a>`)
 	requiresPythonRe := regexp.MustCompile(`data-requires-python="([^"]*)"`)
+	provenanceRe := regexp.MustCompile(`data-provenance="([^"]*)"`)
+	signatureRe := regexp.MustCompile(`data-signature="([^"]*)"`)
 
 	for _, match := range linkRe.FindAllStringSubmatch(body, -1) {
 		href := match[1]
@@ -404,15 +413,35 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 			}
 		}
 
-		var requiresPython string
-		tagStart := strings.LastIndex(body[:strings.Index(body, match[0])+1], "<a")
-		if tagStart >= 0 {
-			tagEnd := strings.Index(body[tagStart:], ">") + tagStart
-			tag := body[tagStart : tagEnd+1]
-			if rpMatch := requiresPythonRe.FindStringSubmatch(tag); rpMatch != nil {
-				requiresPython = strings.ReplaceAll(rpMatch[1], "&gt;", ">")
-				requiresPython = strings.ReplaceAll(requiresPython, "&lt;", "<")
-				requiresPython = strings.ReplaceAll(requiresPython, "&amp;", "&")
+		var requiresPython, provenanceURL, signatureURL string
+		matchIdx := strings.Index(body, match[0])
+		if matchIdx >= 0 {
+			// match[0] starts with "<a", so matchIdx IS the tag start.
+			tagStart := matchIdx
+			if tagStart >= 0 {
+				// Find the closing '>' of the <a> tag, skipping '>' inside quoted attributes.
+				tag := ""
+				rest := body[tagStart:]
+				inQuote := false
+				for j, c := range rest {
+					if c == '"' {
+						inQuote = !inQuote
+					} else if c == '>' && !inQuote {
+						tag = rest[:j+1]
+						break
+					}
+				}
+				if rpMatch := requiresPythonRe.FindStringSubmatch(tag); rpMatch != nil {
+					requiresPython = strings.ReplaceAll(rpMatch[1], "&gt;", ">")
+					requiresPython = strings.ReplaceAll(requiresPython, "&lt;", "<")
+					requiresPython = strings.ReplaceAll(requiresPython, "&amp;", "&")
+				}
+				if pvMatch := provenanceRe.FindStringSubmatch(tag); pvMatch != nil {
+					provenanceURL = pvMatch[1]
+				}
+				if sigMatch := signatureRe.FindStringSubmatch(tag); sigMatch != nil {
+					signatureURL = sigMatch[1]
+				}
 			}
 		}
 
@@ -421,6 +450,8 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 			URL:            linkURL,
 			Checksum:       checksum,
 			RequiresPython: requiresPython,
+			SignatureURL:   signatureURL,
+			ProvenanceURL:  provenanceURL,
 		})
 	}
 
@@ -428,14 +459,15 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 }
 
 // resolveViaSimple resolves a package using the PEP 503 Simple API.
-// Does not return transitive deps (no metadata available without downloading).
-func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, error) {
+// After finding the best wheel, it downloads it to extract Requires-Dist
+// metadata for transitive dependency resolution.
+func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	name := normalizeName(spec.Name)
 
 	for _, index := range indexes {
 		indexURL := strings.TrimSuffix(index, "/") + "/" + name + "/"
 
-		body, err := fetchSimpleIndex(ctx, indexURL)
+		body, err := fetchSimpleIndex(ctx, indexURL, a)
 		if err != nil {
 			clog.FromContext(ctx).Debugf("index %s: %v", indexURL, err)
 			continue
@@ -451,22 +483,83 @@ func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, p
 			continue
 		}
 
-		return ecosystem.ResolvedPackage{
-			Ecosystem: "python",
-			Name:      spec.Name,
-			Version:   best.version,
-			URL:       best.url,
-			Checksum:  best.checksum,
-		}, nil
+		pkg := ecosystem.ResolvedPackage{
+			Ecosystem:     "python",
+			Name:          spec.Name,
+			Version:       best.version,
+			URL:           best.url,
+			Checksum:      best.checksum,
+			SignatureURL:  best.signatureURL,
+			ProvenanceURL: best.provenanceURL,
+		}
+
+		// Download wheel to extract Requires-Dist for transitive deps.
+		deps, err := extractDepsFromWheel(ctx, best.url, a)
+		if err != nil {
+			clog.FromContext(ctx).Debugf("could not extract deps from wheel for %s: %v", spec.Name, err)
+		}
+
+		return pkg, deps, nil
 	}
 
-	return ecosystem.ResolvedPackage{}, fmt.Errorf("package %s not found in any index", spec.Name)
+	return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("package %s not found in any index", spec.Name)
+}
+
+// extractDepsFromWheel downloads a wheel and parses its METADATA for Requires-Dist.
+func extractDepsFromWheel(ctx context.Context, url string, a auth.Authenticator) ([]packageSpec, error) {
+	data, err := httpGet(ctx, url, a)
+	if err != nil {
+		return nil, fmt.Errorf("downloading wheel: %w", err)
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("opening wheel as zip: %w", err)
+	}
+
+	for _, f := range reader.File {
+		if !strings.HasSuffix(f.Name, ".dist-info/METADATA") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("opening METADATA: %w", err)
+		}
+		metadataBytes, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading METADATA: %w", err)
+		}
+		return parseRequiresDist(string(metadataBytes)), nil
+	}
+
+	return nil, nil
+}
+
+// parseRequiresDist extracts Requires-Dist entries from wheel METADATA content.
+func parseRequiresDist(metadata string) []packageSpec {
+	var deps []packageSpec
+	for _, line := range strings.Split(metadata, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if !strings.HasPrefix(line, "Requires-Dist: ") {
+			continue
+		}
+		req := strings.TrimPrefix(line, "Requires-Dist: ")
+		dep := parsePackageSpec(req)
+		if dep.Markers != "" && !evaluateMarkers(dep.Markers, nil) {
+			continue
+		}
+		deps = append(deps, dep)
+	}
+	return deps
 }
 
 type selectedWheel struct {
-	version  string
-	url      string
-	checksum string
+	version       string
+	url           string
+	checksum      string
+	signatureURL  string
+	provenanceURL string
 }
 
 // selectBestWheel selects the best compatible wheel from Simple API links.
@@ -500,9 +593,11 @@ func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, 
 	}
 
 	return selectedWheel{
-		version:  bestParts.Version,
-		url:      bestLink.URL,
-		checksum: bestLink.Checksum,
+		version:       bestParts.Version,
+		url:           bestLink.URL,
+		checksum:      bestLink.Checksum,
+		signatureURL:  bestLink.SignatureURL,
+		provenanceURL: bestLink.ProvenanceURL,
 	}, nil
 }
 
@@ -598,12 +693,18 @@ func parseVersionPart(s string) int {
 
 // --- HTTP helpers ---
 
-func fetchSimpleIndex(ctx context.Context, url string) (string, error) {
+func fetchSimpleIndex(ctx context.Context, url string, a auth.Authenticator) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "text/html")
+
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return "", fmt.Errorf("adding auth for %s: %w", url, err)
+		}
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -622,10 +723,16 @@ func fetchSimpleIndex(ctx context.Context, url string) (string, error) {
 	return string(body), nil
 }
 
-func httpGet(ctx context.Context, url string) ([]byte, error) {
+func httpGet(ctx context.Context, url string, a auth.Authenticator) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, fmt.Errorf("adding auth for %s: %w", url, err)
+		}
 	}
 
 	resp, err := http.DefaultClient.Do(req)
