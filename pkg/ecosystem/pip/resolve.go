@@ -16,9 +16,11 @@ package pip
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"regexp"
 	"strings"
 
@@ -29,14 +31,25 @@ import (
 )
 
 const defaultIndex = "https://pypi.org/simple/"
+const pypiJSONBaseDefault = "https://pypi.org/pypi/"
+
+// pypiJSONBaseOverride allows tests to redirect the JSON API to a mock server.
+var pypiJSONBaseOverride string
+
+func pypiJSONBase() string {
+	if pypiJSONBaseOverride != "" {
+		return pypiJSONBaseOverride
+	}
+	return pypiJSONBaseDefault
+}
 
 // packageSpec represents a parsed package requirement (e.g., "flask==3.0.0").
 type packageSpec struct {
-	Name       string
-	Operator   string // "==", ">=", "<=", "!=", "~=", ""
-	Version    string
-	Extras     []string
-	Markers    string
+	Name     string
+	Operator string // "==", ">=", "<=", "!=", "~=", ""
+	Version  string
+	Extras   []string
+	Markers  string
 }
 
 // parsePackageSpec parses a PEP 508-style requirement string.
@@ -63,13 +76,43 @@ func parsePackageSpec(spec string) packageSpec {
 
 	spec = strings.TrimSpace(spec)
 
-	for _, op := range []string{"~=", "==", "!=", ">=", "<=", ">", "<"} {
-		if idx := strings.Index(spec, op); idx != -1 {
-			ps.Name = strings.TrimSpace(spec[:idx])
-			ps.Operator = op
-			ps.Version = strings.TrimSpace(spec[idx+len(op):])
+	// Handle parenthesized version constraints: "package (>=1.0)"
+	if lpIdx := strings.Index(spec, "("); lpIdx != -1 {
+		if rpIdx := strings.LastIndex(spec, ")"); rpIdx > lpIdx {
+			ps.Name = strings.TrimSpace(spec[:lpIdx])
+			inner := strings.TrimSpace(spec[lpIdx+1 : rpIdx])
+			parts := strings.SplitN(inner, ",", 2)
+			constraint := strings.TrimSpace(parts[0])
+			for _, op := range []string{"~=", "==", "!=", ">=", "<=", ">", "<"} {
+				if strings.HasPrefix(constraint, op) {
+					ps.Operator = op
+					ps.Version = strings.TrimSpace(constraint[len(op):])
+					return ps
+				}
+			}
 			return ps
 		}
+	}
+
+	// Find the first operator by position in the string
+	bestIdx := -1
+	bestOp := ""
+	for _, op := range []string{"~=", "==", "!=", ">=", "<=", ">", "<"} {
+		idx := strings.Index(spec, op)
+		if idx != -1 && (bestIdx == -1 || idx < bestIdx) {
+			bestIdx = idx
+			bestOp = op
+		}
+	}
+	if bestIdx != -1 {
+		ps.Name = strings.TrimSpace(spec[:bestIdx])
+		ps.Operator = bestOp
+		version := strings.TrimSpace(spec[bestIdx+len(bestOp):])
+		if commaIdx := strings.Index(version, ","); commaIdx != -1 {
+			version = version[:commaIdx]
+		}
+		ps.Version = version
+		return ps
 	}
 
 	ps.Name = spec
@@ -81,11 +124,253 @@ func normalizeName(name string) string {
 	return strings.ToLower(regexp.MustCompile(`[-_.]+`).ReplaceAllString(name, "-"))
 }
 
+// --- PyPI JSON API types ---
+
+// pypiPackageJSON is the response from https://pypi.org/pypi/{name}/{version}/json
+type pypiPackageJSON struct {
+	Info pypiInfo            `json:"info"`
+	URLs []pypiURL           `json:"urls"`
+}
+
+type pypiInfo struct {
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	RequiresDist    []string `json:"requires_dist"`
+}
+
+type pypiURL struct {
+	Filename    string      `json:"filename"`
+	URL         string      `json:"url"`
+	PackageType string      `json:"packagetype"`
+	Digests     pypiDigests `json:"digests"`
+}
+
+type pypiDigests struct {
+	SHA256 string `json:"sha256"`
+}
+
+// pypiVersionsJSON is a minimal parse of https://pypi.org/pypi/{name}/json
+// to list available versions.
+type pypiVersionsJSON struct {
+	Releases map[string][]pypiURL `json:"releases"`
+}
+
+// --- Resolution ---
+
+// resolvePackages resolves package specs to specific wheel URLs,
+// including transitive dependencies discovered via the PyPI JSON API.
+func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture) ([]ecosystem.ResolvedPackage, error) {
+	log := clog.FromContext(ctx)
+
+	if len(indexes) == 0 {
+		indexes = []string{defaultIndex}
+	}
+
+	var resolved []ecosystem.ResolvedPackage
+	seen := map[string]bool{}
+
+	// BFS queue
+	queue := make([]packageSpec, len(specs))
+	copy(queue, specs)
+
+	for len(queue) > 0 {
+		spec := queue[0]
+		queue = queue[1:]
+
+		name := normalizeName(spec.Name)
+		if seen[name] {
+			continue
+		}
+
+		pkg, deps, err := resolveOneWithDeps(ctx, spec, indexes, pythonVersion, arch)
+		if err != nil {
+			return nil, fmt.Errorf("resolving %s: %w", spec.Name, err)
+		}
+		seen[name] = true
+		resolved = append(resolved, pkg)
+		log.Debugf("resolved %s==%s from %s", pkg.Name, pkg.Version, pkg.URL)
+
+		for _, dep := range deps {
+			if !seen[normalizeName(dep.Name)] {
+				log.Debugf("discovered transitive dependency: %s (from %s)", dep.Name, pkg.Name)
+				queue = append(queue, dep)
+			}
+		}
+	}
+
+	return resolved, nil
+}
+
+// resolveOneWithDeps resolves a package and returns both the resolved package
+// and its transitive dependencies. It tries the PyPI JSON API first (which
+// gives us clean metadata), falling back to the Simple API for non-PyPI indexes.
+func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+	// Try PyPI JSON API first — it gives us metadata + wheel URLs in one call
+	if usesDefaultPyPI(indexes) {
+		pkg, deps, err := resolveViaJSON(ctx, spec, pythonVersion, arch)
+		if err == nil {
+			return pkg, deps, nil
+		}
+		clog.FromContext(ctx).Debugf("JSON API failed for %s, falling back to Simple API: %v", spec.Name, err)
+	}
+
+	// Fall back to Simple API
+	pkg, err := resolveViaSimple(ctx, spec, indexes, pythonVersion, arch)
+	if err != nil {
+		return ecosystem.ResolvedPackage{}, nil, err
+	}
+	return pkg, nil, nil
+}
+
+func usesDefaultPyPI(indexes []string) bool {
+	if pypiJSONBaseOverride != "" {
+		return true
+	}
+	for _, idx := range indexes {
+		if strings.Contains(idx, "pypi.org") {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveViaJSON resolves a package using the PyPI JSON API.
+// Returns the resolved package and its parsed Requires-Dist as deps.
+func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+	name := normalizeName(spec.Name)
+
+	// If we have an exact version, fetch that directly
+	if spec.Operator == "==" {
+		return resolveJSONVersion(ctx, name, spec.Name, spec.Version, pythonVersion, arch)
+	}
+
+	// Otherwise, list all versions and pick the best
+	versionsURL := pypiJSONBase() + name + "/json"
+	data, err := httpGet(ctx, versionsURL)
+	if err != nil {
+		return ecosystem.ResolvedPackage{}, nil, err
+	}
+
+	var versionsResp pypiVersionsJSON
+	if err := json.Unmarshal(data, &versionsResp); err != nil {
+		return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("parsing PyPI versions JSON: %w", err)
+	}
+
+	// Find the best matching version
+	bestVersion := ""
+	for version := range versionsResp.Releases {
+		if !matchesVersionSpec(version, spec) {
+			continue
+		}
+		// Skip pre-releases unless explicitly requested
+		if isPreRelease(version) && spec.Operator != "==" {
+			continue
+		}
+		if bestVersion == "" || compareVersions(version, bestVersion) > 0 {
+			bestVersion = version
+		}
+	}
+	if bestVersion == "" {
+		return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("no matching version for %s%s%s", spec.Name, spec.Operator, spec.Version)
+	}
+
+	return resolveJSONVersion(ctx, name, spec.Name, bestVersion, pythonVersion, arch)
+}
+
+// resolveJSONVersion fetches a specific version from the PyPI JSON API.
+func resolveJSONVersion(ctx context.Context, normalizedName, originalName, version, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, []packageSpec, error) {
+	versionURL := pypiJSONBase() + normalizedName + "/" + version + "/json"
+	data, err := httpGet(ctx, versionURL)
+	if err != nil {
+		return ecosystem.ResolvedPackage{}, nil, err
+	}
+
+	var pkgResp pypiPackageJSON
+	if err := json.Unmarshal(data, &pkgResp); err != nil {
+		return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("parsing PyPI JSON: %w", err)
+	}
+
+	// Find the best wheel from the URLs
+	wheelURL, checksum, err := selectBestWheelFromJSON(pkgResp.URLs, pythonVersion, arch)
+	if err != nil {
+		return ecosystem.ResolvedPackage{}, nil, err
+	}
+
+	// Parse dependencies from requires_dist
+	var deps []packageSpec
+	for _, req := range pkgResp.Info.RequiresDist {
+		dep := parsePackageSpec(req)
+		if dep.Markers != "" && !evaluateMarkers(dep.Markers, nil) {
+			continue
+		}
+		deps = append(deps, dep)
+	}
+
+	return ecosystem.ResolvedPackage{
+		Ecosystem: "python",
+		Name:      originalName,
+		Version:   pkgResp.Info.Version,
+		URL:       wheelURL,
+		Checksum:  checksum,
+	}, deps, nil
+}
+
+// selectBestWheelFromJSON picks the best compatible wheel from PyPI JSON API URLs.
+func selectBestWheelFromJSON(urls []pypiURL, pythonVersion string, arch types.Architecture) (string, string, error) {
+	var bestURL *pypiURL
+	var bestParts wheelFileParts
+	bestScore := -1
+
+	for i, u := range urls {
+		if u.PackageType != "bdist_wheel" {
+			continue
+		}
+		parts, err := parseWheelFilename(u.Filename)
+		if err != nil {
+			continue
+		}
+		if !isCompatibleWheel(parts, pythonVersion, arch) {
+			continue
+		}
+
+		score := wheelScore(parts, pythonVersion, arch)
+		if bestURL == nil || score > bestScore {
+			bestURL = &urls[i]
+			bestParts = parts
+			_ = bestParts // used for future scoring
+			bestScore = score
+		}
+	}
+
+	if bestURL == nil {
+		return "", "", fmt.Errorf("no compatible wheel found")
+	}
+
+	checksum := ""
+	if bestURL.Digests.SHA256 != "" {
+		checksum = "sha256:" + bestURL.Digests.SHA256
+	}
+	return bestURL.URL, checksum, nil
+}
+
+// isPreRelease returns true if a version string looks like a pre-release.
+func isPreRelease(version string) bool {
+	v := strings.ToLower(version)
+	for _, tag := range []string{"a", "b", "rc", "alpha", "beta", "dev", "pre"} {
+		if strings.Contains(v, tag) {
+			return true
+		}
+	}
+	return false
+}
+
+// --- Simple API fallback (for non-PyPI indexes) ---
+
 // wheelLink represents a parsed link from a PEP 503 Simple API response.
 type wheelLink struct {
-	Filename string
-	URL      string
-	Checksum string // "sha256:<hex>"
+	Filename       string
+	URL            string
+	Checksum       string // "sha256:<hex>"
 	RequiresPython string
 }
 
@@ -93,7 +378,6 @@ type wheelLink struct {
 func parseSimpleIndex(body string, baseURL string) []wheelLink {
 	var links []wheelLink
 
-	// Simple regex-based parsing of <a> tags
 	linkRe := regexp.MustCompile(`<a\s+[^>]*href="([^"]*)"[^>]*>([^<]*)</a>`)
 	requiresPythonRe := regexp.MustCompile(`data-requires-python="([^"]*)"`)
 
@@ -111,14 +395,16 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 			href = href[:hashIdx]
 		}
 
-		// Resolve relative URLs
-		url := href
+		linkURL := href
 		if !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
-			url = strings.TrimSuffix(baseURL, "/") + "/" + strings.TrimPrefix(href, "/")
+			if base, err := neturl.Parse(baseURL); err == nil {
+				if ref, err := neturl.Parse(href); err == nil {
+					linkURL = base.ResolveReference(ref).String()
+				}
+			}
 		}
 
 		var requiresPython string
-		// Check if there's a data-requires-python attribute in the full tag
 		tagStart := strings.LastIndex(body[:strings.Index(body, match[0])+1], "<a")
 		if tagStart >= 0 {
 			tagEnd := strings.Index(body[tagStart:], ">") + tagStart
@@ -132,7 +418,7 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 
 		links = append(links, wheelLink{
 			Filename:       filename,
-			URL:            url,
+			URL:            linkURL,
 			Checksum:       checksum,
 			RequiresPython: requiresPython,
 		})
@@ -141,36 +427,9 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 	return links
 }
 
-// resolvePackages resolves package specs to specific wheel URLs using PEP 503.
-func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture) ([]ecosystem.ResolvedPackage, error) {
-	log := clog.FromContext(ctx)
-
-	if len(indexes) == 0 {
-		indexes = []string{defaultIndex}
-	}
-
-	var resolved []ecosystem.ResolvedPackage
-	seen := map[string]bool{}
-
-	for _, spec := range specs {
-		if seen[normalizeName(spec.Name)] {
-			continue
-		}
-
-		pkg, err := resolveOne(ctx, spec, indexes, pythonVersion, arch)
-		if err != nil {
-			return nil, fmt.Errorf("resolving %s: %w", spec.Name, err)
-		}
-		seen[normalizeName(spec.Name)] = true
-		resolved = append(resolved, pkg)
-		log.Debugf("resolved %s==%s from %s", pkg.Name, pkg.Version, pkg.URL)
-	}
-
-	return resolved, nil
-}
-
-// resolveOne resolves a single package spec to a wheel URL.
-func resolveOne(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, error) {
+// resolveViaSimple resolves a package using the PEP 503 Simple API.
+// Does not return transitive deps (no metadata available without downloading).
+func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture) (ecosystem.ResolvedPackage, error) {
 	name := normalizeName(spec.Name)
 
 	for _, index := range indexes {
@@ -210,7 +469,7 @@ type selectedWheel struct {
 	checksum string
 }
 
-// selectBestWheel selects the best compatible wheel from a list of links.
+// selectBestWheel selects the best compatible wheel from Simple API links.
 func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, arch types.Architecture) (selectedWheel, error) {
 	var bestLink *wheelLink
 	var bestParts wheelFileParts
@@ -221,11 +480,9 @@ func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, 
 		if err != nil {
 			continue
 		}
-
 		if !isCompatibleWheel(parts, pythonVersion, arch) {
 			continue
 		}
-
 		if !matchesVersionSpec(parts.Version, spec) {
 			continue
 		}
@@ -249,7 +506,8 @@ func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, 
 	}, nil
 }
 
-// matchesVersionSpec checks if a version matches the given spec.
+// --- Version comparison ---
+
 func matchesVersionSpec(version string, spec packageSpec) bool {
 	if spec.Operator == "" {
 		return true
@@ -268,7 +526,6 @@ func matchesVersionSpec(version string, spec packageSpec) bool {
 	case "<":
 		return compareVersions(version, spec.Version) < 0
 	case "~=":
-		// Compatible release: ~=X.Y is equivalent to >=X.Y, ==X.*
 		if compareVersions(version, spec.Version) < 0 {
 			return false
 		}
@@ -277,7 +534,6 @@ func matchesVersionSpec(version string, spec packageSpec) bool {
 		if len(specParts) < 2 || len(verParts) < 2 {
 			return false
 		}
-		// Major parts must match up to second-to-last
 		for i := 0; i < len(specParts)-1 && i < len(verParts); i++ {
 			if verParts[i] != specParts[i] {
 				return false
@@ -288,8 +544,6 @@ func matchesVersionSpec(version string, spec packageSpec) bool {
 	return false
 }
 
-// compareVersions performs a simple version comparison.
-// Returns -1, 0, or 1.
 func compareVersions(a, b string) int {
 	aParts := strings.Split(a, ".")
 	bParts := strings.Split(b, ".")
@@ -314,7 +568,6 @@ func compareVersions(a, b string) int {
 		if aVal == bVal {
 			continue
 		}
-		// Try numeric comparison
 		aNum := parseVersionPart(aVal)
 		bNum := parseVersionPart(bVal)
 		if aNum != bNum {
@@ -323,7 +576,6 @@ func compareVersions(a, b string) int {
 			}
 			return 1
 		}
-		// Fall back to string comparison
 		if aVal < bVal {
 			return -1
 		}
@@ -344,7 +596,8 @@ func parseVersionPart(s string) int {
 	return n
 }
 
-// fetchSimpleIndex fetches the PEP 503 Simple API page for a package.
+// --- HTTP helpers ---
+
 func fetchSimpleIndex(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -366,6 +619,24 @@ func fetchSimpleIndex(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return string(body), nil
+}
+
+func httpGet(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+	}
+
+	return io.ReadAll(resp.Body)
 }

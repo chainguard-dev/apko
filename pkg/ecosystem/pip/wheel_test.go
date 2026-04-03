@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -101,6 +102,132 @@ func TestWriteInstallerFile(t *testing.T) {
 	}
 	if string(data) != "apko\n" {
 		t.Errorf("INSTALLER content = %q, want %q", string(data), "apko\n")
+	}
+}
+
+func TestReadMetadata(t *testing.T) {
+	wheelData := createTestWheel(t, map[string]string{
+		"flask-3.0.0.dist-info/METADATA": `Metadata-Version: 2.1
+Name: Flask
+Version: 3.0.0
+Requires-Dist: Werkzeug>=3.0.0
+Requires-Dist: Jinja2>=3.1.2
+Requires-Dist: itsdangerous>=2.1.2
+Requires-Dist: click>=8.1.3
+Requires-Dist: blinker>=1.6.2
+Requires-Dist: importlib-metadata>=3.6.0; python_version < "3.10"
+Requires-Dist: async-timeout>=4.0.3; extra == "async"
+`,
+	})
+
+	metadata, err := readMetadata(wheelData)
+	if err != nil {
+		t.Fatalf("readMetadata() error: %v", err)
+	}
+	if !strings.Contains(metadata, "Requires-Dist: Werkzeug>=3.0.0") {
+		t.Error("metadata should contain Werkzeug requirement")
+	}
+}
+
+func TestParseRequiresDist(t *testing.T) {
+	metadata := `Metadata-Version: 2.1
+Name: Flask
+Version: 3.0.0
+Requires-Dist: Werkzeug>=3.0.0
+Requires-Dist: Jinja2>=3.1.2
+Requires-Dist: click>=8.1.3
+Requires-Dist: importlib-metadata>=3.6.0; python_version < "3.10"
+Requires-Dist: async-timeout>=4.0.3; extra == "async"
+Requires-Dist: pytest; extra == "test"
+`
+	// Without extras — should get runtime deps only, not extra-gated ones
+	deps := parseRequiresDist(metadata, nil)
+
+	names := map[string]bool{}
+	for _, d := range deps {
+		names[d.Name] = true
+	}
+
+	if !names["Werkzeug"] {
+		t.Error("should include Werkzeug")
+	}
+	if !names["Jinja2"] {
+		t.Error("should include Jinja2")
+	}
+	if !names["click"] {
+		t.Error("should include click")
+	}
+	// python_version markers are permissively included
+	if !names["importlib-metadata"] {
+		t.Error("should include importlib-metadata (python_version marker is permissive)")
+	}
+	// extra-gated deps should be excluded
+	if names["async-timeout"] {
+		t.Error("should NOT include async-timeout (gated on extra)")
+	}
+	if names["pytest"] {
+		t.Error("should NOT include pytest (gated on extra)")
+	}
+}
+
+func TestParseRequiresDistWithExtras(t *testing.T) {
+	metadata := `Metadata-Version: 2.1
+Name: Flask
+Version: 3.0.0
+Requires-Dist: Werkzeug>=3.0.0
+Requires-Dist: async-timeout>=4.0.3; extra == "async"
+Requires-Dist: pytest; extra == "test"
+`
+	deps := parseRequiresDist(metadata, []string{"async"})
+
+	names := map[string]bool{}
+	for _, d := range deps {
+		names[d.Name] = true
+	}
+
+	if !names["Werkzeug"] {
+		t.Error("should include Werkzeug")
+	}
+	if !names["async-timeout"] {
+		t.Error("should include async-timeout (async extra requested)")
+	}
+	if names["pytest"] {
+		t.Error("should NOT include pytest (test extra not requested)")
+	}
+}
+
+func TestEvaluateMarkers(t *testing.T) {
+	tests := []struct {
+		name    string
+		markers string
+		extras  []string
+		want    bool
+	}{
+		{"no markers", "", nil, true},
+		{"extra not requested", `extra == "dev"`, nil, false},
+		{"extra requested", `extra == "dev"`, []string{"dev"}, true},
+		{"wrong extra", `extra == "dev"`, []string{"test"}, false},
+		{"os_name posix", `os_name == "posix"`, nil, true},
+		{"os_name nt", `os_name == "nt"`, nil, false},
+		{"sys_platform linux", `sys_platform == "linux"`, nil, true},
+		{"sys_platform win32", `sys_platform == "win32"`, nil, false},
+		{"platform_system Linux", `platform_system == "Linux"`, nil, true},
+		{"python_version", `python_version >= "3.8"`, nil, true},
+		{"compound and true", `python_version >= "3.8" and os_name == "posix"`, nil, true},
+		{"compound and false", `os_name == "nt" and python_version >= "3.8"`, nil, false},
+		{"compound or true", `os_name == "nt" or os_name == "posix"`, nil, true},
+		{"compound or false", `os_name == "nt" or sys_platform == "win32"`, nil, false},
+		{"extra and platform", `extra == "dev" and os_name == "posix"`, []string{"dev"}, true},
+		{"extra and wrong platform", `extra == "dev" and os_name == "nt"`, []string{"dev"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateMarkers(tt.markers, tt.extras)
+			if got != tt.want {
+				t.Errorf("evaluateMarkers(%q, %v) = %v, want %v", tt.markers, tt.extras, got, tt.want)
+			}
+		})
 	}
 }
 

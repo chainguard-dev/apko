@@ -16,6 +16,7 @@ package pip
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,6 +38,9 @@ func TestParsePackageSpec(t *testing.T) {
 		{"foo~=1.4.2", "foo", "~=", "1.4.2", ""},
 		{"bar!=2.0", "bar", "!=", "2.0", ""},
 		{`baz>=1.0; python_version>="3.8"`, "baz", ">=", "1.0", `python_version>="3.8"`},
+		{"typing-extensions (>=4.10.0)", "typing-extensions", ">=", "4.10.0", ""},
+		{"packaging (>=22.0,<25.0)", "packaging", ">=", "22.0", ""},
+		{"mpmath<1.4,>=1.1.0", "mpmath", "<", "1.4", ""},
 	}
 
 	for _, tt := range tests {
@@ -148,18 +152,86 @@ func TestMatchesVersionSpec(t *testing.T) {
 	}
 }
 
-func TestResolveWithMockServer(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/simple/flask/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<html><body>
-<a href="https://files.example.com/Flask-3.0.0-py3-none-any.whl#sha256=abc123">Flask-3.0.0-py3-none-any.whl</a>
-<a href="https://files.example.com/Flask-2.3.0-py3-none-any.whl#sha256=def456">Flask-2.3.0-py3-none-any.whl</a>
-</body></html>`))
-	})
+func TestIsPreRelease(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"3.0.0", false},
+		{"3.0.0rc1", true},
+		{"3.0.0a1", true},
+		{"3.0.0b2", true},
+		{"3.0.0.dev1", true},
+		{"1.14.0rc2", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			got := isPreRelease(tt.version)
+			if got != tt.want {
+				t.Errorf("isPreRelease(%q) = %v, want %v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
 
-	server := httptest.NewServer(mux)
+// servePyPIJSON creates a mock server that serves PyPI JSON API responses.
+func servePyPIJSON(t *testing.T, packages map[string]pypiPackageJSON) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	for name, pkg := range packages {
+		name := normalizeName(name)
+		pkg := pkg
+
+		// Serve /pypi/{name}/{version}/json
+		mux.HandleFunc("/pypi/"+name+"/"+pkg.Info.Version+"/json", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(pkg)
+		})
+
+		// Serve /pypi/{name}/json (versions listing)
+		mux.HandleFunc("/pypi/"+name+"/json", func(w http.ResponseWriter, r *http.Request) {
+			resp := pypiVersionsJSON{
+				Releases: map[string][]pypiURL{
+					pkg.Info.Version: pkg.URLs,
+				},
+			}
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		// Serve Simple API as fallback
+		mux.HandleFunc("/simple/"+name+"/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			html := "<html><body>\n"
+			for _, u := range pkg.URLs {
+				html += `<a href="` + u.URL + `#sha256=` + u.Digests.SHA256 + `">` + u.Filename + "</a>\n"
+			}
+			html += "</body></html>"
+			w.Write([]byte(html))
+		})
+	}
+	return httptest.NewServer(mux)
+}
+
+func TestResolveWithMockJSON(t *testing.T) {
+	server := servePyPIJSON(t, map[string]pypiPackageJSON{
+		"flask": {
+			Info: pypiInfo{
+				Name:    "Flask",
+				Version: "3.0.0",
+			},
+			URLs: []pypiURL{{
+				Filename:    "Flask-3.0.0-py3-none-any.whl",
+				URL:         "https://files.example.com/Flask-3.0.0-py3-none-any.whl",
+				PackageType: "bdist_wheel",
+				Digests:     pypiDigests{SHA256: "abc123"},
+			}},
+		},
+	})
 	defer server.Close()
+
+	// Override the JSON API base for the test
+	origBase := pypiJSONBase
+	defer func() { pypiJSONBaseOverride = ""; _ = origBase }()
+	pypiJSONBaseOverride = server.URL + "/pypi/"
 
 	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
 	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
@@ -170,7 +242,6 @@ func TestResolveWithMockServer(t *testing.T) {
 	if len(resolved) != 1 {
 		t.Fatalf("expected 1 resolved package, got %d", len(resolved))
 	}
-
 	if resolved[0].Name != "flask" {
 		t.Errorf("Name = %q, want %q", resolved[0].Name, "flask")
 	}
@@ -179,5 +250,120 @@ func TestResolveWithMockServer(t *testing.T) {
 	}
 	if resolved[0].Checksum != "sha256:abc123" {
 		t.Errorf("Checksum = %q, want %q", resolved[0].Checksum, "sha256:abc123")
+	}
+}
+
+func TestResolveTransitiveDeps(t *testing.T) {
+	server := servePyPIJSON(t, map[string]pypiPackageJSON{
+		"flask": {
+			Info: pypiInfo{
+				Name:    "Flask",
+				Version: "3.0.0",
+				RequiresDist: []string{
+					"Werkzeug>=3.0.0",
+					"click>=8.0",
+					"devtools; extra == \"dev\"",
+				},
+			},
+			URLs: []pypiURL{{
+				Filename:    "Flask-3.0.0-py3-none-any.whl",
+				URL:         "https://files.example.com/Flask-3.0.0-py3-none-any.whl",
+				PackageType: "bdist_wheel",
+				Digests:     pypiDigests{SHA256: "aaa"},
+			}},
+		},
+		"werkzeug": {
+			Info: pypiInfo{
+				Name:    "Werkzeug",
+				Version: "3.0.1",
+				RequiresDist: []string{
+					"MarkupSafe>=2.1.1",
+				},
+			},
+			URLs: []pypiURL{{
+				Filename:    "Werkzeug-3.0.1-py3-none-any.whl",
+				URL:         "https://files.example.com/Werkzeug-3.0.1-py3-none-any.whl",
+				PackageType: "bdist_wheel",
+				Digests:     pypiDigests{SHA256: "bbb"},
+			}},
+		},
+		"click": {
+			Info: pypiInfo{
+				Name:    "click",
+				Version: "8.1.7",
+			},
+			URLs: []pypiURL{{
+				Filename:    "click-8.1.7-py3-none-any.whl",
+				URL:         "https://files.example.com/click-8.1.7-py3-none-any.whl",
+				PackageType: "bdist_wheel",
+				Digests:     pypiDigests{SHA256: "ccc"},
+			}},
+		},
+		"markupsafe": {
+			Info: pypiInfo{
+				Name:    "MarkupSafe",
+				Version: "2.1.5",
+			},
+			URLs: []pypiURL{{
+				Filename:    "MarkupSafe-2.1.5-py3-none-any.whl",
+				URL:         "https://files.example.com/MarkupSafe-2.1.5-py3-none-any.whl",
+				PackageType: "bdist_wheel",
+				Digests:     pypiDigests{SHA256: "ddd"},
+			}},
+		},
+	})
+	defer server.Close()
+
+	pypiJSONBaseOverride = server.URL + "/pypi/"
+	defer func() { pypiJSONBaseOverride = "" }()
+
+	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
+	if err != nil {
+		t.Fatalf("resolvePackages() error: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, pkg := range resolved {
+		names[normalizeName(pkg.Name)] = true
+	}
+
+	for _, want := range []string{"flask", "werkzeug", "click", "markupsafe"} {
+		if !names[want] {
+			t.Errorf("missing transitive dependency: %s (resolved: %v)", want, names)
+		}
+	}
+	if names["devtools"] {
+		t.Error("should NOT include devtools (gated on extra)")
+	}
+	if len(resolved) != 4 {
+		t.Errorf("expected 4 resolved packages, got %d: %v", len(resolved), names)
+	}
+}
+
+func TestResolveSimpleApiFallback(t *testing.T) {
+	// Test that non-PyPI indexes use the Simple API
+	mux := http.NewServeMux()
+	mux.HandleFunc("/simple/mypackage/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><body>
+<a href="https://files.example.com/mypackage-1.0.0-py3-none-any.whl#sha256=abc">mypackage-1.0.0-py3-none-any.whl</a>
+</body></html>`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	specs := []packageSpec{{Name: "mypackage", Operator: "==", Version: "1.0.0"}}
+	// Use a non-pypi index so it doesn't try the JSON API
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"))
+	if err != nil {
+		t.Fatalf("resolvePackages() error: %v", err)
+	}
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved package, got %d", len(resolved))
+	}
+	if resolved[0].Version != "1.0.0" {
+		t.Errorf("Version = %q, want %q", resolved[0].Version, "1.0.0")
 	}
 }
