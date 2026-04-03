@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -102,97 +101,6 @@ func TestWriteInstallerFile(t *testing.T) {
 	}
 	if string(data) != "apko\n" {
 		t.Errorf("INSTALLER content = %q, want %q", string(data), "apko\n")
-	}
-}
-
-func TestReadMetadata(t *testing.T) {
-	wheelData := createTestWheel(t, map[string]string{
-		"flask-3.0.0.dist-info/METADATA": `Metadata-Version: 2.1
-Name: Flask
-Version: 3.0.0
-Requires-Dist: Werkzeug>=3.0.0
-Requires-Dist: Jinja2>=3.1.2
-Requires-Dist: itsdangerous>=2.1.2
-Requires-Dist: click>=8.1.3
-Requires-Dist: blinker>=1.6.2
-Requires-Dist: importlib-metadata>=3.6.0; python_version < "3.10"
-Requires-Dist: async-timeout>=4.0.3; extra == "async"
-`,
-	})
-
-	metadata, err := readMetadata(wheelData)
-	if err != nil {
-		t.Fatalf("readMetadata() error: %v", err)
-	}
-	if !strings.Contains(metadata, "Requires-Dist: Werkzeug>=3.0.0") {
-		t.Error("metadata should contain Werkzeug requirement")
-	}
-}
-
-func TestParseRequiresDist(t *testing.T) {
-	metadata := `Metadata-Version: 2.1
-Name: Flask
-Version: 3.0.0
-Requires-Dist: Werkzeug>=3.0.0
-Requires-Dist: Jinja2>=3.1.2
-Requires-Dist: click>=8.1.3
-Requires-Dist: importlib-metadata>=3.6.0; python_version < "3.10"
-Requires-Dist: async-timeout>=4.0.3; extra == "async"
-Requires-Dist: pytest; extra == "test"
-`
-	// Without extras — should get runtime deps only, not extra-gated ones
-	deps := parseRequiresDist(metadata, nil)
-
-	names := map[string]bool{}
-	for _, d := range deps {
-		names[d.Name] = true
-	}
-
-	if !names["Werkzeug"] {
-		t.Error("should include Werkzeug")
-	}
-	if !names["Jinja2"] {
-		t.Error("should include Jinja2")
-	}
-	if !names["click"] {
-		t.Error("should include click")
-	}
-	// python_version markers are permissively included
-	if !names["importlib-metadata"] {
-		t.Error("should include importlib-metadata (python_version marker is permissive)")
-	}
-	// extra-gated deps should be excluded
-	if names["async-timeout"] {
-		t.Error("should NOT include async-timeout (gated on extra)")
-	}
-	if names["pytest"] {
-		t.Error("should NOT include pytest (gated on extra)")
-	}
-}
-
-func TestParseRequiresDistWithExtras(t *testing.T) {
-	metadata := `Metadata-Version: 2.1
-Name: Flask
-Version: 3.0.0
-Requires-Dist: Werkzeug>=3.0.0
-Requires-Dist: async-timeout>=4.0.3; extra == "async"
-Requires-Dist: pytest; extra == "test"
-`
-	deps := parseRequiresDist(metadata, []string{"async"})
-
-	names := map[string]bool{}
-	for _, d := range deps {
-		names[d.Name] = true
-	}
-
-	if !names["Werkzeug"] {
-		t.Error("should include Werkzeug")
-	}
-	if !names["async-timeout"] {
-		t.Error("should include async-timeout (async extra requested)")
-	}
-	if names["pytest"] {
-		t.Error("should NOT include pytest (test extra not requested)")
 	}
 }
 

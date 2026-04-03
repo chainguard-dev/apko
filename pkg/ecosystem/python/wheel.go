@@ -89,53 +89,6 @@ func writeInstallerFile(fsys apkfs.FullFS, sitePackagesPath string, wheelData []
 	return nil
 }
 
-// readMetadata reads the METADATA file from a wheel and returns its contents.
-func readMetadata(wheelData []byte) (string, error) {
-	reader, err := zip.NewReader(bytes.NewReader(wheelData), int64(len(wheelData)))
-	if err != nil {
-		return "", err
-	}
-
-	for _, f := range reader.File {
-		if strings.HasSuffix(f.Name, ".dist-info/METADATA") {
-			rc, err := f.Open()
-			if err != nil {
-				return "", err
-			}
-			data, err := io.ReadAll(rc)
-			rc.Close()
-			if err != nil {
-				return "", err
-			}
-			return string(data), nil
-		}
-	}
-
-	return "", fmt.Errorf("METADATA not found in wheel")
-}
-
-// parseRequiresDist extracts Requires-Dist entries from wheel METADATA content.
-// Returns parsed package specs, filtering out entries with unsatisfiable markers.
-func parseRequiresDist(metadata string, extras []string) []packageSpec {
-	var deps []packageSpec
-	for _, line := range strings.Split(metadata, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "Requires-Dist:") {
-			continue
-		}
-		req := strings.TrimSpace(strings.TrimPrefix(line, "Requires-Dist:"))
-		spec := parsePackageSpec(req)
-
-		// Skip deps gated on extras we didn't request
-		if spec.Markers != "" && !evaluateMarkers(spec.Markers, extras) {
-			continue
-		}
-
-		deps = append(deps, spec)
-	}
-	return deps
-}
-
 // evaluateMarkers performs a simplified evaluation of PEP 508 environment markers.
 // It handles the most common cases:
 //   - extra == "..." — only satisfied if the extra was requested
