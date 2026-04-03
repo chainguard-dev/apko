@@ -21,6 +21,55 @@ import (
 	"chainguard.dev/apko/pkg/ecosystem"
 )
 
+func TestCreateVenv(t *testing.T) {
+	fs := apkfs.NewMemFS()
+	if err := fs.MkdirAll("usr/bin", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := createVenv(fs, "app/venv", "3.12")
+	if err != nil {
+		t.Fatalf("createVenv() error: %v", err)
+	}
+
+	// Check pyvenv.cfg
+	data, err := fs.ReadFile("app/venv/pyvenv.cfg")
+	if err != nil {
+		t.Fatalf("reading pyvenv.cfg: %v", err)
+	}
+	cfg := string(data)
+	if !contains(cfg, "home = /usr/bin") {
+		t.Errorf("pyvenv.cfg missing home, got: %q", cfg)
+	}
+	if !contains(cfg, "version = 3.12") {
+		t.Errorf("pyvenv.cfg missing version, got: %q", cfg)
+	}
+
+	// Check directories exist
+	for _, dir := range []string{
+		"app/venv/bin",
+		"app/venv/include",
+		"app/venv/lib/python3.12/site-packages",
+	} {
+		if _, err := fs.Stat(dir); err != nil {
+			t.Errorf("directory %s should exist: %v", dir, err)
+		}
+	}
+
+	// Check symlinks
+	for _, name := range []string{"python", "python3", "python3.12"} {
+		target, err := fs.Readlink("app/venv/bin/" + name)
+		if err != nil {
+			t.Errorf("symlink %s should exist: %v", name, err)
+			continue
+		}
+		if target != "/usr/bin/python3.12" {
+			t.Errorf("symlink %s = %q, want %q", name, target, "/usr/bin/python3.12")
+		}
+	}
+}
+
+
 func TestInstallerRegistration(t *testing.T) {
 	inst, ok := ecosystem.Get("python")
 	if !ok {

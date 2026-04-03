@@ -40,7 +40,8 @@ type Installer interface {
 	// Resolve resolves the requested packages to specific versions and URLs.
 	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture) ([]ResolvedPackage, error)
 	// Install extracts resolved packages into the filesystem.
-	Install(ctx context.Context, fs apkfs.FullFS, packages []ResolvedPackage) error
+	// Returns environment variables that should be set in the image configuration.
+	Install(ctx context.Context, fs apkfs.FullFS, packages []ResolvedPackage, config types.EcosystemConfig) (map[string]string, error)
 }
 
 var (
@@ -67,22 +68,28 @@ func Get(name string) (Installer, bool) {
 }
 
 // InstallAll installs packages for all configured ecosystems.
-func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture) error {
+// Returns environment variables that should be set in the image configuration.
+func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture) (map[string]string, error) {
+	env := map[string]string{}
 	for name, config := range ecosystems {
 		installer, ok := Get(name)
 		if !ok {
-			return fmt.Errorf("unknown ecosystem: %s", name)
+			return nil, fmt.Errorf("unknown ecosystem: %s", name)
 		}
 		resolved, err := installer.Resolve(ctx, config, arch)
 		if err != nil {
-			return fmt.Errorf("resolving %s packages: %w", name, err)
+			return nil, fmt.Errorf("resolving %s packages: %w", name, err)
 		}
 		if len(resolved) == 0 {
 			continue
 		}
-		if err := installer.Install(ctx, fs, resolved); err != nil {
-			return fmt.Errorf("installing %s packages: %w", name, err)
+		vars, err := installer.Install(ctx, fs, resolved, config)
+		if err != nil {
+			return nil, fmt.Errorf("installing %s packages: %w", name, err)
+		}
+		for k, v := range vars {
+			env[k] = v
 		}
 	}
-	return nil
+	return env, nil
 }

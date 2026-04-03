@@ -104,7 +104,7 @@ type BaseImageDescriptor struct {
 	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
 }
 
-// EcosystemConfig holds configuration for a non-APK package ecosystem (e.g., pip).
+// EcosystemConfig holds configuration for a non-APK package ecosystem (e.g., python).
 type EcosystemConfig struct {
 	// Indexes is a list of package index URLs (e.g., PyPI simple API URLs).
 	Indexes []string `json:"indexes,omitempty" yaml:"indexes,omitempty"`
@@ -112,6 +112,10 @@ type EcosystemConfig struct {
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// PythonVersion overrides auto-detection of the Python version (e.g., "3.12").
 	PythonVersion string `json:"python_version,omitempty" yaml:"python_version,omitempty"`
+	// Venv is an optional path for a virtual environment (e.g., "/app/venv").
+	// When set, packages are installed into the venv instead of the system site-packages,
+	// and VIRTUAL_ENV / PATH are set automatically.
+	Venv string `json:"venv,omitempty" yaml:"venv,omitempty"`
 }
 
 type ImageContents struct {

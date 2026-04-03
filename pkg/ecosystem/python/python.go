@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/chainguard-dev/clog"
@@ -53,8 +54,6 @@ func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, a
 		indexes = []string{defaultIndex}
 	}
 
-	// We need a Python version to filter wheels. We'll use a default that
-	// callers can override via the config, or detect later during install.
 	pythonVersion := config.PythonVersion
 	if pythonVersion == "" {
 		pythonVersion = "3.12"
@@ -63,18 +62,29 @@ func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, a
 	return resolvePackages(ctx, specs, indexes, pythonVersion, arch)
 }
 
-func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []ecosystem.ResolvedPackage) error {
+func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []ecosystem.ResolvedPackage, config types.EcosystemConfig) (map[string]string, error) {
 	log := clog.FromContext(ctx)
 
 	pythonVersion := detectPythonVersion(fsys)
 	if pythonVersion == "" {
-		return fmt.Errorf("no Python installation found in filesystem; install python3 via APK first")
+		return nil, fmt.Errorf("no Python installation found in filesystem; install python3 via APK first")
 	}
 	log.Infof("detected Python %s for python ecosystem install", pythonVersion)
 
-	sitePackagesPath := fmt.Sprintf("usr/lib/python%s/site-packages", pythonVersion)
+	var sitePackagesPath string
+	if config.Venv != "" {
+		venvPath := strings.TrimPrefix(config.Venv, "/")
+		if err := createVenv(fsys, venvPath, pythonVersion); err != nil {
+			return nil, fmt.Errorf("creating virtual environment at %s: %w", config.Venv, err)
+		}
+		sitePackagesPath = filepath.Join(venvPath, "lib", "python"+pythonVersion, "site-packages")
+		log.Infof("using virtual environment at %s", config.Venv)
+	} else {
+		sitePackagesPath = fmt.Sprintf("usr/lib/python%s/site-packages", pythonVersion)
+	}
+
 	if err := fsys.MkdirAll(sitePackagesPath, 0755); err != nil {
-		return fmt.Errorf("creating site-packages directory: %w", err)
+		return nil, fmt.Errorf("creating site-packages directory: %w", err)
 	}
 
 	for _, pkg := range packages {
@@ -82,19 +92,70 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 
 		data, err := downloadWheel(ctx, pkg.URL)
 		if err != nil {
-			return fmt.Errorf("downloading %s: %w", pkg.Name, err)
+			return nil, fmt.Errorf("downloading %s: %w", pkg.Name, err)
 		}
 
 		if err := verifyChecksum(data, pkg.Checksum); err != nil {
-			return fmt.Errorf("verifying %s: %w", pkg.Name, err)
+			return nil, fmt.Errorf("verifying %s: %w", pkg.Name, err)
 		}
 
 		if err := extractWheel(fsys, data, sitePackagesPath); err != nil {
-			return fmt.Errorf("extracting %s: %w", pkg.Name, err)
+			return nil, fmt.Errorf("extracting %s: %w", pkg.Name, err)
 		}
 
 		if err := writeInstallerFile(fsys, sitePackagesPath, data); err != nil {
 			log.Debugf("could not write INSTALLER file for %s: %v", pkg.Name, err)
+		}
+	}
+
+	// When using a venv, set VIRTUAL_ENV and prepend its bin/ to PATH.
+	if config.Venv != "" {
+		venvBin := filepath.Join(config.Venv, "bin")
+		return map[string]string{
+			"VIRTUAL_ENV": config.Venv,
+			"PATH":        venvBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// createVenv sets up a virtual environment directory structure.
+func createVenv(fsys apkfs.FullFS, venvPath, pythonVersion string) error {
+	// Create directory structure
+	dirs := []string{
+		filepath.Join(venvPath, "bin"),
+		filepath.Join(venvPath, "include"),
+		filepath.Join(venvPath, "lib", "python"+pythonVersion, "site-packages"),
+	}
+	for _, dir := range dirs {
+		if err := fsys.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating %s: %w", dir, err)
+		}
+	}
+
+	// Write pyvenv.cfg
+	cfg := fmt.Sprintf(
+		"home = /usr/bin\ninclude-system-site-packages = false\nversion = %s\n",
+		pythonVersion,
+	)
+	cfgPath := filepath.Join(venvPath, "pyvenv.cfg")
+	if err := fsys.WriteFile(cfgPath, []byte(cfg), 0644); err != nil {
+		return fmt.Errorf("writing pyvenv.cfg: %w", err)
+	}
+
+	// Create symlinks in bin/
+	pythonBin := "/usr/bin/python" + pythonVersion
+	binPath := filepath.Join(venvPath, "bin")
+	symlinks := map[string]string{
+		"python":                   pythonBin,
+		"python3":                  pythonBin,
+		"python" + pythonVersion:   pythonBin,
+	}
+	for name, target := range symlinks {
+		linkPath := filepath.Join(binPath, name)
+		if err := fsys.Symlink(target, linkPath); err != nil {
+			return fmt.Errorf("creating symlink %s: %w", linkPath, err)
 		}
 	}
 

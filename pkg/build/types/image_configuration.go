@@ -193,6 +193,9 @@ func (i *ImageContents) MergeInto(target *ImageContents) error {
 				if existing.PythonVersion == "" {
 					existing.PythonVersion = eco.PythonVersion
 				}
+				if existing.Venv == "" {
+					existing.Venv = eco.Venv
+				}
 				target.Ecosystems[name] = existing
 			} else {
 				target.Ecosystems[name] = eco
