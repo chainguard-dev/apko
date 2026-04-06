@@ -241,23 +241,39 @@ func TestIsPreRelease(t *testing.T) {
 }
 
 // servePyPIJSON creates a mock server that serves PyPI JSON API responses.
+// Wheel URLs in test data use a placeholder that gets replaced with the
+// actual test server URL to avoid outbound network calls.
 func servePyPIJSON(t *testing.T, packages map[string]pypiPackageJSON) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
+
+	// Placeholder replaced with actual server URL after startup.
+	var serverURL string
+
 	for name, pkg := range packages {
 		name := normalizeName(name)
 		pkg := pkg
 
 		// Serve /pypi/{name}/{version}/json
 		mux.HandleFunc("/pypi/"+name+"/"+pkg.Info.Version+"/json", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(pkg)
+			// Rewrite placeholder URLs to point to this test server.
+			resp := pkg
+			for i := range resp.URLs {
+				resp.URLs[i].URL = serverURL + "/wheels/" + resp.URLs[i].Filename
+			}
+			json.NewEncoder(w).Encode(resp)
 		})
 
 		// Serve /pypi/{name}/json (versions listing)
 		mux.HandleFunc("/pypi/"+name+"/json", func(w http.ResponseWriter, r *http.Request) {
+			urls := make([]pypiURL, len(pkg.URLs))
+			copy(urls, pkg.URLs)
+			for i := range urls {
+				urls[i].URL = serverURL + "/wheels/" + urls[i].Filename
+			}
 			resp := pypiVersionsJSON{
 				Releases: map[string][]pypiURL{
-					pkg.Info.Version: pkg.URLs,
+					pkg.Info.Version: urls,
 				},
 			}
 			json.NewEncoder(w).Encode(resp)
@@ -269,13 +285,21 @@ func servePyPIJSON(t *testing.T, packages map[string]pypiPackageJSON) *httptest.
 			var b strings.Builder
 			b.WriteString("<html><body>\n")
 			for _, u := range pkg.URLs {
-				b.WriteString(`<a href="` + u.URL + `#sha256=` + u.Digests.SHA256 + `">` + u.Filename + "</a>\n")
+				b.WriteString(`<a href="` + serverURL + "/wheels/" + u.Filename + `#sha256=` + u.Digests.SHA256 + `">` + u.Filename + "</a>\n")
 			}
 			b.WriteString("</body></html>")
 			w.Write([]byte(b.String()))
 		})
 	}
-	return httptest.NewServer(mux)
+
+	// Serve dummy wheel downloads (resolver fetches these to extract deps).
+	mux.HandleFunc("/wheels/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	server := httptest.NewServer(mux)
+	serverURL = server.URL
+	return server
 }
 
 func TestResolveWithMockJSON(t *testing.T) {
@@ -287,7 +311,7 @@ func TestResolveWithMockJSON(t *testing.T) {
 			},
 			URLs: []pypiURL{{
 				Filename:    "Flask-3.0.0-py3-none-any.whl",
-				URL:         "https://files.example.com/Flask-3.0.0-py3-none-any.whl",
+				URL:         "https://placeholder/Flask-3.0.0-py3-none-any.whl",
 				PackageType: "bdist_wheel",
 				Digests:     pypiDigests{SHA256: "abc123"},
 			}},
@@ -334,7 +358,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 			},
 			URLs: []pypiURL{{
 				Filename:    "Flask-3.0.0-py3-none-any.whl",
-				URL:         "https://files.example.com/Flask-3.0.0-py3-none-any.whl",
+				URL:         "https://placeholder/Flask-3.0.0-py3-none-any.whl",
 				PackageType: "bdist_wheel",
 				Digests:     pypiDigests{SHA256: "aaa"},
 			}},
@@ -349,7 +373,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 			},
 			URLs: []pypiURL{{
 				Filename:    "Werkzeug-3.0.1-py3-none-any.whl",
-				URL:         "https://files.example.com/Werkzeug-3.0.1-py3-none-any.whl",
+				URL:         "https://placeholder/Werkzeug-3.0.1-py3-none-any.whl",
 				PackageType: "bdist_wheel",
 				Digests:     pypiDigests{SHA256: "bbb"},
 			}},
@@ -361,7 +385,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 			},
 			URLs: []pypiURL{{
 				Filename:    "click-8.1.7-py3-none-any.whl",
-				URL:         "https://files.example.com/click-8.1.7-py3-none-any.whl",
+				URL:         "https://placeholder/click-8.1.7-py3-none-any.whl",
 				PackageType: "bdist_wheel",
 				Digests:     pypiDigests{SHA256: "ccc"},
 			}},
@@ -373,7 +397,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 			},
 			URLs: []pypiURL{{
 				Filename:    "MarkupSafe-2.1.5-py3-none-any.whl",
-				URL:         "https://files.example.com/MarkupSafe-2.1.5-py3-none-any.whl",
+				URL:         "https://placeholder/MarkupSafe-2.1.5-py3-none-any.whl",
 				PackageType: "bdist_wheel",
 				Digests:     pypiDigests{SHA256: "ddd"},
 			}},
@@ -409,16 +433,27 @@ func TestResolveTransitiveDeps(t *testing.T) {
 }
 
 func TestResolveSimpleApiFallback(t *testing.T) {
-	// Test that non-PyPI indexes use the Simple API
+	// Test that non-PyPI indexes use the Simple API.
+	// All URLs must point to the test server to avoid outbound network calls.
 	mux := http.NewServeMux()
+
+	// Serve the simple index page; the wheel URL is set dynamically after the server starts.
+	var serverURL string
 	mux.HandleFunc("/simple/mypackage/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><body>
-<a href="https://files.example.com/mypackage-1.0.0-py3-none-any.whl#sha256=abc">mypackage-1.0.0-py3-none-any.whl</a>
+<a href="` + serverURL + `/wheels/mypackage-1.0.0-py3-none-any.whl#sha256=abc">mypackage-1.0.0-py3-none-any.whl</a>
 </body></html>`))
 	})
+
+	// Serve a dummy wheel (the resolver downloads it to extract deps).
+	mux.HandleFunc("/wheels/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
 	server := httptest.NewServer(mux)
 	defer server.Close()
+	serverURL = server.URL
 
 	specs := []packageSpec{{Name: "mypackage", Operator: "==", Version: "1.0.0"}}
 	// Use a non-pypi index so it doesn't try the JSON API
