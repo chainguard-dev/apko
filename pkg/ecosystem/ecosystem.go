@@ -17,10 +17,11 @@ package ecosystem
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/apk/auth"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -144,9 +145,7 @@ func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]type
 
 		installed = append(installed, resolved...)
 
-		for k, v := range vars {
-			env[k] = v
-		}
+		maps.Copy(env, vars)
 	}
 	return env, installed, nil
 }

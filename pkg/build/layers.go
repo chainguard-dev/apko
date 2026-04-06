@@ -90,8 +90,8 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Combine all groups and apply the shared budget.
-	allGroups := append(apkGroups, ecoGroups...)
-	groups := applyBudget(allGroups, bc.ic.Layering.Budget)
+	apkGroups = append(apkGroups, ecoGroups...)
+	groups := applyBudget(apkGroups, bc.ic.Layering.Budget)
 	log.Infof("Building %d layers with budget %d", len(groups), bc.ic.Layering.Budget)
 
 	for i, g := range groups {
