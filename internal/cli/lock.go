@@ -254,7 +254,7 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			return fmt.Errorf("unknown ecosystem: %s", name)
 		}
 		for _, arch := range archs {
-			resolved, err := installer.Resolve(ctx, ecoConfig, arch, nil)
+			resolved, err := installer.Resolve(ctx, ecoConfig, arch, auth.DefaultAuthenticators)
 			if err != nil {
 				return fmt.Errorf("resolving %s packages for %s: %w", name, arch, err)
 			}

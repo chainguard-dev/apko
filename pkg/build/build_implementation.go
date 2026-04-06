@@ -182,7 +182,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 	// Install ecosystem packages (python, etc.) after APK packages so that
 	// the language runtime is available for version detection.
 	if len(bc.ic.Contents.Ecosystems) > 0 {
-		env, ecoPkgs, err := ecosystem.InstallAll(ctx, bc.fs, bc.ic.Contents.Ecosystems, bc.o.Arch, nil)
+		env, ecoPkgs, err := ecosystem.InstallAll(ctx, bc.fs, bc.ic.Contents.Ecosystems, bc.o.Arch, bc.o.Auth)
 		if err != nil {
 			return nil, fmt.Errorf("installing ecosystem packages: %w", err)
 		}
