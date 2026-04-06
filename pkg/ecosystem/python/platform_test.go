@@ -22,9 +22,9 @@ import (
 
 func TestPlatformTags(t *testing.T) {
 	tests := []struct {
-		arch     string
-		wantLen  int
-		wantAny  string // At least one tag should contain this
+		arch    string
+		wantLen int
+		wantAny string // At least one tag should contain this
 	}{
 		{"amd64", 5, "x86_64"},
 		{"arm64", 3, "aarch64"},
@@ -136,11 +136,11 @@ func TestParseWheelFilename(t *testing.T) {
 
 func TestIsCompatibleWheel(t *testing.T) {
 	tests := []struct {
-		name    string
-		wheel   wheelFileParts
-		pyVer   string
-		arch    string
-		want    bool
+		name  string
+		wheel wheelFileParts
+		pyVer string
+		arch  string
+		want  bool
 	}{
 		{
 			name:  "pure python wheel is always compatible",

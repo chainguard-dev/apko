@@ -68,13 +68,13 @@ func writePackageSBOM(fsys apkfs.FullFS, sitePackagesPath string, wheelData []by
 
 // spdxDocument is a minimal SPDX 2.3 JSON document structure.
 type spdxDocument struct {
-	SPDXVersion   string            `json:"spdxVersion"`
-	DataLicense   string            `json:"dataLicense"`
-	SPDXID        string            `json:"SPDXID"`
-	Name          string            `json:"name"`
-	Namespace     string            `json:"documentNamespace"`
-	CreationInfo  spdxCreationInfo  `json:"creationInfo"`
-	Packages      []spdxPackage     `json:"packages"`
+	SPDXVersion  string           `json:"spdxVersion"`
+	DataLicense  string           `json:"dataLicense"`
+	SPDXID       string           `json:"SPDXID"`
+	Name         string           `json:"name"`
+	Namespace    string           `json:"documentNamespace"`
+	CreationInfo spdxCreationInfo `json:"creationInfo"`
+	Packages     []spdxPackage    `json:"packages"`
 }
 
 type spdxCreationInfo struct {

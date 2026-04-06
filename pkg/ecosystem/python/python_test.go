@@ -69,7 +69,6 @@ func TestCreateVenv(t *testing.T) {
 	}
 }
 
-
 func TestInstallerRegistration(t *testing.T) {
 	inst, ok := ecosystem.Get("python")
 	if !ok {

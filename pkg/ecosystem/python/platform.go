@@ -16,6 +16,7 @@ package python
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -143,7 +144,7 @@ func isCompatibleWheel(w wheelFileParts, pythonVersion string, arch types.Archit
 // E.g., "py3", "cp312", "py2.py3"
 func isCompatiblePythonTag(tag, pythonVersion string) bool {
 	cpTag := "cp" + strings.ReplaceAll(pythonVersion, ".", "")
-	for _, t := range strings.Split(tag, ".") {
+	for t := range strings.SplitSeq(tag, ".") {
 		if t == "py3" || t == "py2.py3" || t == cpTag {
 			return true
 		}
@@ -157,7 +158,7 @@ func isCompatibleABI(tag, pythonVersion string) bool {
 		return true
 	}
 	cpTag := "cp" + strings.ReplaceAll(pythonVersion, ".", "")
-	for _, t := range strings.Split(tag, ".") {
+	for t := range strings.SplitSeq(tag, ".") {
 		if t == "abi3" || t == cpTag {
 			return true
 		}
@@ -171,11 +172,9 @@ func isCompatiblePlatform(tag string, arch types.Architecture) bool {
 		return true
 	}
 	compatible := platformTags(arch)
-	for _, t := range strings.Split(tag, ".") {
-		for _, c := range compatible {
-			if t == c {
-				return true
-			}
+	for t := range strings.SplitSeq(tag, ".") {
+		if slices.Contains(compatible, t) {
+			return true
 		}
 	}
 	return false
@@ -188,7 +187,7 @@ func wheelScore(w wheelFileParts, pythonVersion string, arch types.Architecture)
 
 	// Prefer exact CPython tag over generic py3
 	cpTag := "cp" + strings.ReplaceAll(pythonVersion, ".", "")
-	for _, t := range strings.Split(w.PythonTag, ".") {
+	for t := range strings.SplitSeq(w.PythonTag, ".") {
 		if t == cpTag {
 			score += 100
 			break
@@ -196,10 +195,11 @@ func wheelScore(w wheelFileParts, pythonVersion string, arch types.Architecture)
 	}
 
 	// Prefer specific ABI over none/abi3
-	for _, t := range strings.Split(w.ABITag, ".") {
-		if t == cpTag {
+	for t := range strings.SplitSeq(w.ABITag, ".") {
+		switch t {
+		case cpTag:
 			score += 50
-		} else if t == "abi3" {
+		case "abi3":
 			score += 25
 		}
 	}
@@ -208,11 +208,10 @@ func wheelScore(w wheelFileParts, pythonVersion string, arch types.Architecture)
 	if w.PlatformTag != "any" {
 		platTags := platformTags(arch)
 		for i, pt := range platTags {
-			for _, t := range strings.Split(w.PlatformTag, ".") {
-				if t == pt {
+			for pp := range strings.SplitSeq(w.PlatformTag, ".") {
+				if pp == pt {
 					// More specific platforms (earlier in list) get higher scores
 					score += 10 * (len(platTags) - i)
-					break
 				}
 			}
 		}

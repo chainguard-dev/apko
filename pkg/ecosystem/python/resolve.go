@@ -131,14 +131,14 @@ func normalizeName(name string) string {
 
 // pypiPackageJSON is the response from https://pypi.org/pypi/{name}/{version}/json
 type pypiPackageJSON struct {
-	Info pypiInfo            `json:"info"`
-	URLs []pypiURL           `json:"urls"`
+	Info pypiInfo  `json:"info"`
+	URLs []pypiURL `json:"urls"`
 }
 
 type pypiInfo struct {
-	Name            string   `json:"name"`
-	Version         string   `json:"version"`
-	RequiresDist    []string `json:"requires_dist"`
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	RequiresDist []string `json:"requires_dist"`
 }
 
 type pypiURL struct {
@@ -300,7 +300,7 @@ func resolveJSONVersion(ctx context.Context, normalizedName, originalName, versi
 	}
 
 	// Parse dependencies from requires_dist
-	var deps []packageSpec
+	deps := make([]packageSpec, 0, len(pkgResp.Info.RequiresDist))
 	for _, req := range pkgResp.Info.RequiresDist {
 		dep := parsePackageSpec(req)
 		if dep.Markers != "" && !evaluateMarkers(dep.Markers, nil) {
@@ -381,8 +381,6 @@ type wheelLink struct {
 
 // parseSimpleIndex parses the HTML from a PEP 503 Simple Repository API response.
 func parseSimpleIndex(body string, baseURL string) []wheelLink {
-	var links []wheelLink
-
 	// Use a regex that handles '>' inside quoted attribute values (e.g., data-requires-python=">=3.0").
 	// The [^>]* approach breaks when attributes contain '>' characters.
 	linkRe := regexp.MustCompile(`<a\s+(?:[^>"]*(?:"[^"]*")?)*href="([^"]*)"(?:[^>"]*(?:"[^"]*")?)*>([^<]*)</a>`)
@@ -390,7 +388,9 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 	provenanceRe := regexp.MustCompile(`data-provenance="([^"]*)"`)
 	signatureRe := regexp.MustCompile(`data-signature="([^"]*)"`)
 
-	for _, match := range linkRe.FindAllStringSubmatch(body, -1) {
+	matches := linkRe.FindAllStringSubmatch(body, -1)
+	links := make([]wheelLink, 0, len(matches))
+	for _, match := range matches {
 		href := match[1]
 		filename := strings.TrimSpace(match[2])
 
@@ -538,8 +538,8 @@ func extractDepsFromWheel(ctx context.Context, url string, a auth.Authenticator)
 
 // parseRequiresDist extracts Requires-Dist entries from wheel METADATA content.
 func parseRequiresDist(metadata string) []packageSpec {
-	var deps []packageSpec
-	for _, line := range strings.Split(metadata, "\n") {
+	deps := make([]packageSpec, 0, strings.Count(metadata, "Requires-Dist: "))
+	for line := range strings.SplitSeq(metadata, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if !strings.HasPrefix(line, "Requires-Dist: ") {
 			continue
@@ -644,9 +644,7 @@ func compareVersions(a, b string) int {
 	bParts := strings.Split(b, ".")
 
 	maxLen := len(aParts)
-	if len(bParts) > maxLen {
-		maxLen = len(bParts)
-	}
+	maxLen = max(maxLen, len(bParts))
 
 	for i := 0; i < maxLen; i++ {
 		var aVal, bVal string

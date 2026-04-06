@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -191,9 +192,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 			if bc.ic.Environment == nil {
 				bc.ic.Environment = make(map[string]string)
 			}
-			for k, v := range env {
-				bc.ic.Environment[k] = v
-			}
+			maps.Copy(bc.ic.Environment, env)
 		}
 	}
 

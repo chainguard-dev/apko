@@ -24,8 +24,8 @@ import (
 
 	"github.com/chainguard-dev/clog"
 
-	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/apk/auth"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/ecosystem"
 )
@@ -181,9 +181,9 @@ func createVenv(fsys apkfs.FullFS, venvPath, pythonVersion string) error {
 	pythonBin := "/usr/bin/python" + pythonVersion
 	binPath := filepath.Join(venvPath, "bin")
 	symlinks := map[string]string{
-		"python":                   pythonBin,
-		"python3":                  pythonBin,
-		"python" + pythonVersion:   pythonBin,
+		"python":                 pythonBin,
+		"python3":                pythonBin,
+		"python" + pythonVersion: pythonBin,
 	}
 	for name, target := range symlinks {
 		linkPath := filepath.Join(binPath, name)

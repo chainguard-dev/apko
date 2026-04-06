@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -265,12 +266,13 @@ func servePyPIJSON(t *testing.T, packages map[string]pypiPackageJSON) *httptest.
 		// Serve Simple API as fallback
 		mux.HandleFunc("/simple/"+name+"/", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			html := "<html><body>\n"
+			var b strings.Builder
+			b.WriteString("<html><body>\n")
 			for _, u := range pkg.URLs {
-				html += `<a href="` + u.URL + `#sha256=` + u.Digests.SHA256 + `">` + u.Filename + "</a>\n"
+				b.WriteString(`<a href="` + u.URL + `#sha256=` + u.Digests.SHA256 + `">` + u.Filename + "</a>\n")
 			}
-			html += "</body></html>"
-			w.Write([]byte(html))
+			b.WriteString("</body></html>")
+			w.Write([]byte(b.String()))
 		})
 	}
 	return httptest.NewServer(mux)

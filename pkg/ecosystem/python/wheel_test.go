@@ -45,8 +45,8 @@ func createTestWheel(t *testing.T, files map[string]string) []byte {
 
 func TestExtractWheel(t *testing.T) {
 	wheelData := createTestWheel(t, map[string]string{
-		"mypackage/__init__.py":          "# init",
-		"mypackage/module.py":            "def hello(): pass",
+		"mypackage/__init__.py":              "# init",
+		"mypackage/module.py":                "def hello(): pass",
 		"mypackage-1.0.0.dist-info/METADATA": "Name: mypackage\nVersion: 1.0.0\n",
 		"mypackage-1.0.0.dist-info/RECORD":   "",
 	})
@@ -81,8 +81,8 @@ func TestExtractWheel(t *testing.T) {
 
 func TestWriteInstallerFile(t *testing.T) {
 	wheelData := createTestWheel(t, map[string]string{
-		"mypackage/__init__.py":               "# init",
-		"mypackage-1.0.0.dist-info/METADATA":  "Name: mypackage\nVersion: 1.0.0\n",
+		"mypackage/__init__.py":              "# init",
+		"mypackage-1.0.0.dist-info/METADATA": "Name: mypackage\nVersion: 1.0.0\n",
 	})
 
 	fs := apkfs.NewMemFS()

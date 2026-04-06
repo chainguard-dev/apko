@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -35,8 +36,13 @@ func extractWheel(fsys apkfs.FullFS, wheelData []byte, sitePackagesPath string) 
 		return fmt.Errorf("opening wheel as zip: %w", err)
 	}
 
+	cleanBase := filepath.Clean(sitePackagesPath) + string(filepath.Separator)
 	for _, f := range reader.File {
-		targetPath := filepath.Join(sitePackagesPath, f.Name)
+		// G305: Protect against zip slip / path traversal.
+		targetPath := filepath.Join(sitePackagesPath, filepath.Clean(f.Name))
+		if !strings.HasPrefix(targetPath, cleanBase) {
+			return errors.New("illegal file path in wheel archive: " + f.Name)
+		}
 
 		if f.FileInfo().IsDir() {
 			if err := fsys.MkdirAll(targetPath, 0755); err != nil {
