@@ -34,6 +34,17 @@ type ResolvedPackage struct {
 	Checksum      string // "sha256:<hex>"
 	SignatureURL  string // optional: signature bundle URL (from data-signature)
 	ProvenanceURL string // optional: provenance data URL (from data-provenance)
+
+	// InstalledSize is populated after installation with the approximate
+	// bytes written for this package. Used for layering budget decisions.
+	InstalledSize uint64
+}
+
+// OwnerName returns the namespaced owner string used for filesystem tagging
+// and layer routing (e.g. "python:flask"). The colon ensures no collision
+// with APK package names.
+func (rp ResolvedPackage) OwnerName() string {
+	return rp.Ecosystem + ":" + rp.Name
 }
 
 // Installer is the interface that ecosystem package installers must implement.
@@ -96,29 +107,46 @@ func Get(name string) (Installer, bool) {
 	return factory(), true
 }
 
+// OwnerTagger is implemented by filesystems that support tagging files
+// with an owner name for layering purposes.
+type OwnerTagger interface {
+	SetCurrentOwner(owner string)
+	OwnerSize(owner string) uint64
+}
+
 // InstallAll installs packages for all configured ecosystems.
-// Returns environment variables that should be set in the image configuration.
-func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) (map[string]string, error) {
+// Returns environment variables, the resolved packages with InstalledSize
+// populated, and any error.
+//
+// Installers are responsible for tagging files with per-package ownership
+// via the OwnerTagger interface on the filesystem, if supported.
+func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) (map[string]string, []ResolvedPackage, error) {
 	env := map[string]string{}
+	var installed []ResolvedPackage
+
 	for name, config := range ecosystems {
 		installer, ok := Get(name)
 		if !ok {
-			return nil, fmt.Errorf("unknown ecosystem: %s", name)
+			return nil, nil, fmt.Errorf("unknown ecosystem: %s", name)
 		}
 		resolved, err := installer.Resolve(ctx, config, arch, a)
 		if err != nil {
-			return nil, fmt.Errorf("resolving %s packages: %w", name, err)
+			return nil, nil, fmt.Errorf("resolving %s packages: %w", name, err)
 		}
 		if len(resolved) == 0 {
 			continue
 		}
+
 		vars, err := installer.Install(ctx, fs, resolved, config, a)
 		if err != nil {
-			return nil, fmt.Errorf("installing %s packages: %w", name, err)
+			return nil, nil, fmt.Errorf("installing %s packages: %w", name, err)
 		}
+
+		installed = append(installed, resolved...)
+
 		for k, v := range vars {
 			env[k] = v
 		}
 	}
-	return env, nil
+	return env, installed, nil
 }

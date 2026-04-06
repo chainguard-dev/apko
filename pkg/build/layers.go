@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strings"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -50,10 +51,10 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 		return nil, fmt.Errorf("building filesystem: %w", err)
 	}
 
-	pkgs := make([]*apk.Package, 0, len(diffs))
+	apkPkgs := make([]*apk.Package, 0, len(diffs))
 	pkgToDiff := map[*apk.Package][]byte{}
 	for _, pkgDiff := range diffs {
-		pkgs = append(pkgs, pkgDiff.Package)
+		apkPkgs = append(apkPkgs, pkgDiff.Package)
 		pkgToDiff[pkgDiff.Package] = pkgDiff.Diff
 	}
 
@@ -69,11 +70,28 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 		return nil, err
 	}
 
-	// Use our layering strategy to partition packages into a set of Budget groups.
-	groups, err := groupByOriginAndSize(pkgs, bc.ic.Layering.Budget)
+	// Group APK packages by origin/replaces.
+	apkGroups, err := groupAPKByOrigin(apkPkgs)
 	if err != nil {
-		return nil, fmt.Errorf("grouping packages: %w", err)
+		return nil, fmt.Errorf("grouping apk packages: %w", err)
 	}
+
+	// Create a separate group for each ecosystem package.
+	// Each gets its own group since ecosystem packages are independently versioned
+	// and don't have APK concepts like origin or replaces.
+	ecoGroups := make([]*group, 0, len(bc.ecosystemPkgs))
+	for _, ep := range bc.ecosystemPkgs {
+		owner := ep.OwnerName()
+		ecoGroups = append(ecoGroups, &group{
+			owners:     []string{owner},
+			size:       ep.InstalledSize,
+			tiebreaker: owner,
+		})
+	}
+
+	// Combine all groups and apply the shared budget.
+	allGroups := append(apkGroups, ecoGroups...)
+	groups := applyBudget(allGroups, bc.ic.Layering.Budget)
 	log.Infof("Building %d layers with budget %d", len(groups), bc.ic.Layering.Budget)
 
 	for i, g := range groups {
@@ -81,6 +99,13 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 
 		for _, pkg := range g.pkgs {
 			log.Infof("    - %s=%s", pkg.Name, pkg.Version)
+		}
+		for _, owner := range g.owners {
+			// Ecosystem owners are namespaced with a colon (e.g. "python:flask"),
+			// APK owners are bare package names logged above via g.pkgs.
+			if strings.Contains(owner, ":") {
+				log.Infof("    - %s", owner)
+			}
 		}
 	}
 
@@ -117,6 +142,16 @@ func replacesGroup(rep string, g *group) (bool, error) {
 }
 
 func groupByOriginAndSize(pkgs []*apk.Package, budget int) ([]*group, error) {
+	groups, err := groupAPKByOrigin(pkgs)
+	if err != nil {
+		return nil, err
+	}
+	return applyBudget(groups, budget), nil
+}
+
+// groupAPKByOrigin groups APK packages by origin and merges replaces relationships.
+// It populates both pkgs and owners on each group. Does not apply budget.
+func groupAPKByOrigin(pkgs []*apk.Package) ([]*group, error) {
 	// First, we're going to group packages by their origin.
 	byOrigin := map[string]*group{}
 	for _, pkg := range pkgs {
@@ -131,6 +166,7 @@ func groupByOriginAndSize(pkgs []*apk.Package, budget int) ([]*group, error) {
 		}
 
 		g.pkgs = append(g.pkgs, pkg)
+		g.owners = append(g.owners, pkg.Name)
 	}
 
 	// Then we need to merge any packages that replace each other.
@@ -189,9 +225,8 @@ func groupByOriginAndSize(pkgs []*apk.Package, budget int) ([]*group, error) {
 		}
 	}
 
-	// Now we need to pick the best groups to keep.
-	// First pass we'll set the size of each group to the sum of the installed size of all its packages.
-	groups := make([]*group, 0, budget)
+	// Compute sizes and deduplicate groups.
+	groups := make([]*group, 0)
 	seen := map[*group]struct{}{}
 	for v := range maps.Values(byOrigin) {
 		if _, ok := seen[v]; ok {
@@ -207,7 +242,14 @@ func groupByOriginAndSize(pkgs []*apk.Package, budget int) ([]*group, error) {
 		}
 	}
 
-	// Then we'll sort by the size and take the top $budget, merging the remainders.
+	return groups, nil
+}
+
+// applyBudget sorts groups by size descending and merges anything beyond
+// the budget into a single overflow group. It also sorts owners/packages
+// within each group for consistency.
+func applyBudget(groups []*group, budget int) []*group {
+	// Sort by the size and take the top $budget, merging the remainders.
 	slices.SortFunc(groups, func(a, b *group) int {
 		return cmp.Or(
 			cmp.Compare(b.size, a.size),             // Descending size.
@@ -223,18 +265,26 @@ func groupByOriginAndSize(pkgs []*apk.Package, budget int) ([]*group, error) {
 		groups = append(groups, merge(remainder...))
 	}
 
-	// Sort packages too just so they're in a consistent order.
+	// Sort packages and owners for consistent order.
 	for _, g := range groups {
 		slices.SortFunc(g.pkgs, func(a, b *apk.Package) int {
 			return cmp.Compare(a.Name, b.Name)
 		})
+		slices.Sort(g.owners)
 	}
 
-	return groups, nil
+	return groups
 }
 
 type group struct {
+	// pkgs holds APK packages in this group (used for installed DB splitting).
 	pkgs []*apk.Package
+
+	// owners holds all owner names in this group.
+	// For APK packages this is the package name, for ecosystem packages
+	// this is the owner string (e.g. "python:flask").
+	// Used by splitLayers to route files to the correct layer writer.
+	owners []string
 
 	size uint64
 
@@ -247,6 +297,7 @@ func merge(groups ...*group) *group {
 	merged := &group{}
 	for _, g := range groups {
 		merged.pkgs = slices.Concat(merged.pkgs, g.pkgs)
+		merged.owners = slices.Concat(merged.owners, g.owners)
 		merged.size += g.size
 		merged.tiebreaker = max(merged.tiebreaker, g.tiebreaker)
 	}
@@ -256,8 +307,8 @@ func merge(groups ...*group) *group {
 func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
-	// We'll create a writer for each layer and a map to quickly access the writer given a package or group.
-	packageToWriter := map[string]*layerWriter{}
+	// We'll create a writer for each layer and a map to quickly access the writer given an owner name or group.
+	ownerToWriter := map[string]*layerWriter{}
 	groupToWriter := map[*group]*layerWriter{}
 
 	for _, g := range groups {
@@ -270,8 +321,8 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		w := newLayerWriter(f)
 		groupToWriter[g] = w
 
-		for _, pkg := range g.pkgs {
-			packageToWriter[pkg.Name] = w
+		for _, owner := range g.owners {
+			ownerToWriter[owner] = w
 		}
 	}
 
@@ -314,15 +365,17 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		// By default, all files go into the top layer.
 		w := top
 
-		// However, if a file implements an extension interface that tells us what package owns it,
+		// However, if a file implements an extension interface that tells us who owns it,
 		// we can use that to determine which layer it belongs to (if any).
-		if pkger, ok := f.info.(interface {
-			Package() *apk.Package
+		// Owner() returns the APK package name for APK-installed files, or the
+		// ecosystem owner string (e.g. "python:flask") for ecosystem files.
+		if ownr, ok := f.info.(interface {
+			Owner() string
 		}); ok {
-			if pkg := pkger.Package(); pkg != nil {
-				w, ok = packageToWriter[pkg.Name]
+			if name := ownr.Owner(); name != "" {
+				w, ok = ownerToWriter[name]
 				if !ok {
-					panic(fmt.Errorf("packageToWriter[%q] missing", pkg.Name))
+					panic(fmt.Errorf("ownerToWriter[%q] missing", name))
 				}
 			}
 		}

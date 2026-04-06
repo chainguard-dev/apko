@@ -103,8 +103,14 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 		return nil, fmt.Errorf("creating site-packages directory: %w", err)
 	}
 
-	for _, pkg := range packages {
+	tagger, _ := fsys.(ecosystem.OwnerTagger)
+
+	for idx, pkg := range packages {
 		log.Infof("installing python package %s==%s", pkg.Name, pkg.Version)
+
+		if tagger != nil {
+			tagger.SetCurrentOwner(pkg.OwnerName())
+		}
 
 		data, err := downloadWheel(ctx, pkg.URL, a)
 		if err != nil {
@@ -127,6 +133,11 @@ func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []e
 			if err := writePackageSBOM(fsys, sitePackagesPath, data, pkg); err != nil {
 				log.Debugf("could not write SBOM for %s: %v", pkg.Name, err)
 			}
+		}
+
+		if tagger != nil {
+			tagger.SetCurrentOwner("")
+			packages[idx].InstalledSize = tagger.OwnerSize(pkg.OwnerName())
 		}
 	}
 
