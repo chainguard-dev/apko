@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
 	"sync"
 
 	"chainguard.dev/apko/pkg/apk/auth"
@@ -53,7 +54,8 @@ type Installer interface {
 	// Name returns the ecosystem name (e.g., "python").
 	Name() string
 	// Resolve resolves the requested packages to specific versions and URLs.
-	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) ([]ResolvedPackage, error)
+	// libc is "musl" or "glibc", detected from the image filesystem.
+	Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, libc string, a auth.Authenticator) ([]ResolvedPackage, error)
 	// Install extracts resolved packages into the filesystem.
 	// Returns environment variables that should be set in the image configuration.
 	Install(ctx context.Context, fs apkfs.FullFS, packages []ResolvedPackage, config types.EcosystemConfig, a auth.Authenticator) (map[string]string, error)
@@ -108,6 +110,21 @@ func Get(name string) (Installer, bool) {
 	return factory(), true
 }
 
+// detectLibc checks /etc/os-release to determine the image's libc.
+// Alpine uses musl; everything else uses glibc.
+func detectLibc(fs apkfs.FullFS) string {
+	data, err := fs.ReadFile("etc/os-release")
+	if err != nil {
+		return "glibc"
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if line == "ID=alpine" {
+			return "musl"
+		}
+	}
+	return "glibc"
+}
+
 // OwnerTagger is implemented by filesystems that support tagging files
 // with an owner name for layering purposes.
 type OwnerTagger interface {
@@ -125,12 +142,14 @@ func InstallAll(ctx context.Context, fs apkfs.FullFS, ecosystems map[string]type
 	env := map[string]string{}
 	var installed []ResolvedPackage
 
+	libc := detectLibc(fs)
+
 	for name, config := range ecosystems {
 		installer, ok := Get(name)
 		if !ok {
 			return nil, nil, fmt.Errorf("unknown ecosystem: %s", name)
 		}
-		resolved, err := installer.Resolve(ctx, config, arch, a)
+		resolved, err := installer.Resolve(ctx, config, arch, libc, a)
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolving %s packages: %w", name, err)
 		}

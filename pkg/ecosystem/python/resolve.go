@@ -162,7 +162,7 @@ type pypiVersionsJSON struct {
 
 // resolvePackages resolves package specs to specific wheel URLs,
 // including transitive dependencies discovered via the PyPI JSON API.
-func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
+func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string, pythonVersion string, arch types.Architecture, libc string, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
 	log := clog.FromContext(ctx)
 
 	if len(indexes) == 0 {
@@ -185,7 +185,7 @@ func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string,
 			continue
 		}
 
-		pkg, deps, err := resolveOneWithDeps(ctx, spec, indexes, pythonVersion, arch, a)
+		pkg, deps, err := resolveOneWithDeps(ctx, spec, indexes, pythonVersion, arch, libc, a)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s: %w", spec.Name, err)
 		}
@@ -207,10 +207,10 @@ func resolvePackages(ctx context.Context, specs []packageSpec, indexes []string,
 // resolveOneWithDeps resolves a package and returns both the resolved package
 // and its transitive dependencies. It tries the PyPI JSON API first (which
 // gives us clean metadata), falling back to the Simple API for non-PyPI indexes.
-func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, libc string, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	// Try PyPI JSON API first — it gives us metadata + wheel URLs in one call
 	if usesDefaultPyPI(indexes) {
-		pkg, deps, err := resolveViaJSON(ctx, spec, pythonVersion, arch, a)
+		pkg, deps, err := resolveViaJSON(ctx, spec, pythonVersion, arch, libc, a)
 		if err == nil {
 			return pkg, deps, nil
 		}
@@ -218,7 +218,7 @@ func resolveOneWithDeps(ctx context.Context, spec packageSpec, indexes []string,
 	}
 
 	// Fall back to Simple API (downloads wheel to extract Requires-Dist for deps)
-	pkg, deps, err := resolveViaSimple(ctx, spec, indexes, pythonVersion, arch, a)
+	pkg, deps, err := resolveViaSimple(ctx, spec, indexes, pythonVersion, arch, libc, a)
 	if err != nil {
 		return ecosystem.ResolvedPackage{}, nil, err
 	}
@@ -239,12 +239,12 @@ func usesDefaultPyPI(indexes []string) bool {
 
 // resolveViaJSON resolves a package using the PyPI JSON API.
 // Returns the resolved package and its parsed Requires-Dist as deps.
-func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string, arch types.Architecture, libc string, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	name := normalizeName(spec.Name)
 
 	// If we have an exact version, fetch that directly
 	if spec.Operator == "==" {
-		return resolveJSONVersion(ctx, name, spec.Name, spec.Version, pythonVersion, arch, a)
+		return resolveJSONVersion(ctx, name, spec.Name, spec.Version, pythonVersion, arch, libc, a)
 	}
 
 	// Otherwise, list all versions and pick the best
@@ -277,11 +277,11 @@ func resolveViaJSON(ctx context.Context, spec packageSpec, pythonVersion string,
 		return ecosystem.ResolvedPackage{}, nil, fmt.Errorf("no matching version for %s%s%s", spec.Name, spec.Operator, spec.Version)
 	}
 
-	return resolveJSONVersion(ctx, name, spec.Name, bestVersion, pythonVersion, arch, a)
+	return resolveJSONVersion(ctx, name, spec.Name, bestVersion, pythonVersion, arch, libc, a)
 }
 
 // resolveJSONVersion fetches a specific version from the PyPI JSON API.
-func resolveJSONVersion(ctx context.Context, normalizedName, originalName, version, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveJSONVersion(ctx context.Context, normalizedName, originalName, version, pythonVersion string, arch types.Architecture, libc string, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	versionURL := pypiJSONBase() + normalizedName + "/" + version + "/json"
 	data, err := httpGet(ctx, versionURL, a)
 	if err != nil {
@@ -294,7 +294,7 @@ func resolveJSONVersion(ctx context.Context, normalizedName, originalName, versi
 	}
 
 	// Find the best wheel from the URLs
-	wheelURL, checksum, err := selectBestWheelFromJSON(pkgResp.URLs, pythonVersion, arch)
+	wheelURL, checksum, err := selectBestWheelFromJSON(pkgResp.URLs, pythonVersion, arch, libc)
 	if err != nil {
 		return ecosystem.ResolvedPackage{}, nil, err
 	}
@@ -319,10 +319,9 @@ func resolveJSONVersion(ctx context.Context, normalizedName, originalName, versi
 }
 
 // selectBestWheelFromJSON picks the best compatible wheel from PyPI JSON API URLs.
-func selectBestWheelFromJSON(urls []pypiURL, pythonVersion string, arch types.Architecture) (string, string, error) {
+func selectBestWheelFromJSON(urls []pypiURL, pythonVersion string, arch types.Architecture, libc string) (string, string, error) {
 	var bestURL *pypiURL
 	var bestParts wheelFileParts
-	bestScore := -1
 
 	for i, u := range urls {
 		if u.PackageType != "bdist_wheel" {
@@ -332,16 +331,13 @@ func selectBestWheelFromJSON(urls []pypiURL, pythonVersion string, arch types.Ar
 		if err != nil {
 			continue
 		}
-		if !isCompatibleWheel(parts, pythonVersion, arch) {
+		if !isCompatibleWheel(parts, pythonVersion, arch, libc) {
 			continue
 		}
 
-		score := wheelScore(parts, pythonVersion, arch)
-		if bestURL == nil || score > bestScore {
+		if bestURL == nil || isBetterWheel(bestParts, parts) {
 			bestURL = &urls[i]
 			bestParts = parts
-			_ = bestParts // used for future scoring
-			bestScore = score
 		}
 	}
 
@@ -461,7 +457,7 @@ func parseSimpleIndex(body string, baseURL string) []wheelLink {
 // resolveViaSimple resolves a package using the PEP 503 Simple API.
 // After finding the best wheel, it downloads it to extract Requires-Dist
 // metadata for transitive dependency resolution.
-func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
+func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, pythonVersion string, arch types.Architecture, libc string, a auth.Authenticator) (ecosystem.ResolvedPackage, []packageSpec, error) {
 	name := normalizeName(spec.Name)
 
 	for _, index := range indexes {
@@ -478,7 +474,7 @@ func resolveViaSimple(ctx context.Context, spec packageSpec, indexes []string, p
 			continue
 		}
 
-		best, err := selectBestWheel(links, spec, pythonVersion, arch)
+		best, err := selectBestWheel(links, spec, pythonVersion, arch, libc)
 		if err != nil {
 			continue
 		}
@@ -563,28 +559,25 @@ type selectedWheel struct {
 }
 
 // selectBestWheel selects the best compatible wheel from Simple API links.
-func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, arch types.Architecture) (selectedWheel, error) {
+func selectBestWheel(links []wheelLink, spec packageSpec, pythonVersion string, arch types.Architecture, libc string) (selectedWheel, error) {
 	var bestLink *wheelLink
 	var bestParts wheelFileParts
-	bestScore := -1
 
 	for i, link := range links {
 		parts, err := parseWheelFilename(link.Filename)
 		if err != nil {
 			continue
 		}
-		if !isCompatibleWheel(parts, pythonVersion, arch) {
+		if !isCompatibleWheel(parts, pythonVersion, arch, libc) {
 			continue
 		}
 		if !matchesVersionSpec(parts.Version, spec) {
 			continue
 		}
 
-		score := wheelScore(parts, pythonVersion, arch)
-		if bestLink == nil || compareVersions(parts.Version, bestParts.Version) > 0 || (compareVersions(parts.Version, bestParts.Version) == 0 && score > bestScore) {
+		if bestLink == nil || compareVersions(parts.Version, bestParts.Version) > 0 || (compareVersions(parts.Version, bestParts.Version) == 0 && isBetterWheel(bestParts, parts)) {
 			bestLink = &links[i]
 			bestParts = parts
-			bestScore = score
 		}
 	}
 

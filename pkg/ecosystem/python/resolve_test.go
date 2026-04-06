@@ -325,7 +325,7 @@ func TestResolveWithMockJSON(t *testing.T) {
 	pypiJSONBaseOverride = server.URL + "/pypi/"
 
 	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), "glibc", nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestResolveTransitiveDeps(t *testing.T) {
 	defer func() { pypiJSONBaseOverride = "" }()
 
 	specs := []packageSpec{{Name: "flask", Operator: "==", Version: "3.0.0"}}
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), "glibc", nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestResolveSimpleApiFallback(t *testing.T) {
 
 	specs := []packageSpec{{Name: "mypackage", Operator: "==", Version: "1.0.0"}}
 	// Use a non-pypi index so it doesn't try the JSON API
-	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), nil)
+	resolved, err := resolvePackages(context.Background(), specs, []string{server.URL + "/simple/"}, "3.12", types.ParseArchitecture("amd64"), "glibc", nil)
 	if err != nil {
 		t.Fatalf("resolvePackages() error: %v", err)
 	}

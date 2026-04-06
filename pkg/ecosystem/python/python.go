@@ -55,7 +55,7 @@ type installer struct{}
 
 func (i *installer) Name() string { return "python" }
 
-func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
+func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, arch types.Architecture, libc string, a auth.Authenticator) ([]ecosystem.ResolvedPackage, error) {
 	if len(config.Packages) == 0 {
 		return nil, nil
 	}
@@ -75,7 +75,7 @@ func (i *installer) Resolve(ctx context.Context, config types.EcosystemConfig, a
 		return nil, fmt.Errorf("python_version is required in ecosystem python config")
 	}
 
-	return resolvePackages(ctx, specs, indexes, pythonVersion, arch, a)
+	return resolvePackages(ctx, specs, indexes, pythonVersion, arch, libc, a)
 }
 
 func (i *installer) Install(ctx context.Context, fsys apkfs.FullFS, packages []ecosystem.ResolvedPackage, config types.EcosystemConfig, a auth.Authenticator) (map[string]string, error) {

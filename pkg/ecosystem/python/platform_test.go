@@ -20,51 +20,60 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
-func TestPlatformTags(t *testing.T) {
+func TestIsLinuxPlatformTag(t *testing.T) {
 	tests := []struct {
-		arch    string
-		wantLen int
-		wantAny string // At least one tag should contain this
+		tag, machine string
+		libc  string
+		want         bool
 	}{
-		{"amd64", 5, "x86_64"},
-		{"arm64", 3, "aarch64"},
-		{"arm/v7", 3, "armv7l"},
-		{"386", 5, "i686"},
-		{"ppc64le", 3, "ppc64le"},
-		{"s390x", 3, "s390x"},
+		// musl accepts musllinux, rejects manylinux
+		{"musllinux_1_2_x86_64", "x86_64", "musl", true},
+		{"manylinux_2_17_x86_64", "x86_64", "musl", false},
+		// glibc accepts manylinux, rejects musllinux
+		{"manylinux_2_17_x86_64", "x86_64", "glibc", true},
+		{"manylinux_2_99_x86_64", "x86_64", "glibc", true}, // no version ceiling
+		{"manylinux2014_x86_64", "x86_64", "glibc", true},  // legacy alias
+		{"manylinux1_i686", "i686", "glibc", true},          // legacy alias
+		{"musllinux_1_2_x86_64", "x86_64", "glibc", false},
+		// linux_ fallback works for both
+		{"linux_x86_64", "x86_64", "musl", true},
+		{"linux_x86_64", "x86_64", "glibc", true},
+		// wrong machine or non-linux
+		{"musllinux_1_2_aarch64", "x86_64", "musl", false},
+		{"macosx_10_9_x86_64", "x86_64", "glibc", false},
+		{"any", "x86_64", "glibc", false},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.arch, func(t *testing.T) {
-			tags := platformTags(types.ParseArchitecture(tt.arch))
-			if len(tags) != tt.wantLen {
-				t.Errorf("platformTags(%s) returned %d tags, want %d", tt.arch, len(tags), tt.wantLen)
-			}
-			found := false
-			for _, tag := range tags {
-				if contains(tag, tt.wantAny) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("platformTags(%s) = %v, none contain %q", tt.arch, tags, tt.wantAny)
+		t.Run(tt.tag, func(t *testing.T) {
+			if got := isLinuxPlatformTag(tt.tag, tt.machine, tt.libc); got != tt.want {
+				t.Errorf("isLinuxPlatformTag(%q, %q, %v) = %v, want %v", tt.tag, tt.machine, tt.libc, got, tt.want)
 			}
 		})
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
+func TestIsBetterWheel(t *testing.T) {
+	pure := wheelFileParts{PythonTag: "py3", ABITag: "none", PlatformTag: "any"}
+	binary := wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_x86_64"}
+
+	if !isBetterWheel(pure, binary) {
+		t.Error("binary wheel should be better than pure python")
+	}
+	if isBetterWheel(binary, pure) {
+		t.Error("pure python should not be better than binary")
+	}
+	if isBetterWheel(binary, binary) {
+		t.Error("identical wheels should not be better")
+	}
 }
 
-func containsSubstr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+func TestArchToMachine(t *testing.T) {
+	// All standard architectures should have a mapping.
+	for _, arch := range []string{"amd64", "arm64", "arm/v7", "arm/v6", "386", "ppc64le", "s390x", "riscv64", "loong64"} {
+		if _, ok := archToMachine[types.ParseArchitecture(arch)]; !ok {
+			t.Errorf("archToMachine missing %q", arch)
 		}
 	}
-	return false
 }
 
 func TestParseWheelFilename(t *testing.T) {
@@ -140,48 +149,59 @@ func TestIsCompatibleWheel(t *testing.T) {
 		wheel wheelFileParts
 		pyVer string
 		arch  string
+		libc  string
 		want  bool
 	}{
 		{
-			name:  "pure python wheel is always compatible",
+			name:  "pure python wheel on glibc",
 			wheel: wheelFileParts{PythonTag: "py3", ABITag: "none", PlatformTag: "any"},
-			pyVer: "3.12",
-			arch:  "amd64",
-			want:  true,
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: true,
 		},
 		{
-			name:  "cpython binary for matching arch",
+			name:  "pure python wheel on musl",
+			wheel: wheelFileParts{PythonTag: "py3", ABITag: "none", PlatformTag: "any"},
+			pyVer: "3.12", arch: "amd64", libc: "musl", want: true,
+		},
+		{
+			name:  "manylinux on glibc",
 			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_x86_64"},
-			pyVer: "3.12",
-			arch:  "amd64",
-			want:  true,
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: true,
 		},
 		{
-			name:  "cpython binary for wrong arch",
+			name:  "manylinux on musl is rejected",
+			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_x86_64"},
+			pyVer: "3.12", arch: "amd64", libc: "musl", want: false,
+		},
+		{
+			name:  "musllinux on musl",
+			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "musllinux_1_2_x86_64"},
+			pyVer: "3.12", arch: "amd64", libc: "musl", want: true,
+		},
+		{
+			name:  "musllinux on glibc is rejected",
+			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "musllinux_1_2_x86_64"},
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: false,
+		},
+		{
+			name:  "wrong arch",
 			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_aarch64"},
-			pyVer: "3.12",
-			arch:  "amd64",
-			want:  false,
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: false,
 		},
 		{
 			name:  "wrong python version",
 			wheel: wheelFileParts{PythonTag: "cp311", ABITag: "cp311", PlatformTag: "any"},
-			pyVer: "3.12",
-			arch:  "amd64",
-			want:  false,
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: false,
 		},
 		{
-			name:  "abi3 is compatible",
+			name:  "abi3 on glibc",
 			wheel: wheelFileParts{PythonTag: "cp312", ABITag: "abi3", PlatformTag: "manylinux_2_17_x86_64"},
-			pyVer: "3.12",
-			arch:  "amd64",
-			want:  true,
+			pyVer: "3.12", arch: "amd64", libc: "glibc", want: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isCompatibleWheel(tt.wheel, tt.pyVer, types.ParseArchitecture(tt.arch))
+			got := isCompatibleWheel(tt.wheel, tt.pyVer, types.ParseArchitecture(tt.arch), tt.libc)
 			if got != tt.want {
 				t.Errorf("isCompatibleWheel() = %v, want %v", got, tt.want)
 			}
@@ -189,14 +209,18 @@ func TestIsCompatibleWheel(t *testing.T) {
 	}
 }
 
-func TestWheelScore(t *testing.T) {
-	pureWheel := wheelFileParts{PythonTag: "py3", ABITag: "none", PlatformTag: "any"}
-	binaryWheel := wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_x86_64"}
+func TestWheelSelection(t *testing.T) {
+	// When both pure and binary wheels are compatible, binary wins.
+	pure := wheelFileParts{PythonTag: "py3", ABITag: "none", PlatformTag: "any"}
+	binary := wheelFileParts{PythonTag: "cp312", ABITag: "cp312", PlatformTag: "manylinux_2_17_x86_64"}
 
-	pureScore := wheelScore(pureWheel, "3.12", types.ParseArchitecture("amd64"))
-	binaryScore := wheelScore(binaryWheel, "3.12", types.ParseArchitecture("amd64"))
-
-	if binaryScore <= pureScore {
-		t.Errorf("binary wheel score (%d) should be higher than pure wheel score (%d)", binaryScore, pureScore)
+	if !isCompatibleWheel(pure, "3.12", types.ParseArchitecture("amd64"), "glibc") {
+		t.Fatal("pure wheel should be compatible")
+	}
+	if !isCompatibleWheel(binary, "3.12", types.ParseArchitecture("amd64"), "glibc") {
+		t.Fatal("binary wheel should be compatible on glibc")
+	}
+	if !isBetterWheel(pure, binary) {
+		t.Error("binary should be preferred over pure")
 	}
 }

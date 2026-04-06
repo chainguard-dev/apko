@@ -15,6 +15,7 @@
 package python
 
 import (
+	"strings"
 	"testing"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -38,10 +39,10 @@ func TestCreateVenv(t *testing.T) {
 		t.Fatalf("reading pyvenv.cfg: %v", err)
 	}
 	cfg := string(data)
-	if !contains(cfg, "home = /usr/bin") {
+	if !strings.Contains(cfg, "home = /usr/bin") {
 		t.Errorf("pyvenv.cfg missing home, got: %q", cfg)
 	}
-	if !contains(cfg, "version = 3.12") {
+	if !strings.Contains(cfg, "version = 3.12") {
 		t.Errorf("pyvenv.cfg missing version, got: %q", cfg)
 	}
 
