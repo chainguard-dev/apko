@@ -27,6 +27,7 @@ jobs:
             apk.cgr.dev:443
             dl-cdn.alpinelinux.org:443
             dl.google.com:443
+            files.example.com:443
             github.com:443
             go.dev:443
             objects.githubusercontent.com:443
