@@ -1,3 +1,6 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 name: Action Lint
 on:
   pull_request:
