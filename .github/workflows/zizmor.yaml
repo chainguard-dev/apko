@@ -1,0 +1,44 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Zizmor
+
+on:
+  pull_request:
+    branches: ['main']
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  push:
+    branches: ['main']
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: Zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # Required by codeql-action/upload-sarif to get workflow run info
+      contents: read # Clone the repository
+      security-events: write # Upload SARIF results to Code Scanning
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            ghcr.io
+
+      - name: Check out code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@71321a20a9ded102f6e9ce5718a2fcec2c4f70d8 # v0.5.2
