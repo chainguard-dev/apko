@@ -1,0 +1,9 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+rules:
+  # adjust the default cooldown for non-security dependabot updates
+  # to 3 days, down from 7.
+  dependabot-cooldown:
+    config:
+      days: 3
