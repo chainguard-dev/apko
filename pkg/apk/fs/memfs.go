@@ -54,6 +54,10 @@ func NewMemFS() FullFS {
 	}
 }
 
+func (m *memFS) String() string {
+	return "memfs"
+}
+
 // getNode returns the node for the given path. If the path is not found, it
 // returns an error.
 func (m *memFS) getNode(path string) (*node, error) {
