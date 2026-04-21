@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -455,100 +456,308 @@ func TestScriptsTarPattern(t *testing.T) {
 	require.Equal(t, combinedData, finalData, "ReadFile should return combined data, not zeros")
 }
 
-func TestSanitizePath(t *testing.T) {
+// TestSymlinkEscape_WriteFile_AbsoluteTarget verifies that a symlink planted
+// inside the dirFS whose target is an absolute path outside the base cannot be
+// used to land a write outside the base.
+func TestSymlinkEscape_WriteFile_AbsoluteTarget(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(outside, "evil"))
+
+	err := fsys.WriteFile("evil/pwned", []byte("bad"), 0o644)
+	require.Error(t, err, "write through escape symlink must fail")
+
+	_, statErr := os.Stat(filepath.Join(outside, "pwned"))
+	require.True(t, os.IsNotExist(statErr), "outside file must not exist")
+}
+
+// TestSymlinkEscape_WriteFile_RelativeTarget covers the "../outside" target
+// variant separately: the lexical path inside dirFS is innocuous but the
+// symlink resolves to a location outside the root.
+func TestSymlinkEscape_WriteFile_RelativeTarget(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink("../outside", "evil"))
+
+	err := fsys.WriteFile("evil/pwned", []byte("bad"), 0o644)
+	require.Error(t, err, "write through relative-escape symlink must fail")
+
+	_, statErr := os.Stat(filepath.Join(outside, "pwned"))
+	require.True(t, os.IsNotExist(statErr), "outside file must not exist")
+}
+
+// TestSymlinkEscape_OpenFileCreate mirrors the WriteFile case for the
+// OpenFile+O_CREATE code path, which takes a different branch in dirFS.
+func TestSymlinkEscape_OpenFileCreate(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(outside, "evil"))
+
+	fh, err := fsys.OpenFile("evil/pwned", os.O_CREATE|os.O_WRONLY, 0o644)
+	if err == nil {
+		_ = fh.Close()
+	}
+	require.Error(t, err, "OpenFile+O_CREATE through escape symlink must fail")
+
+	_, statErr := os.Stat(filepath.Join(outside, "pwned"))
+	require.True(t, os.IsNotExist(statErr), "outside file must not exist")
+}
+
+// TestSymlinkEscape_MkdirAll ensures MkdirAll cannot merge into an
+// attacker-planted symlinked directory that points outside the root.
+func TestSymlinkEscape_MkdirAll(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(outside, "evil"))
+
+	err := fsys.MkdirAll("evil/sub", 0o755)
+	require.Error(t, err, "MkdirAll through escape symlink must fail")
+
+	_, statErr := os.Stat(filepath.Join(outside, "sub"))
+	require.True(t, os.IsNotExist(statErr), "outside dir must not exist")
+}
+
+// TestSymlinkEscape_Link rejects hardlink newnames whose path resolution goes
+// through an attacker-planted symlink pointing out of the root.
+func TestSymlinkEscape_Link(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.WriteFile("legit", []byte("content"), 0o644))
+	require.NoError(t, fsys.Symlink(outside, "evil"))
+
+	err := fsys.Link("legit", "evil/linked")
+	require.Error(t, err, "Link through escape symlink must fail")
+
+	_, statErr := os.Lstat(filepath.Join(outside, "linked"))
+	require.True(t, os.IsNotExist(statErr), "outside hardlink must not exist")
+}
+
+// TestSymlinkEscape_ReadFile ensures a symlink planted inside dirFS cannot be
+// used to read a file outside the root (read-side exfiltration).
+func TestSymlinkEscape_ReadFile(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	secret := filepath.Join(outside, "secret")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(secret, []byte("top-secret"), 0o600))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(secret, "evil"))
+
+	_, err := fsys.ReadFile("evil")
+	require.Error(t, err, "ReadFile through escape symlink must fail")
+}
+
+// TestSymlinkEscape_Stat ensures Stat refuses to resolve an attacker-planted
+// symlink that points outside the root.
+func TestSymlinkEscape_Stat(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	secret := filepath.Join(outside, "secret")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(secret, []byte("s"), 0o600))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(secret, "evil"))
+
+	_, err := fsys.Stat("evil")
+	require.Error(t, err, "Stat through escape symlink must fail")
+}
+
+// TestSymlinkEscape_Chmod verifies Chmod cannot change permissions on files
+// outside the root via an attacker-planted symlink. The escape returns an
+// error (not a filesystem-compat errno) so it surfaces to the caller.
+func TestSymlinkEscape_Chmod(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	target := filepath.Join(outside, "target")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(target, []byte("x"), 0o600))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(target, "evil"))
+
+	require.Error(t, fsys.Chmod("evil", 0o777), "Chmod through escape symlink must fail")
+
+	fi, err := os.Stat(target)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm(), "outside file perms must be unchanged")
+}
+
+// TestSymlinkEscape_Chown verifies Chown cannot change ownership on files
+// outside the root via an attacker-planted symlink. Mirrors the Chmod case:
+// path-escape errors surface, compat errnos (e.g. EPERM as non-root) don't.
+func TestSymlinkEscape_Chown(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	target := filepath.Join(outside, "target")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(target, []byte("x"), 0o600))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(target, "evil"))
+
+	require.Error(t, fsys.Chown("evil", os.Getuid(), os.Getgid()), "Chown through escape symlink must fail")
+}
+
+// TestSymlinkEscape_PreExistingOnDisk plants an escape symlink on disk before
+// DirFS is constructed. The constructor walker must not create a usable
+// escape; writes through the link must still be refused.
+func TestSymlinkEscape_PreExistingOnDisk(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+	require.NoError(t, os.Symlink(outside, filepath.Join(base, "evil")))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	err := fsys.WriteFile("evil/pwned", []byte("bad"), 0o644)
+	require.Error(t, err, "write through pre-existing escape symlink must fail")
+
+	_, statErr := os.Stat(filepath.Join(outside, "pwned"))
+	require.True(t, os.IsNotExist(statErr), "outside file must not exist")
+}
+
+// TestSymlinkEscape_Mknod_ParentPath exercises the parent-FD leg of
+// mknodOnDisk: a symlink component in the path to the node must be refused at
+// root.Open time, before mknodat is ever issued.
+func TestSymlinkEscape_Mknod_ParentPath(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(outside, "evil"))
+
+	err := fsys.Mknod("evil/foo", syscall.S_IFCHR|0o644, 0)
+	require.Error(t, err, "Mknod through escape symlink parent must fail")
+
+	_, statErr := os.Lstat(filepath.Join(outside, "foo"))
+	require.True(t, os.IsNotExist(statErr), "outside node must not exist")
+}
+
+// TestSymlinkEscape_Mknod_Basename exercises the placeholder fallback: when
+// mknodat refuses (EEXIST on an existing symlink, or EPERM without CAP_MKNOD),
+// mknodOnDisk falls back to root.OpenFile, which must refuse to follow a
+// basename symlink that escapes the root.
+func TestSymlinkEscape_Mknod_Basename(t *testing.T) {
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outside := filepath.Join(sandbox, "outside")
+	target := filepath.Join(outside, "pwned")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.MkdirAll(base, 0o755))
+
+	fsys := DirFS(t.Context(), base)
+	require.NotNil(t, fsys)
+
+	require.NoError(t, fsys.Symlink(target, "evil"))
+
+	err := fsys.Mknod("evil", syscall.S_IFCHR|0o644, 0)
+	require.Error(t, err, "Mknod on escape-symlink basename must fail")
+
+	_, statErr := os.Lstat(target)
+	require.True(t, os.IsNotExist(statErr), "outside node must not be created via placeholder")
+}
+
+// TestDirFSClose ensures the type-assertable Close() releases the root FD.
+func TestDirFSClose(t *testing.T) {
+	dir := t.TempDir()
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys)
+
+	closer, ok := fsys.(interface{ Close() error })
+	require.True(t, ok, "dirFS should expose Close()")
+	require.NoError(t, closer.Close())
+	// Idempotent.
+	require.NoError(t, closer.Close())
+}
+
+func TestRelPath(t *testing.T) {
+	// relPath is a normalizer; it does not police escapes — *os.Root is the
+	// authority on that. The cases that *used* to error in relPath now pass
+	// through normalized, and the rejection happens at the root.* call site.
 	for _, tt := range []struct {
-		name    string
-		base    string
-		path    string
-		want    string
-		wantErr bool
+		name string
+		path string
+		want string
 	}{
-		{
-			name:    "empty base",
-			base:    "",
-			wantErr: true,
-		},
-		{
-			name: "empty path returns base",
-			base: "/tmp/1",
-			want: "/tmp/1",
-		},
-		{
-			name: "root path returns base",
-			base: "/tmp/1",
-			path: "/",
-			want: "/tmp/1",
-		},
-		{
-			name: "dot path returns base (plus dot)",
-			base: "/tmp/1",
-			path: ".",
-			want: "/tmp/1/.",
-		},
-		{
-			name: "base has valid traversal",
-			base: "../",
-			path: ".",
-			want: "../.",
-		},
-		{
-			name: "base has valid traversal (no trailing slash)",
-			base: "..",
-			path: ".",
-			want: "../.",
-		},
-		{
-			name:    "invalid path with traversal",
-			base:    "/tmp/1",
-			path:    "../",
-			wantErr: true,
-		},
-		{
-			name: "path with traversal even within base is valid",
-			base: "/tmp/1",
-			path: "a/b/c/../../b",
-			want: "/tmp/1/a/b/c/../../b",
-		},
-		{
-			name: "path with trailing dotdot stays within base",
-			base: "/tmp/1",
-			path: "a/b/c/..",
-			want: "/tmp/1/a/b/c/..",
-		},
-		{
-			name: "path starting with dotdot but resolving within base",
-			base: "/tmp/1",
-			path: "../1/a",
-			want: "/tmp/1/../1/a",
-		},
-		{
-			name: "path with multiple dotdot stays within base",
-			base: "/tmp/1",
-			path: "a/b/../x/../z",
-			want: "/tmp/1/a/b/../x/../z",
-		},
-		{
-			name:    "relative base with path that escapes",
-			base:    "../",
-			path:    "../..",
-			wantErr: true,
-		},
-		{
-			name:    "path with null byte",
-			base:    "/tmp/1",
-			path:    "test\x00file",
-			wantErr: true,
-		},
+		{name: "empty path", path: "", want: "."},
+		{name: "root path", path: "/", want: "."},
+		{name: "dot path", path: ".", want: "."},
+		{name: "simple path", path: "a/b", want: "a/b"},
+		{name: "absolute path becomes relative", path: "/a/b", want: "a/b"},
+		{name: "dotdot middle resolves in place", path: "a/b/c/../../b", want: "a/b"},
+		{name: "trailing dotdot resolves in place", path: "a/b/c/..", want: "a/b"},
+		{name: "multiple dotdot staying within root", path: "a/b/../x/../z", want: "a/z"},
+
+		// These used to error; now they normalize and os.Root rejects at use time.
+		{name: "leading dotdot normalized", path: "../", want: ".."},
+		{name: "nested escape normalized", path: "a/../..", want: ".."},
+		{name: "leading dotdot with path kept", path: "../1/a", want: "../1/a"},
+		{name: "null byte preserved for os.Root to reject", path: "test\x00file", want: "test\x00file"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &dirFS{base: tt.base}
-			got, err := f.sanitizePath(tt.path)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
+			f := &dirFS{}
+			require.Equal(t, tt.want, f.relPath(tt.path))
 		})
 	}
 }
