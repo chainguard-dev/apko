@@ -469,6 +469,7 @@ func (f *dirFS) ReadFile(name string) ([]byte, error) {
 	}
 	return f.overrides.ReadFile(name)
 }
+
 // WriteFile writes data to the named file. Non-permission bits in mode
 // (setuid/setgid/sticky) are silently stripped for the disk write — *os.Root
 // refuses them. Callers that need those bits on disk must Chmod after.

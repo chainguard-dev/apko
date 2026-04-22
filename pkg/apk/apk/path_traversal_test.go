@@ -242,10 +242,11 @@ func TestSymlinkEscape_HardlinkThroughSymlink(t *testing.T) {
 }
 
 // TestInstallSetuidBinary exercises the end-to-end install of a setuid regular
-// file — the mount binary shape that triggered "unsupported file mode" on
-// melange qemu runners. dirFS.OpenFile silently strips non-perm mode bits;
-// installRegularFile must re-apply them with Chmod after Close so the setuid
-// bit survives the kernel's file_remove_privs() during the write.
+// file — the mount-binary shape that triggered "unsupported file mode" on
+// melange qemu runners. *os.Root rejects non-permission bits in OpenFile, so
+// dirFS.OpenFile silently strips them; the full mode survives via the memFS
+// overlay and is what downstream layer/tar/cpio emitters consume through
+// dirFS.Stat().Mode() and DirEntry.Info().Mode().
 func TestInstallSetuidBinary(t *testing.T) {
 	ctx := t.Context()
 
@@ -272,24 +273,24 @@ func TestInstallSetuidBinary(t *testing.T) {
 		t.Fatalf("installAPKFiles failed: %v", err)
 	}
 
-	installed := filepath.Join(base, "usr/bin/mount")
-	fi, err := os.Stat(installed)
+	// fsys.Stat is the authoritative mode for downstream emission.
+	fi, err := fsys.Stat("usr/bin/mount")
 	if err != nil {
-		t.Fatalf("installed file missing: %v", err)
+		t.Fatalf("fsys.Stat: %v", err)
 	}
 	if fi.Mode()&os.ModeSetuid == 0 {
-		t.Fatalf("expected setuid bit on %s, got mode %s", installed, fi.Mode())
+		t.Fatalf("expected setuid bit via fsys.Stat, got %s", fi.Mode())
 	}
 	if fi.Mode().Perm() != 0o755 {
-		t.Fatalf("expected perm 0o755 on %s, got %o", installed, fi.Mode().Perm())
+		t.Fatalf("expected perm 0o755, got %o", fi.Mode().Perm())
 	}
 
-	got, err := os.ReadFile(installed)
+	got, err := os.ReadFile(filepath.Join(base, "usr/bin/mount"))
 	if err != nil {
 		t.Fatalf("reading installed file: %v", err)
 	}
 	if string(got) != string(content) {
-		t.Fatalf("content mismatch: got %q, want %q", got, content)
+		t.Fatalf("content mismatch")
 	}
 }
 
