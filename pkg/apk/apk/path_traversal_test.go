@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -238,6 +239,90 @@ func TestSymlinkEscape_HardlinkThroughSymlink(t *testing.T) {
 	if _, statErr := os.Lstat(outsideLinked); statErr == nil {
 		t.Fatalf("expected %s to not exist after fix", outsideLinked)
 	}
+}
+
+// TestInstallSetuidBinary exercises the end-to-end install of a setuid regular
+// file — the mount binary shape that triggered "unsupported file mode" on
+// melange qemu runners. dirFS.OpenFile silently strips non-perm mode bits;
+// installRegularFile must re-apply them with Chmod after Close so the setuid
+// bit survives the kernel's file_remove_privs() during the write.
+func TestInstallSetuidBinary(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	content := []byte("setuid binary payload")
+	// 0o4755 = S_ISUID | rwxr-xr-x — the shape in the mount APK's tar header.
+	r, err := makeTestTarWithRegFile("usr/bin/mount", content, 0o4755)
+	if err != nil {
+		t.Fatalf("makeTestTarWithRegFile: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err != nil {
+		t.Fatalf("installAPKFiles failed: %v", err)
+	}
+
+	installed := filepath.Join(base, "usr/bin/mount")
+	fi, err := os.Stat(installed)
+	if err != nil {
+		t.Fatalf("installed file missing: %v", err)
+	}
+	if fi.Mode()&os.ModeSetuid == 0 {
+		t.Fatalf("expected setuid bit on %s, got mode %s", installed, fi.Mode())
+	}
+	if fi.Mode().Perm() != 0o755 {
+		t.Fatalf("expected perm 0o755 on %s, got %o", installed, fi.Mode().Perm())
+	}
+
+	got, err := os.ReadFile(installed)
+	if err != nil {
+		t.Fatalf("reading installed file: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("content mismatch: got %q, want %q", got, content)
+	}
+}
+
+func makeTestTarWithRegFile(name string, content []byte, mode int64) (*bytes.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	// Emit a TypeDir entry for each parent so installAPKFiles can MkdirAll
+	// before the regular-file entry lands.
+	parts := strings.Split(filepath.ToSlash(name), "/")
+	for i := 1; i < len(parts); i++ {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     strings.Join(parts[:i], "/") + "/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Typeflag: tar.TypeReg,
+		Mode:     mode,
+		Size:     int64(len(content)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(content); err != nil {
+		return nil, err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(buf.Bytes()), nil
 }
 
 func makeSymlinkThenFileTar(symlinkName, symlinkTarget, fileName string, content []byte) (*bytes.Reader, error) {

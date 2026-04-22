@@ -718,6 +718,71 @@ func TestSymlinkEscape_Mknod_Basename(t *testing.T) {
 	require.True(t, os.IsNotExist(statErr), "outside node must not be created via placeholder")
 }
 
+// TestSpecialModeBits pins dirFS's contract around setuid/setgid/sticky:
+// OpenFile and WriteFile silently strip them (*os.Root refuses them in these
+// calls). Callers that need those bits on disk use Chmod after the write —
+// dirFS.Chmod forwards to root.Chmod which does accept them.
+func TestSpecialModeBits(t *testing.T) {
+	specials := fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
+	for _, tt := range []struct {
+		name string
+		mode os.FileMode
+	}{
+		{"setuid", fs.ModeSetuid | 0o755},
+		{"setgid", fs.ModeSetgid | 0o755},
+		{"sticky", fs.ModeSticky | 0o755},
+		{"setuid_setgid_sticky", fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky | 0o755},
+	} {
+		t.Run(tt.name+"/OpenFile_strips", func(t *testing.T) {
+			dir := t.TempDir()
+			fsys := DirFS(t.Context(), dir)
+			require.NotNil(t, fsys)
+
+			path := "binary"
+			file, err := fsys.OpenFile(path, os.O_CREATE|os.O_WRONLY, tt.mode)
+			require.NoError(t, err, "OpenFile must not error on non-perm mode bits")
+			_, err = file.Write([]byte("payload"))
+			require.NoError(t, err)
+			require.NoError(t, file.Close())
+
+			fi, err := os.Stat(filepath.Join(dir, path))
+			require.NoError(t, err)
+			require.Equal(t, tt.mode.Perm(), fi.Mode().Perm(),
+				"on-disk perm bits should match .Perm() of input")
+			require.Zero(t, fi.Mode()&specials,
+				"special bits must be stripped by OpenFile")
+		})
+		t.Run(tt.name+"/WriteFile_strips", func(t *testing.T) {
+			dir := t.TempDir()
+			fsys := DirFS(t.Context(), dir)
+			require.NotNil(t, fsys)
+
+			path := "binary"
+			require.NoError(t, fsys.WriteFile(path, []byte("x"), tt.mode))
+
+			fi, err := os.Stat(filepath.Join(dir, path))
+			require.NoError(t, err)
+			require.Equal(t, tt.mode.Perm(), fi.Mode().Perm())
+			require.Zero(t, fi.Mode()&specials,
+				"special bits must be stripped by WriteFile")
+		})
+		t.Run(tt.name+"/Chmod_preserves", func(t *testing.T) {
+			dir := t.TempDir()
+			fsys := DirFS(t.Context(), dir)
+			require.NotNil(t, fsys)
+
+			path := "binary"
+			require.NoError(t, fsys.WriteFile(path, []byte("x"), 0o755))
+			require.NoError(t, fsys.Chmod(path, tt.mode))
+
+			fi, err := os.Stat(filepath.Join(dir, path))
+			require.NoError(t, err)
+			require.Equal(t, tt.mode, fi.Mode(),
+				"Chmod after write should leave full mode (incl. specials) on disk")
+		})
+	}
+}
+
 // TestDirFSClose ensures the type-assertable Close() releases the root FD.
 func TestDirFSClose(t *testing.T) {
 	dir := t.TempDir()

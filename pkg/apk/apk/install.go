@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -55,16 +56,27 @@ func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool)
 			return fmt.Errorf("unable to remove existing file %s: %w", header.Name, err)
 		}
 	}
-	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, header.FileInfo().Mode())
+	mode := header.FileInfo().Mode()
+	// a.fs silently strips setuid/setgid/sticky from OpenFile; we re-apply
+	// them with Chmod after Close so the kernel's file_remove_privs() (Linux,
+	// non-privileged writer) doesn't clear them during the write below.
+	f, err := a.fs.OpenFile(header.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
 	if err != nil {
 		return fmt.Errorf("error creating file %s: %w", header.Name, err)
 	}
-	defer f.Close()
 
 	if _, err := io.CopyN(f, r, header.Size); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("unable to write content for %s: %w", header.Name, err)
 	}
-	// override one of the
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("unable to close %s: %w", header.Name, err)
+	}
+	if mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0 {
+		if err := a.fs.Chmod(header.Name, mode); err != nil {
+			return fmt.Errorf("unable to apply special mode bits to %s: %w", header.Name, err)
+		}
+	}
 	return nil
 }
 
