@@ -311,11 +311,13 @@ func (f *dirFS) open(name string) (*fileImpl, error) {
 	return &fileImpl{file: file, name: baseName}, nil
 }
 
-// Open open a file for reading. Returns fs.File.
-// If the file has the wrong permissions for reading, it tries to
-// change them, and then change them back when closing.
-// This only works if the user reading the file actually has
-// permissions to change the file permissions.
+// OpenFile opens a file, returning a File.
+//
+// Non-permission bits in perm (setuid/setgid/sticky) are silently stripped —
+// *os.Root refuses them in OpenFile, and applying them eagerly would be
+// cleared again by the kernel's file_remove_privs() on the caller's next
+// write (on Linux, for non-privileged processes). Callers that need those
+// bits on disk must Chmod after the final close.
 func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	var (
 		file File
@@ -329,14 +331,14 @@ func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) 
 		// do we create it on disk?
 		if f.createOnDisk(name) {
 			_ = file.Close()
-			file, err = f.root.OpenFile(f.relPath(name), flag, perm)
+			file, err = f.root.OpenFile(f.relPath(name), flag, perm.Perm())
 			if err != nil {
 				return nil, err
 			}
 		}
 	} else {
 		if f.caseSensitiveOnDisk(name) {
-			file, err = f.root.OpenFile(f.relPath(name), flag, perm)
+			file, err = f.root.OpenFile(f.relPath(name), flag, perm.Perm())
 		} else {
 			file, err = f.overrides.OpenFile(name, flag, perm)
 		}
@@ -467,9 +469,13 @@ func (f *dirFS) ReadFile(name string) ([]byte, error) {
 	}
 	return f.overrides.ReadFile(name)
 }
+
+// WriteFile writes data to the named file. Non-permission bits in mode
+// (setuid/setgid/sticky) are silently stripped for the disk write — *os.Root
+// refuses them. Callers that need those bits on disk must Chmod after.
 func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	if f.createOnDisk(name) {
-		if err := f.root.WriteFile(f.relPath(name), b, mode); err != nil {
+		if err := f.root.WriteFile(f.relPath(name), b, mode.Perm()); err != nil {
 			return err
 		}
 	}
