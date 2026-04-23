@@ -187,7 +187,7 @@ func TestAddInstalledPackageAdded(t *testing.T) {
 		"D:testlib",
 		"p:",
 		"c:a2020bf03d408b2ef1585d7dc52c29ce88524a76",
-		"i:[]",
+		"i:",
 		"t:1754874000",
 		"S:13282",
 		"I:123541",
@@ -312,6 +312,26 @@ func TestAddInstalledPackageAdded(t *testing.T) {
 			require.Equal(t, newPkgContent+"\n"+tt.expected+"\n\n", string(installedBytes))
 		})
 	}
+}
+
+func TestAddInstalledPackageFormatsInstallIf(t *testing.T) {
+	a, _, err := testGetTestAPK()
+	require.NoError(t, err, "unable to initialize APK implementation")
+
+	pkg := &Package{
+		Name:      "testpkg",
+		Version:   "1.0.0",
+		Arch:      "x86_64",
+		InstallIf: []string{"eudev", "openrc"},
+		BuildTime: time.Date(2025, 8, 11, 1, 0, 0, 0, time.UTC),
+	}
+
+	installedBytes, err := a.AddInstalledPackage(pkg, nil)
+	require.NoError(t, err, "AddInstalledPackage should not return error")
+
+	installedStr := string(installedBytes)
+	require.Contains(t, installedStr, "i:eudev openrc\n")
+	require.NotContains(t, installedStr, "i:[eudev openrc]")
 }
 
 func TestIsInstalledPackage(t *testing.T) {
@@ -751,7 +771,7 @@ U:https://git.alpinelinux.org/cgit/aports/tree/main/alpine-baselayout
 D:alpine-baselayout-data=3.2.0-r23 /bin/sh so:libc.musl-aarch64.so.1
 p:cmd:mkmntdirs=3.2.0-r23
 c:348653a9ba0701e8e968b3344e72313a9ef334e4
-i:[]
+i:
 t:1662926906
 S:11012
 I:339968
@@ -880,7 +900,7 @@ U:
 D:busybox
 p:
 c:
-i:[]
+i:
 t:0
 S:499
 I:4117
@@ -907,7 +927,7 @@ U:https://git.alpinelinux.org/cgit/aports/tree/main/alpine-baselayout
 D:alpine-baselayout-data=3.2.0-r23 /bin/sh so:libc.musl-aarch64.so.1
 p:cmd:mkmntdirs=3.2.0-r23
 c:348653a9ba0701e8e968b3344e72313a9ef334e4
-i:[]
+i:
 t:1662926906
 S:11012
 I:339968
