@@ -156,6 +156,15 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 			}
 		}
 	}
+	if target.LayerAnnotations == nil && ic.LayerAnnotations != nil {
+		target.LayerAnnotations = maps.Clone(ic.LayerAnnotations)
+	} else {
+		for k, v := range ic.LayerAnnotations {
+			if _, ok := target.LayerAnnotations[k]; !ok {
+				target.LayerAnnotations[k] = v
+			}
+		}
+	}
 
 	target.Volumes = slices.Concat(ic.Volumes, target.Volumes)
 
