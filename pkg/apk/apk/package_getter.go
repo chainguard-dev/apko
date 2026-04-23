@@ -170,12 +170,54 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
 	}
 
+	if err := verifyControlHash(pkg, exp.ControlHash); err != nil {
+		_ = exp.Close()
+		return nil, err
+	}
+
 	// If we don't have a cache, we're done.
 	if d.cache == nil {
 		return exp, nil
 	}
 
 	return d.cachePackage(ctx, pkg, exp, cacheDir)
+}
+
+// sha1File returns the SHA-1 of the file at path.
+func sha1File(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	h := sha1.New() //nolint:gosec // this is what apk tools is using
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
+}
+
+// verifyControlHash compares the SHA-1 of the downloaded package's control
+// section against the Q1-prefixed base64 checksum recorded in the signed
+// APKINDEX (or lock file). Without this check a compromised mirror or
+// poisoned cache could substitute arbitrary package contents even though
+// the index itself is signature-verified.
+func verifyControlHash(pkg InstallablePackage, controlHash []byte) error {
+	chk := pkg.ChecksumString()
+	if !strings.HasPrefix(chk, "Q1") {
+		return fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
+	}
+	expected, err := base64.StdEncoding.DecodeString(chk[2:])
+	if err != nil {
+		return fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
+	}
+	if len(expected) == 0 {
+		return fmt.Errorf("package %q has empty checksum", pkg.PackageName())
+	}
+	if !bytes.Equal(expected, controlHash) {
+		return fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expected, controlHash)
+	}
+	return nil
 }
 
 // fetchPackage fetches a package from the network or local filesystem.
@@ -322,8 +364,21 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	if err != nil {
 		return nil, err
 	}
+
+	// Recompute the hash of the on-disk control file rather than trusting
+	// the content-addressable filename. A missed check here would let a
+	// tampered or corrupted cache entry be served without the verification
+	// that getPackageImpl applies on the fetch path.
+	ctlHash, err := sha1File(ctl)
+	if err != nil {
+		return nil, fmt.Errorf("hashing cached control %q: %w", ctl, err)
+	}
+	if err := verifyControlHash(pkg, ctlHash); err != nil {
+		return nil, fmt.Errorf("cached %q: %w", ctl, err)
+	}
+
 	exp.ControlFile = ctl
-	exp.ControlHash = checksum
+	exp.ControlHash = ctlHash
 	exp.ControlSize = cf.Size()
 
 	control, err := exp.ControlData()

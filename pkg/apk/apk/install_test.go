@@ -416,7 +416,7 @@ func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry) Installable
 	return &testPackage{
 		pkg:      pkg,
 		file:     f.Name(),
-		checksum: base64.StdEncoding.EncodeToString(h.Sum(nil)),
+		checksum: "Q1" + base64.StdEncoding.EncodeToString(h.Sum(nil)),
 	}
 }
 
