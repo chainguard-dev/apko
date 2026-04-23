@@ -131,6 +131,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Certificates == nil {
 		target.Certificates = ic.Certificates
 	}
+	if target.Xpkg == nil {
+		target.Xpkg = ic.Xpkg
+	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
 	}
@@ -158,6 +161,16 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	}
 
 	target.Volumes = slices.Concat(ic.Volumes, target.Volumes)
+
+	if target.LayerAnnotations == nil && ic.LayerAnnotations != nil {
+		target.LayerAnnotations = maps.Clone(ic.LayerAnnotations)
+	} else {
+		for k, v := range ic.LayerAnnotations {
+			if _, ok := target.LayerAnnotations[k]; !ok {
+				target.LayerAnnotations[k] = v
+			}
+		}
+	}
 
 	// Update the contents.
 	return ic.Contents.MergeInto(&target.Contents)
@@ -244,6 +257,7 @@ func (ic *ImageConfiguration) Validate() error {
 			}
 		}
 	}
+
 	return nil
 }
 
