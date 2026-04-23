@@ -1058,7 +1058,11 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		}
 		keyName := key.KeyID + ".rsa.pub"
 
-		b, err := x509.MarshalPKIXPublicKey(key.Key.(*rsa.PublicKey))
+		rsaKey, ok := key.Key.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("unsupported JWKS key type %T for key %q: expected *rsa.PublicKey", key.Key, key.KeyID)
+		}
+		b, err := x509.MarshalPKIXPublicKey(rsaKey)
 		if err != nil {
 			return nil, err
 		} else if len(b) == 0 {
