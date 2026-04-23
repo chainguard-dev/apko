@@ -16,6 +16,11 @@ package apk
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -29,6 +34,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.step.sm/crypto/jose"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -929,4 +935,59 @@ func TestAuth_bad_original(t *testing.T) {
 	_, err = a.FetchPackage(ctx, pkg)
 	require.Error(t, err, "should fail with bad auth")
 	require.True(t, called, "did not make request")
+}
+
+func TestDiscoverKeysNonRSA(t *testing.T) {
+	ctx := context.Background()
+
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	var jwksURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apk-configuration":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"jwks_uri":%q}`, jwksURL)
+		case "/jwks":
+			jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &ecKey.PublicKey, KeyID: "ec-test"}}}
+			require.NoError(t, json.NewEncoder(w).Encode(jwks))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	jwksURL = srv.URL + "/jwks"
+
+	_, err = DiscoverKeys(ctx, srv.Client(), auth.StaticAuth("", "", ""), srv.URL)
+	require.Error(t, err, "expected typed error, not a panic")
+	require.Contains(t, err.Error(), "unsupported JWKS key type")
+}
+
+func TestDiscoverKeysRSA(t *testing.T) {
+	ctx := context.Background()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	var jwksURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apk-configuration":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"jwks_uri":%q}`, jwksURL)
+		case "/jwks":
+			jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &rsaKey.PublicKey, KeyID: "rsa-test"}}}
+			require.NoError(t, json.NewEncoder(w).Encode(jwks))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	jwksURL = srv.URL + "/jwks"
+
+	keys, err := DiscoverKeys(ctx, srv.Client(), auth.StaticAuth("", "", ""), srv.URL)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.Equal(t, "rsa-test.rsa.pub", keys[0].ID)
 }
