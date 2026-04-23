@@ -2,6 +2,7 @@ package apk
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -262,4 +263,90 @@ func TestAuth_bad(t *testing.T) {
 	_, err := getter.GetPackage(ctx, pkg)
 	require.Error(t, err, "unable to expand package")
 	require.True(t, called, "did not make request")
+}
+
+// TestGetPackage_ChecksumMismatch confirms that a package served by a repository
+// that does not match the checksum recorded in the (signed) APKINDEX is rejected
+// rather than silently installed. This guards against compromised mirrors or
+// poisoned caches substituting package contents.
+func TestGetPackage_ChecksumMismatch(t *testing.T) {
+	tampered := testPkg
+	// Flip one byte of the recorded checksum so the downloaded content's
+	// real control-section SHA-1 will not match.
+	tampered.Checksum = append([]byte(nil), testPkg.Checksum...)
+	tampered.Checksum[0] ^= 0xff
+
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&tampered}})
+	pkg := NewRepositoryPackage(&tampered, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	_, err := a.GetPackage(ctx, pkg)
+	require.Error(t, err, "expected checksum mismatch to be detected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+// TestCachedPackage_TamperedControl confirms that a cache entry whose
+// on-disk control file no longer matches its content-addressable filename
+// is rejected rather than served. This protects against cache corruption
+// or tampering after an entry was originally written.
+func TestCachedPackage_TamperedControl(t *testing.T) {
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	// Populate the cache.
+	exp, err := a.GetPackage(ctx, pkg)
+	require.NoError(t, err, "populating cache")
+	ctlPath := exp.ControlFile
+	require.FileExists(t, ctlPath)
+
+	cacheDir := filepath.Dir(ctlPath)
+
+	// Tamper with the cached control file. Overwrite with different bytes
+	// so its SHA-1 no longer matches the content-addressable filename.
+	require.NoError(t, os.WriteFile(ctlPath, []byte("tampered"), 0o644))
+
+	_, err = a.cachedPackage(ctx, pkg, cacheDir)
+	require.Error(t, err, "expected tampered cache entry to be rejected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+func TestVerifyControlHash(t *testing.T) {
+	want := make([]byte, 20)
+	for i := range want {
+		want[i] = byte(i)
+	}
+	pkg := &testPackage{
+		pkg:      &Package{Name: "example"},
+		checksum: "Q1" + base64.StdEncoding.EncodeToString(want),
+	}
+
+	require.NoError(t, verifyControlHash(pkg, want))
+
+	bad := append([]byte(nil), want...)
+	bad[0] ^= 0xff
+	require.Error(t, verifyControlHash(pkg, bad))
+
+	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: ""}, want))
+	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "Q1"}, want))
+	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "Q1!!!"}, want))
+	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "raw-no-prefix"}, want))
 }
