@@ -266,3 +266,35 @@ func WithSizeLimits(limits options.SizeLimits) Option {
 		return nil
 	}
 }
+
+// WithExtraEcosystemPackages adds extra ecosystem packages to the build.
+func WithExtraEcosystemPackages(ecosystem string, packages []string) Option {
+	return func(bc *Context) error {
+		if len(packages) == 0 {
+			return nil
+		}
+		if bc.ic.Contents.Ecosystems == nil {
+			bc.ic.Contents.Ecosystems = make(map[string]types.EcosystemConfig)
+		}
+		eco := bc.ic.Contents.Ecosystems[ecosystem]
+		eco.Packages = append(eco.Packages, packages...)
+		bc.ic.Contents.Ecosystems[ecosystem] = eco
+		return nil
+	}
+}
+
+// WithExtraEcosystemIndexes adds extra ecosystem indexes to the build.
+func WithExtraEcosystemIndexes(ecosystem string, indexes []string) Option {
+	return func(bc *Context) error {
+		if len(indexes) == 0 {
+			return nil
+		}
+		if bc.ic.Contents.Ecosystems == nil {
+			bc.ic.Contents.Ecosystems = make(map[string]types.EcosystemConfig)
+		}
+		eco := bc.ic.Contents.Ecosystems[ecosystem]
+		eco.Indexes = append(eco.Indexes, indexes...)
+		bc.ic.Contents.Ecosystems[ecosystem] = eco
+		return nil
+	}
+}

@@ -31,6 +31,35 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "EcosystemConfig": {
+      "properties": {
+        "indexes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Indexes is a list of package index URLs (e.g., PyPI simple API URLs)."
+        },
+        "packages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Packages is a list of package specifications (e.g., \"flask==3.0.0\")."
+        },
+        "python_version": {
+          "type": "string",
+          "description": "PythonVersion overrides auto-detection of the Python version (e.g., \"3.12\")."
+        },
+        "venv": {
+          "type": "string",
+          "description": "Venv is an optional path for a virtual environment (e.g., \"/app/venv\").\nWhen set, packages are installed into the venv instead of the system site-packages,\nand VIRTUAL_ENV / PATH are set automatically."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EcosystemConfig holds configuration for a non-APK package ecosystem (e.g., python)."
+    },
     "Group": {
       "properties": {
         "groupname": {
@@ -217,6 +246,13 @@
         "baseimage": {
           "$ref": "#/$defs/BaseImageDescriptor",
           "description": "Optional: Base image to build on top of. Warning: Experimental."
+        },
+        "ecosystems": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EcosystemConfig"
+          },
+          "type": "object",
+          "description": "Optional: Non-APK ecosystem packages to install (e.g., pip packages)."
         }
       },
       "additionalProperties": false,

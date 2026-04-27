@@ -35,6 +35,8 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/ecosystem"
+	_ "chainguard.dev/apko/pkg/ecosystem/python"
 	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
@@ -242,6 +244,30 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 				return fmt.Errorf("locking repositories: %w", err)
 			}
 			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
+		}
+	}
+
+	// Resolve ecosystem packages
+	for name, ecoConfig := range ic.Contents.Ecosystems {
+		installer, ok := ecosystem.Get(name)
+		if !ok {
+			return fmt.Errorf("unknown ecosystem: %s", name)
+		}
+		for _, arch := range archs {
+			resolved, err := installer.Resolve(ctx, ecoConfig, arch, "glibc", auth.DefaultAuthenticators)
+			if err != nil {
+				return fmt.Errorf("resolving %s packages for %s: %w", name, arch, err)
+			}
+			for _, pkg := range resolved {
+				lock.Contents.EcosystemPackages = append(lock.Contents.EcosystemPackages, pkglock.LockEcosystemPkg{
+					Ecosystem:    pkg.Ecosystem,
+					Name:         pkg.Name,
+					Version:      pkg.Version,
+					URL:          pkg.URL,
+					Checksum:     pkg.Checksum,
+					Architecture: arch.ToAPK(),
+				})
+			}
 		}
 	}
 
