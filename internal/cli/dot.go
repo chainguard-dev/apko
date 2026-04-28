@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"os"
@@ -515,7 +516,7 @@ func DotCmd(ctx context.Context, configFile string, archs []types.Architecture, 
 			cmd.Stdout = &svgBuf
 
 			if err := cmd.Run(); err != nil {
-				fmt.Fprintf(w, "error rendering %v: %v", nodes, err)
+				fmt.Fprintf(w, "error rendering %s: %s", html.EscapeString(strings.Join(nodes, ",")), html.EscapeString(err.Error()))
 				return
 			}
 

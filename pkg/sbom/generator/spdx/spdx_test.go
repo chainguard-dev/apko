@@ -297,7 +297,7 @@ func TestReproducible(t *testing.T) {
 	fsys := apkfs.NewMemFS()
 	opts := testOpts(fsys)
 	sx := New()
-	d := [][]byte{}
+	d := make([][]byte, 0, 2)
 	for i := range 2 {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
 		require.NoError(t, sx.Generate(t.Context(), opts, path))

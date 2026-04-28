@@ -1098,7 +1098,7 @@ func TestParseInstalledFiles(t *testing.T) {
 				t.Fatalf("package %s not found installed in %s\n", c.pkgName, c.installedFile)
 			}
 
-			got := []string{}
+			got := make([]string, 0, len(installedPkg.Files))
 			for _, i := range installedPkg.Files {
 				got = append(got, i.Name)
 			}

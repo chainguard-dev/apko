@@ -491,13 +491,8 @@ func LoadCacheFile(r io.ReadSeeker) (*LDSOCacheFile, error) {
 // extractShlibName extracts a shared library from the string table.
 func extractShlibName(strtable []byte, startIdx uint32) string {
 	subset := strtable[startIdx:]
-	terminatorPos := bytes.IndexByte(subset, 0x0)
-
-	if terminatorPos == -1 {
-		return string(subset)
-	}
-
-	return string(subset[:terminatorPos])
+	name, _, _ := bytes.Cut(subset, []byte{0x0})
+	return string(name)
 }
 
 func (cf *LDSOCacheFile) Write(w io.Writer) error {
@@ -508,7 +503,7 @@ func (cf *LDSOCacheFile) Write(w io.Writer) error {
 	fileEntryTableSize := int(unsafe.Sizeof(LDSORawCacheHeader{}) + (uintptr(len(cf.Entries)) * unsafe.Sizeof(LDSORawCacheEntry{})))
 
 	// Build the string table.
-	lrcEntries := []LDSORawCacheEntry{}
+	lrcEntries := make([]LDSORawCacheEntry, 0, len(cf.Entries))
 	stringTable := []byte{}
 	for _, lib := range cf.Entries {
 		cursor := uint32(fileEntryTableSize) + uint32(len(stringTable))

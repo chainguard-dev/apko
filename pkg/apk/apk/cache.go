@@ -188,7 +188,7 @@ func (t *cacheTransport) RoundTrip(request *http.Request) (*http.Response, error
 			defer span.End()
 
 			// We don't cache the response for these because they get cached later in cachePackage.
-			return t.wrapped.Do(request)
+			return t.wrapped.Do(request) //#nosec G704 -- transport wrapper executes caller-provided request
 		}
 
 		return &http.Response{
@@ -213,7 +213,7 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 	v, err, _ := t.cache.headFlight.Do(cacheFile, func() (any, error) {
 		req := request.Clone(request.Context())
 		req.Method = http.MethodHead
-		resp, err := t.wrapped.Do(req)
+		resp, err := t.wrapped.Do(req) //#nosec G704 -- transport wrapper executes caller-provided request
 		if err != nil {
 			return nil, err
 		}
@@ -278,7 +278,7 @@ func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Reques
 
 		etag, ok := etagFromResponse(resp)
 		if !ok {
-			return t.wrapped.Do(request)
+			return t.wrapped.Do(request) //#nosec G704 -- transport wrapper executes caller-provided request
 		}
 
 		initialEtag = etag
@@ -295,7 +295,7 @@ func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Reques
 		return nil, err
 	}
 
-	f, err := os.Open(etagFile)
+	f, err := os.Open(etagFile) //#nosec G304 G703 -- etagFile is sanitized by cacheFileFromEtag to stay within cacheDir
 	if err != nil {
 		return nil, fmt.Errorf("open(%q): %w", etagFile, err)
 	}
@@ -421,7 +421,7 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 	if t.wrapped == nil {
 		return "", fmt.Errorf("wrapped client is nil")
 	}
-	resp, err := t.wrapped.Do(request)
+	resp, err := t.wrapped.Do(request) //#nosec G704 -- transport wrapper executes caller-provided request
 	if err != nil {
 		return "", err
 	} else if resp.StatusCode != 200 {

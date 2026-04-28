@@ -426,8 +426,8 @@ func TestScriptsTarPattern(t *testing.T) {
 	require.NoError(t, err, "OpenFile for temp should succeed")
 
 	// Step 5: Write existing + new content to temp
-	combinedData := make([]byte, len(existingData))
-	copy(existingData, combinedData)
+	combinedData := make([]byte, 0, len(existingData)+14)
+	combinedData = append(combinedData, existingData...)
 	combinedData = append(combinedData, []byte(" + new content")...)
 
 	_, err = tempFile.Write(combinedData)
