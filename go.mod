@@ -1,6 +1,6 @@
 module chainguard.dev/apko
 
-go 1.25.7
+go 1.26.0
 
 require (
 	chainguard.dev/sdk v0.1.52
@@ -33,7 +33,7 @@ require (
 	google.golang.org/api v0.276.0
 	gopkg.in/ini.v1 v1.67.1
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.35.4
+	k8s.io/apimachinery v0.36.0
 	sigs.k8s.io/release-utils v0.12.4
 )
 
@@ -132,7 +132,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
