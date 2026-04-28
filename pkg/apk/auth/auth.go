@@ -101,8 +101,8 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 	}
 
 	sometimes.Do(func() {
-		cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host)
-		cmd.Stderr = io.Discard // Don't pollute logs when things fail
+		cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host) //#nosec G702 -- host is from env/default, passed as argv (no shell)
+		cmd.Stderr = io.Discard                                                          // Don't pollute logs when things fail
 		out, err := cmd.Output()
 		if err != nil {
 			// Document that automatic auth failed and how to reproduce.

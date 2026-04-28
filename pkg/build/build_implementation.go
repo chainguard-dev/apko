@@ -244,11 +244,12 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 		return nil
 	}
 
-	libdirs := []string{"/lib"}
 	dirs, err := ldsocache.ParseLDSOConf(fsys, "etc/ld.so.conf")
 	if err != nil {
 		return fmt.Errorf("parsing /etc/ld.so.conf: %w", err)
 	}
+	libdirs := make([]string, 0, 1+len(dirs))
+	libdirs = append(libdirs, "/lib")
 	libdirs = append(libdirs, dirs...)
 	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, libdirs)
 	if err != nil {
