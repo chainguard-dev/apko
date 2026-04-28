@@ -22,6 +22,7 @@ import (
 	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -163,13 +164,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.Error(t, err, "some double-write error")
@@ -192,13 +193,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second", Replaces: []string{"first"}}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -221,13 +222,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "first-compat", Origin: "first"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -249,13 +250,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -278,13 +279,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -349,73 +350,52 @@ func (t *testPackage) ChecksumString() string {
 	return t.checksum
 }
 
-func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry) InstallablePackage {
+// fakePackage builds a well-formed synthetic APK. If dataHashOverride is
+// non-empty it is written into .PKGINFO as the datahash instead of the real
+// computed SHA-256 (use "" for a correctly-formed package).
+func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry, dataHashOverride string) *testPackage {
 	t.Helper()
 
-	dir := t.TempDir()
-	f, err := os.CreateTemp(dir, pkg.Name)
-	if err != nil {
-		t.Fatal(err)
+	// Pass 1: compute data section bytes and SHA-256.
+	var dataBuf bytes.Buffer
+	dh := sha256.New()
+	dataZw := gzip.NewWriter(io.MultiWriter(&dataBuf, dh))
+	dataTw := tar.NewWriter(dataZw)
+	require.NoError(t, writeFiles(dataTw, entries))
+	require.NoError(t, dataTw.Close())
+	require.NoError(t, dataZw.Close())
+	dataHash := hex.EncodeToString(dh.Sum(nil))
+	if dataHashOverride != "" {
+		dataHash = dataHashOverride
 	}
+	pkg.DataHash = dataHash
+
+	// Pass 2: write control section (with datahash now set) then data bytes.
+	f, err := os.CreateTemp(t.TempDir(), pkg.Name+"*.apk")
+	require.NoError(t, err)
 
 	h := sha1.New() //nolint:gosec
-	dh := sha256.New()
+	ctlZw := gzip.NewWriter(io.MultiWriter(f, h))
+	ctlTw := tar.NewWriter(ctlZw)
 
-	mw := io.MultiWriter(f, h)
-
-	zw := gzip.NewWriter(mw)
-	tw := tar.NewWriter(zw)
-
-	tmpl := template.New("control")
 	var b bytes.Buffer
-	if err := template.Must(tmpl.Parse(controlTemplate)).Execute(&b, pkg); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
+	require.NoError(t, template.Must(template.New("control").Parse(controlTemplate)).Execute(&b, pkg))
+	require.NoError(t, ctlTw.WriteHeader(&tar.Header{
 		Name:     ".PKGINFO",
 		Typeflag: tar.TypeReg,
 		Size:     int64(b.Len()),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := tw.Write(b.Bytes()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.Flush(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	mw = io.MultiWriter(f, dh)
-	zw.Reset(mw)
-
-	if err := writeFiles(tw, entries); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	pkg.DataHash = base64.StdEncoding.EncodeToString(dh.Sum(nil))
+	}))
+	_, err = ctlTw.Write(b.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, ctlTw.Close())
+	require.NoError(t, ctlZw.Close())
+	_, err = io.Copy(f, &dataBuf)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
 	return &testPackage{
-		pkg:      pkg,
 		file:     f.Name(),
+		pkg:      pkg,
 		checksum: "Q1" + base64.StdEncoding.EncodeToString(h.Sum(nil)),
 	}
 }

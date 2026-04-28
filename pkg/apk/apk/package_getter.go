@@ -170,9 +170,34 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
 	}
 
-	if err := verifyControlHash(pkg, exp.ControlHash); err != nil {
+	chk := pkg.ChecksumString()
+	if !strings.HasPrefix(chk, "Q1") {
 		_ = exp.Close()
-		return nil, err
+		return nil, fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
+	}
+	expectedControlHash, err := base64.StdEncoding.DecodeString(chk[2:])
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
+	}
+	if !bytes.Equal(expectedControlHash, exp.ControlHash) {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash)
+	}
+
+	pkgInfo, err := exp.PkgInfo()
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("reading pkginfo for %s: %w", pkg.PackageName(), err)
+	}
+	expectedDataHash, err := hex.DecodeString(pkgInfo.DataHash)
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q has malformed datahash %q: %w", pkg.PackageName(), pkgInfo.DataHash, err)
+	}
+	if !bytes.Equal(expectedDataHash, exp.PackageHash) {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash)
 	}
 
 	// If we don't have a cache, we're done.
@@ -195,29 +220,6 @@ func sha1File(path string) ([]byte, error) {
 		return nil, err
 	}
 	return h.Sum(nil), nil
-}
-
-// verifyControlHash compares the SHA-1 of the downloaded package's control
-// section against the Q1-prefixed base64 checksum recorded in the signed
-// APKINDEX (or lock file). Without this check a compromised mirror or
-// poisoned cache could substitute arbitrary package contents even though
-// the index itself is signature-verified.
-func verifyControlHash(pkg InstallablePackage, controlHash []byte) error {
-	chk := pkg.ChecksumString()
-	if !strings.HasPrefix(chk, "Q1") {
-		return fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
-	}
-	expected, err := base64.StdEncoding.DecodeString(chk[2:])
-	if err != nil {
-		return fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
-	}
-	if len(expected) == 0 {
-		return fmt.Errorf("package %q has empty checksum", pkg.PackageName())
-	}
-	if !bytes.Equal(expected, controlHash) {
-		return fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expected, controlHash)
-	}
-	return nil
 }
 
 // fetchPackage fetches a package from the network or local filesystem.
@@ -365,16 +367,13 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 		return nil, err
 	}
 
-	// Recompute the hash of the on-disk control file rather than trusting
-	// the content-addressable filename. A missed check here would let a
-	// tampered or corrupted cache entry be served without the verification
-	// that getPackageImpl applies on the fetch path.
+	// Recompute rather than trust the content-addressable filename; a tampered cache entry must not bypass fetch-path verification.
 	ctlHash, err := sha1File(ctl)
 	if err != nil {
 		return nil, fmt.Errorf("hashing cached control %q: %w", ctl, err)
 	}
-	if err := verifyControlHash(pkg, ctlHash); err != nil {
-		return nil, fmt.Errorf("cached %q: %w", ctl, err)
+	if !bytes.Equal(checksum, ctlHash) {
+		return nil, fmt.Errorf("cached %q: control hash mismatch: expected %x, got %x", ctl, checksum, ctlHash)
 	}
 
 	exp.ControlFile = ctl

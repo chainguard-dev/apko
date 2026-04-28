@@ -329,24 +329,40 @@ func TestCachedPackage_TamperedControl(t *testing.T) {
 	require.Contains(t, err.Error(), "control hash mismatch")
 }
 
-func TestVerifyControlHash(t *testing.T) {
-	want := make([]byte, 20)
-	for i := range want {
-		want[i] = byte(i)
+// TestGetPackage_HashVerification confirms that GetPackage checks both the
+// control hash and the data hash and that each failure path returns a
+// distinguishable error. A synthetic APK is used so the test is fully
+// self-contained and will regress if either check is removed.
+func TestGetPackage_HashVerification(t *testing.T) {
+	ctx := context.Background()
+	getter := newDefaultPackageGetter(http.DefaultClient, nil, auth.DefaultAuthenticators)
+
+	entries := []testDirEntry{
+		{path: "usr/", dir: true, perms: 0o755},
+		{path: "usr/bin/hello", perms: 0o755, content: []byte("hello")},
 	}
-	pkg := &testPackage{
-		pkg:      &Package{Name: "example"},
-		checksum: "Q1" + base64.StdEncoding.EncodeToString(want),
-	}
 
-	require.NoError(t, verifyControlHash(pkg, want))
+	t.Run("success", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		exp, err := getter.GetPackage(ctx, ip)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+		_ = exp.Close()
+	})
 
-	bad := append([]byte(nil), want...)
-	bad[0] ^= 0xff
-	require.Error(t, verifyControlHash(pkg, bad))
+	t.Run("control hash mismatch", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		ip.checksum = "Q1" + base64.StdEncoding.EncodeToString(make([]byte, 20)) // all-zero SHA-1
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "control hash mismatch")
+	})
 
-	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: ""}, want))
-	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "Q1"}, want))
-	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "Q1!!!"}, want))
-	require.Error(t, verifyControlHash(&testPackage{pkg: &Package{Name: "x"}, checksum: "raw-no-prefix"}, want))
+	t.Run("data hash mismatch", func(t *testing.T) {
+		wrongHash := fmt.Sprintf("%x", make([]byte, 32)) // 32 zero bytes, hex-encoded
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, wrongHash)
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "data hash mismatch")
+	})
 }
