@@ -764,7 +764,7 @@ func TestSortPackages(t *testing.T) {
 				pkgs            []*RepositoryPackage
 				pkg             *RepositoryPackage
 				existing        = map[string]*RepositoryPackage{}
-				existingOrigins = map[string]bool{}
+				existingOrigins = map[string]string{}
 			)
 			for _, pkg := range tt.pkgs {
 				// we cheat and use the InstalledSize for the preferred order, so that it gets carried around.
@@ -778,7 +778,7 @@ func TestSortPackages(t *testing.T) {
 			}
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = NewRepositoryPackage(pkg.pkg, &RepositoryWithIndex{Repository: &Repository{URI: pkg.repo}})
-				existingOrigins[pkg.pkg.Origin] = true
+				existingOrigins[pkg.pkg.Origin] = pkg.pkg.Version
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
 			pr := NewPkgResolver(context.Background(), []NamedIndex{})
@@ -898,6 +898,43 @@ func TestHigherProvidedVersion(t *testing.T) {
 	for i, pkg := range pkgs {
 		require.Equal(t, pkg.Filename(), wantPkgs[i])
 	}
+}
+
+// When an origin is bumped to a new version that no longer ships one of its
+// old subpackages, but the old subpackage still lingers in the index providing
+// some so:, the resolver must not prefer that stale package over a fresh
+// provider in a different origin just because we already pulled the origin at
+// a different version.
+//
+// As a contrived example, if we want to drop libcrypt1 from glibc's origin,
+// it was difficult because we would prefer the libcrypt.so.1 provider due to
+// that same-origin heuristic. This tests that the heuristic does not activate
+// if the origins match but the versions don't.
+func TestProviderAcrossOriginVersionBump(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "glibc", Version: "1", Origin: "glibc"},
+			{Name: "libcrypt1", Version: "1", Origin: "glibc",
+				Provides: []string{"so:libcrypt.so.1=1"}},
+			{Name: "glibc", Version: "2", Origin: "glibc"},
+			{Name: "libxcrypt", Version: "2", Origin: "libxcrypt",
+				Provides: []string{"so:libcrypt.so.1=1"}},
+			{Name: "consumer", Version: "1",
+				Dependencies: []string{"so:libcrypt.so.1"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"consumer", "glibc=2"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.NotContains(t, got, "libcrypt1-1.apk", "should not pull stale libcrypt1 from old glibc origin")
+	require.Contains(t, got, "libxcrypt-2.apk", "should select libxcrypt for so:libcrypt.so.1")
+	require.Contains(t, got, "glibc-2.apk")
 }
 
 func TestConstrains(t *testing.T) {
