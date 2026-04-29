@@ -40,6 +40,7 @@ func buildCPIO() *cobra.Command {
 	var extraRepos []string
 	var extraPackages []string
 	var sizeLimits options.SizeLimits
+	var lockfile string
 
 	cmd := &cobra.Command{
 		Use:     "build-cpio",
@@ -59,6 +60,7 @@ func buildCPIO() *cobra.Command {
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
 				build.WithSizeLimits(sizeLimits),
+				build.WithLockFile(lockfile),
 			)
 		},
 	}
@@ -71,6 +73,7 @@ func buildCPIO() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	addClientLimitFlags(cmd, &sizeLimits)
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 
 	return cmd
 }
