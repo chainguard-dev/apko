@@ -20,6 +20,7 @@ import (
 	"hash"
 	"maps"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -57,7 +58,7 @@ func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath s
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, includePaths []string, configHasher hash.Hash) error {
+func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, includePaths []string, configHasher hash.Hash, includeStack []string) error {
 	log := clog.FromContext(ctx)
 	configHasher.Write(configData)
 	dec := yaml.NewDecoder(strings.NewReader(string(configData)))
@@ -71,7 +72,7 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 
 		included := &ImageConfiguration{}
 
-		if err := included.Load(ctx, ic.Include, includePaths, configHasher); err != nil {
+		if err := included.load(ctx, ic.Include, includePaths, configHasher, includeStack); err != nil {
 			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
@@ -184,26 +185,40 @@ func (i *ImageContents) MergeInto(target *ImageContents) error {
 	return nil
 }
 
-func (ic *ImageConfiguration) readLocal(imageconfigPath string, includePaths []string) ([]byte, error) {
-	resolvedPath, err := paths.ResolvePath(imageconfigPath, includePaths)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(resolvedPath)
-}
-
 // Load - loads an image configuration given a configuration file path.
 // Populates configHasher with the configuration data loaded from the imageConfigPath and the other referenced files.
 // You can pass any dummy hasher (like fnv.New32()), if you don't care about the hash of the configuration.
 //
 // Deprecated: This will be removed in a future release.
 func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string, includePaths []string, configHasher hash.Hash) error {
-	data, err := ic.readLocal(imageConfigPath, includePaths)
+	return ic.load(ctx, imageConfigPath, includePaths, configHasher, nil)
+}
+
+func (ic *ImageConfiguration) load(ctx context.Context, imageConfigPath string, includePaths []string, configHasher hash.Hash, includeStack []string) error {
+	resolvedPath, err := paths.ResolvePath(imageConfigPath, includePaths)
 	if err != nil {
 		return err
 	}
 
-	return ic.parse(ctx, data, includePaths, configHasher)
+	canonicalPath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return err
+	}
+	if evaluatedPath, err := filepath.EvalSymlinks(canonicalPath); err == nil {
+		canonicalPath = evaluatedPath
+	}
+
+	if slices.Contains(includeStack, canonicalPath) {
+		cycle := append(slices.Clone(includeStack), canonicalPath)
+		return fmt.Errorf("recursive include detected: %s", strings.Join(cycle, " -> "))
+	}
+
+	data, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return err
+	}
+
+	return ic.parse(ctx, data, includePaths, configHasher, append(includeStack, canonicalPath))
 }
 
 // Do preflight checks and mutations on an image configuration.
