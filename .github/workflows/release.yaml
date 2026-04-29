@@ -114,7 +114,7 @@ jobs:
           # https://github.com/goreleaser/goreleaser/issues/6195
           cosign-release: "v2.6.1"
 
-      - uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7.1.0
+      - uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
         if: steps.check.outputs.need_release == 'yes'
         with:
           version: latest
