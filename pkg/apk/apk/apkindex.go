@@ -67,7 +67,7 @@ c:{{.RepoCommit}}
 D:{{join .Dependencies}}
 {{- end}}
 {{- if .InstallIf}}
-i:{{.InstallIf}}
+i:{{join .InstallIf}}
 {{- end}}
 {{- if .Provides}}
 p:{{join .Provides}}
