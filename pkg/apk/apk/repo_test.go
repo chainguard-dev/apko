@@ -764,7 +764,7 @@ func TestSortPackages(t *testing.T) {
 				pkgs            []*RepositoryPackage
 				pkg             *RepositoryPackage
 				existing        = map[string]*RepositoryPackage{}
-				existingOrigins = map[string]bool{}
+				existingOrigins = map[string]map[string]bool{}
 			)
 			for _, pkg := range tt.pkgs {
 				// we cheat and use the InstalledSize for the preferred order, so that it gets carried around.
@@ -778,7 +778,7 @@ func TestSortPackages(t *testing.T) {
 			}
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = NewRepositoryPackage(pkg.pkg, &RepositoryWithIndex{Repository: &Repository{URI: pkg.repo}})
-				existingOrigins[pkg.pkg.Origin] = true
+				addExistingOrigin(existingOrigins, pkg.pkg.Origin, pkg.pkg.Version)
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
 			pr := NewPkgResolver(context.Background(), []NamedIndex{})
@@ -1002,4 +1002,409 @@ func TestDisqualifyingOtherArchitectures(t *testing.T) {
 	resolver := NewPkgResolver(context.Background(), armIndex)
 	_, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, byArch)
 	require.ErrorContains(t, err, "package \"onlyinarm64-1.0.0.apk\" not available for arch \"x86_64\"")
+}
+
+// TestVirtualProviderBacktracking is the canonical cross-package backtracking case.
+// pkg-a needs a virtual with any version; pkg-b needs the same virtual at exactly 1.0.
+// The greedy resolver would pick provider-new (v2.0) for pkg-a, disqualify provider-old,
+// and then fail to satisfy pkg-b's virt=1.0 requirement.
+// The pre-constrain step should prevent that by DQing provider-new before Phase 1 runs.
+func TestVirtualProviderBacktracking(t *testing.T) {
+	providers := map[string][]string{
+		"provider-new=2.0": {"virt=2.0"},
+		"provider-old=1.0": {"virt=1.0"},
+	}
+	dependers := map[string][]string{
+		"pkg-a=1.0": {"virt"},
+		"pkg-b=1.0": {"virt=1.0"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "provider-old-1.0.apk")
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.NotContains(t, names, "provider-new-2.0.apk")
+}
+
+// TestLevel1Backtracking checks that within a single top-level package's dep subtree,
+// a greedy provider choice that causes a downstream conflict is retried with the
+// next candidate.
+//
+// consumer depends on "lib" (any version) and "sibling".
+// sibling depends on "lib=1.0".
+// lib-high=2.0 provides lib=2.0; lib-low=1.0 provides lib=1.0.
+// The greedy resolver picks lib-high first; sibling then can't satisfy lib=1.0.
+// With Level 1 backtracking the resolver retries with lib-low.
+func TestLevel1Backtracking(t *testing.T) {
+	providers := map[string][]string{
+		"lib-high=2.0": {"lib=2.0"},
+		"lib-low=1.0":  {"lib=1.0"},
+	}
+	dependers := map[string][]string{
+		"consumer=1.0": {"lib", "sibling"},
+		"sibling=1.0":  {"lib=1.0"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"consumer"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "lib-low-1.0.apk")
+	require.Contains(t, names, "sibling-1.0.apk")
+	require.Contains(t, names, "consumer-1.0.apk")
+	require.NotContains(t, names, "lib-high-2.0.apk")
+}
+
+// TestTransitiveVirtualProviderBacktracking is a deeper version of
+// TestVirtualProviderBacktracking. The versioned constraint on the virtual
+// comes through a transitive dependency (A → libfoo any; B → C → libfoo=1.5),
+// so the Level 2 pre-constrain step (which only looks at direct deps) is not
+// sufficient. The Phase 2 retry mechanism must kick in: when B's resolution
+// fails because A already committed to libfoo-new, Phase 2 reorders to process
+// B first so its transitive constraint (libfoo=1.5 via C) disqualifies
+// libfoo-new before A selects a provider.
+func TestTransitiveVirtualProviderBacktracking(t *testing.T) {
+	providers := map[string][]string{
+		"libfoo-new=2.0": {"libfoo=2.0"},
+		"libfoo-old=1.5": {"libfoo=1.5"},
+	}
+	dependers := map[string][]string{
+		"pkg-a=1.0": {"libfoo"},
+		"pkg-b=1.0": {"pkg-c"},
+		"pkg-c=1.0": {"libfoo=1.5"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "libfoo-old-1.5.apk")
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.Contains(t, names, "pkg-c-1.0.apk")
+	require.NotContains(t, names, "libfoo-new-2.0.apk")
+}
+
+// TestHardErrorNotRetried verifies that a hard failure ("nothing provides X")
+// is not swallowed by backtracking and surfaces as an error.
+func TestHardErrorNotRetried(t *testing.T) {
+	dependers := map[string][]string{
+		"pkg=1.0": {"nonexistent"},
+	}
+	resolver := makeResolver(nil, dependers)
+	_, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg"}, nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "nonexistent")
+}
+
+// TestNonRetryableErrorInCandidateLoop verifies that a hard (non-retryable)
+// error returned from a candidate's subtree propagates immediately and does
+// NOT cause the resolver to fall back to the next candidate.
+//
+// provider-high=2.0 is tried first (higher version). It depends on "ghost"
+// which is absent from all indexes — a hard "nothing provides" error.
+// provider-low=1.0 would succeed, but it must NOT be tried.
+func TestNonRetryableErrorInCandidateLoop(t *testing.T) {
+	providers := map[string][]string{
+		"provider-high=2.0": {"virt=2.0"},
+		"provider-low=1.0":  {"virt=1.0"},
+	}
+	dependers := map[string][]string{
+		"provider-high=2.0": {"ghost"}, // hard dep on a package that does not exist
+		"pkg=1.0":           {"virt"},
+	}
+	resolver := makeResolver(providers, dependers)
+	_, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg"}, nil)
+	// Must get an error; if provider-low were tried the call would succeed.
+	require.Error(t, err)
+	require.ErrorContains(t, err, "ghost")
+}
+
+// TestLevel1CandidateRetryOnRetryableError is the purest Level 1 backtracking
+// test: the candidate loop in getPackageDependencies tries the best candidate
+// first, discovers a retryable failure, restores the snapshot, and succeeds
+// with the next candidate.
+//
+// virt-a=2.0 provides both "virt=2.0" and "helper=2.0".
+// When virt-a is chosen, disqualifyConflicts DQs provider-sub because
+// provider-sub provides "helper=1.0" which conflicts with "helper=2.0".
+// virt-a depends on "sub-pkg", the sole provider of which is provider-sub —
+// now disqualified — so getPackageDependencies(virt-a) fails retryably.
+// The snapshot is restored (un-DQing provider-sub) and virt-b=1.0 is tried.
+// virt-b provides only "virt=1.0" and has no deps, so it resolves cleanly.
+func TestLevel1CandidateRetryOnRetryableError(t *testing.T) {
+	providers := map[string][]string{
+		"virt-a=2.0":       {"virt=2.0", "helper=2.0"},
+		"virt-b=1.0":       {"virt=1.0"},
+		"provider-sub=1.0": {"sub-pkg=1.0", "helper=1.0"},
+	}
+	dependers := map[string][]string{
+		"virt-a=2.0": {"sub-pkg"}, // needs sub-pkg, only available via provider-sub
+		"pkg=1.0":    {"virt"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	// virt-b should be selected (virt-a's subtree failed retryably → backtracked)
+	require.Contains(t, names, "virt-b-1.0.apk")
+	require.Contains(t, names, "pkg-1.0.apk")
+	require.NotContains(t, names, "virt-a-2.0.apk")
+	require.NotContains(t, names, "provider-sub-1.0.apk")
+}
+
+// TestAllCandidatesRetryablyFail exercises the !succeeded branch of the
+// candidate loop: all providers of a dep fail retryably, so the resolver
+// returns an error rather than a spurious success.
+//
+// Both virt-a and virt-b depend on "helper=5.0". Only helper=1.0 exists, so
+// constrain DQs it and filterPackages returns empty for each candidate's
+// subtree — a retryable (DQ-based) failure. After exhausting both candidates,
+// getPackageDependencies returns an error.
+func TestAllCandidatesRetryablyFail(t *testing.T) {
+	providers := map[string][]string{
+		"virt-a=2.0": {"virt=2.0"},
+		"virt-b=1.0": {"virt=1.0"},
+	}
+	dependers := map[string][]string{
+		"virt-a=2.0": {"helper=5.0"}, // requires helper=5.0 which cannot be satisfied
+		"virt-b=1.0": {"helper=5.0"},
+		"helper=1.0": {}, // only version 1.0 exists; does not satisfy =5.0
+		"pkg=1.0":    {"virt"},
+	}
+	resolver := makeResolver(providers, dependers)
+	_, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg"}, nil)
+	require.Error(t, err)
+}
+
+// TestGenuineConflictExhaustsRetries verifies that when two top-level packages
+// have genuinely conflicting version requirements that no package ordering can
+// resolve, the Phase 2 retry mechanism exhausts all attempts and returns an error.
+//
+// pkg-x requires virt=2.0; pkg-y requires virt=1.0. The pre-constrain step DQs
+// both providers (provider-a is DQed by "virt=1.0"; provider-b is DQed by
+// "virt=2.0"), so no ordering of pkg-x and pkg-y will ever succeed.
+// After len(packages) retry attempts, lastPhase2Err is returned.
+func TestGenuineConflictExhaustsRetries(t *testing.T) {
+	providers := map[string][]string{
+		"provider-a=2.0": {"virt=2.0"},
+		"provider-b=1.0": {"virt=1.0"},
+	}
+	dependers := map[string][]string{
+		"pkg-x=1.0": {"virt=2.0"},
+		"pkg-y=1.0": {"virt=1.0"},
+	}
+	resolver := makeResolver(providers, dependers)
+	_, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-x", "pkg-y"}, nil)
+	require.Error(t, err)
+}
+
+// TestSameVersionProvideDoesNotConflict is a regression test for the
+// conflictingVersion fix.  Two packages both advertising the same versioned
+// virtual ("helper=1.0") must NOT disqualify each other: co-providing the same
+// virtual at the same version is harmless when no package actually depends on
+// it.  Previously, the early-return `if constraint.Version != "" { return true
+// }` in conflictingVersion caused disqualifyConflicts to DQ helper-lib-direct
+// the moment pkg-b was resolved in Phase 1, making the whole install fail.
+func TestSameVersionProvideDoesNotConflict(t *testing.T) {
+	providers := map[string][]string{
+		"helper-lib-direct=1.0": {"helper=1.0"},
+		"pkg-b=1.0":             {"helper=1.0"}, // same version — must not DQ helper-lib-direct
+	}
+	dependers := map[string][]string{
+		"helper-lib-direct=1.0": {"stub"},
+		"pkg-a=1.0":             {"helper-lib-direct"},
+		"pkg-b=1.0":             {"sub-dep"},
+		"stub=1.0":              {},
+		"sub-dep=1.0":           {},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b"}, nil)
+	require.NoError(t, err)
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.Contains(t, names, "helper-lib-direct-1.0.apk")
+	require.Contains(t, names, "sub-dep-1.0.apk")
+}
+
+// TestTransitiveLibfooBacktracking exercises a four-package scenario where the
+// versioned constraint on "libfoo" is two levels deep in the dependency graph.
+//
+// Top-level: pkg-a, pkg-b, pkg-c
+//   - pkg-a depends on "libfoo" (any version)
+//   - pkg-b has no dependencies
+//   - pkg-c depends on pkg-d
+//   - pkg-d depends on "libfoo=1.5" (versioned)
+//
+// Candidates: libfoo-new=2.0 (provides libfoo=2.0), libfoo-old=1.5 (provides libfoo=1.5).
+// Without backtracking the greedy resolver would pick libfoo-new first and
+// then fail when pkg-d requests libfoo=1.5. With backtracking it retries and
+// selects libfoo-old=1.5, satisfying both pkg-a and pkg-d.
+func TestTransitiveLibfooBacktracking(t *testing.T) {
+	providers := map[string][]string{
+		"libfoo-new=2.0": {"libfoo=2.0"},
+		"libfoo-old=1.5": {"libfoo=1.5"},
+	}
+	dependers := map[string][]string{
+		"pkg-a=1.0": {"libfoo"},
+		"pkg-b=1.0": {},
+		"pkg-c=1.0": {"pkg-d"},
+		"pkg-d=1.0": {"libfoo=1.5"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b", "pkg-c"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "libfoo-old-1.5.apk")
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.Contains(t, names, "pkg-c-1.0.apk")
+	require.Contains(t, names, "pkg-d-1.0.apk")
+	require.NotContains(t, names, "libfoo-new-2.0.apk")
+}
+
+// TestThreeProvidersOneUnversionedSelectsHighest verifies that when three
+// packages provide the same virtual — one without a version in its provides
+// line and two with explicit versioned provides — the resolver installs only
+// the package that advertises the highest version of the virtual.
+//
+// provider-unversioned=1.0  provides "virt"      (no explicit version)
+// provider-mid=2.0          provides "virt=2.0"  (versioned, lower)
+// provider-high=3.0         provides "virt=3.0"  (versioned, highest)
+//
+// A consumer depending on "virt" (any version) must resolve to provider-high
+// because its provided virtual version (3.0) ranks above 2.0 and above 1.0
+// (the package-version fallback used for the unversioned provide). The other
+// two providers must not appear in the final install set.
+func TestThreeProvidersOneUnversionedSelectsHighest(t *testing.T) {
+	providers := map[string][]string{
+		"provider-unversioned=1.0": {"virt"},     // unversioned provide; effective virt version = 1.0
+		"provider-mid=2.0":         {"virt=2.0"}, // versioned, lower
+		"provider-high=3.0":        {"virt=3.0"}, // versioned, highest
+	}
+	dependers := map[string][]string{
+		"consumer=1.0": {"virt"},
+	}
+	resolver := makeResolver(providers, dependers)
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"consumer"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "consumer-1.0.apk")
+	require.Contains(t, names, "provider-high-3.0.apk")
+	require.NotContains(t, names, "provider-mid-2.0.apk")
+	require.NotContains(t, names, "provider-unversioned-1.0.apk")
+}
+
+// TestSameOriginVersionPreferredOverNewer is a unit test for the sort tier that
+// prefers an exact origin+version match over a newer package from the same origin.
+//
+// Two candidates both provide "libpq" and share origin "postgresql":
+//   - libpq-15=15.3-r1: exact version match with the already-selected postgresql-15=15.3-r1
+//   - libpq-15=15.4-r0: newer version, same origin, no exact match
+//
+// Without the new tier the greedy version sort would pick 15.4-r0 (higher version).
+// With the new tier 15.3-r1 must sort first.
+func TestSameOriginVersionPreferredOverNewer(t *testing.T) {
+	const origin = "postgresql"
+	const selectedVersion = "15.3-r1"
+
+	// Two candidates for virtual "libpq", both from origin "postgresql".
+	matchedPkg := NewRepositoryPackage(
+		&Package{Name: "libpq-15", Version: selectedVersion, Origin: origin},
+		&RepositoryWithIndex{Repository: &Repository{URI: "http://repo"}},
+	)
+	newerPkg := NewRepositoryPackage(
+		&Package{Name: "libpq-15", Version: "15.4-r0", Origin: origin},
+		&RepositoryWithIndex{Repository: &Repository{URI: "http://repo"}},
+	)
+
+	// Simulate postgresql-15=15.3-r1 already being in the install set.
+	existingOrigins := map[string]map[string]bool{}
+	addExistingOrigin(existingOrigins, origin, selectedVersion)
+
+	candidates := testNamedPackageFromPackages([]*RepositoryPackage{newerPkg, matchedPkg})
+	pr := NewPkgResolver(context.Background(), []NamedIndex{})
+	pr.sortPackages(candidates, nil, "libpq", map[string]*RepositoryPackage{}, existingOrigins, "")
+
+	// The version-matched candidate must rank first.
+	require.Equal(t, selectedVersion, candidates[0].Version,
+		"exact origin+version match should rank before newer package from same origin")
+}
+
+// TestSameOriginVersionEndToEnd exercises the full resolver flow: postgresql-15 is
+// a top-level package that gets resolved before pkg-b, so its origin+version end up
+// in existingOrigins when libpq providers are sorted for pkg-b's dependency.
+//
+// Two libpq providers share origin "postgresql":
+//   - libpq-15=15.3-r1 (same version as postgresql-15) — must be selected
+//   - libpq-15=15.4-r0 (newer)                          — must not be selected
+func TestSameOriginVersionEndToEnd(t *testing.T) {
+	const origin = "postgresql"
+
+	// Build packages manually so we can set the Origin field.
+	allPkgs := []*Package{
+		{Name: "postgresql-15", Version: "15.3-r1", Origin: origin},
+		{Name: "libpq-15", Version: "15.3-r1", Origin: origin, Provides: []string{"libpq=1"}},
+		{Name: "libpq-15", Version: "15.4-r0", Origin: origin, Provides: []string{"libpq=1"}},
+		{Name: "pkg-a", Version: "1.0", Dependencies: []string{"postgresql-15"}},
+		{Name: "pkg-b", Version: "1.0", Dependencies: []string{"libpq"}},
+	}
+	repo := Repository{}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: allPkgs})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{repoWithIndex}))
+
+	// pkg-a is listed first so postgresql-15 lands in dependenciesMap before
+	// pkg-b is resolved, giving existingOrigins the postgresql/15.3-r1 entry.
+	pkgs, _, err := resolver.GetPackagesWithDependencies(
+		context.Background(), []string{"pkg-a", "pkg-b"}, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Filename())
+	}
+	require.Contains(t, names, "postgresql-15-15.3-r1.apk")
+	require.Contains(t, names, "libpq-15-15.3-r1.apk")
+	require.Contains(t, names, "pkg-a-1.0.apk")
+	require.Contains(t, names, "pkg-b-1.0.apk")
+	require.NotContains(t, names, "libpq-15-15.4-r0.apk")
 }

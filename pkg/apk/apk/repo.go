@@ -333,14 +333,9 @@ func (p *PkgResolver) disqualifyProviders(constraint string, dq map[*RepositoryP
 }
 
 func (p *PkgResolver) conflictingVersion(constraint ParsedConstraint, conflict *repositoryPackage) bool {
-	// If the constraint is not a virtual, everything will conflict with it.
-	// TODO: Figure out if this logic is actually equivalent to how apk disqualifies virtual.
-	if constraint.Version != "" {
-		return true
-	}
-
-	// From here on, "the same version" really means it's a virtual, but let's keep the diff small until we revisit.
-
+	// Two packages conflict when they provide the same virtual at *different* versions.
+	// Same-version co-providers are allowed: if neither package is explicitly requested
+	// by name, having two packages both advertising "helper=1.0" is harmless.
 	if conflict.Name == constraint.Name {
 		return conflict.Version != constraint.Version
 	}
@@ -392,6 +387,22 @@ func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*Reposi
 	}
 }
 
+// packageProvidesVersion reports whether pkg provides name at the given version,
+// either because pkg.Name == name && pkg.Version == version, or because one of
+// pkg.Provides contains "name=version".
+func packageProvidesVersion(pkg *RepositoryPackage, name, version string) bool {
+	if pkg.Name == name && pkg.Version == version {
+		return true
+	}
+	for _, prov := range pkg.Provides {
+		pc := cachedResolvePackageNameVersionPin(prov)
+		if pc.Name == name && pc.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *PkgResolver) pick(pkg *RepositoryPackage) error {
 	if conflict, ok := p.selected[pkg.Name]; ok {
 		// Trying to re-select the same thing is fine actually.
@@ -406,19 +417,96 @@ func (p *PkgResolver) pick(pkg *RepositoryPackage) error {
 
 	for _, prov := range pkg.Provides {
 		constraint := cachedResolvePackageNameVersionPin(prov)
-		if conflict, ok := p.selected[constraint.Name]; ok {
-			return fmt.Errorf("selecting package %s conflicts with %s on %q", pkg.Filename(), conflict.Filename(), constraint.Name)
-		}
 
-		// We don't care about virtuals, actually.
+		// We don't track unversioned provides in p.selected.
 		if constraint.Version == "" {
 			continue
+		}
+
+		if conflict, ok := p.selected[constraint.Name]; ok {
+			// Same-version co-providers are valid: the dep slot is already
+			// satisfied by an equivalent provider, so there is no real conflict.
+			if packageProvidesVersion(conflict, constraint.Name, constraint.Version) {
+				continue
+			}
+			return fmt.Errorf("selecting package %s conflicts with %s on %q", pkg.Filename(), conflict.Filename(), constraint.Name)
 		}
 
 		p.selected[constraint.Name] = pkg
 	}
 
 	return nil
+}
+
+// resolverSnapshot captures the mutable resolver and call-local state at a
+// choice point so it can be restored if the chosen candidate fails.
+type resolverSnapshot struct {
+	selected        map[string]*RepositoryPackage
+	dq              map[*RepositoryPackage]string
+	existing        map[string]*RepositoryPackage
+	existingOrigins map[string]map[string]bool
+	depsLen         int
+	conflictsLen    int
+}
+
+// cloneExistingOrigins deep-clones the existingOrigins map so that snapshot
+// restoration does not share inner maps with the live state.
+func cloneExistingOrigins(m map[string]map[string]bool) map[string]map[string]bool {
+	clone := make(map[string]map[string]bool, len(m))
+	for k, v := range m {
+		clone[k] = maps.Clone(v)
+	}
+	return clone
+}
+
+// addExistingOrigin records that a package with the given origin and version
+// has been selected, so that comparePackages can prefer same-origin/same-version
+// providers when later resolving virtual dependencies.
+func addExistingOrigin(m map[string]map[string]bool, origin, version string) {
+	if origin == "" {
+		return
+	}
+	if m[origin] == nil {
+		m[origin] = map[string]bool{}
+	}
+	m[origin][version] = true
+}
+
+// snapshotState captures the current mutable state for later restoration.
+func (p *PkgResolver) snapshotState(
+	dq map[*RepositoryPackage]string,
+	existing map[string]*RepositoryPackage,
+	existingOrigins map[string]map[string]bool,
+	deps []*RepositoryPackage,
+	conflicts []string,
+) resolverSnapshot {
+	return resolverSnapshot{
+		selected:        maps.Clone(p.selected),
+		dq:              maps.Clone(dq),
+		existing:        maps.Clone(existing),
+		existingOrigins: cloneExistingOrigins(existingOrigins),
+		depsLen:         len(deps),
+		conflictsLen:    len(conflicts),
+	}
+}
+
+// restoreState reverts all mutable state to a previously captured snapshot.
+// Because dq and existing are function-local maps (not struct fields), the
+// restored copies are returned so callers can reassign their local variables.
+func (p *PkgResolver) restoreState(
+	snap resolverSnapshot,
+	deps []*RepositoryPackage,
+	conflicts []string,
+) (
+	dq map[*RepositoryPackage]string,
+	existing map[string]*RepositoryPackage,
+	existingOrigins map[string]map[string]bool,
+	restoredDeps []*RepositoryPackage,
+	restoredConflicts []string,
+) {
+	p.selected = snap.selected
+	return snap.dq, snap.existing, snap.existingOrigins,
+		deps[:snap.depsLen], conflicts[:snap.conflictsLen]
 }
 
 func (p *PkgResolver) disqualify(dq map[*RepositoryPackage]string, pkg *RepositoryPackage, reason string) {
@@ -508,6 +596,35 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 		return nil, nil, fmt.Errorf("constraining initial packages: %w", err)
 	}
 
+	// Pre-constrain: apply versioned deps from each top-level package's best
+	// candidate before Phase 1 greedily selects providers via disqualifyConflicts.
+	// Without this, pkg-A's greedy provider selection can DQ the only provider
+	// that satisfies pkg-B's stricter version requirement of the same virtual.
+	// constrain() is monotone — it only DQs packages that provably fail a versioned
+	// requirement, so this cannot produce false failures.
+	{
+		var preConstraints []string
+		for _, pkgName := range constraints {
+			parsed := cachedResolvePackageNameVersionPin(pkgName)
+			candidates, ok := p.nameMap[parsed.Name]
+			if !ok {
+				continue
+			}
+			filtered := filterPackages(candidates, dq, withVersion(parsed.Version, parsed.dep))
+			if len(filtered) == 0 {
+				continue
+			}
+			best := p.bestPackage(filtered, nil, parsed.Name, nil, nil, parsed.pin)
+			if best == nil {
+				continue
+			}
+			preConstraints = append(preConstraints, best.Dependencies...)
+		}
+		if err := p.constrain(preConstraints, dq); err != nil {
+			return nil, nil, fmt.Errorf("pre-constraining top-level deps: %w", err)
+		}
+	}
+
 	for len(constraints) != 0 {
 		next, err := p.nextPackage(constraints, dq)
 		if err != nil {
@@ -530,30 +647,76 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 		p.disqualifyConflicts(pkg, dq)
 	}
 
-	// now get the dependencies for each package
-	for _, pkgName := range packages {
-		pkg, deps, confs, err := p.GetPackageWithDependencies(ctx, pkgName, dependenciesMap, dq)
-		if err != nil {
-			return toInstall, nil, &ConstraintError{pkgName, err}
+	// Snapshot state at the Phase 1 / Phase 2 boundary. When a package's
+	// dependency resolution fails retryably (e.g. because an earlier package's
+	// greedy provider choice DQed the provider the failing package needs), we
+	// reset to this snapshot and retry with the failing package moved to the
+	// front of the processing order. Processing it first lets its transitive
+	// versioned constraints propagate into dq before the other packages run
+	// their greedy selection.
+	phase2DQ := maps.Clone(dq)
+	phase2Selected := maps.Clone(p.selected)
+	phase2DepsMap := maps.Clone(dependenciesMap)
+	packageOrder := slices.Clone(packages)
+
+	var lastPhase2Err error
+	for attempt := range len(packages) {
+		if attempt > 0 {
+			// Reset to Phase 2 initial state.
+			clear(dq)
+			maps.Copy(dq, phase2DQ)
+			p.selected = maps.Clone(phase2Selected)
+			clear(dependenciesMap)
+			maps.Copy(dependenciesMap, phase2DepsMap)
+			toInstall = toInstall[:0]
+			installTracked = map[string]*RepositoryPackage{}
+			conflicts = conflicts[:0]
 		}
 
-		for _, dep := range deps {
-			if _, ok := installTracked[dep.Name]; !ok {
-				toInstall = append(toInstall, dep)
-				installTracked[dep.Name] = dep
+		lastPhase2Err = nil
+		for i, pkgName := range packageOrder {
+			pkg, deps, confs, err := p.GetPackageWithDependencies(ctx, pkgName, dependenciesMap, dq)
+			if err != nil {
+				if !isRetryable(err) {
+					return nil, nil, &ConstraintError{pkgName, err}
+				}
+				lastPhase2Err = &ConstraintError{pkgName, err}
+				// Move the failing package to front so its transitive
+				// constraints run before the other packages next attempt.
+				newOrder := make([]string, 0, len(packageOrder))
+				newOrder = append(newOrder, pkgName)
+				newOrder = append(newOrder, packageOrder[:i]...)
+				newOrder = append(newOrder, packageOrder[i+1:]...)
+				packageOrder = newOrder
+				break
 			}
-			if _, ok := dependenciesMap[dep.Name]; !ok {
-				dependenciesMap[dep.Name] = dep
+
+			for _, dep := range deps {
+				if _, ok := installTracked[dep.Name]; !ok {
+					toInstall = append(toInstall, dep)
+					installTracked[dep.Name] = dep
+				}
+				if _, ok := dependenciesMap[dep.Name]; !ok {
+					dependenciesMap[dep.Name] = dep
+				}
 			}
+			if _, ok := installTracked[pkg.Name]; !ok {
+				toInstall = append(toInstall, pkg)
+				installTracked[pkg.Name] = pkg
+			}
+			if _, ok := dependenciesMap[pkg.Name]; !ok {
+				dependenciesMap[pkg.Name] = pkg
+			}
+			conflicts = append(conflicts, confs...)
 		}
-		if _, ok := installTracked[pkg.Name]; !ok {
-			toInstall = append(toInstall, pkg)
-			installTracked[pkg.Name] = pkg
+
+		if lastPhase2Err == nil {
+			break
 		}
-		if _, ok := dependenciesMap[pkg.Name]; !ok {
-			dependenciesMap[pkg.Name] = pkg
-		}
-		conflicts = append(conflicts, confs...)
+	}
+
+	if lastPhase2Err != nil {
+		return nil, nil, lastPhase2Err
 	}
 
 	conflicts = uniqify(conflicts)
@@ -569,11 +732,11 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
 	parents := make(map[string]bool)
 	localExisting := make(map[string]*RepositoryPackage, len(existing))
-	existingOrigins := map[string]bool{}
+	existingOrigins := map[string]map[string]bool{}
 	for k, v := range existing {
 		localExisting[k] = v
-		if v != nil && v.Origin != "" {
-			existingOrigins[v.Origin] = true
+		if v != nil {
+			addExistingOrigin(existingOrigins, v.Origin, v.Version)
 		}
 	}
 
@@ -712,7 +875,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, context.Cause(ctx)
 	}
@@ -824,7 +987,8 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				}
 
 				// We already selected something to satisfy "name" and it does not match the "version" we need now.
-				return nil, nil, fmt.Errorf("we already selected \"%s=%s\" which conflicts with %q", picked.Name, picked.Version, dep)
+				// This is retryable: a different upstream provider choice might avoid this conflict.
+				return nil, nil, &retryableError{fmt.Errorf("we already selected \"%s=%s\" which conflicts with %q", picked.Name, picked.Version, dep)}
 			}
 
 			// first see if it is a name of a package
@@ -841,7 +1005,13 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				withInstalledPackage(existing[name]),
 			)
 			if len(pkgs) == 0 {
-				return nil, nil, &ConstraintError{dep, maybedqerror(depPkgWithVersions, dq)}
+				dqErr := maybedqerror(depPkgWithVersions, dq)
+				// If all candidates exist but were disqualified, a different upstream
+				// provider choice might un-disqualify one — mark as retryable.
+				if isDQBasedError(dqErr) {
+					return nil, nil, &retryableError{&ConstraintError{dep, dqErr}}
+				}
+				return nil, nil, &ConstraintError{dep, dqErr}
 			}
 			options[dep] = pkgs
 		}
@@ -871,38 +1041,65 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 			return s == lowest
 		})
 
-		best := p.bestPackage(pkgs, nil, name, existing, existingOrigins, "")
-		if best == nil {
-			return nil, nil, &ConstraintError{name, fmt.Errorf("could not find package for %q", name)}
-		}
+		// Sort candidates in preference order (best first). We try them in
+		// order and backtrack on retryable failures.
+		p.sortPackages(pkgs, nil, name, existing, existingOrigins, "")
 
-		depPkg := best.RepositoryPackage
-		p.disqualifyConflicts(depPkg, dq)
-
-		// and then recurse to its children
-		// each child gets the parental chain, but should not affect any others,
-		// so we duplicate the map for the child
+		// Build the parent chain once; it is the same for all candidates.
 		childParents := map[string]bool{}
 		for k := range parents {
 			childParents[k] = true
 		}
 		childParents[pkg.Name] = true
 
-		if err := p.pick(pkg); err != nil {
-			return nil, nil, err
+		var (
+			lastErr   error
+			succeeded bool
+		)
+		for _, candidate := range pkgs {
+			// Snapshot all mutable state before attempting this candidate.
+			snap := p.snapshotState(dq, existing, existingOrigins, dependencies, conflicts)
+
+			depPkg := candidate.RepositoryPackage
+			p.disqualifyConflicts(depPkg, dq)
+			if err := p.pick(pkg); err != nil {
+				// This should not happen: disqualifyConflicts removes conflicting
+				// providers before we reach pick, and conflictingVersion now allows
+				// same-version co-providers. Log and restore rather than silently
+				// ignoring or panicking.
+				clog.FromContext(ctx).Warnf("unexpected pick conflict for %s: %v", pkg.Filename(), err)
+				dq, existing, existingOrigins, dependencies, conflicts =
+					p.restoreState(snap, dependencies, conflicts)
+				lastErr = &retryableError{err}
+				continue
+			}
+
+			subDeps, confs, err := p.getPackageDependencies(ctx, depPkg, allowPin, childParents, existing, existingOrigins, dq)
+			if err != nil {
+				dq, existing, existingOrigins, dependencies, conflicts =
+					p.restoreState(snap, dependencies, conflicts)
+				if !isRetryable(err) {
+					// Hard failure — propagate immediately.
+					return nil, nil, &ConstraintError{name, &DepError{depPkg, err}}
+				}
+				lastErr = err
+				continue
+			}
+
+			// Candidate succeeded — commit results (depth-first order).
+			dependencies = append(dependencies, subDeps...)
+			dependencies = append(dependencies, depPkg)
+			conflicts = append(conflicts, confs...)
+			for _, dep := range subDeps {
+				existing[dep.Name] = dep
+				addExistingOrigin(existingOrigins, dep.Origin, dep.Version)
+			}
+			succeeded = true
+			break
 		}
 
-		subDeps, confs, err := p.getPackageDependencies(ctx, depPkg, allowPin, childParents, existing, existingOrigins, dq)
-		if err != nil {
-			return nil, nil, &ConstraintError{name, &DepError{depPkg, err}}
-		}
-		// first add the children, then the parent (depth-first)
-		dependencies = append(dependencies, subDeps...)
-		dependencies = append(dependencies, depPkg)
-		conflicts = append(conflicts, confs...)
-		for _, dep := range subDeps {
-			existing[dep.Name] = dep
-			existingOrigins[dep.Origin] = true
+		if !succeeded {
+			return nil, nil, &ConstraintError{name, lastErr}
 		}
 	}
 	return dependencies, conflicts, nil
@@ -944,11 +1141,11 @@ func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 // For example, if the original search was for package "a", then pkgs may contain some that
 // are named "a", but others that provided "a". In that case, we should look not at the
 // version of the package, but the version of "a" that the package provides.
-func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) {
+func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) {
 	slices.SortFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
 }
 
-func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
+func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
 	return func(a, b *repositoryPackage) int {
 		// determine versions
 		iVersionStr := p.getDepVersionForName(a, name)
@@ -990,9 +1187,22 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 		}
 		// both matched, so keep looking
 
-		// see if an origin already is installed
-		iOriginMatched := existingOrigins[a.Origin]
-		jOriginMatched := existingOrigins[b.Origin]
+		// Prefer providers from the same origin AND same package version as an
+		// already-selected package. This ensures that, e.g., libpq-15=15.3-r1 is
+		// preferred over libpq-15=15.4-r0 when postgresql-15=15.3-r1 is already
+		// in the install set: packages built together are most likely compatible.
+		iExactOriginMatch := existingOrigins[a.Origin][a.Version]
+		jExactOriginMatch := existingOrigins[b.Origin][b.Version]
+		if iExactOriginMatch && !jExactOriginMatch {
+			return -1
+		}
+		if jExactOriginMatch && !iExactOriginMatch {
+			return 1
+		}
+
+		// see if an origin already is installed (any version)
+		_, iOriginMatched := existingOrigins[a.Origin]
+		_, jOriginMatched := existingOrigins[b.Origin]
 		if iOriginMatched && !jOriginMatched {
 			return -1
 		}
@@ -1052,7 +1262,7 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 	}
 }
 
-func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) *repositoryPackage {
+func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]map[string]bool, pin string) *repositoryPackage {
 	if len(pkgs) == 0 {
 		return nil
 	}
@@ -1138,6 +1348,28 @@ func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) e
 	}
 
 	return errors.New("not in indexes")
+}
+
+// retryableError wraps an error to signal that the caller should try the
+// next candidate rather than propagating failure immediately. An error is
+// retryable when a different upstream package selection might resolve it.
+type retryableError struct{ wrapped error }
+
+func (e *retryableError) Error() string { return e.wrapped.Error() }
+func (e *retryableError) Unwrap() error { return e.wrapped }
+
+// isRetryable reports whether err (or any error in its chain) is a retryableError.
+func isRetryable(err error) bool {
+	var r *retryableError
+	return errors.As(err, &r)
+}
+
+// isDQBasedError reports whether err contains a DisqualifiedError, meaning all
+// candidates exist in the index but were disqualified. A different upstream
+// provider choice might un-disqualify one of them.
+func isDQBasedError(err error) bool {
+	var d *DisqualifiedError
+	return errors.As(err, &d)
 }
 
 func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
