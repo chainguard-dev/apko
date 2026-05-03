@@ -7,3 +7,12 @@ rules:
   dependabot-cooldown:
     config:
       days: 3
+  # Pedantic-only; no security impact — cosmetic/style findings
+  anonymous-definition:
+    disable: true
+  undocumented-permissions:
+    disable: true
+  # Pedantic-only; low security value but noisy
+  # Address concurrency limits as a separate, dedicated effort if desired
+  concurrency-limits:
+    disable: true
