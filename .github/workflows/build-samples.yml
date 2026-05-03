@@ -69,15 +69,15 @@ jobs:
       - name: Check SBOM Conformance
         run: |
           set -euxo pipefail
-          if ! ls *.spdx.json; then
+          if ! ls ./*.spdx.json; then
             echo "no SBOMs found!"
             exit 1
           fi
-          for f in *.spdx.json; do
+          for f in ./*.spdx.json; do
             echo ::group::sbom.json
-            cat $f
+            cat "$f"
             echo ::endgroup::
-            docker run --rm -v $(pwd)/$f:/$f --entrypoint "sh" cgr.dev/chainguard/wolfi-base -c "apk add spdx-tools-java && tools-java Verify /$f"
+            docker run --rm -v "$(pwd)/$f:/$f" --entrypoint "sh" cgr.dev/chainguard/wolfi-base -c "apk add spdx-tools-java && tools-java Verify /$f"
           done
 
   build-all-examples-one-arch:
@@ -130,17 +130,17 @@ jobs:
       - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
       - run: |
           make apko
-          for cfg in $(find ./examples/ -name '*.yaml'); do
-            name=$(basename ${cfg} .yaml)
+          while IFS= read -r cfg; do
+            name=$(basename "${cfg}" .yaml)
             echo "Building ${name}..."
-            build_script=$(dirname ${cfg})/build.sh
-            if [ -f ${build_script} ]; then
-              ${build_script} ./apko
+            build_script=$(dirname "${cfg}")/build.sh
+            if [ -f "${build_script}" ]; then
+              "${build_script}" ./apko
             else
-              ./apko build ${cfg} ${name}:build /tmp/${name}.tar
-              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar
+              ./apko build "${cfg}" "${name}:build" /tmp/"${name}".tar
+              ./apko build --offline "${cfg}" "${name}:build" /tmp/"${name}".tar
             fi
-          done
+          done < <(find ./examples/ -name '*.yaml')
 
   build-wolfi-source-date-epoch:
     name: source-date-epoch
@@ -325,13 +325,13 @@ jobs:
           ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx --arch x86_64,aarch64)
 
           # Check index annotations.
-          crane manifest $ref | jq -r '.annotations.foo' | grep bar
+          crane manifest "$ref" | jq -r '.annotations.foo' | grep bar
 
           # Check per-image annotations.
-          crane manifest --platform=linux/arm64 $ref | jq -r '.annotations.foo' | grep bar
+          crane manifest --platform=linux/arm64 "$ref" | jq -r '.annotations.foo' | grep bar
 
           # Check per-image config labels.
-          crane config --platform=linux/arm64 $ref | jq -r '.config.Labels' | grep bar
+          crane config --platform=linux/arm64 "$ref" | jq -r '.config.Labels' | grep bar
 
   certificates:
     name: certificates

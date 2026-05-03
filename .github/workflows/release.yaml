@@ -68,25 +68,25 @@ jobs:
 
               if [ -z "$RELEASE_WORTHY_CHANGES" ]; then
                 echo "No Go source files, go.mod, go.sum, or LICENSE changed since last release. Skipping release."
-                echo "need_release=no" >> $GITHUB_OUTPUT
+                echo "need_release=no" >> "$GITHUB_OUTPUT"
               else
                 echo "Found release-worthy changes since last release:"
                 echo "$RELEASE_WORTHY_CHANGES"
-                echo "need_release=yes" >> $GITHUB_OUTPUT
+                echo "need_release=yes" >> "$GITHUB_OUTPUT"
               fi
             else
               echo "No previous tags found. Creating first release."
-              echo "need_release=yes" >> $GITHUB_OUTPUT
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
             fi
           else
             RELEASE=$(gh release view "$TAG" --json tagName --jq '.tagName' || echo "none")
             if [ "$RELEASE" == "$TAG" ]; then
               echo "A release exists for tag $TAG, which has the latest changes, so no need for a new tag or release."
-              echo "need_release=no" >> $GITHUB_OUTPUT
+              echo "need_release=no" >> "$GITHUB_OUTPUT"
             else
               echo "Tag $TAG exists, but no release is associated. Need a new release."
-              echo "need_release=yes" >> $GITHUB_OUTPUT
-              echo "existing_tag=$TAG" >> $GITHUB_OUTPUT
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
+              echo "existing_tag=$TAG" >> "$GITHUB_OUTPUT"
             fi
           fi
 
