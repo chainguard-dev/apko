@@ -60,9 +60,11 @@ jobs:
           check-latest: true
       - name: Setup QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-      - run: |
+      - env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
+          ./apko build ./examples/nginx.yaml nginx:build "/tmp/nginx-${MATRIX_ARCH}.tar" --arch "${MATRIX_ARCH}"
 
       - name: Check SBOM Conformance
         run: |
