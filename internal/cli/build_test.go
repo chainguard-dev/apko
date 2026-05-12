@@ -155,3 +155,34 @@ func TestBuildWithBase(t *testing.T) {
 
 	require.Equal(t, want, got)
 }
+
+func TestBuildMinirootFSWritesSBOM(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+
+	sbomPath := filepath.Join(tmp, "sboms")
+	require.NoError(t, os.MkdirAll(sbomPath, 0o750))
+
+	output := filepath.Join(tmp, "minirootfs.tar.gz")
+	err := cli.BuildMinirootFSCmd(ctx,
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
+		build.WithArch(types.ParseArchitecture("amd64")),
+		build.WithTarball(output),
+		build.WithSBOM(sbomPath),
+		build.WithSBOMGenerators(spdx.New()),
+	)
+	require.NoError(t, err)
+
+	require.FileExists(t, output)
+
+	sbom := filepath.Join(sbomPath, "sbom-x86_64.spdx.json")
+	require.FileExists(t, sbom)
+
+	data, err := os.ReadFile(sbom)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(data, &doc))
+	require.Equal(t, "SPDX-2.3", doc["spdxVersion"])
+	require.NotEmpty(t, doc["packages"])
+}
