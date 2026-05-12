@@ -26,6 +26,24 @@ import (
 
 // FromLayer converts a container layer to CPIO format.
 func FromLayer(layer v1.Layer, dest io.Writer) error {
+	return FromLayers([]v1.Layer{layer}, dest)
+}
+
+// FromLayers converts multiple container layers to a single CPIO archive.
+func FromLayers(layers []v1.Layer, dest io.Writer) error {
+	w := cpio.NewDedupWriter(cpio.Newc.Writer(dest))
+
+	for _, layer := range layers {
+		if err := recordsFromLayer(layer, w); err != nil {
+			return err
+		}
+	}
+
+	return w.WriteRecord(cpio.TrailerRecord)
+}
+
+// recordsFromLayer reads tar entries from a layer and writes them as CPIO records.
+func recordsFromLayer(layer v1.Layer, w cpio.RecordWriter) error {
 	// Open the filesystem layer to walk through the file.
 	u, err := layer.Uncompressed()
 	if err != nil {
@@ -34,8 +52,6 @@ func FromLayer(layer v1.Layer, dest io.Writer) error {
 	defer u.Close()
 
 	tarReader := tar.NewReader(u)
-
-	w := cpio.NewDedupWriter(cpio.Newc.Writer(dest))
 
 	// Iterate through the tar archive entries
 	for {
@@ -95,5 +111,5 @@ func FromLayer(layer v1.Layer, dest io.Writer) error {
 		}
 	}
 
-	return w.WriteRecord(cpio.TrailerRecord)
+	return nil
 }
