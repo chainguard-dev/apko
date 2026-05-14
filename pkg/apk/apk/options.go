@@ -113,9 +113,11 @@ func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 			}
 		}
 		o.cache = &cache{
-			dir:     cacheDir,
-			offline: offline,
-			shared:  shared,
+			dir:             cacheDir,
+			offline:         offline,
+			shared:          shared,
+			resolverCache:   &resolverCache{},
+			disqualifyCache: &disqualifyCache{},
 		}
 		return nil
 	}
