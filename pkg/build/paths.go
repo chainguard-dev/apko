@@ -41,14 +41,34 @@ func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMuta
 }
 
 func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uint32) error {
-	target := path
+	// Get file/directory information.
+	info, err := fsys.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %q: %w", path, err)
+	}
 
-	if err := fsys.Chmod(target, fs.FileMode(perms)); err != nil {
-		return fmt.Errorf("chmod %q: %w", target, err)
+	// Change permissions and ownership for the current path.
+	if err := fsys.Chmod(path, fs.FileMode(perms)); err != nil {
+		return fmt.Errorf("chmod %q: %w", path, err)
 	}
-	if err := fsys.Chown(target, int(uid), int(gid)); err != nil {
-		return fmt.Errorf("chown %q: %w", target, err)
+	if err := fsys.Chown(path, int(uid), int(gid)); err != nil {
+		return fmt.Errorf("chown %q: %w", path, err)
 	}
+
+	// If the current path is a directory, recursively process its contents.
+	if info.IsDir() {
+		entries, err := fsys.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("read dir %q: %w", path, err)
+		}
+		for _, entry := range entries {
+			childPath := filepath.Join(path, entry.Name())
+			if err := mutatePermissionsDirect(fsys, childPath, perms, uid, gid); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
