@@ -342,9 +342,13 @@ func (t *cacheTransport) fetchOffline(cacheFile string) (*http.Response, error) 
 			return nil, err
 		}
 
-		if fi.ModTime().After(newest.ModTime()) {
+		if (fi.ModTime().After(newest.ModTime()) || newest.IsDir()) && !fi.IsDir() {
 			newest = fi
 		}
+	}
+
+	if newest.IsDir() {
+		return nil, fmt.Errorf("%s is a directory", newest.Name())
 	}
 
 	f, err := os.Open(filepath.Join(cacheDir, newest.Name()))
