@@ -338,27 +338,36 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 				fullpath, _ = sanitizeArchivePath(lastDir.Name, val)
 			}
 			lastFile = &tar.Header{
-				Name: fullpath,
-				Mode: 0o644,
-				Uid:  0,
-				Gid:  0,
-			}
-			pkg.Files = append(pkg.Files, *lastFile)
-		case "a":
-			// file perms if not 0o644
-			if lastFile == nil {
-				return nil, fmt.Errorf("cannot parse line %d: no file specified when setting permissions", linenr)
-			}
-			uid, gid, perms, err := parseInstalledPerms(val)
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse line %d: %w", linenr, err)
-			}
-			lastFile.Uid = uid
-			lastFile.Gid = gid
-			lastFile.Mode = perms
+			Name: fullpath,
+			Mode: 0o644,
+			Uid:  0,
+			Gid:  0,
 		}
+		pkg.Files = append(pkg.Files, *lastFile)
+	case "a":
+		// file perms if not 0o644
+		if lastFile == nil {
+			return nil, fmt.Errorf("cannot parse line %d: no file specified when setting permissions", linenr)
+		}
+		uid, gid, perms, err := parseInstalledPerms(val)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse line %d: %w", linenr, err)
+		}
+		lastFile.Uid = uid
+		lastFile.Gid = gid
+		lastFile.Mode = perms
+	case "Z":
+		// file checksum
+		if lastFile == nil {
+			return nil, fmt.Errorf("cannot parse line %d: no file specified when setting checksum", linenr)
+		}
+		if lastFile.PAXRecords == nil {
+			lastFile.PAXRecords = make(map[string]string)
+		}
+		lastFile.PAXRecords[paxRecordsChecksumKey] = val
+	}
 
-		linenr++
+	linenr++
 	}
 
 	return packages, nil
