@@ -214,7 +214,7 @@ The `paths` element contains the following children:
  - `gid`: GID to associate with the file
  - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
  - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
-
+ - `recursive`: toggle whether to mutate recursively
 
 ### Includes
 
