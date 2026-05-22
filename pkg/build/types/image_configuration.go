@@ -181,6 +181,27 @@ func (i *ImageContents) MergeInto(target *ImageContents) error {
 	if target.BaseImage == nil {
 		target.BaseImage = i.BaseImage
 	}
+	// Merge ecosystem configs
+	if len(i.Ecosystems) > 0 {
+		if target.Ecosystems == nil {
+			target.Ecosystems = make(map[string]EcosystemConfig)
+		}
+		for name, eco := range i.Ecosystems {
+			if existing, ok := target.Ecosystems[name]; ok {
+				existing.Indexes = slices.Concat(eco.Indexes, existing.Indexes)
+				existing.Packages = slices.Concat(eco.Packages, existing.Packages)
+				if existing.PythonVersion == "" {
+					existing.PythonVersion = eco.PythonVersion
+				}
+				if existing.Venv == "" {
+					existing.Venv = eco.Venv
+				}
+				target.Ecosystems[name] = existing
+			} else {
+				target.Ecosystems[name] = eco
+			}
+		}
+	}
 	return nil
 }
 
@@ -293,6 +314,14 @@ func (ic *ImageConfiguration) Summarize(ctx context.Context) {
 		log.Infof("    groups:")
 		for _, g := range ic.Accounts.Groups {
 			log.Infof("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
+		}
+	}
+	if len(ic.Contents.Ecosystems) > 0 {
+		log.Infof("  ecosystems:")
+		for name, eco := range ic.Contents.Ecosystems {
+			log.Infof("    %s:", name)
+			log.Infof("      indexes:  %v", eco.Indexes)
+			log.Infof("      packages: %v", eco.Packages)
 		}
 	}
 	if len(ic.Annotations) > 0 {

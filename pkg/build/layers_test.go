@@ -25,6 +25,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func size(pkgs ...*apk.Package) uint64 {
@@ -261,8 +262,8 @@ func TestSplitLayersDirectoryCreation(t *testing.T) {
 
 	// Create package groups (this will result in multiple layers)
 	groups := []*group{
-		{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"},
-		{pkgs: []*apk.Package{pkg2}, size: 2000, tiebreaker: "pkg2"},
+		{pkgs: []*apk.Package{pkg1}, owners: []string{"pkg1"}, size: 1000, tiebreaker: "pkg1"},
+		{pkgs: []*apk.Package{pkg2}, owners: []string{"pkg2"}, size: 2000, tiebreaker: "pkg2"},
 	}
 
 	// Create package diffs (minimal content for each package)
@@ -345,6 +346,136 @@ func TestSplitLayersDirectoryCreation(t *testing.T) {
 			if _, ok := foundDirs[dir]; !ok {
 				t.Errorf("layer %d missing parent directory %q - this indicates the directory creation fix is not working", i, dir)
 			}
+		}
+	}
+}
+
+func TestApplyBudgetWithEcosystemGroups(t *testing.T) {
+	// Simulate APK groups and ecosystem groups competing for budget.
+	apkGroup := &group{
+		pkgs:       []*apk.Package{{Name: "glibc", Origin: "glibc", InstalledSize: 6000000}},
+		owners:     []string{"glibc"},
+		size:       6000000,
+		tiebreaker: "glibc",
+	}
+	ecoGroup1 := &group{
+		owners:     []string{"python:flask"},
+		size:       500000,
+		tiebreaker: "python:flask",
+	}
+	ecoGroup2 := &group{
+		owners:     []string{"python:requests"},
+		size:       300000,
+		tiebreaker: "python:requests",
+	}
+
+	groups := applyBudget([]*group{apkGroup, ecoGroup1, ecoGroup2}, 3)
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(groups))
+	}
+	// Should be sorted by size descending: glibc, flask, requests
+	if groups[0].owners[0] != "glibc" {
+		t.Errorf("expected glibc first, got %v", groups[0].owners)
+	}
+	if groups[1].owners[0] != "python:flask" {
+		t.Errorf("expected python:flask second, got %v", groups[1].owners)
+	}
+	if groups[2].owners[0] != "python:requests" {
+		t.Errorf("expected python:requests third, got %v", groups[2].owners)
+	}
+
+	// With budget=2, the smallest should overflow into the last group.
+	groups = applyBudget([]*group{
+		{owners: []string{"glibc"}, size: 6000000, tiebreaker: "glibc"},
+		{owners: []string{"python:flask"}, size: 500000, tiebreaker: "python:flask"},
+		{owners: []string{"python:requests"}, size: 300000, tiebreaker: "python:requests"},
+	}, 2)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	if groups[0].owners[0] != "glibc" {
+		t.Errorf("expected glibc first, got %v", groups[0].owners)
+	}
+	// The overflow group should contain both ecosystem packages.
+	if len(groups[1].owners) != 2 {
+		t.Errorf("expected 2 owners in overflow, got %d: %v", len(groups[1].owners), groups[1].owners)
+	}
+}
+
+func TestSplitLayersWithEcosystemOwners(t *testing.T) {
+	// Use tarfs which supports Owner() on file info.
+	fsys := tarfs.New()
+
+	// Create some APK-like content (without actual package ownership).
+	if err := fsys.MkdirAll("usr/lib/apk/db", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("usr/lib/apk/db/installed", []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate ecosystem package file installation with owner tagging.
+	fsys.SetCurrentOwner("python:flask")
+	if err := fsys.MkdirAll("usr/lib/python3.12/site-packages/flask", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("usr/lib/python3.12/site-packages/flask/__init__.py", []byte("# flask init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fsys.SetCurrentOwner("")
+
+	fsys.SetCurrentOwner("python:requests")
+	if err := fsys.MkdirAll("usr/lib/python3.12/site-packages/requests", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("usr/lib/python3.12/site-packages/requests/__init__.py", []byte("# requests init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fsys.SetCurrentOwner("")
+
+	// Create groups: one for each ecosystem package.
+	groups := []*group{
+		{owners: []string{"python:flask"}, size: 100, tiebreaker: "python:flask"},
+		{owners: []string{"python:requests"}, size: 200, tiebreaker: "python:requests"},
+	}
+
+	tmpDir := t.TempDir()
+	pkgToDiff := map[*apk.Package][]byte{}
+
+	ctx := context.Background()
+	layers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir)
+	if err != nil {
+		t.Fatalf("splitLayers failed: %v", err)
+	}
+
+	// 2 ecosystem groups + 1 top layer = 3 layers
+	if len(layers) != 3 {
+		t.Fatalf("expected 3 layers, got %d", len(layers))
+	}
+
+	// Check that flask files ended up in layer 0 and requests in layer 1.
+	for i, want := range []string{"flask", "requests"} {
+		rc, err := layers[i].Uncompressed()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := tar.NewReader(rc)
+		found := false
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if hdr.Name == fmt.Sprintf("usr/lib/python3.12/site-packages/%s/__init__.py", want) {
+				found = true
+			}
+		}
+		rc.Close()
+		if !found {
+			t.Errorf("layer %d missing %s/__init__.py", i, want)
 		}
 	}
 }
