@@ -70,6 +70,7 @@ func TestParseVersion(t *testing.T) {
 			{"1.1.1s_alpha2-r2", Version{numbers: []int{1, 1, 1}, preSuffix: packageVersionPreModifierAlpha, preSuffixNumber: 2, letter: 's', postSuffix: packageVersionPostModifierNone, revision: 2}},
 			{"1.1.1-r2", Version{numbers: []int{1, 1, 1}, preSuffix: packageVersionPreModifierNone, postSuffix: packageVersionPostModifierNone, revision: 2}},
 			{"1.1.1-r29", Version{numbers: []int{1, 1, 1}, preSuffix: packageVersionPreModifierNone, postSuffix: packageVersionPostModifierNone, revision: 29}},
+			{"1.1.0-r1-r0", Version{numbers: []int{1, 1, 0}, preSuffix: packageVersionPreModifierNone, postSuffix: packageVersionPostModifierNone, revision: 0, revisions: []int{1, 0}}},
 		}
 		for _, tt := range tests {
 			actual, err := ParseVersion(tt.version)
@@ -85,6 +86,7 @@ func TestParseVersion(t *testing.T) {
 			"1_illegal",
 			"1_illegal",
 			"1.1.1-rQ",
+			"1.1.0-r1-rbad",
 		}
 		for _, version := range tests {
 			_, err := ParseVersion(version)
@@ -315,6 +317,9 @@ func TestCompareVersion(t *testing.T) {
 		{"4.1.4", greater, "1.2.10-r5"},
 		{"1.2.10-r5", less, "4.1.4-r3"},
 		{"4.1.4-r3", equal, "4.1.4-r3"},
+		{"1.1.0-r1-r0", greater, "1.1.0-r1"},
+		{"1.1.0-r1-r0", less, "1.1.0-r1-r1"},
+		{"1.1.0-r1-r0", greater, "1.1.0-r0"},
 		{"4.1.4-r3", less, "4.2.1"},
 		{"4.2.1", greater, "4.1.0"},
 		{"4.1.0", less, "8.11"},
