@@ -217,11 +217,17 @@ type ImageConfiguration struct {
 	// supported container runtimes.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 
+	// Optional: Annotations to apply to individual layer descriptors
+	LayerAnnotations map[string]string `json:"layer-annotations,omitempty" yaml:"layer-annotations,omitempty"`
+
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
 
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+
+	// Optional: Crossplane xpkg base layer content, written directly as package.yaml
+	Xpkg map[string]any `json:"xpkg,omitempty" yaml:"xpkg,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -440,6 +446,7 @@ type Layering struct {
 	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
 }
+
 
 type AdditionalCertificateEntry struct {
 	// Required: Name of the certificate entry
