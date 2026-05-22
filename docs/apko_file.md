@@ -92,6 +92,10 @@ annotations:
   foo: bar
   bar: baz
 
+# optional layer descriptor annotations
+layer-annotations:
+  dev.chainguard.layer.source: apko
+
 # optional layering strategy
 layering:
   strategy: origin
@@ -246,6 +250,21 @@ Patches to improve the parsing to make it more flexible are welcome.
 ### Annotations
 
 `annotations` defines the set of annotations that should be applied to images and indexes.
+
+### Layer Annotations
+
+`layer-annotations` defines the set of annotations that should be applied to every layer descriptor
+in the image manifest. This is useful for attaching metadata to layers for provenance tracking or
+tooling integration.
+
+Example:
+
+```yaml
+layer-annotations:
+  dev.chainguard.layer.source: apko
+```
+
+Layer annotations can also be set via the `--layer-annotations` CLI flag using `key:value` format.
 
 ### Layering
 

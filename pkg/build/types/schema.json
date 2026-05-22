@@ -154,6 +154,13 @@
           "type": "object",
           "description": "Optional: Annotations to apply to the images manifests"
         },
+        "layer-annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Optional: Annotations to apply to every layer descriptor in the image manifest"
+        },
         "include": {
           "type": "string",
           "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration\n\nDeprecated: This will be removed in a future release."

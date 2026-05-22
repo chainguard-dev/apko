@@ -201,6 +201,8 @@ type ImageConfiguration struct {
 	VCSUrl string `json:"vcs-url,omitempty" yaml:"vcs-url,omitempty"`
 	// Optional: Annotations to apply to the images manifests
 	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	// Optional: Annotations to apply to every layer descriptor in the image manifest
+	LayerAnnotations map[string]string `json:"layer-annotations,omitempty" yaml:"layer-annotations,omitempty"`
 	// Optional: Path to a local file containing additional image configuration
 	//
 	// The included configuration is deep merged with the parent configuration

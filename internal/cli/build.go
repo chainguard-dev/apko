@@ -54,6 +54,7 @@ func buildCmd() *cobra.Command {
 	var extraRepos []string
 	var extraPackages []string
 	var rawAnnotations []string
+	var rawLayerAnnotations []string
 	var cacheDir string
 	var offline bool
 	var lockfile string
@@ -86,6 +87,10 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 			if err != nil {
 				return fmt.Errorf("parsing annotations from command line: %w", err)
 			}
+			layerAnnotations, err := parseAnnotations(rawLayerAnnotations)
+			if err != nil {
+				return fmt.Errorf("parsing layer annotations from command line: %w", err)
+			}
 
 			var sbomGenerators []generator.Generator
 			if writeSBOM && len(sbomFormats) > 0 {
@@ -113,6 +118,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithTags(args[1]),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
+				build.WithLayerAnnotations(layerAnnotations),
 				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 				build.WithLockFile(lockfile),
 				build.WithTempDir(tmp),
@@ -134,6 +140,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
+	cmd.Flags().StringSliceVar(&rawLayerAnnotations, "layer-annotations", []string{}, "OCI annotations to add to every layer descriptor. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
