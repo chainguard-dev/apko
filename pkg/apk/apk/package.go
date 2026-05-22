@@ -46,7 +46,7 @@ func PackageToInstalled(pkg *Package) (out []string) {
 		out = append(out, fmt.Sprintf("r:%s", strings.Join(pkg.Replaces, " ")))
 	}
 	out = append(out, fmt.Sprintf("c:%s", pkg.RepoCommit))
-	out = append(out, fmt.Sprintf("i:%s", pkg.InstallIf))
+	out = append(out, fmt.Sprintf("i:%s", strings.Join(pkg.InstallIf, " ")))
 	out = append(out, fmt.Sprintf("t:%d", pkg.BuildTime.Unix()))
 	out = append(out, fmt.Sprintf("S:%d", pkg.Size))
 	out = append(out, fmt.Sprintf("I:%d", pkg.InstalledSize))
