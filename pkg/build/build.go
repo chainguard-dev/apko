@@ -187,6 +187,20 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	bc.o.TarballPath = outfile.Name()
 	defer outfile.Close()
 
+	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
+		if err := writeERofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
+			return "", nil, fmt.Errorf("generating erofs image: %w", err)
+		}
+		if err := outfile.Sync(); err != nil {
+			return "", nil, fmt.Errorf("syncing erofs image: %w", err)
+		}
+		l, err := buildErofsLayerFromFile(outfile.Name(), nil)
+		if err != nil {
+			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
+		}
+		return outfile.Name(), l, nil
+	}
+
 	lw := newLayerWriter(outfile)
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
