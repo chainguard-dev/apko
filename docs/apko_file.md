@@ -268,3 +268,5 @@ See [layering.md](layering.md) for more information.
 `erofs` may also be selected on the command line with `--format=erofs` on `apko build` and `apko publish`. The CLI flag overrides whatever is in the config file.
 
 **Status:** EROFS support is experimental and tracks the spec PR at https://github.com/erofs/erofs-image-spec/pull/1; media types and annotations may change before the spec reaches a stable release. Both single-layer and multi-layer (`layering`) builds are supported. Multi-layer builds emit each non-final layer with `org.erofs.role=overlay-lower` per spec §3.8; the final layer carries no role. `+zstd` compression and dm-verity are not implemented.
+
+See [erofs.md](erofs.md) for a step-by-step guide to building, inspecting, mounting, and pulling EROFS images.
