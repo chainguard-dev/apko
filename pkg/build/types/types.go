@@ -220,8 +220,40 @@ type ImageConfiguration struct {
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
 
+	// Optional: Layer payload format. One of "tar" (default) or "erofs".
+	// "erofs" is experimental and tracks the draft erofs/erofs-image-spec.
+	Format LayerFormat `json:"format,omitempty" yaml:"format,omitempty"`
+
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+}
+
+// LayerFormat selects the on-wire layer payload format.
+type LayerFormat string
+
+const (
+	// LayerFormatTar produces gzip-compressed tar layers (OCI/Docker default).
+	LayerFormatTar LayerFormat = "tar"
+	// LayerFormatErofs produces uncompressed EROFS filesystem layers per the
+	// draft erofs/erofs-image-spec.
+	LayerFormatErofs LayerFormat = "erofs"
+)
+
+// Resolved returns the format with the empty default coerced to LayerFormatTar.
+func (f LayerFormat) Resolved() LayerFormat {
+	if f == "" {
+		return LayerFormatTar
+	}
+	return f
+}
+
+// Valid reports whether f is a recognized layer format.
+func (f LayerFormat) Valid() bool {
+	switch f.Resolved() {
+	case LayerFormatTar, LayerFormatErofs:
+		return true
+	}
+	return false
 }
 
 // Architecture represents a CPU architecture for the container image.

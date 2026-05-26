@@ -128,6 +128,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Layering == nil {
 		target.Layering = ic.Layering
 	}
+	if target.Format == "" {
+		target.Format = ic.Format
+	}
 	if target.Certificates == nil {
 		target.Certificates = ic.Certificates
 	}
@@ -232,6 +235,10 @@ func (ic *ImageConfiguration) Validate() error {
 		if g.GroupName == "" {
 			return fmt.Errorf("configured group %v has no configured group name", g)
 		}
+	}
+
+	if ic.Format != "" && !ic.Format.Valid() {
+		return fmt.Errorf("invalid layer format %q (must be %q or %q)", ic.Format, LayerFormatTar, LayerFormatErofs)
 	}
 
 	if ic.Certificates != nil {
