@@ -32,6 +32,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             raw.githubusercontent.com:443
             registry-1.docker.io:443
