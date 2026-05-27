@@ -145,7 +145,7 @@ cat extracted/etc/os-release
 
 ### List contents with `apko erofs ls`
 
-For a quick `tar tvf`-style listing of any EROFS source (raw blob or OCI image directory), use `apko erofs ls`. It transparently mounts read-only, walks the tree, prints one line per entry, and unmounts automatically.
+For a quick `tar tvf`-style listing of any EROFS source (raw blob or OCI image directory), use `apko erofs ls`. It opens the EROFS blobs directly, walks the merged view in user space, and prints one line per entry — no mounts, no root or FUSE required, works on Linux/macOS/Windows.
 
 ```sh
 apko erofs ls out/blobs/sha256/$LAYER | head
@@ -156,7 +156,7 @@ apko erofs ls out/blobs/sha256/$LAYER | head
 apko erofs ls out/      # works against the whole OCI image too
 ```
 
-`apko erofs ls` picks `kernel` mode automatically when running as root and `fuse` mode otherwise. Override with `--mode=kernel|fuse|auto`.
+For multi-layer images, `ls` applies AUFS-style overlay semantics in user space (whiteouts, opaque markers) to present the merged view the kernel would assemble.
 
 ## Mount the layer
 
