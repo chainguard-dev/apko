@@ -34,8 +34,8 @@ type fakeLayer struct {
 }
 
 // writeFakeOCILayout writes a minimal OCI image layout under root with one or
-// more EROFS layers. Returns the path it wrote to.
-func writeFakeOCILayout(t *testing.T, root string, layers []fakeLayer) string {
+// more EROFS layers.
+func writeFakeOCILayout(t *testing.T, root string, layers []fakeLayer) {
 	t.Helper()
 	blobsDir := filepath.Join(root, "blobs", "sha256")
 	if err := os.MkdirAll(blobsDir, 0o755); err != nil {
@@ -124,7 +124,6 @@ func writeFakeOCILayout(t *testing.T, root string, layers []fakeLayer) string {
 	if err := os.WriteFile(filepath.Join(root, "index.json"), indexBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return root
 }
 
 func TestReadOCILayers_MultiLayer(t *testing.T) {
