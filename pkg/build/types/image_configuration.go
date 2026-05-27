@@ -238,7 +238,7 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 
 	if ic.Format != "" && !ic.Format.Valid() {
-		return fmt.Errorf("invalid layer format %q (must be %q or %q)", ic.Format, LayerFormatTar, LayerFormatErofs)
+		return fmt.Errorf("invalid layer format %q (must be %q, %q, or %q with one of zstd|lz4|lz4hc|deflate and optional ,level=N)", ic.Format, LayerFormatTar, LayerFormatErofs, "erofs+ALGO")
 	}
 
 	if ic.Certificates != nil {

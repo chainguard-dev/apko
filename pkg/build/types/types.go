@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -220,15 +221,22 @@ type ImageConfiguration struct {
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
 
-	// Optional: Layer payload format. One of "tar" (default) or "erofs".
-	// "erofs" is experimental and tracks the draft erofs/erofs-image-spec.
+	// Optional: Layer payload format. One of:
+	//   "tar"                     gzip-compressed tar (default)
+	//   "erofs"                   raw EROFS via the pure-Go writer
+	//   "erofs+ALGO[,level=N]"    compressed EROFS via mkfs.erofs;
+	//                             ALGO is one of zstd|lz4|lz4hc|deflate
+	// "erofs" forms are experimental and track the draft erofs/erofs-image-spec.
 	Format LayerFormat `json:"format,omitempty" yaml:"format,omitempty"`
 
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
 }
 
-// LayerFormat selects the on-wire layer payload format.
+// LayerFormat selects the on-wire layer payload format. It is a string of
+// the form "BASE[+ALGO[,level=N]]", where BASE is "tar" or "erofs" and the
+// optional +ALGO[,level=N] suffix selects a compressor (only meaningful for
+// "erofs").
 type LayerFormat string
 
 const (
@@ -239,7 +247,16 @@ const (
 	LayerFormatErofs LayerFormat = "erofs"
 )
 
-// Resolved returns the format with the empty default coerced to LayerFormatTar.
+// erofsCompressors is the set of compressor names mkfs.erofs accepts via -z.
+var erofsCompressors = map[string]bool{
+	"zstd":    true,
+	"lz4":     true,
+	"lz4hc":   true,
+	"deflate": true,
+}
+
+// Resolved returns the format with the empty default coerced to
+// LayerFormatTar. The compressor suffix, if any, is preserved.
 func (f LayerFormat) Resolved() LayerFormat {
 	if f == "" {
 		return LayerFormatTar
@@ -247,11 +264,68 @@ func (f LayerFormat) Resolved() LayerFormat {
 	return f
 }
 
-// Valid reports whether f is a recognized layer format.
+// Base returns the base format type ("tar" or "erofs") with any "+ALGO[,...]"
+// compressor suffix stripped. Use Base() (not Resolved()) for dispatch on
+// format kind.
+func (f LayerFormat) Base() LayerFormat {
+	r := f.Resolved()
+	if base, _, ok := strings.Cut(string(r), "+"); ok {
+		return LayerFormat(base)
+	}
+	return r
+}
+
+// Compressor returns the compressor algorithm name from a compound format
+// like "erofs+zstd,level=5", or "" if no compressor is specified.
+func (f LayerFormat) Compressor() string {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return ""
+	}
+	algo, _, _ := strings.Cut(rest, ",")
+	return algo
+}
+
+// CompressionLevel returns the parsed level from a compound format like
+// "erofs+zstd,level=5", or 0 if not specified. Validation of the level
+// against the chosen algorithm's range is left to the underlying tool
+// (e.g. mkfs.erofs); we just parse the integer.
+func (f LayerFormat) CompressionLevel() (int, bool) {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return 0, false
+	}
+	_, opts, ok := strings.Cut(rest, ",")
+	if !ok {
+		return 0, false
+	}
+	for opt := range strings.SplitSeq(opts, ",") {
+		k, v, ok := strings.Cut(opt, "=")
+		if !ok {
+			continue
+		}
+		if k == "level" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return 0, false
+			}
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// Valid reports whether f is a recognized layer format. The base must be
+// "tar" or "erofs"; a compressor suffix, if present, must name a compressor
+// that mkfs.erofs supports.
 func (f LayerFormat) Valid() bool {
-	switch f.Resolved() {
-	case LayerFormatTar, LayerFormatErofs:
-		return true
+	switch f.Base() {
+	case LayerFormatTar:
+		// tar doesn't take a compressor suffix.
+		return f.Compressor() == ""
+	case LayerFormatErofs:
+		c := f.Compressor()
+		return c == "" || erofsCompressors[c]
 	}
 	return false
 }

@@ -316,9 +316,35 @@ for d in mnt/lower*; do sudo umount "$d" 2>/dev/null || fusermount -u "$d"; done
 
 Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; both `apko erofs mount` and the manual steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
 
+## Compressed layers (mkfs.erofs)
+
+The default `--format=erofs` produces uncompressed EROFS layers via the pure-Go [go-erofs](https://github.com/erofs/go-erofs) writer. For compression, ask for it explicitly:
+
+```sh
+sudo apk add erofs-utils                                            # Wolfi / Alpine
+# or: brew install erofs-utils                                      # macOS
+# or: sudo apt install erofs-utils                                  # Debian / Ubuntu
+
+apko build --format=erofs+zstd erofs-demo.yaml apko-erofs-demo:latest out/
+```
+
+apko routes compressed `--format=erofs+ALGO[,level=N]` builds through the `mkfs.erofs` tool from `erofs-utils`, since go-erofs doesn't write compressed images yet. Supported algorithms are `zstd`, `lz4`, `lz4hc`, and `deflate`. Examples:
+
+```sh
+apko build --format=erofs+zstd             ...   # default level for the algorithm
+apko build --format=erofs+zstd,level=15    ...   # explicit level (zstd: 0–22)
+apko build --format=erofs+lz4              ...   # faster, less compression
+apko build --format=erofs+lz4hc,level=12   ...   # best lz4 ratio
+```
+
+If `mkfs.erofs` is not on PATH, the build fails with a clear error.
+
+**Important caveat:** compressed EROFS layers cannot be inspected with `apko erofs ls`, because go-erofs has not yet implemented read-side decompression. `apko erofs ls` will fail with an error pointing you at `apko erofs mount`, which uses the kernel or `erofsfuse` and handles decompression transparently. Uncompressed images (`--format=erofs`) and uncompressed mkfs.erofs output remain readable by `apko erofs ls`.
+
+This is expected to be temporary: once go-erofs gains read-side compression, `apko erofs ls` will work against `--format=erofs+zstd` images automatically — the user-facing flag won't change.
+
 ## Current limitations
 
-- **No compression.** apko emits raw `application/vnd.erofs` layers only. The draft spec defines `application/vnd.erofs+zstd` but neither apko's writer nor the underlying go-erofs library writes compressed images yet.
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
 - **No chunk index.** Lazy-loading runtimes (per spec §3.4) won't get an index; reads are sequential.
 - **No `overlay-data` or `device` roles.** Only `overlay-lower` (and unannotated final) layers are emitted.
