@@ -73,8 +73,8 @@ func TestWalkAndPrint(t *testing.T) {
 	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		fields := strings.Fields(line)
 		rel := fields[len(fields)-1]
-		if i := strings.Index(line, " -> "); i >= 0 {
-			before := strings.Fields(line[:i])
+		if left, _, ok := strings.Cut(line, " -> "); ok {
+			before := strings.Fields(left)
 			rel = before[len(before)-1]
 		}
 		if strings.HasPrefix(rel, "/") || rel == "." || rel == "" {

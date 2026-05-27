@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/chainguard-dev/clog"
@@ -127,8 +128,8 @@ func mountImage(ctx context.Context, drv Driver, src Source, dest string, opts O
 		if retErr == nil {
 			return
 		}
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			if err := cleanups[i](); err != nil {
+		for _, c := range slices.Backward(cleanups) {
+			if err := c(); err != nil {
 				log.Warnf("cleanup on error: %v", err)
 			}
 		}

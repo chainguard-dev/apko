@@ -92,10 +92,7 @@ func walkAndPrint(ctx context.Context, root string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		line, err := formatEntry(info, rel, path)
-		if err != nil {
-			return err
-		}
+		line := formatEntry(info, rel, path)
 		if _, werr := fmt.Fprintln(tw, line); werr != nil {
 			return werr
 		}
@@ -107,7 +104,7 @@ func walkAndPrint(ctx context.Context, root string, w io.Writer) error {
 	return tw.Flush()
 }
 
-func formatEntry(info fs.FileInfo, rel, path string) (string, error) {
+func formatEntry(info fs.FileInfo, rel, path string) string {
 	mode := info.Mode()
 	modeStr := formatMode(mode)
 
@@ -122,13 +119,12 @@ func formatEntry(info fs.FileInfo, rel, path string) (string, error) {
 
 	suffix := ""
 	if mode&fs.ModeSymlink != 0 {
-		target, err := os.Readlink(path)
-		if err == nil {
+		if target, err := os.Readlink(path); err == nil {
 			suffix = " -> " + target
 		}
 	}
 
-	return fmt.Sprintf("%s\t%d/%d\t%d\t%s\t%s%s", modeStr, uid, gid, size, mt, rel, suffix), nil
+	return fmt.Sprintf("%s\t%d/%d\t%d\t%s\t%s%s", modeStr, uid, gid, size, mt, rel, suffix)
 }
 
 // formatMode renders a 10-character mode string in the style of `ls -l`.
