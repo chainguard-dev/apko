@@ -143,31 +143,50 @@ ls extracted/
 cat extracted/etc/os-release
 ```
 
+### List contents with `apko erofs ls`
+
+For a quick `tar tvf`-style listing of any EROFS source (raw blob or OCI image directory), use `apko erofs ls`. It transparently mounts read-only, walks the tree, prints one line per entry, and unmounts automatically.
+
+```sh
+apko erofs ls out/blobs/sha256/$LAYER | head
+# lrwxrwxrwx  0/0    7    2026-04-17 19:17  bin -> usr/bin
+# drwxr-xr-x  0/0    115  2026-04-17 19:17  dev
+# ...
+
+apko erofs ls out/      # works against the whole OCI image too
+```
+
+`apko erofs ls` picks `kernel` mode automatically when running as root and `fuse` mode otherwise. Override with `--mode=kernel|fuse|auto`.
+
 ## Mount the layer
 
-### Kernel mount (root)
+`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `apko erofs umount DEST` tears it back down.
 
 ```sh
-sudo mkdir -p /mnt/apko-erofs
-sudo mount -t erofs -o loop out/blobs/sha256/$LAYER /mnt/apko-erofs
+mkdir -p /mnt/apko-erofs
+apko erofs mount out/blobs/sha256/$LAYER /mnt/apko-erofs
 ls /mnt/apko-erofs/
 file /mnt/apko-erofs/bin/sh
-sudo umount /mnt/apko-erofs
+apko erofs umount /mnt/apko-erofs
 ```
 
-The kernel mount is read-only, zero-copy, and exposes xattrs.
-If `mount` reports "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or use the FUSE path below.
+If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
 
-### FUSE mount (unprivileged)
+### Doing it manually
+
+For reference, `apko erofs mount` is equivalent to one of:
 
 ```sh
-mkdir -p mnt
-erofsfuse out/blobs/sha256/$LAYER mnt/
-ls mnt/
-fusermount -u mnt/      # or `fusermount3 -u mnt/`
-```
+# Kernel (root):
+sudo mount -t erofs -o loop out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
+sudo umount /mnt/apko-erofs
 
-`erofsfuse` does not require root, which makes it convenient on dev machines and inside CI containers that lack the kernel module.
+# FUSE (unprivileged):
+erofsfuse out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
+fusermount3 -u /mnt/apko-erofs       # or `fusermount -u`
+```
 
 ## Pulling from a registry
 
@@ -239,7 +258,32 @@ Each layer is independently mountable as an EROFS filesystem, and each carries i
 ### Assemble the full rootfs with overlayfs
 
 The OCI spec composes layers with `overlayfs`-style semantics; for EROFS layers the composition is straightforward.
-Mount each layer separately, then stack them with `mount -t overlay`:
+The simplest way is `apko erofs mount`, which mounts each layer and assembles the overlay in one step:
+
+```sh
+mkdir -p mnt
+apko erofs mount out-layered/ mnt/
+ls mnt/merged/                     # full rootfs
+cat mnt/.apko-erofs-mount.json     # records the mounts for teardown
+apko erofs umount mnt/             # unwinds the overlay and every layer
+```
+
+The directory layout produced under `DEST` is:
+
+```
+mnt/
+├── layers/00..NN              # one EROFS mountpoint per layer (00 is base)
+├── upper/                     # overlayfs upperdir
+├── work/                      # overlayfs workdir
+├── merged/                    # combined view
+└── .apko-erofs-mount.json     # state file consumed by `apko erofs umount`
+```
+
+`apko erofs mount` picks kernel mounts when running as root and falls back to `erofsfuse` + (kernel overlay over FUSE, then `fuse-overlayfs`) otherwise. Force one path with `--mode=kernel|fuse|auto`.
+
+#### Doing it manually
+
+For reference, the equivalent without `apko erofs mount`:
 
 ```sh
 # Pull each layer blob out of the OCI layout.
@@ -270,7 +314,7 @@ sudo umount mnt/merged
 for d in mnt/lower*; do sudo umount "$d" 2>/dev/null || fusermount -u "$d"; done
 ```
 
-Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; the manual steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
+Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; both `apko erofs mount` and the manual steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
 
 ## Current limitations
 
