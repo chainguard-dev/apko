@@ -19,17 +19,18 @@ package erofsmount
 import (
 	"context"
 	"fmt"
-	"io"
 	"runtime"
 )
 
 // Driver, NewDriver, ResolveMode are intentionally absent on non-Linux: the
 // EROFS kernel module, erofsfuse, overlayfs, and fuse-overlayfs are Linux
-// concepts. The exported Mount/Unmount/Ls return a clear error so callers
-// (the CLI) don't have to gate at every call site.
+// concepts. Mount and Unmount return a clear error so the CLI doesn't have
+// to gate at every call site.
+//
+// Ls and OpenLayers are cross-platform (go-erofs is pure Go).
 
 func unsupportedOS() error {
-	return fmt.Errorf("apko erofs subcommands are only supported on Linux (running on %s)", runtime.GOOS)
+	return fmt.Errorf("apko erofs mount/umount are only supported on Linux (running on %s)", runtime.GOOS)
 }
 
 // Mount is a no-op stub on non-Linux that returns an error.
@@ -40,16 +41,4 @@ func Mount(_ context.Context, _ Source, _ string, _ Options) (*MountState, error
 // Unmount is a no-op stub on non-Linux that returns an error.
 func Unmount(_ context.Context, _ string) error {
 	return unsupportedOS()
-}
-
-// Ls is a no-op stub on non-Linux that returns an error.
-func Ls(_ context.Context, _ Source, _ Options, _ io.Writer) error {
-	return unsupportedOS()
-}
-
-// Options is defined on non-Linux to keep the CLI build-tag-free.
-type Options struct {
-	Mode     Mode
-	Arch     string
-	ReadOnly bool
 }

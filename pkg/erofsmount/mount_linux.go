@@ -29,19 +29,6 @@ import (
 	"github.com/chainguard-dev/clog"
 )
 
-// Options bundles the optional knobs for Mount and Ls.
-type Options struct {
-	// Mode selects ModeKernel, ModeFuse, or ModeAuto. Zero value is treated
-	// as ModeAuto.
-	Mode Mode
-	// Arch picks a manifest from a multi-arch OCI index. "" or "host" means
-	// runtime.GOARCH.
-	Arch string
-	// ReadOnly, when true, skips upper/work overlay dirs and produces a
-	// pure read-only overlay. Used by Ls.
-	ReadOnly bool
-}
-
 // Mount mounts src at dest. For KindBlob, dest is the single mountpoint. For
 // KindOCIDir, dest is a directory that receives the standard layout:
 //
