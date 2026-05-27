@@ -87,7 +87,16 @@ func openOneBlob(path string) (*os.File, fs.FS, error) {
 	l, err := erofs.Open(f)
 	if err != nil {
 		_ = f.Close()
-		return nil, nil, fmt.Errorf("erofs.Open %s: %w", path, err)
+		return nil, nil, wrapErofsErr(path, err)
 	}
 	return f, l, nil
+}
+
+// wrapErofsErr turns go-erofs's ErrNotImplemented into an actionable message
+// pointing the user at the mount-based path. Other errors pass through.
+func wrapErofsErr(path string, err error) error {
+	if errors.Is(err, erofs.ErrNotImplemented) {
+		return fmt.Errorf("read %s: this EROFS image uses a feature go-erofs does not yet support (typically compression); use `apko erofs mount` to inspect via the kernel or erofsfuse instead: %w", path, err)
+	}
+	return fmt.Errorf("erofs.Open %s: %w", path, err)
 }

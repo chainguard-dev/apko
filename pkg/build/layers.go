@@ -86,7 +86,14 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
-	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
+	if bc.ic.Format.Base() == types.LayerFormatErofs {
+		if compressor := bc.ic.Format.Compressor(); compressor != "" {
+			if err := preflightMkfsErofs(ctx, bc.ic.Format); err != nil {
+				return nil, err
+			}
+			level, _ := bc.ic.Format.CompressionLevel()
+			return splitErofsLayersViaMkfs(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch, compressor, level)
+		}
 		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
 	}
 	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
