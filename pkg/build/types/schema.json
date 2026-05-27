@@ -171,7 +171,7 @@
         },
         "format": {
           "type": "string",
-          "description": "Optional: Layer payload format. One of \"tar\" (default) or \"erofs\".\n\"erofs\" is experimental and tracks the draft erofs/erofs-image-spec."
+          "description": "Optional: Layer payload format. One of:\n  \"tar\"                     gzip-compressed tar (default)\n  \"erofs\"                   raw EROFS via the pure-Go writer\n  \"erofs+ALGO[,level=N]\"    compressed EROFS via mkfs.erofs;\n                            ALGO is one of zstd|lz4|lz4hc|deflate\n\"erofs\" forms are experimental and track the draft erofs/erofs-image-spec."
         },
         "certificates": {
           "$ref": "#/$defs/ImageCertificates",
