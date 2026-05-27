@@ -34,6 +34,20 @@ const (
 	ModeFuse   Mode = "fuse"
 )
 
+// Options is the shared option bag used by Mount and Ls. Only Arch is
+// meaningful for Ls; Mode and ReadOnly only affect Mount.
+type Options struct {
+	// Mode selects ModeKernel, ModeFuse, or ModeAuto. Zero value is
+	// treated as ModeAuto.
+	Mode Mode
+	// Arch picks a manifest from a multi-arch OCI index. "" or "host"
+	// means runtime.GOARCH.
+	Arch string
+	// ReadOnly, when true, skips upper/work overlay dirs and produces a
+	// pure read-only overlay during Mount.
+	ReadOnly bool
+}
+
 // StateSchemaVersion is the current MountState JSON schema version.
 const StateSchemaVersion = 1
 
