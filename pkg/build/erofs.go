@@ -44,15 +44,15 @@ const (
 	erofsUncompressedDigestAnnotation = "org.erofs.uncompressed-digest"
 )
 
-// writeERofs serializes fsys as a raw (uncompressed) EROFS filesystem image to
+// writeErofs serializes fsys as a raw (uncompressed) EROFS filesystem image to
 // out. out must be both writable and seekable: go-erofs's Writer rewrites the
 // superblock at offset 0 after streaming file data.
 //
 // If buildTime is non-zero it sets the EROFS image build time (used to seed
 // per-entry mtime defaulting and recorded in the superblock), making the image
 // reproducible.
-func writeERofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, buildTime time.Time) error {
-	ctx, span := otel.Tracer("apko").Start(ctx, "writeERofs")
+func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, buildTime time.Time) error {
+	ctx, span := otel.Tracer("apko").Start(ctx, "writeErofs")
 	defer span.End()
 
 	var createOpts []erofs.CreateOpt

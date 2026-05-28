@@ -98,10 +98,10 @@ func runMkfsErofs(ctx context.Context, outPath, tarPath string, buildTime time.T
 	return nil
 }
 
-// writeERofsViaMkfs is the mkfs.erofs equivalent of writeERofs for the
+// writeErofsViaMkfs is the mkfs.erofs equivalent of writeErofs for the
 // single-layer build path. It serializes fsys to a temp tar file, runs
 // mkfs.erofs to produce outPath, and removes the temp tar on return.
-func writeERofsViaMkfs(ctx context.Context, outPath string, fsys apkfs.FullFS, buildTime time.Time, compressor string, level int) error {
+func writeErofsViaMkfs(ctx context.Context, outPath string, fsys apkfs.FullFS, buildTime time.Time, compressor string, level int) error {
 	tarFile, err := os.CreateTemp(filepath.Dir(outPath), "apko-erofs-mkfs-*.tar")
 	if err != nil {
 		return fmt.Errorf("creating tar tempfile: %w", err)

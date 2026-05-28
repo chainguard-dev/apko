@@ -52,7 +52,7 @@ func seedFS(t *testing.T) apkfs.FullFS {
 	return m
 }
 
-func TestWriteERofs_Roundtrip(t *testing.T) {
+func TestWriteErofs_Roundtrip(t *testing.T) {
 	m := seedFS(t)
 
 	out := filepath.Join(t.TempDir(), "image.erofs")
@@ -60,7 +60,7 @@ func TestWriteERofs_Roundtrip(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 
-	require.NoError(t, writeERofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
 	require.NoError(t, f.Close())
 
 	r, err := os.Open(out)
@@ -154,11 +154,11 @@ func TestImageLayoutToLayer_Erofs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestWriteERofs_FsckErofs validates a generated image with the C reference
+// TestWriteErofs_FsckErofs validates a generated image with the C reference
 // tool from erofs-utils. The test is skipped when fsck.erofs is not on PATH so
 // contributors without erofs-utils installed still get a green build. CI
 // images that include erofs-utils will actually exercise this path.
-func TestWriteERofs_FsckErofs(t *testing.T) {
+func TestWriteErofs_FsckErofs(t *testing.T) {
 	fsckBin, err := exec.LookPath("fsck.erofs")
 	if err != nil {
 		t.Skip("fsck.erofs not found in PATH; install erofs-utils to run this test")
@@ -168,7 +168,7 @@ func TestWriteERofs_FsckErofs(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(out)
 	require.NoError(t, err)
-	require.NoError(t, writeERofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
 	require.NoError(t, f.Close())
 
 	// Plain integrity check: superblock CRC, layout, all reachable inodes.
@@ -286,12 +286,12 @@ func lookFsckErofs() (string, error) {
 	return exec.LookPath("fsck.erofs")
 }
 
-func TestWriteERofs_Reproducible(t *testing.T) {
+func TestWriteErofs_Reproducible(t *testing.T) {
 	build := func(path string) []byte {
 		m := seedFS(t)
 		f, err := os.Create(path)
 		require.NoError(t, err)
-		require.NoError(t, writeERofs(context.Background(), f, m, epoch))
+		require.NoError(t, writeErofs(context.Background(), f, m, epoch))
 		require.NoError(t, f.Close())
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
