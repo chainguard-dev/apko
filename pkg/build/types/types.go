@@ -317,7 +317,9 @@ func (f LayerFormat) CompressionLevel() (int, bool) {
 
 // Valid reports whether f is a recognized layer format. The base must be
 // "tar" or "erofs"; a compressor suffix, if present, must name a compressor
-// that mkfs.erofs supports.
+// that mkfs.erofs supports; and any "key=value" options after the
+// compressor must use a known key (currently only "level") with a value
+// that parses cleanly.
 func (f LayerFormat) Valid() bool {
 	switch f.Base() {
 	case LayerFormatTar:
@@ -325,9 +327,41 @@ func (f LayerFormat) Valid() bool {
 		return f.Compressor() == ""
 	case LayerFormatErofs:
 		c := f.Compressor()
-		return c == "" || erofsCompressors[c]
+		if c != "" && !erofsCompressors[c] {
+			return false
+		}
+		return f.validOptions()
 	}
 	return false
+}
+
+// validOptions checks the comma-separated "key=value" options that follow
+// the compressor name. An empty or missing suffix is valid. Currently the
+// only recognized key is "level", whose value must parse as an integer.
+func (f LayerFormat) validOptions() bool {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return true
+	}
+	_, opts, ok := strings.Cut(rest, ",")
+	if !ok {
+		return true
+	}
+	for opt := range strings.SplitSeq(opts, ",") {
+		k, v, ok := strings.Cut(opt, "=")
+		if !ok {
+			return false
+		}
+		switch k {
+		case "level":
+			if _, err := strconv.Atoi(v); err != nil {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Architecture represents a CPU architecture for the container image.
