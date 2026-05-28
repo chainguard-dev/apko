@@ -232,7 +232,7 @@ func TestSplitErofsLayers(t *testing.T) {
 		// Layer roles: overlay-lower on the package layers, absent on the top.
 		anns := erl.LayerAnnotations()
 		if i < len(layers)-1 {
-			require.Equal(t, "overlay-lower", anns[erofsRoleAnnotation], "layer[%d] missing overlay-lower role", i)
+			require.Equal(t, "overlay-lower", anns[types.ErofsRoleAnnotation], "layer[%d] missing overlay-lower role", i)
 		} else {
 			require.Empty(t, anns, "top layer must carry no role annotation")
 		}

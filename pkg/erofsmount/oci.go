@@ -24,18 +24,11 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	ocitypes "github.com/google/go-containerregistry/pkg/v1/types"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
-// EROFS-specific constants. These are duplicated from pkg/build/erofs.go to
-// avoid taking a dependency on the build package from this leaf library.
-// They must stay in sync.
-const (
-	erofsLayerMediaType = "application/vnd.erofs"
-	erofsRoleAnnotation = "org.erofs.role"
-	erofsRoleOverlay    = "overlay-lower"
-
-	annotationRefName = "org.opencontainers.image.ref.name"
-)
+const annotationRefName = "org.opencontainers.image.ref.name"
 
 // LayerRef points at one EROFS layer blob on disk along with its descriptor
 // metadata.
@@ -84,8 +77,8 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 
 	refs := make([]LayerRef, 0, len(manifest.Layers))
 	for i, desc := range manifest.Layers {
-		if string(desc.MediaType) != erofsLayerMediaType {
-			return nil, fmt.Errorf("layer %d has mediaType %q; expected %q (this command only handles EROFS images)", i, desc.MediaType, erofsLayerMediaType)
+		if string(desc.MediaType) != types.ErofsLayerMediaType {
+			return nil, fmt.Errorf("layer %d has mediaType %q; expected %q (this command only handles EROFS images)", i, desc.MediaType, types.ErofsLayerMediaType)
 		}
 		blob := filepath.Join(ociDir, "blobs", desc.Digest.Algorithm, desc.Digest.Hex)
 		if _, err := os.Stat(blob); err != nil {
@@ -96,7 +89,7 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 			Digest:      desc.Digest.String(),
 			MediaType:   string(desc.MediaType),
 			Annotations: desc.Annotations,
-			Role:        desc.Annotations[erofsRoleAnnotation],
+			Role:        desc.Annotations[types.ErofsRoleAnnotation],
 		})
 	}
 
@@ -106,8 +99,8 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 	// either position so single-layer images (one unannotated layer) work.
 	if len(refs) > 1 {
 		for i := 0; i < len(refs)-1; i++ {
-			if refs[i].Role != erofsRoleOverlay {
-				return nil, fmt.Errorf("layer %d: missing %s=%s annotation (only the final layer may be unannotated)", i, erofsRoleAnnotation, erofsRoleOverlay)
+			if refs[i].Role != types.ErofsRoleOverlayLower {
+				return nil, fmt.Errorf("layer %d: missing %s=%s annotation (only the final layer may be unannotated)", i, types.ErofsRoleAnnotation, types.ErofsRoleOverlayLower)
 			}
 		}
 		if refs[len(refs)-1].Role != "" {

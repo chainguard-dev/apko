@@ -24,13 +24,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 type fakeLayer struct {
 	body        []byte
 	role        string
 	annotations map[string]string
-	mediaType   string // override; default erofsLayerMediaType
+	mediaType   string // override; default types.ErofsLayerMediaType
 }
 
 // writeFakeOCILayout writes a minimal OCI image layout under root with one or
@@ -70,13 +72,13 @@ func writeFakeOCILayout(t *testing.T, root string, layers []fakeLayer) {
 	for _, l := range layers {
 		mt := l.mediaType
 		if mt == "" {
-			mt = erofsLayerMediaType
+			mt = types.ErofsLayerMediaType
 		}
 		dig := writeBlob(l.body)
 		anns := map[string]string{}
 		maps.Copy(anns, l.annotations)
 		if l.role != "" {
-			anns[erofsRoleAnnotation] = l.role
+			anns[types.ErofsRoleAnnotation] = l.role
 		}
 		layerDescs = append(layerDescs, descriptor{
 			MediaType:   mt,
@@ -129,8 +131,8 @@ func writeFakeOCILayout(t *testing.T, root string, layers []fakeLayer) {
 func TestReadOCILayers_MultiLayer(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeOCILayout(t, dir, []fakeLayer{
-		{body: []byte("layer0-base"), role: erofsRoleOverlay},
-		{body: []byte("layer1-mid"), role: erofsRoleOverlay},
+		{body: []byte("layer0-base"), role: types.ErofsRoleOverlayLower},
+		{body: []byte("layer1-mid"), role: types.ErofsRoleOverlayLower},
 		{body: []byte("layer2-top")},
 	})
 
@@ -141,7 +143,7 @@ func TestReadOCILayers_MultiLayer(t *testing.T) {
 	if len(refs) != 3 {
 		t.Fatalf("got %d layers, want 3", len(refs))
 	}
-	for i, want := range []string{erofsRoleOverlay, erofsRoleOverlay, ""} {
+	for i, want := range []string{types.ErofsRoleOverlayLower, types.ErofsRoleOverlayLower, ""} {
 		if refs[i].Role != want {
 			t.Errorf("layer %d role: got %q want %q", i, refs[i].Role, want)
 		}
@@ -190,7 +192,7 @@ func TestReadOCILayers_BadRoleOrder(t *testing.T) {
 	// First layer lacks role annotation: invalid.
 	writeFakeOCILayout(t, dir, []fakeLayer{
 		{body: []byte("a")},
-		{body: []byte("b"), role: erofsRoleOverlay},
+		{body: []byte("b"), role: types.ErofsRoleOverlayLower},
 	})
 	_, err := ReadOCILayers(dir, "", "amd64")
 	if err == nil || !strings.Contains(err.Error(), "missing") {
