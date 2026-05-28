@@ -160,7 +160,7 @@ For multi-layer images, `ls` applies AUFS-style overlay semantics in user space 
 
 ## Mount the layer
 
-`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `apko erofs umount DEST` tears it back down.
+`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `--read-only` mounts the image without an upper/work overlay; for a single-layer image that means the lone layer is mounted straight at `DEST/merged` with no overlayfs in the path. `apko erofs umount DEST` tears it back down.
 
 ```sh
 mkdir -p /mnt/apko-erofs

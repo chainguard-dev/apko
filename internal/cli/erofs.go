@@ -38,6 +38,7 @@ by 'apko build --format=erofs'). These commands are Linux-only.`,
 
 func erofsMount() *cobra.Command {
 	var mode, arch string
+	var readOnly bool
 	cmd := &cobra.Command{
 		Use:   "mount [flags] SOURCE DEST",
 		Short: "Mount an EROFS blob or an EROFS OCI image at DEST",
@@ -52,13 +53,16 @@ SOURCE may be:
 
 For OCI sources, DEST gets this layout:
   DEST/layers/00..NN  one per EROFS layer (00 is base)
-  DEST/upper          overlayfs upperdir
-  DEST/work           overlayfs workdir
+  DEST/upper          overlayfs upperdir (writable mounts only)
+  DEST/work           overlayfs workdir (writable mounts only)
   DEST/merged         the combined view
-  DEST/.apko-erofs-mount.json  state for 'apko erofs umount'`,
+  DEST/.apko-erofs-mount.json  state for 'apko erofs umount'
+
+With --read-only on a single-layer image, overlayfs is skipped and the
+sole layer is mounted directly at DEST/merged.`,
 		Example: `  apko erofs mount ./out:latest /mnt/x
   apko erofs mount --mode=fuse ./image.erofs /mnt/y
-  apko erofs mount oci-dir:./out:latest /mnt/z`,
+  apko erofs mount --read-only oci-dir:./out:latest /mnt/z`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src, err := erofsmount.ParseSource(args[0])
@@ -66,14 +70,16 @@ For OCI sources, DEST gets this layout:
 				return err
 			}
 			_, err = erofsmount.Mount(cmd.Context(), src, args[1], erofsmount.Options{
-				Mode: erofsmount.Mode(mode),
-				Arch: arch,
+				Mode:     erofsmount.Mode(mode),
+				Arch:     arch,
+				ReadOnly: readOnly,
 			})
 			return err
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", string(erofsmount.ModeAuto), "mount mode: kernel, fuse, or auto (auto = kernel if root else fuse)")
 	cmd.Flags().StringVar(&arch, "arch", "host", "architecture to select from a multi-arch OCI index (host = process arch)")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mount the image read-only (omits upperdir/workdir; single-layer images skip overlayfs entirely)")
 	return cmd
 }
 

@@ -104,12 +104,6 @@ func mountImage(ctx context.Context, drv Driver, src Source, dest string, opts O
 		return nil, fmt.Errorf("stat state file: %w", err)
 	}
 
-	for _, sub := range []string{"layers", "upper", "work", "merged"} {
-		if err := ensureDir(filepath.Join(dest, sub)); err != nil {
-			return nil, err
-		}
-	}
-
 	var cleanups []func() error
 	defer func() {
 		if retErr == nil {
@@ -121,6 +115,42 @@ func mountImage(ctx context.Context, drv Driver, src Source, dest string, opts O
 			}
 		}
 	}()
+
+	// Single-layer read-only short-circuit: overlay buys nothing when there's
+	// one lower and no upper, and a lowerdir-only overlay over a single
+	// EROFS mount has been flaky across overlayfs versions. Mount the layer
+	// straight at DEST/merged.
+	if opts.ReadOnly && len(layers) == 1 {
+		merged := filepath.Join(dest, "merged")
+		if err := ensureDir(merged); err != nil {
+			return nil, err
+		}
+		umount, err := drv.MountLayer(ctx, layers[0].BlobPath, merged)
+		if err != nil {
+			return nil, fmt.Errorf("mount layer 0 (%s) at %s: %w", layers[0].Digest, merged, err)
+		}
+		cleanups = append(cleanups, umount)
+		log.Infof("mounted single layer (%s) read-only at %s", layers[0].Digest, merged)
+
+		state := &MountState{
+			SchemaVersion: StateSchemaVersion,
+			Mode:          drv.Name(),
+			Source:        src.Raw,
+			Dest:          dest,
+			Created:       time.Now().UTC(),
+			Mounts:        []string{merged},
+		}
+		if err := WriteState(dest, state); err != nil {
+			return nil, fmt.Errorf("write state: %w", err)
+		}
+		return state, nil
+	}
+
+	for _, sub := range []string{"layers", "upper", "work", "merged"} {
+		if err := ensureDir(filepath.Join(dest, sub)); err != nil {
+			return nil, err
+		}
+	}
 
 	layerMps := make([]string, 0, len(layers))
 	mountsLIFO := make([]string, 0, len(layers)+1)
