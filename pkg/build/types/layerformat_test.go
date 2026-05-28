@@ -42,9 +42,14 @@ func TestLayerFormat(t *testing.T) {
 		{"erofs+xyz", LayerFormatErofs, "xyz", 0, false, false},
 		// Rejected: unknown base.
 		{"squashfs", "squashfs", "", 0, false, false},
-		// level=BAD is silently dropped (returns hasLevel=false), but the
-		// format is still valid — the compressor name validates.
-		{"erofs+zstd,level=oops", LayerFormatErofs, "zstd", 0, false, true},
+		// Rejected: level= value doesn't parse as an integer.
+		{"erofs+zstd,level=oops", LayerFormatErofs, "zstd", 0, false, false},
+		// Rejected: unknown option key.
+		{"erofs+zstd,foo=bar", LayerFormatErofs, "zstd", 0, false, false},
+		// Rejected: unknown key alongside a valid level.
+		{"erofs+zstd,level=3,foo=bar", LayerFormatErofs, "zstd", 3, true, false},
+		// Rejected: bare option with no '='.
+		{"erofs+zstd,solo", LayerFormatErofs, "zstd", 0, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.spec, func(t *testing.T) {
