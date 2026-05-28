@@ -185,13 +185,13 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
 	}
 	bc.o.TarballPath = outfile.Name()
-	defer outfile.Close()
 
 	if bc.ic.Format.Base() == types.LayerFormatErofs {
 		if compressor := bc.ic.Format.Compressor(); compressor != "" {
 			// Compressed EROFS routes to mkfs.erofs (go-erofs can't write
 			// compressed images yet). Close our handle before invoking it so
-			// it can recreate the file.
+			// it can recreate the file; no deferred Close is set, so we own
+			// the lifetime here exactly once.
 			level, _ := bc.ic.Format.CompressionLevel()
 			outName := outfile.Name()
 			if err := outfile.Close(); err != nil {
@@ -200,15 +200,13 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 			if err := preflightMkfsErofs(ctx, bc.ic.Format); err != nil {
 				return "", nil, err
 			}
-			if err := writeErofsViaMkfs(ctx, outName, bc.fs, bc.o.SourceDateEpoch, compressor, level); err != nil {
-				return "", nil, fmt.Errorf("generating erofs image via mkfs.erofs: %w", err)
-			}
-			l, err := buildErofsLayerFromFile(outName, nil)
+			l, err := writeErofsViaMkfs(ctx, outName, bc.o.TempDir(), bc.fs, bc.o.SourceDateEpoch, compressor, level)
 			if err != nil {
-				return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
+				return "", nil, fmt.Errorf("generating erofs image via mkfs.erofs: %w", err)
 			}
 			return outName, l, nil
 		}
+		defer outfile.Close()
 		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
 			return "", nil, fmt.Errorf("generating erofs image: %w", err)
 		}
@@ -222,6 +220,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return outfile.Name(), l, nil
 	}
 
+	defer outfile.Close()
 	lw := newLayerWriter(outfile)
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {

@@ -99,12 +99,16 @@ func runMkfsErofs(ctx context.Context, outPath, tarPath string, buildTime time.T
 }
 
 // writeErofsViaMkfs is the mkfs.erofs equivalent of writeErofs for the
-// single-layer build path. It serializes fsys to a temp tar file, runs
-// mkfs.erofs to produce outPath, and removes the temp tar on return.
-func writeErofsViaMkfs(ctx context.Context, outPath string, fsys apkfs.FullFS, buildTime time.Time, compressor string, level int) error {
-	tarFile, err := os.CreateTemp(filepath.Dir(outPath), "apko-erofs-mkfs-*.tar")
+// single-layer build path. It serializes fsys to a tar tempfile in workDir,
+// runs mkfs.erofs to produce the compressed layer at outPath, runs it again
+// without -z to produce the equivalent uncompressed image (used for DiffID
+// and the org.erofs.uncompressed-digest annotation), and returns a v1.Layer
+// referencing both files. The uncompressed-equivalent persists in workDir
+// for the lifetime of the returned layer.
+func writeErofsViaMkfs(ctx context.Context, outPath, workDir string, fsys apkfs.FullFS, buildTime time.Time, compressor string, level int) (v1.Layer, error) {
+	tarFile, err := os.CreateTemp(workDir, "apko-erofs-mkfs-*.tar")
 	if err != nil {
-		return fmt.Errorf("creating tar tempfile: %w", err)
+		return nil, fmt.Errorf("creating tar tempfile: %w", err)
 	}
 	tarPath := tarFile.Name()
 	defer os.Remove(tarPath)
@@ -112,24 +116,42 @@ func writeErofsViaMkfs(ctx context.Context, outPath string, fsys apkfs.FullFS, b
 	tw := tar.NewWriter(tarFile)
 	if err := writeTar(ctx, tw, fsys); err != nil {
 		_ = tarFile.Close()
-		return fmt.Errorf("writing tar input for mkfs.erofs: %w", err)
+		return nil, fmt.Errorf("writing tar input for mkfs.erofs: %w", err)
 	}
 	if err := tw.Close(); err != nil {
 		_ = tarFile.Close()
-		return fmt.Errorf("closing tar input for mkfs.erofs: %w", err)
+		return nil, fmt.Errorf("closing tar input for mkfs.erofs: %w", err)
 	}
 	if err := tarFile.Close(); err != nil {
-		return fmt.Errorf("closing tar tempfile: %w", err)
+		return nil, fmt.Errorf("closing tar tempfile: %w", err)
 	}
 
-	return runMkfsErofs(ctx, outPath, tarPath, buildTime, compressor, level)
+	if err := runMkfsErofs(ctx, outPath, tarPath, buildTime, compressor, level); err != nil {
+		return nil, err
+	}
+
+	uncompressedFile, err := os.CreateTemp(workDir, "apko-erofs-mkfs-uncompressed-*.bin")
+	if err != nil {
+		return nil, fmt.Errorf("creating uncompressed-equivalent tempfile: %w", err)
+	}
+	uncompressedPath := uncompressedFile.Name()
+	if err := uncompressedFile.Close(); err != nil {
+		return nil, fmt.Errorf("closing uncompressed-equivalent tempfile: %w", err)
+	}
+	if err := runMkfsErofs(ctx, uncompressedPath, tarPath, buildTime, "", 0); err != nil {
+		return nil, fmt.Errorf("generating uncompressed-equivalent for DiffID: %w", err)
+	}
+
+	return buildCompressedErofsLayerFromFiles(outPath, uncompressedPath, nil)
 }
 
 // splitErofsLayersViaMkfs is the mkfs.erofs equivalent of splitErofsLayers.
 // It reuses the existing tar-based grouping logic from splitLayers to
 // produce one uncompressed-tar layer per group, then runs mkfs.erofs on
 // each to convert to a compressed EROFS blob. The resulting layers carry
-// the same overlay-lower role annotations as the go-erofs path.
+// the same overlay-lower role annotations as the go-erofs path plus the
+// org.erofs.uncompressed-digest annotation describing the equivalent
+// uncompressed image.
 func splitErofsLayersViaMkfs(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, buildTime time.Time, compressor string, level int) ([]v1.Layer, error) {
 	tarLayers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpdir)
 	if err != nil {
@@ -139,14 +161,15 @@ func splitErofsLayersViaMkfs(ctx context.Context, fsys apkfs.FullFS, groups []*g
 	out := make([]v1.Layer, 0, len(tarLayers))
 	for i, tl := range tarLayers {
 		layerPath := filepath.Join(tmpdir, fmt.Sprintf("apko-erofs-mkfs-layer-%02d.bin", i))
-		if err := convertTarLayerViaMkfs(ctx, tl, layerPath, buildTime, compressor, level); err != nil {
+		uncompressedPath := filepath.Join(tmpdir, fmt.Sprintf("apko-erofs-mkfs-layer-%02d.uncompressed.bin", i))
+		if err := convertTarLayerViaMkfs(ctx, tl, layerPath, uncompressedPath, buildTime, compressor, level); err != nil {
 			return nil, fmt.Errorf("converting layer %d: %w", i, err)
 		}
-		var anns map[string]string
+		var extra map[string]string
 		if i < len(tarLayers)-1 {
-			anns = map[string]string{erofsRoleAnnotation: erofsRoleOverlay}
+			extra = map[string]string{erofsRoleAnnotation: erofsRoleOverlay}
 		}
-		l, err := buildErofsLayerFromFile(layerPath, anns)
+		l, err := buildCompressedErofsLayerFromFiles(layerPath, uncompressedPath, extra)
 		if err != nil {
 			return nil, fmt.Errorf("finalizing layer %d: %w", i, err)
 		}
@@ -156,8 +179,10 @@ func splitErofsLayersViaMkfs(ctx context.Context, fsys apkfs.FullFS, groups []*g
 }
 
 // convertTarLayerViaMkfs writes the uncompressed tar bytes from tl into a
-// temp file and runs mkfs.erofs to produce outPath.
-func convertTarLayerViaMkfs(ctx context.Context, tl v1.Layer, outPath string, buildTime time.Time, compressor string, level int) (retErr error) {
+// temp file and runs mkfs.erofs twice: once with -z to produce the
+// compressed layer at outPath, and once without to produce the equivalent
+// uncompressed image at uncompressedOutPath (used for DiffID).
+func convertTarLayerViaMkfs(ctx context.Context, tl v1.Layer, outPath, uncompressedOutPath string, buildTime time.Time, compressor string, level int) (retErr error) {
 	tarFile, err := os.CreateTemp(filepath.Dir(outPath), "apko-erofs-mkfs-*.tar")
 	if err != nil {
 		return fmt.Errorf("creating tar tempfile: %w", err)
@@ -179,5 +204,8 @@ func convertTarLayerViaMkfs(ctx context.Context, tl v1.Layer, outPath string, bu
 		return fmt.Errorf("closing tar tempfile: %w", err)
 	}
 
-	return runMkfsErofs(ctx, outPath, tarPath, buildTime, compressor, level)
+	if err := runMkfsErofs(ctx, outPath, tarPath, buildTime, compressor, level); err != nil {
+		return err
+	}
+	return runMkfsErofs(ctx, uncompressedOutPath, tarPath, buildTime, "", 0)
 }
