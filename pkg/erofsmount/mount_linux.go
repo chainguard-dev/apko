@@ -198,21 +198,17 @@ func unmountImage(ctx context.Context, dest string, st *MountState, log *clog.Lo
 	if err != nil {
 		return err
 	}
-	var errs []error
+	// st.Mounts is overlay-first then per-layer mounts in LIFO order. If
+	// any umount fails, stop: layer mounts that come after a still-pinned
+	// overlay would only return EBUSY noise, and continuing past an error
+	// would also leave the state file out of sync with reality. The user
+	// can rerun `apko erofs umount` after addressing whatever is keeping
+	// the mount busy.
 	for _, mp := range st.Mounts {
-		// Build a minimal one-shot umount via the driver's API: we can't
-		// reuse the closures from Mount because they live in a different
-		// process. Construct an umount inline using a fresh layer mount of
-		// nothing — i.e. just call the umount command directly.
 		if err := unmountOne(ctx, drv, mp); err != nil {
-			errs = append(errs, fmt.Errorf("umount %s: %w", mp, err))
-			log.Warnf("umount %s: %v", mp, err)
-		} else {
-			log.Infof("unmounted %s", mp)
+			return fmt.Errorf("umount %s: %w (remaining mounts left intact; rerun once they are no longer busy)", mp, err)
 		}
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+		log.Infof("unmounted %s", mp)
 	}
 	for _, sub := range []string{"merged", "upper", "work", "layers"} {
 		if err := os.RemoveAll(filepath.Join(dest, sub)); err != nil {
