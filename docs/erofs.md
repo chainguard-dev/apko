@@ -178,7 +178,7 @@ For reference, `apko erofs mount` is equivalent to one of:
 
 ```sh
 # Kernel (root):
-sudo mount -t erofs -o loop out/blobs/sha256/$LAYER /mnt/apko-erofs
+sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
 # ...later:
 sudo umount /mnt/apko-erofs
 
@@ -299,7 +299,7 @@ i=0
 for d in $(jq -r '.layers[].digest | split(":")[1]' "$BLOBS/$MANIFEST"); do
   mp=mnt/lower$(printf %02d $i)
   mkdir -p "$mp"
-  sudo mount -t erofs -o loop "$BLOBS/$d" "$mp" 2>/dev/null || \
+  sudo mount -t erofs -o ro "$BLOBS/$d" "$mp" 2>/dev/null || \
     erofsfuse "$BLOBS/$d" "$mp"
   LOWERS="$mp${LOWERS:+:$LOWERS}"
   i=$((i+1))
