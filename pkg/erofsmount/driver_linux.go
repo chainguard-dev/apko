@@ -176,7 +176,13 @@ func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper
 // Command builders. Pure functions so they can be tested without exec.
 
 func buildKernelLayerArgs(blob, mp string) []string {
-	return []string{"mount", "-t", "erofs", "-o", "loop,ro", blob, mp}
+	// "-o loop" is unnecessary on modern util-linux: when the source is a
+	// regular file, mount(8) auto-detects and allocates a loop device with
+	// O_AUTOCLEAR so it's freed on umount. Asking for "-o loop" explicitly
+	// risks leaking the loop device when the kernel/util-linux don't agree
+	// on autoclear semantics. EROFS itself is read-only, but pass "-o ro"
+	// anyway to document intent.
+	return []string{"mount", "-t", "erofs", "-o", "ro", blob, mp}
 }
 
 func buildKernelUmountArgs(mp string) []string {

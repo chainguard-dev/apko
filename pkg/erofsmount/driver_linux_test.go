@@ -24,7 +24,7 @@ import (
 
 func TestBuildKernelLayerArgs(t *testing.T) {
 	got := buildKernelLayerArgs("/blobs/abc", "/mnt/x")
-	want := []string{"mount", "-t", "erofs", "-o", "loop,ro", "/blobs/abc", "/mnt/x"}
+	want := []string{"mount", "-t", "erofs", "-o", "ro", "/blobs/abc", "/mnt/x"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
