@@ -32,7 +32,7 @@ sudo apk add erofs-utils-fuse    # erofsfuse (optional, for unprivileged mount)
 Install on Debian / Ubuntu:
 
 ```sh
-sudo apt install erofs-utils erofsfuse
+sudo apt install erofs-utils    # ships mkfs.erofs, fsck.erofs, dump.erofs, and erofsfuse
 ```
 
 ## Single-layer build
@@ -59,7 +59,7 @@ Build into an OCI image layout directory:
 
 ```sh
 mkdir -p out
-apko build erofs-demo.yaml apko-erofs-demo:latest out/ --format=erofs --arch=$(uname -m)
+apko build erofs-demo.yaml apko-erofs-demo:latest out/ --format=erofs --arch=host
 ```
 
 The OCI layout under `out/` is a regular OCI image directory — the layer blob just happens to be an EROFS filesystem:
@@ -233,7 +233,7 @@ format: erofs
 
 ```sh
 mkdir -p out-layered
-apko build erofs-layered.yaml apko-erofs-layered:latest out-layered/ --arch=$(uname -m)
+apko build erofs-layered.yaml apko-erofs-layered:latest out-layered/ --arch=host
 ```
 
 Inspect the manifest:
@@ -287,21 +287,26 @@ For reference, the equivalent without `apko erofs mount`:
 
 ```sh
 # Pull each layer blob out of the OCI layout.
-ROOT=$(pwd)/out-layered/blobs/sha256
-mkdir -p mnt/{lower0,lower1,lower2,lower3,top,merged,work,upper}
+BLOBS=$(pwd)/out-layered/blobs/sha256
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+mkdir -p mnt/{merged,work,upper}
 
-LAYERS=$(jq -r '.layers[].digest | split(":")[1]' $ROOT/../../blobs/sha256/$MANIFEST)
+# Mount every layer; build the overlay lowerdir as we go. overlayfs lists
+# lowerdirs top-down (highest priority first), while OCI orders layers
+# bottom-up (index 0 is the base), so prepend each new layer.
+LOWERS=
 i=0
-for d in $LAYERS; do
-  sudo mount -t erofs -o loop "$ROOT/$d" "mnt/lower$i" 2>/dev/null || \
-    erofsfuse "$ROOT/$d" "mnt/lower$i"
+for d in $(jq -r '.layers[].digest | split(":")[1]' "$BLOBS/$MANIFEST"); do
+  mp=mnt/lower$(printf %02d $i)
+  mkdir -p "$mp"
+  sudo mount -t erofs -o loop "$BLOBS/$d" "$mp" 2>/dev/null || \
+    erofsfuse "$BLOBS/$d" "$mp"
+  LOWERS="$mp${LOWERS:+:$LOWERS}"
   i=$((i+1))
 done
 
-# In overlayfs, lowerdirs are listed top-down (highest priority first).
-# OCI orders layers bottom-up (index 0 is the base), so reverse the order.
 sudo mount -t overlay overlay \
-  -o lowerdir=mnt/lower$((i-1)):mnt/lower$((i-2)):mnt/lower1:mnt/lower0,upperdir=mnt/upper,workdir=mnt/work \
+  -o "lowerdir=$LOWERS,upperdir=mnt/upper,workdir=mnt/work" \
   mnt/merged
 
 ls mnt/merged/   # full rootfs
