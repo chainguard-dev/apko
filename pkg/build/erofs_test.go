@@ -17,6 +17,9 @@ package build
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -284,6 +287,58 @@ func newPkg(name string) *apk.Package {
 
 func lookFsckErofs() (string, error) {
 	return exec.LookPath("fsck.erofs")
+}
+
+// TestImageLayoutToLayer_ErofsCompressed exercises the mkfs.erofs path and
+// verifies that compressed layers expose distinct Digest and DiffID values,
+// surface the org.erofs.uncompressed-digest annotation matching DiffID, and
+// that Uncompressed() actually streams bytes whose SHA-256 equals DiffID.
+func TestImageLayoutToLayer_ErofsCompressed(t *testing.T) {
+	if _, err := exec.LookPath("mkfs.erofs"); err != nil {
+		t.Skip("mkfs.erofs not found in PATH; install erofs-utils to run this test")
+	}
+
+	m := seedFS(t)
+	require.NoError(t, m.MkdirAll("etc", 0o755))
+	require.NoError(t, m.WriteFile("etc/passwd", []byte("root:x:0:0:root:/root:/bin/sh\n"), 0o644))
+	require.NoError(t, m.WriteFile("etc/group", []byte("root:x:0:root\n"), 0o644))
+	require.NoError(t, m.WriteFile("etc/os-release", []byte("ID=test\n"), 0o644))
+
+	tmp := t.TempDir()
+	bc := &Context{
+		ic: types.ImageConfiguration{Format: types.LayerFormat("erofs+zstd")},
+		o: options.Options{
+			TempDirPath:     tmp,
+			SourceDateEpoch: epoch,
+		},
+		fs: m,
+	}
+
+	_, layer, err := bc.ImageLayoutToLayer(context.Background())
+	require.NoError(t, err)
+
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	diffID, err := layer.DiffID()
+	require.NoError(t, err)
+	require.NotEqual(t, digest, diffID, "compressed EROFS: Digest must differ from DiffID")
+
+	la, ok := layer.(interface {
+		LayerAnnotations() map[string]string
+	})
+	require.True(t, ok, "layer does not expose LayerAnnotations")
+	require.Equal(t, diffID.String(), la.LayerAnnotations()["org.erofs.uncompressed-digest"],
+		"uncompressed-digest annotation must equal DiffID")
+
+	// Uncompressed() must produce bytes whose hash equals DiffID.
+	rc, err := layer.Uncompressed()
+	require.NoError(t, err)
+	defer rc.Close()
+	h := sha256.New()
+	_, err = io.Copy(h, rc)
+	require.NoError(t, err)
+	require.Equal(t, diffID.Hex, hex.EncodeToString(h.Sum(nil)),
+		"Uncompressed() bytes must hash to DiffID")
 }
 
 func TestWriteErofs_Reproducible(t *testing.T) {

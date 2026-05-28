@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"time"
 
@@ -226,44 +227,81 @@ func newErofsLayerFile(tmpdir, pattern string) (*os.File, error) {
 	return f, nil
 }
 
-// buildErofsLayerFromFile takes a finalized EROFS image already serialized to
-// path and returns a v1.Layer wrapping it. For the raw `application/vnd.erofs`
-// media type the DiffID and Digest are identical: the SHA-256 of the on-wire
-// blob bytes (per spec §5.2). annotations, when non-empty, are surfaced on the
-// layer's descriptor via the LayerAnnotations() accessor.
+// buildErofsLayerFromFile takes a finalized raw (uncompressed) EROFS image at
+// path and returns a v1.Layer wrapping it. For raw EROFS, DiffID and Digest
+// are identical: the SHA-256 of the on-wire blob bytes (per spec §5.2).
+// annotations, when non-empty, are surfaced on the layer's descriptor via the
+// LayerAnnotations() accessor.
 func buildErofsLayerFromFile(path string, annotations map[string]string) (v1.Layer, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	size, err := io.Copy(h, f)
+	hash, size, err := hashFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("hashing erofs layer %s: %w", path, err)
 	}
-
-	hash := v1.Hash{
-		Algorithm: "sha256",
-		Hex:       hex.EncodeToString(h.Sum(make([]byte, 0, h.Size()))),
-	}
-
 	return &erofsLayer{
 		path:        path,
 		hash:        hash,
+		diffID:      hash,
 		size:        size,
 		annotations: annotations,
 	}, nil
 }
 
-// erofsLayer implements v1.Layer for raw, uncompressed EROFS blobs. Digest and
-// DiffID are equal; Compressed and Uncompressed return the same bytes.
+// buildCompressedErofsLayerFromFiles wraps a compressed EROFS image at path
+// alongside its equivalent uncompressed image at uncompressedPath (the file
+// mkfs.erofs would have produced without -z, byte-identical except for the
+// internal compression). The compressed file's SHA-256 is Digest; the
+// uncompressed file's SHA-256 is DiffID and is also exposed as the
+// "org.erofs.uncompressed-digest" descriptor annotation per the draft
+// erofs/erofs-image-spec. extra entries are merged on top.
+func buildCompressedErofsLayerFromFiles(path, uncompressedPath string, extra map[string]string) (v1.Layer, error) {
+	digest, size, err := hashFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("hashing erofs layer %s: %w", path, err)
+	}
+	diffID, _, err := hashFile(uncompressedPath)
+	if err != nil {
+		return nil, fmt.Errorf("hashing uncompressed-equivalent %s: %w", uncompressedPath, err)
+	}
+	annotations := map[string]string{erofsUncompressedDigestAnnotation: diffID.String()}
+	maps.Copy(annotations, extra)
+	return &erofsLayer{
+		path:             path,
+		uncompressedPath: uncompressedPath,
+		hash:             digest,
+		diffID:           diffID,
+		size:             size,
+		annotations:      annotations,
+	}, nil
+}
+
+// hashFile returns the SHA-256 of path's contents and the byte count.
+func hashFile(path string) (v1.Hash, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return v1.Hash{}, 0, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return v1.Hash{}, 0, err
+	}
+	return v1.Hash{Algorithm: "sha256", Hex: hex.EncodeToString(h.Sum(nil))}, n, nil
+}
+
+// erofsLayer implements v1.Layer for EROFS blobs. For raw images path is the
+// uncompressed bytes and uncompressedPath is empty, so Compressed() and
+// Uncompressed() both read path and hash == diffID. For compressed images
+// path holds the compressed wire bytes and uncompressedPath holds the
+// equivalent uncompressed image used to serve Uncompressed() and to compute
+// DiffID (per spec §5.2 and the org.erofs.uncompressed-digest annotation).
 type erofsLayer struct {
-	path        string
-	hash        v1.Hash
-	size        int64
-	annotations map[string]string
+	path             string
+	uncompressedPath string
+	hash             v1.Hash
+	diffID           v1.Hash
+	size             int64
+	annotations      map[string]string
 }
 
 // LayerPath returns the on-disk path of this layer's payload. Used by callers
@@ -274,12 +312,17 @@ func (l *erofsLayer) LayerPath() string { return l.path }
 // descriptor. apko/oci consults this via an opt-in interface assertion.
 func (l *erofsLayer) LayerAnnotations() map[string]string { return l.annotations }
 
-func (l *erofsLayer) DiffID() (v1.Hash, error) { return l.hash, nil }
+func (l *erofsLayer) DiffID() (v1.Hash, error) { return l.diffID, nil }
 func (l *erofsLayer) Digest() (v1.Hash, error) { return l.hash, nil }
 func (l *erofsLayer) Size() (int64, error)     { return l.size, nil }
 func (l *erofsLayer) MediaType() (v1types.MediaType, error) {
 	return v1types.MediaType(erofsLayerMediaType), nil
 }
 
-func (l *erofsLayer) Uncompressed() (io.ReadCloser, error) { return os.Open(l.path) }
-func (l *erofsLayer) Compressed() (io.ReadCloser, error)   { return os.Open(l.path) }
+func (l *erofsLayer) Compressed() (io.ReadCloser, error) { return os.Open(l.path) }
+func (l *erofsLayer) Uncompressed() (io.ReadCloser, error) {
+	if l.uncompressedPath != "" {
+		return os.Open(l.uncompressedPath)
+	}
+	return os.Open(l.path)
+}
