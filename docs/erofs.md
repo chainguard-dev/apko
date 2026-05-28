@@ -343,6 +343,37 @@ If `mkfs.erofs` is not on PATH, the build fails with a clear error.
 
 This is expected to be temporary: once go-erofs gains read-side compression, `apko erofs ls` will work against `--format=erofs+zstd` images automatically — the user-facing flag won't change.
 
+## Using EROFS support as a Go library
+
+### From apko-consuming projects
+
+If you're already building apko images programmatically (`apko_build.New(ctx, fsys, opts...).BuildImage(...)`), EROFS is just a configuration choice — set the layer format on your `ImageConfiguration` and apko handles the rest:
+
+```go
+import (
+    apko_build "chainguard.dev/apko/pkg/build"
+    apko_types "chainguard.dev/apko/pkg/build/types"
+)
+
+imgConfig := apko_types.ImageConfiguration{
+    // ... your existing fields ...
+    Format: apko_types.LayerFormat("erofs+zstd,level=15"),
+}
+
+bc, err := apko_build.New(ctx, fsys, apko_build.WithImageConfiguration(imgConfig), ...)
+if err != nil { /* ... */ }
+if err := bc.BuildImage(ctx); err != nil { /* ... */ }
+_, layer, err := bc.ImageLayoutToLayer(ctx)
+```
+
+The `LayerFormat` type exposes `Base()`, `Compressor()`, `CompressionLevel()`, and `Valid()` for parsing/validation if you're constructing format strings dynamically.
+
+### From projects that don't use apko
+
+If you have a plain `fs.FS` and want an EROFS image, **use [go-erofs](https://github.com/erofs/go-erofs) directly** — apko doesn't expose its EROFS writer as a standalone library (and wrapping go-erofs wouldn't add meaningful value over its existing `Writer.CopyFrom(fs.FS)` API).
+
+For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Mount`/`Unmount`/`Ls` (the CLI subcommand helpers, Linux-only for mount/umount; `Ls` is cross-platform).
+
 ## Current limitations
 
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
