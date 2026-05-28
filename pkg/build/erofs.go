@@ -32,16 +32,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
-)
-
-// Media types from the draft erofs/erofs-image-spec (PR #1).
-// These tracking constants are intentionally kept in one place so they can be
-// updated in lockstep with the spec.
-const (
-	erofsLayerMediaType               = "application/vnd.erofs"
-	erofsRoleAnnotation               = "org.erofs.role"
-	erofsRoleOverlay                  = "overlay-lower"
-	erofsUncompressedDigestAnnotation = "org.erofs.uncompressed-digest"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 // writeErofs serializes fsys as a raw (uncompressed) EROFS filesystem image to
@@ -278,7 +269,7 @@ func (l *erofsLayer) DiffID() (v1.Hash, error) { return l.hash, nil }
 func (l *erofsLayer) Digest() (v1.Hash, error) { return l.hash, nil }
 func (l *erofsLayer) Size() (int64, error)     { return l.size, nil }
 func (l *erofsLayer) MediaType() (v1types.MediaType, error) {
-	return v1types.MediaType(erofsLayerMediaType), nil
+	return v1types.MediaType(types.ErofsLayerMediaType), nil
 }
 
 func (l *erofsLayer) Uncompressed() (io.ReadCloser, error) { return os.Open(l.path) }
