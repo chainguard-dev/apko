@@ -33,16 +33,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
-)
-
-// Media types from the draft erofs/erofs-image-spec (PR #1).
-// These tracking constants are intentionally kept in one place so they can be
-// updated in lockstep with the spec.
-const (
-	erofsLayerMediaType               = "application/vnd.erofs"
-	erofsRoleAnnotation               = "org.erofs.role"
-	erofsRoleOverlay                  = "overlay-lower"
-	erofsUncompressedDigestAnnotation = "org.erofs.uncompressed-digest"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 // writeErofs serializes fsys as a raw (uncompressed) EROFS filesystem image to
@@ -262,7 +253,7 @@ func buildCompressedErofsLayerFromFiles(path, uncompressedPath string, extra map
 	if err != nil {
 		return nil, fmt.Errorf("hashing uncompressed-equivalent %s: %w", uncompressedPath, err)
 	}
-	annotations := map[string]string{erofsUncompressedDigestAnnotation: diffID.String()}
+	annotations := map[string]string{types.ErofsUncompressedDigestAnnotation: diffID.String()}
 	maps.Copy(annotations, extra)
 	return &erofsLayer{
 		path:             path,
@@ -316,7 +307,7 @@ func (l *erofsLayer) DiffID() (v1.Hash, error) { return l.diffID, nil }
 func (l *erofsLayer) Digest() (v1.Hash, error) { return l.hash, nil }
 func (l *erofsLayer) Size() (int64, error)     { return l.size, nil }
 func (l *erofsLayer) MediaType() (v1types.MediaType, error) {
-	return v1types.MediaType(erofsLayerMediaType), nil
+	return v1types.MediaType(types.ErofsLayerMediaType), nil
 }
 
 func (l *erofsLayer) Compressed() (io.ReadCloser, error) { return os.Open(l.path) }

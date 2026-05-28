@@ -28,6 +28,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 // splitErofsLayers is the EROFS analogue of splitLayers. It walks fsys once,
@@ -239,7 +240,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		// spec §3.8 rule 1. The final layer carries no role.
 		var anns map[string]string
 		if i < len(writers)-1 {
-			anns = map[string]string{erofsRoleAnnotation: erofsRoleOverlay}
+			anns = map[string]string{types.ErofsRoleAnnotation: types.ErofsRoleOverlayLower}
 		}
 		l, err := buildErofsLayerFromFile(gw.path, anns)
 		if err != nil {

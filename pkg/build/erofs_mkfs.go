@@ -167,7 +167,7 @@ func splitErofsLayersViaMkfs(ctx context.Context, fsys apkfs.FullFS, groups []*g
 		}
 		var extra map[string]string
 		if i < len(tarLayers)-1 {
-			extra = map[string]string{erofsRoleAnnotation: erofsRoleOverlay}
+			extra = map[string]string{types.ErofsRoleAnnotation: types.ErofsRoleOverlayLower}
 		}
 		l, err := buildCompressedErofsLayerFromFiles(layerPath, uncompressedPath, extra)
 		if err != nil {
