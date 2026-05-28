@@ -316,6 +316,35 @@ for d in mnt/lower*; do sudo umount "$d" 2>/dev/null || fusermount -u "$d"; done
 
 Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; both `apko erofs mount` and the manual steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
 
+## Using EROFS support as a Go library
+
+### From apko-consuming projects
+
+If you're already building apko images programmatically (`apko_build.New(ctx, fsys, opts...).BuildImage(...)`), EROFS is just a configuration choice — set the layer format on your `ImageConfiguration` and apko handles the rest:
+
+```go
+import (
+    apko_build "chainguard.dev/apko/pkg/build"
+    apko_types "chainguard.dev/apko/pkg/build/types"
+)
+
+imgConfig := apko_types.ImageConfiguration{
+    // ... your existing fields ...
+    Format: apko_types.LayerFormatErofs,
+}
+
+bc, err := apko_build.New(ctx, fsys, apko_build.WithImageConfiguration(imgConfig), ...)
+if err != nil { /* ... */ }
+if err := bc.BuildImage(ctx); err != nil { /* ... */ }
+_, layer, err := bc.ImageLayoutToLayer(ctx)
+```
+
+### From projects that don't use apko
+
+If you have a plain `fs.FS` and want an EROFS image, **use [go-erofs](https://github.com/erofs/go-erofs) directly** — apko doesn't expose its EROFS writer as a standalone library (and wrapping go-erofs wouldn't add meaningful value over its existing `Writer.CopyFrom(fs.FS)` API).
+
+For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Mount`/`Unmount`/`Ls` (the CLI subcommand helpers, Linux-only for mount/umount; `Ls` is cross-platform).
+
 ## Current limitations
 
 - **No compression.** apko emits raw `application/vnd.erofs` layers only. The draft spec defines `application/vnd.erofs+zstd` but neither apko's writer nor the underlying go-erofs library writes compressed images yet.
