@@ -188,7 +188,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	defer outfile.Close()
 
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
-		if err := writeERofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
 			return "", nil, fmt.Errorf("generating erofs image: %w", err)
 		}
 		if err := outfile.Sync(); err != nil {
