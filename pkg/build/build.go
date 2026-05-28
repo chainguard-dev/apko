@@ -200,7 +200,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 			if err := preflightMkfsErofs(ctx, bc.ic.Format); err != nil {
 				return "", nil, err
 			}
-			if err := writeERofsViaMkfs(ctx, outName, bc.fs, bc.o.SourceDateEpoch, compressor, level); err != nil {
+			if err := writeErofsViaMkfs(ctx, outName, bc.fs, bc.o.SourceDateEpoch, compressor, level); err != nil {
 				return "", nil, fmt.Errorf("generating erofs image via mkfs.erofs: %w", err)
 			}
 			l, err := buildErofsLayerFromFile(outName, nil)
@@ -209,7 +209,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 			}
 			return outName, l, nil
 		}
-		if err := writeERofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
 			return "", nil, fmt.Errorf("generating erofs image: %w", err)
 		}
 		if err := outfile.Sync(); err != nil {
