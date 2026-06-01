@@ -15,10 +15,13 @@
 package cli
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -109,8 +112,15 @@ func BuildCPIOCmd(ctx context.Context, dest string, opts ...build.Option) error 
 	}
 	defer f.Close()
 
-	// TODO(mattmoor): Consider wrapping in a gzip writer if the filename
-	// ends in .gz
+	// Use a gzip-compressed writer when the output filename ends with .gz.
+	var w io.Writer = f
 
-	return cpio.FromLayer(layer, f)
+	if strings.HasSuffix(dest, ".gz") {
+		gzw := gzip.NewWriter(f)
+		defer gzw.Close()
+
+		w = gzw
+	}
+
+	return cpio.FromLayer(layer, w)
 }
