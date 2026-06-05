@@ -64,6 +64,9 @@ func mutateDirectory(fsys apkfs.FullFS, o *options.Options, mut types.PathMutati
 			if err != nil {
 				return err
 			}
+			if d.Type()&fs.ModeSymlink != 0 {
+				return nil
+			}
 			if err := mutatePermissionsDirect(fsys, path, mut.Permissions, mut.UID, mut.GID); err != nil {
 				return fmt.Errorf("mutating permissions for path %q: %w", path, err)
 			}
@@ -143,7 +146,7 @@ func mutatePaths(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfigura
 			return fmt.Errorf("mutating path %q: %w", mut.Path, err)
 		}
 
-		if mut.Type != "permissions" {
+		if mut.Type != "permissions" && mut.Type != "symlink" {
 			if err := mutatePermissions(fsys, o, mut); err != nil {
 				return fmt.Errorf("%s mutation on %s: %w", mut.Type, mut.Path, err)
 			}
