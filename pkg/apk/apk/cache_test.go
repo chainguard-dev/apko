@@ -15,6 +15,7 @@
 package apk
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -99,4 +100,32 @@ func TestFlightCacheCoalescesCalls(t *testing.T) {
 	require.NoError(t, eg.Wait())
 
 	require.EqualValues(t, 1, called.Load(), "Function should only be called once")
+}
+
+func TestFlightCacheForgetFunc(t *testing.T) {
+	s := newFlightCache[string, int]()
+
+	for k, v := range map[string]int{"a-1": 1, "a-2": 2, "b-1": 3} {
+		_, err := s.Do(k, func() (int, error) { return v, nil })
+		require.NoError(t, err)
+	}
+
+	// Forget all keys starting with "a-".
+	s.ForgetFunc(func(k string) bool {
+		return strings.HasPrefix(k, "a-")
+	})
+
+	// "a-*" keys should be evicted, so new values are computed.
+	r, err := s.Do("a-1", func() (int, error) { return 100, nil })
+	require.NoError(t, err)
+	require.Equal(t, 100, r)
+
+	r, err = s.Do("a-2", func() (int, error) { return 200, nil })
+	require.NoError(t, err)
+	require.Equal(t, 200, r)
+
+	// "b-1" should still be cached.
+	r, err = s.Do("b-1", func() (int, error) { return 999, nil })
+	require.NoError(t, err)
+	require.Equal(t, 3, r, "b-1 should still return the cached value")
 }
