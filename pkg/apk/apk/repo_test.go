@@ -937,6 +937,40 @@ func TestProviderAcrossOriginVersionBump(t *testing.T) {
 	require.Contains(t, got, "glibc-2.apk")
 }
 
+// An index can retain old builds of a package whose provider priority is
+// higher than the current build's, for example when a priority assignment bug
+// was fixed in between. Provider priority is compared before version, so a
+// direct dependency on the package name would select the stale build. The
+// same-origin heuristic must rescue this: once the origin is pulled in at the
+// current version (here via the meta package), the candidate matching that
+// origin version wins over the stale higher-priority build.
+//
+// This is the py3-pybind11 case from the wolfi index: py3.10-pybind11
+// 2.13.6-r1 lingers with k=312 while the current 3.0.4-r0 build has k=310.
+func TestSameOriginVersionBeatsStaleProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "2.13.6-r1", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 312},
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 310},
+			{Name: "py3-supported-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Dependencies: []string{"py3.10-pybind11"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3-supported-pybind11"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Contains(t, got, "py3.10-pybind11-3.0.4-r0.apk", "should select the current build of py3.10-pybind11")
+	require.NotContains(t, got, "py3.10-pybind11-2.13.6-r1.apk", "should not select the stale higher-priority build")
+}
+
 func TestConstrains(t *testing.T) {
 	providers := map[string][]string{
 		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1=1.0"},
