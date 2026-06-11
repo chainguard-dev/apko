@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -94,6 +96,11 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 	host := "apk.cgr.dev"
 	// TODO(jason): Use a more general way to get the host.
 	if h := os.Getenv("APKO_APK_HOST"); h != "" {
+		// Validate the host to prevent injection attacks
+		if err := validateHost(h); err != nil {
+			log.Infof("Invalid APKO_APK_HOST value: %v", err)
+			return nil
+		}
 		host = h
 	}
 	if req.Host != host {
@@ -114,6 +121,38 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 	if tok != "" {
 		req.SetBasicAuth("user", tok)
 	}
+	return nil
+}
+
+// validateHost ensures the host value is a valid hostname or URL and doesn't contain
+// malicious characters that could be used for injection attacks.
+func validateHost(host string) error {
+	if host == "" {
+		return fmt.Errorf("host cannot be empty")
+	}
+
+	// Check if it's a valid URL
+	if strings.Contains(host, "://") {
+		u, err := url.Parse(host)
+		if err != nil {
+			return fmt.Errorf("invalid URL format: %w", err)
+		}
+		host = u.Host
+	}
+
+	// Check for common shell metacharacters and control characters
+	dangerousChars := []string{";", "|", "&", "$", "`", "\n", "\r", "\t", "<", ">", "(", ")", "{", "}", "[", "]", "\\", "\"", "'"}
+	for _, char := range dangerousChars {
+		if strings.Contains(host, char) {
+			return fmt.Errorf("host contains invalid character: %q", char)
+		}
+	}
+
+	// Ensure host is not excessively long (DoS protection)
+	if len(host) > 253 {
+		return fmt.Errorf("host exceeds maximum length of 253 characters")
+	}
+
 	return nil
 }
 
