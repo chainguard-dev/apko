@@ -40,6 +40,7 @@ func buildMinirootFS() *cobra.Command {
 	var extraRepos []string
 	var extraPackages []string
 	var sizeLimits options.SizeLimits
+	var lockfile string
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -60,6 +61,7 @@ func buildMinirootFS() *cobra.Command {
 				build.WithArch(types.ParseArchitecture(buildArch)),
 				build.WithIgnoreSignatures(ignoreSignatures),
 				build.WithSizeLimits(sizeLimits),
+				build.WithLockFile(lockfile),
 			)
 		},
 	}
@@ -73,6 +75,7 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	addClientLimitFlags(cmd, &sizeLimits)
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 
 	return cmd
 }
