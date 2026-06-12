@@ -18,7 +18,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -113,14 +112,14 @@ func BuildCPIOCmd(ctx context.Context, dest string, opts ...build.Option) error 
 	defer f.Close()
 
 	// Use a gzip-compressed writer when the output filename ends with .gz.
-	var w io.Writer = f
-
 	if strings.HasSuffix(dest, ".gz") {
 		gzw := gzip.NewWriter(f)
-		defer gzw.Close()
-
-		w = gzw
+		if err := cpio.FromLayer(layer, gzw); err != nil {
+			gzw.Close()
+			return err
+		}
+		return gzw.Close()
 	}
 
-	return cpio.FromLayer(layer, w)
+	return cpio.FromLayer(layer, f)
 }
