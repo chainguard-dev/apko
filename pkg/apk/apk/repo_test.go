@@ -937,6 +937,152 @@ func TestProviderAcrossOriginVersionBump(t *testing.T) {
 	require.Contains(t, got, "glibc-2.apk")
 }
 
+// An index can retain old builds of a package whose provider priority is
+// higher than the current build's, for example when a priority assignment bug
+// was fixed in between. Provider priority is compared before version, so a
+// direct dependency on the package name would select the stale build. The
+// same-origin heuristic must rescue this: once the origin is pulled in at the
+// current version (here via the meta package), the candidate matching that
+// origin version wins over the stale higher-priority build.
+//
+// This is the py3-pybind11 case from the wolfi index: py3.10-pybind11
+// 2.13.6-r1 lingers with k=312 while the current 3.0.4-r0 build has k=310.
+func TestSameOriginVersionBeatsStaleProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "2.13.6-r1", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 312},
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 310},
+			{Name: "py3-supported-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Dependencies: []string{"py3.10-pybind11"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3-supported-pybind11"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Contains(t, got, "py3.10-pybind11-3.0.4-r0.apk", "should select the current build of py3.10-pybind11")
+	require.NotContains(t, got, "py3.10-pybind11-2.13.6-r1.apk", "should not select the stale higher-priority build")
+}
+
+// Provider priority arbitrates between different packages providing the same
+// virtual name. It must not arbitrate between builds of the named package
+// itself: there, the higher version wins, regardless of what priority each
+// build declared for its virtual provides.
+//
+// This is the py3-pybind11 case again, but with a direct dependency on the
+// package name, so the same-origin heuristic cannot help.
+func TestDirectDependencyPrefersVersionOverProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "2.13.6-r1", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 312},
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 310},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3.10-pybind11"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"py3.10-pybind11-3.0.4-r0.apk"}, got)
+}
+
+// Between different packages providing the same unversioned virtual name,
+// provider priority decides, as in apk-tools' compare_providers:
+// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L667
+func TestProviderPriorityArbitratesVirtualProvides(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11-dev"}, ProviderPriority: 310},
+			{Name: "py3.13-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11-dev"}, ProviderPriority: 313},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3-pybind11-dev"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"py3.13-pybind11-3.0.4-r0.apk"}, got)
+}
+
+// Between providers of a versioned virtual name, the version each provides
+// for that name decides before provider priority, as in apk-tools'
+// compare_providers:
+// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L667
+func TestVersionedProvideBeatsProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov-a", Version: "1.0-r0", Origin: "prov-a",
+				Provides: []string{"virt=2.0"}, ProviderPriority: 1},
+			{Name: "prov-b", Version: "9.0-r0", Origin: "prov-b",
+				Provides: []string{"virt=1.0"}, ProviderPriority: 999},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"virt"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"prov-a-1.0-r0.apk"}, got)
+}
+
+// When providers of a virtual name tie on the version they provide for it and
+// on priority, the higher build version wins, regardless of repository order.
+//
+// This is a deliberate divergence from apk-tools, which prefers the lowest
+// available repository here. Image configurations can layer a variant
+// repository ahead of the main one, with packages providing the same sonames
+// as the main repository's packages. An image depending on such a soname must
+// not resolve it to the variant build just because the variant repository is
+// configured first.
+func TestHigherVersionBreaksProviderTieAcrossRepositories(t *testing.T) {
+	repoA := Repository{URI: "https://example.invalid/a"}
+	indexA := repoA.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov-variant", Version: "1.0-r1", Origin: "prov-variant",
+				Provides: []string{"so:libprov.so.12=12"}},
+		},
+	})
+	repoB := Repository{URI: "https://example.invalid/b"}
+	indexB := repoB.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov", Version: "1.0-r2", Origin: "prov",
+				Provides: []string{"so:libprov.so.12=12"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{indexA, indexB}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"so:libprov.so.12"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"prov-1.0-r2.apk"}, got)
+}
+
 func TestConstrains(t *testing.T) {
 	providers := map[string][]string{
 		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1=1.0"},

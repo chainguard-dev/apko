@@ -1012,7 +1012,47 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 			return 1
 		}
 
-		// check provider priority
+		// The remaining steps follow apk-tools' compare_providers ordering
+		// (latest by requested name, then latest by principal name, then the
+		// highest declared provider priority), with one deliberate divergence
+		// in the final tiebreak below.
+		// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L688
+
+		// Latest by requested name: compare the versions the candidates carry
+		// for the name being resolved. An unversioned provide carries no
+		// version for the name and ties with anything.
+		if iVersionStr != "" && jVersionStr != "" && iVersionStr != jVersionStr {
+			iVersion, err := cachedParseVersion(iVersionStr)
+			if err != nil {
+				return 1
+			}
+			jVersion, err := cachedParseVersion(jVersionStr)
+			if err != nil {
+				// If j fails to parse, prefer i.
+				return -1
+			}
+			if versions := CompareVersions(iVersion, jVersion); versions != equal {
+				return -1 * versions
+			}
+		}
+
+		// Latest by principal name.
+		if a.Name == b.Name && a.Version != b.Version {
+			iVersion, err := cachedParseVersion(a.Version)
+			if err != nil {
+				return 1
+			}
+			jVersion, err := cachedParseVersion(b.Version)
+			if err != nil {
+				// If j fails to parse, prefer i.
+				return -1
+			}
+			if versions := CompareVersions(iVersion, jVersion); versions != equal {
+				return -1 * versions
+			}
+		}
+
+		// Highest declared provider priority.
 		if a.ProviderPriority != b.ProviderPriority {
 			if a.ProviderPriority > b.ProviderPriority {
 				return -1
@@ -1021,23 +1061,17 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 			// a < b
 			return 1
 		}
-		// both matched or both did not, so just compare versions
-		// version priority
-		iVersion, err := cachedParseVersion(iVersionStr)
-		if err != nil {
-			return 1
-		}
-		jVersion, err := cachedParseVersion(jVersionStr)
-		if err != nil {
-			// If j fails to parse, prefer i.
-			return -1
-		}
-		versions := CompareVersions(iVersion, jVersion)
-		if versions != equal {
-			return -1 * versions
-		}
-		// if versions are equal, they might not be the same as the package versions
-		if iVersionStr != a.Version || jVersionStr != b.Version {
+
+		// Prefer the more recent build, regardless of which repository carries
+		// it. This is where we deliberately diverge from apk-tools, which
+		// prefers the lowest available repository. Image configurations can
+		// layer a variant repository ahead of the main one, with packages
+		// providing the same virtual names, such as sonames, as the main
+		// repository's packages. Preferring the earlier repository would let
+		// those builds capture shared provides from every package in later
+		// repositories. Preferring the higher version also stops a stale
+		// build lingering in any index from winning the tie.
+		if a.Version != b.Version {
 			iVersion, err := cachedParseVersion(a.Version)
 			if err != nil {
 				return 1
@@ -1066,7 +1100,8 @@ func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *Repository
 
 // getDepVersionForName get the version of the package that provides the given name.
 // If the name matches the package name, then the version of the package is used;
-// if it does not, then the version of the provides is used.
+// if it does not, then the version of the provides is used. An unversioned
+// provide carries no version for the name, so it returns "".
 //
 // For example, if pkg foo v2.3 provides bar=1.2, and we look for name=bar then it returns
 // 1.2 (from the provides); else it return 2.3 (from the package itself).
@@ -1079,12 +1114,8 @@ func (p *PkgResolver) getDepVersionForName(pkg *repositoryPackage, name string) 
 	}
 	for _, prov := range pkg.Provides {
 		constraint := cachedResolvePackageNameVersionPin(prov)
-		pName, pVersion := constraint.Name, constraint.Version
-		if pVersion == "" {
-			pVersion = pkg.Version
-		}
-		if pName == name {
-			return pVersion
+		if constraint.Name == name {
+			return constraint.Version
 		}
 	}
 	return ""
