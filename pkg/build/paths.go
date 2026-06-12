@@ -40,10 +40,27 @@ func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMuta
 	return mutatePermissionsDirect(fsys, mut.Path, mut.Permissions, mut.UID, mut.GID)
 }
 
+// unixModeToFsMode converts raw unix permission bits (as written in apko
+// configs, e.g. 0o2775) to fs.FileMode, mapping setuid/setgid/sticky to
+// their Go fs.FileMode equivalents.
+func unixModeToFsMode(perms uint32) fs.FileMode {
+	mode := fs.FileMode(perms & 0o777)
+	if perms&0o4000 != 0 {
+		mode |= fs.ModeSetuid
+	}
+	if perms&0o2000 != 0 {
+		mode |= fs.ModeSetgid
+	}
+	if perms&0o1000 != 0 {
+		mode |= fs.ModeSticky
+	}
+	return mode
+}
+
 func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uint32) error {
 	target := path
 
-	if err := fsys.Chmod(target, fs.FileMode(perms)); err != nil {
+	if err := fsys.Chmod(target, unixModeToFsMode(perms)); err != nil {
 		return fmt.Errorf("chmod %q: %w", target, err)
 	}
 	if err := fsys.Chown(target, int(uid), int(gid)); err != nil {
@@ -53,7 +70,7 @@ func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms, uid, gid uin
 }
 
 func mutateDirectory(fsys apkfs.FullFS, o *options.Options, mut types.PathMutation) error {
-	perms := fs.FileMode(mut.Permissions)
+	perms := unixModeToFsMode(mut.Permissions)
 
 	if err := fsys.MkdirAll(mut.Path, perms); err != nil {
 		return err
