@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -220,8 +221,147 @@ type ImageConfiguration struct {
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
 
+	// Optional: Layer payload format. One of:
+	//   "tar"                     gzip-compressed tar (default)
+	//   "erofs"                   raw EROFS via the pure-Go writer
+	//   "erofs+ALGO[,level=N]"    compressed EROFS via mkfs.erofs;
+	//                             ALGO is one of zstd|lz4|lz4hc|deflate
+	// "erofs" forms are experimental and track the draft erofs/erofs-image-spec.
+	Format LayerFormat `json:"format,omitempty" yaml:"format,omitempty"`
+
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+}
+
+// LayerFormat selects the on-wire layer payload format. It is a string of
+// the form "BASE[+ALGO[,level=N]]", where BASE is "tar" or "erofs" and the
+// optional +ALGO[,level=N] suffix selects a compressor (only meaningful for
+// "erofs").
+type LayerFormat string
+
+const (
+	// LayerFormatTar produces gzip-compressed tar layers (OCI/Docker default).
+	LayerFormatTar LayerFormat = "tar"
+	// LayerFormatErofs produces uncompressed EROFS filesystem layers per the
+	// draft erofs/erofs-image-spec.
+	LayerFormatErofs LayerFormat = "erofs"
+)
+
+// erofsCompressors is the set of compressor names mkfs.erofs accepts via -z.
+var erofsCompressors = map[string]bool{
+	"zstd":    true,
+	"lz4":     true,
+	"lz4hc":   true,
+	"deflate": true,
+}
+
+// Resolved returns the format with the empty default coerced to
+// LayerFormatTar. The compressor suffix, if any, is preserved.
+func (f LayerFormat) Resolved() LayerFormat {
+	if f == "" {
+		return LayerFormatTar
+	}
+	return f
+}
+
+// Base returns the base format type ("tar" or "erofs") with any "+ALGO[,...]"
+// compressor suffix stripped. Use Base() (not Resolved()) for dispatch on
+// format kind.
+func (f LayerFormat) Base() LayerFormat {
+	r := f.Resolved()
+	if base, _, ok := strings.Cut(string(r), "+"); ok {
+		return LayerFormat(base)
+	}
+	return r
+}
+
+// Compressor returns the compressor algorithm name from a compound format
+// like "erofs+zstd,level=5", or "" if no compressor is specified.
+func (f LayerFormat) Compressor() string {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return ""
+	}
+	algo, _, _ := strings.Cut(rest, ",")
+	return algo
+}
+
+// CompressionLevel returns the parsed level from a compound format like
+// "erofs+zstd,level=5", or 0 if not specified. Validation of the level
+// against the chosen algorithm's range is left to the underlying tool
+// (e.g. mkfs.erofs); we just parse the integer.
+func (f LayerFormat) CompressionLevel() (int, bool) {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return 0, false
+	}
+	_, opts, ok := strings.Cut(rest, ",")
+	if !ok {
+		return 0, false
+	}
+	for opt := range strings.SplitSeq(opts, ",") {
+		k, v, ok := strings.Cut(opt, "=")
+		if !ok {
+			continue
+		}
+		if k == "level" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return 0, false
+			}
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// Valid reports whether f is a recognized layer format. The base must be
+// "tar" or "erofs"; a compressor suffix, if present, must name a compressor
+// that mkfs.erofs supports; and any "key=value" options after the
+// compressor must use a known key (currently only "level") with a value
+// that parses cleanly.
+func (f LayerFormat) Valid() bool {
+	switch f.Base() {
+	case LayerFormatTar:
+		// tar doesn't take a compressor suffix.
+		return f.Compressor() == ""
+	case LayerFormatErofs:
+		c := f.Compressor()
+		if c != "" && !erofsCompressors[c] {
+			return false
+		}
+		return f.validOptions()
+	}
+	return false
+}
+
+// validOptions checks the comma-separated "key=value" options that follow
+// the compressor name. An empty or missing suffix is valid. Currently the
+// only recognized key is "level", whose value must parse as an integer.
+func (f LayerFormat) validOptions() bool {
+	_, rest, ok := strings.Cut(string(f.Resolved()), "+")
+	if !ok {
+		return true
+	}
+	_, opts, ok := strings.Cut(rest, ",")
+	if !ok {
+		return true
+	}
+	for opt := range strings.SplitSeq(opts, ",") {
+		k, v, ok := strings.Cut(opt, "=")
+		if !ok {
+			return false
+		}
+		switch k {
+		case "level":
+			if _, err := strconv.Atoi(v); err != nil {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Architecture represents a CPU architecture for the container image.

@@ -169,3 +169,25 @@ func TestBuildImageFromLayer(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildImageFromLayer_ErofsOSFeatures(t *testing.T) {
+	layer := static.NewLayer([]byte("hello"), ggcrtypes.MediaType("application/vnd.erofs"))
+	ctx := context.Background()
+	now := time.Now()
+
+	ic := types.ImageConfiguration{Format: types.LayerFormatErofs}
+	img, err := BuildImageFromLayer(ctx, empty.Image, layer, ic, now, types.ParseArchitecture(""))
+	require.NoError(t, err)
+
+	cfg, err := img.ConfigFile()
+	require.NoError(t, err)
+	require.Contains(t, cfg.OSFeatures, "erofs", "expected os.features to include erofs for EROFS-format builds")
+
+	// Default (tar) format must not advertise erofs.
+	tarLayer := static.NewLayer([]byte("hello"), ggcrtypes.OCILayer)
+	img2, err := BuildImageFromLayer(ctx, empty.Image, tarLayer, types.ImageConfiguration{}, now, types.ParseArchitecture(""))
+	require.NoError(t, err)
+	cfg2, err := img2.ConfigFile()
+	require.NoError(t, err)
+	require.NotContains(t, cfg2.OSFeatures, "erofs", "tar-format builds must not declare erofs in os.features")
+}
