@@ -272,8 +272,8 @@ go.opentelemetry.io/otel/sdk/metric v1.43.0 h1:S88dyqXjJkuBNLeMcVPRFXpRw2fuwdvfC
 go.opentelemetry.io/otel/sdk/metric v1.43.0/go.mod h1:C/RJtwSEJ5hzTiUz5pXF1kILHStzb9zFlIEe85bhj6A=
 go.opentelemetry.io/otel/trace v1.44.0 h1:jxF5CsGYCe74MCRx2X4g7WsY/VBKRqqpNvXlX/6gtIk=
 go.opentelemetry.io/otel/trace v1.44.0/go.mod h1:oLl1jrMQAVo6v3GAggN+1VH9VIz9iUSvW53sW1Q8PIE=
-go.step.sm/crypto v0.82.0 h1:JOT8b/7Jh4My3mxE4U7UkuaN2sUGkZ8fnjznXaTGoRE=
-go.step.sm/crypto v0.82.0/go.mod h1:qyLTv666WJ6ImFPUjljux+684Y/GGYUjAZcKCnc6yBs=
+go.step.sm/crypto v0.83.0 h1:llCPEiL2f+kUPY+CUJrOCsuSBoJZ2qooFG9EqGast6w=
+go.step.sm/crypto v0.83.0/go.mod h1:qyLTv666WJ6ImFPUjljux+684Y/GGYUjAZcKCnc6yBs=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.yaml.in/yaml/v2 v2.4.4 h1:tuyd0P+2Ont/d6e2rl3be67goVK4R6deVxCUX5vyPaQ=
