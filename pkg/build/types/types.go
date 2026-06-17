@@ -68,6 +68,10 @@ type User struct {
 
 type GID *uint32
 
+// UID is a nullable user ID. A nil UID means "unset" (distinct from an
+// explicit 0), which lets path mutations leave ownership untouched.
+type UID *uint32
+
 type Group struct {
 	// Required: The name of the group
 	GroupName string `json:"groupname,omitempty"`
@@ -84,15 +88,19 @@ type PathMutation struct {
 	//
 	// This can be one of: directory, empty-file, hardlink, symlink, permissions
 	Type string `json:"type,omitempty"`
-	// The mutation's desired user ID
-	UID uint32 `json:"uid,omitempty"`
-	// The mutation's desired group ID
-	GID uint32 `json:"gid,omitempty"`
+	// The mutation's desired user ID. If unset (nil), ownership is left
+	// untouched unless gid is set (see Recursive).
+	UID UID `json:"uid,omitempty" yaml:"uid,omitempty"`
+	// The mutation's desired group ID. If unset (nil), ownership is left
+	// untouched unless uid is set (see Recursive).
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// The permission bits for the path
 	Permissions uint32 `json:"permissions,omitempty"`
 	// The source path to mutate
 	Source string `json:"source,omitempty"`
-	// Toggle whether to mutate recursively
+	// Toggle whether to mutate recursively. Honored for the "directory" and
+	// "permissions" types: the permissions, and uid/gid when set, are applied
+	// to every entry beneath the path.
 	Recursive bool `json:"recursive,omitempty"`
 }
 

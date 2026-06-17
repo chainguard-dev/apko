@@ -270,11 +270,11 @@
         },
         "uid": {
           "type": "integer",
-          "description": "The mutation's desired user ID"
+          "description": "The mutation's desired user ID. If unset (nil), ownership is left\nuntouched unless gid is set (see Recursive)."
         },
         "gid": {
           "type": "integer",
-          "description": "The mutation's desired group ID"
+          "description": "The mutation's desired group ID. If unset (nil), ownership is left\nuntouched unless uid is set (see Recursive)."
         },
         "permissions": {
           "type": "integer",
@@ -286,7 +286,7 @@
         },
         "recursive": {
           "type": "boolean",
-          "description": "Toggle whether to mutate recursively"
+          "description": "Toggle whether to mutate recursively. Honored for the \"directory\" and\n\"permissions\" types: the permissions, and uid/gid when set, are applied\nto every entry beneath the path."
         }
       },
       "additionalProperties": false,
