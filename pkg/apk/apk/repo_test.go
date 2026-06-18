@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base32"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"net/http"
@@ -90,6 +91,21 @@ guyM+Ks3c29KlRf3iX35Gt0CAwEAAQ==
 	}
 	testArch = "aarch64"
 )
+
+type headMethodNotAllowedTransport struct {
+	wrapped http.RoundTripper
+}
+
+func (t *headMethodNotAllowedTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.Method == http.MethodHead {
+		return &http.Response{
+			StatusCode: http.StatusMethodNotAllowed,
+			Body:       io.NopCloser(strings.NewReader("method not allowed")),
+		}, nil
+	}
+
+	return t.wrapped.RoundTrip(request)
+}
 
 func TestGetRepositoryIndexes(t *testing.T) {
 	prepLayout := func(t *testing.T, tr http.RoundTripper, cache string, repos []string) *APK {
@@ -183,6 +199,16 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		index2, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, indexFilename))
 		require.NoError(t, err, "unable to read previous index file")
 		require.Equal(t, index1, index2, "index files do not match")
+	})
+	t.Run("head method not allowed falls back to get", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepLayout(t, &headMethodNotAllowedTransport{
+			wrapped: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
+		}, tmpDir, nil)
+
+		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
+		require.NoErrorf(t, err, "unable to get indexes")
+		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
 	t.Run("repo url with http basic auth", func(t *testing.T) {
 		tmpDir := t.TempDir()
