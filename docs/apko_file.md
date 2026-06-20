@@ -96,6 +96,14 @@ annotations:
 layering:
   strategy: origin
   budget: 10
+
+# optional Crossplane xpkg base layer
+xpkg:
+  type: provider
+  name: my-provider
+  controller-image: example/ctrl:v1
+  annotations:
+    meta.crossplane.io/description: "My provider"
 ```
 
 Details of each field can be found below.
@@ -257,3 +265,18 @@ It contains the following children:
  - `budget`: The number of additional layers apko will use for layering.
 
 See [layering.md](layering.md) for more information.
+
+### Xpkg
+
+`xpkg` configures Crossplane package (xpkg) support. When set, apko generates a `package.yaml`
+file and prepends it as the first layer in the image, annotated with `io.crossplane.xpkg: base`
+on the layer descriptor. This produces a valid Crossplane package image.
+
+It contains the following children:
+
+ - `type`: (Required) The type of Crossplane package. Must be one of: `provider`, `configuration`,
+   or `function`.
+ - `name`: (Required) The name of the Crossplane package.
+ - `controller-image`: (Optional) The controller image reference. Only valid when `type` is
+   `provider`.
+ - `annotations`: (Optional) A map of annotations to include in the package metadata.
