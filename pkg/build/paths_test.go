@@ -95,13 +95,15 @@ func TestMutateDirectoryRecursiveSpecialBits(t *testing.T) {
 	fsys := apkfs.NewMemFS()
 	require.NoError(t, fsys.MkdirAll("/var/log/kolla/glance", 0o755))
 
-	mut := types.PathMutation{
+	// mutateDirectory only creates the tree; mutatePaths runs the recursive
+	// permissions follow-up, so exercise the full pipeline.
+	ic := &types.ImageConfiguration{Paths: []types.PathMutation{{
 		Path:        "/var/log/kolla",
 		Type:        "directory",
 		Permissions: 0o2775,
 		Recursive:   true,
-	}
-	require.NoError(t, mutateDirectory(fsys, nil, mut))
+	}}}
+	require.NoError(t, mutatePaths(fsys, nil, ic))
 
 	for _, path := range []string{"/var/log/kolla", "/var/log/kolla/glance"} {
 		fi, err := fsys.Stat(path)
@@ -113,7 +115,185 @@ func TestMutateDirectoryRecursiveSpecialBits(t *testing.T) {
 
 func TestMutatePermissionsMissingPath(t *testing.T) {
 	fsys := apkfs.NewMemFS()
-	require.Error(t, mutatePermissionsDirect(fsys, "/does/not/exist", 0o2775, 0, 0))
+	require.Error(t, mutatePermissionsDirect(fsys, "/does/not/exist", 0o2775, nil, nil))
+}
+
+// TestMutatePermissionsRecursive applies a "permissions" mutation recursively
+// over a pre-existing tree and asserts perms + ownership reach every entry.
+func TestMutatePermissionsRecursive(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data/sub", 0o700))
+	f, err := fsys.Create("/srv/data/sub/file")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	ic := &types.ImageConfiguration{Paths: []types.PathMutation{{
+		Path:        "/srv/data",
+		Type:        "permissions",
+		Permissions: 0o2750,
+		UID:         new(uint32(64045)),
+		GID:         new(uint32(64045)),
+		Recursive:   true,
+	}}}
+	require.NoError(t, mutatePaths(fsys, nil, ic))
+
+	for _, path := range []string{"/srv/data", "/srv/data/sub", "/srv/data/sub/file"} {
+		fi, err := fsys.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, fs.FileMode(0o750), fi.Mode().Perm(), "perms wrong on %s", path)
+		require.Equal(t, fs.ModeSetgid, fi.Mode()&fs.ModeSetgid, "setgid missing on %s", path)
+		require.Equal(t, 64045, fileUID(t, fsys, path), "uid wrong on %s", path)
+		require.Equal(t, 64045, fileGID(t, fsys, path), "gid wrong on %s", path)
+	}
+}
+
+// fileUID/fileGID read ownership from the memfs FileInfo, whose Sys() returns a
+// *tar.Header carrying Uid/Gid.
+func fileUID(t *testing.T, fsys apkfs.FullFS, path string) int {
+	t.Helper()
+	fi, err := fsys.Stat(path)
+	require.NoError(t, err)
+	hdr, ok := fi.Sys().(*tar.Header)
+	require.True(t, ok, "unexpected FileInfo.Sys() type for %s", path)
+	return hdr.Uid
+}
+
+func fileGID(t *testing.T, fsys apkfs.FullFS, path string) int {
+	t.Helper()
+	fi, err := fsys.Stat(path)
+	require.NoError(t, err)
+	hdr, ok := fi.Sys().(*tar.Header)
+	require.True(t, ok, "unexpected FileInfo.Sys() type for %s", path)
+	return hdr.Gid
+}
+
+// TestMutatePermissionsRecursiveModeOnly verifies that omitting uid/gid leaves
+// ownership untouched while still applying the mode recursively.
+func TestMutatePermissionsRecursiveModeOnly(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data/sub", 0o700))
+	require.NoError(t, fsys.Chown("/srv/data", 1000, 1000))
+	require.NoError(t, fsys.Chown("/srv/data/sub", 1000, 1000))
+
+	ic := &types.ImageConfiguration{Paths: []types.PathMutation{{
+		Path:        "/srv/data",
+		Type:        "permissions",
+		Permissions: 0o755,
+		Recursive:   true,
+	}}}
+	require.NoError(t, mutatePaths(fsys, nil, ic))
+
+	for _, path := range []string{"/srv/data", "/srv/data/sub"} {
+		fi, err := fsys.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, fs.FileMode(0o755), fi.Mode().Perm(), "perms wrong on %s", path)
+		// Ownership must be left as-is (1000:1000), not reset to root.
+		require.Equal(t, 1000, fileUID(t, fsys, path), "ownership changed on %s", path)
+	}
+}
+
+// TestMutatePermissionsRecursiveOnFile applies a recursive "permissions"
+// mutation to a single regular file: it must affect just that file, no error.
+func TestMutatePermissionsRecursiveOnFile(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/usr/bin", 0o755))
+	f, err := fsys.Create("/usr/bin/tool")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	require.NoError(t, mutatePermissionsRecursive(fsys, "/usr/bin/tool", 0o4755, new(uint32(0)), new(uint32(0))))
+
+	fi, err := fsys.Stat("/usr/bin/tool")
+	require.NoError(t, err)
+	require.Equal(t, fs.ModeSetuid, fi.Mode()&fs.ModeSetuid)
+	require.Equal(t, fs.FileMode(0o755), fi.Mode().Perm())
+}
+
+func TestMutatePermissionsRecursiveMissingPath(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.Error(t, mutatePermissionsRecursive(fsys, "/does/not/exist", 0o755, nil, nil))
+}
+
+// TestMutatePermissionsNonRecursiveDoesNotRecurse guards the original bug: a
+// non-recursive "permissions" mutation must touch only the named path, never
+// its children.
+func TestMutatePermissionsNonRecursiveDoesNotRecurse(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data/sub", 0o700))
+
+	ic := &types.ImageConfiguration{Paths: []types.PathMutation{{
+		Path:        "/srv/data",
+		Type:        "permissions",
+		Permissions: 0o755,
+		// Recursive intentionally omitted (false).
+	}}}
+	require.NoError(t, mutatePaths(fsys, nil, ic))
+
+	top, err := fsys.Stat("/srv/data")
+	require.NoError(t, err)
+	require.Equal(t, fs.FileMode(0o755), top.Mode().Perm(), "top path should change")
+
+	child, err := fsys.Stat("/srv/data/sub")
+	require.NoError(t, err)
+	require.Equal(t, fs.FileMode(0o700), child.Mode().Perm(), "child must be untouched without recursive")
+}
+
+// TestMutatePermissionsExplicitZeroResetsOwnership verifies an explicit
+// uid:0/gid:0 (non-nil) resets ownership, distinct from omitting them (which
+// leaves it untouched, see TestMutatePermissionsRecursiveModeOnly). This is the
+// core distinction the nullable uid/gid type enables.
+func TestMutatePermissionsExplicitZeroResetsOwnership(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data", 0o755))
+	require.NoError(t, fsys.Chown("/srv/data", 1000, 1000))
+
+	require.NoError(t, mutatePermissionsDirect(fsys, "/srv/data", 0o755, new(uint32(0)), new(uint32(0))))
+
+	require.Equal(t, 0, fileUID(t, fsys, "/srv/data"), "explicit uid:0 must reset owner to root")
+	require.Equal(t, 0, fileGID(t, fsys, "/srv/data"), "explicit gid:0 must reset group to root")
+}
+
+// TestMutatePermissionsOneOwnerDefaultsOtherToZero verifies that setting only
+// one of uid/gid defaults the other to 0 (root), preserving historical behavior.
+func TestMutatePermissionsOneOwnerDefaultsOtherToZero(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data", 0o755))
+
+	// uid set, gid omitted -> gid defaults to 0.
+	require.NoError(t, fsys.Chown("/srv/data", 1000, 1000))
+	require.NoError(t, mutatePermissionsDirect(fsys, "/srv/data", 0o755, new(uint32(42)), nil))
+	require.Equal(t, 42, fileUID(t, fsys, "/srv/data"))
+	require.Equal(t, 0, fileGID(t, fsys, "/srv/data"))
+
+	// gid set, uid omitted -> uid defaults to 0.
+	require.NoError(t, fsys.Chown("/srv/data", 1000, 1000))
+	require.NoError(t, mutatePermissionsDirect(fsys, "/srv/data", 0o755, nil, new(uint32(7))))
+	require.Equal(t, 0, fileUID(t, fsys, "/srv/data"))
+	require.Equal(t, 7, fileGID(t, fsys, "/srv/data"))
+}
+
+// TestMutatePermissionsRecursiveWithSymlink ensures a symlink inside the tree
+// does not abort the recursive walk (WalkDir does not follow symlinks) and that
+// regular entries are still mutated.
+func TestMutatePermissionsRecursiveWithSymlink(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("/srv/data", 0o700))
+	f, err := fsys.Create("/srv/data/real")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.NoError(t, fsys.Symlink("/srv/data/real", "/srv/data/link"))
+
+	ic := &types.ImageConfiguration{Paths: []types.PathMutation{{
+		Path:        "/srv/data",
+		Type:        "permissions",
+		Permissions: 0o750,
+		Recursive:   true,
+	}}}
+	require.NoError(t, mutatePaths(fsys, nil, ic))
+
+	fi, err := fsys.Stat("/srv/data/real")
+	require.NoError(t, err)
+	require.Equal(t, fs.FileMode(0o750), fi.Mode().Perm(), "regular file in tree must be mutated")
 }
 
 // TestPathMutationSpecialBitsReachTar covers the full chain: paths mutation →
@@ -133,8 +313,8 @@ func TestPathMutationSpecialBitsReachTar(t *testing.T) {
 			Path:        "var/log/kolla",
 			Type:        "directory",
 			Permissions: 0o2775,
-			UID:         0,
-			GID:         42400,
+			UID:         new(uint32(0)),
+			GID:         new(uint32(42400)),
 		}},
 	}
 	require.NoError(t, mutatePaths(fsys, nil, ic))
@@ -165,7 +345,7 @@ func TestMutatePermissionsSpecialBitsOnFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	require.NoError(t, mutatePermissionsDirect(fsys, "/usr/bin/suidtool", 0o4755, 0, 0))
+	require.NoError(t, mutatePermissionsDirect(fsys, "/usr/bin/suidtool", 0o4755, new(uint32(0)), new(uint32(0))))
 
 	fi, err := fsys.Stat("/usr/bin/suidtool")
 	require.NoError(t, err)
