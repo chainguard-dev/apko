@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -36,6 +37,8 @@ import (
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/ecosystem"
+	_ "chainguard.dev/apko/pkg/ecosystem/python" // Register python ecosystem installer.
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -174,6 +177,22 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("installing apk packages: %w", err)
+		}
+	}
+
+	// Install ecosystem packages (python, etc.) after APK packages so that
+	// the language runtime is available for version detection.
+	if len(bc.ic.Contents.Ecosystems) > 0 {
+		env, ecoPkgs, err := ecosystem.InstallAll(ctx, bc.fs, bc.ic.Contents.Ecosystems, bc.o.Arch, bc.o.Auth)
+		if err != nil {
+			return nil, fmt.Errorf("installing ecosystem packages: %w", err)
+		}
+		bc.ecosystemPkgs = ecoPkgs
+		if len(env) > 0 {
+			if bc.ic.Environment == nil {
+				bc.ic.Environment = make(map[string]string)
+			}
+			maps.Copy(bc.ic.Environment, env)
 		}
 	}
 
