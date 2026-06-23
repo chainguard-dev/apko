@@ -82,6 +82,17 @@ func (f *flightCache[K, V]) Forget(key K) {
 	delete(f.cache, key)
 }
 
+// ForgetFunc removes all keys for which fn returns true.
+func (f *flightCache[K, V]) ForgetFunc(fn func(K) bool) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	for k := range f.cache {
+		if fn(k) {
+			delete(f.cache, k)
+		}
+	}
+}
+
 type Cache struct {
 	etagCache  *sync.Map
 	headFlight *singleflight.Group
