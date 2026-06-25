@@ -17,6 +17,20 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "AdditionalSigningKeyEntry": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Required: filename the key is written to under /etc/apk/keys. Validated\nagainst certNameRegex so it can't escape the directory."
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: PEM-encoded RSA public key. Must contain exactly one key."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "BaseImageDescriptor": {
       "properties": {
         "image": {
@@ -172,6 +186,10 @@
         "certificates": {
           "$ref": "#/$defs/ImageCertificates",
           "description": "Optional: Certificates to install in the container image"
+        },
+        "signing_keys": {
+          "$ref": "#/$defs/ImageSigningKeys",
+          "description": "Optional: APK signing public keys to install in /etc/apk/keys so the\nassembled image can verify packages from re-signing mirrors at runtime.\nThese are a runtime trust anchor only: they are not consulted during\nbuild-time package resolution."
         }
       },
       "additionalProperties": false,
@@ -241,6 +259,19 @@
             "type": "string"
           },
           "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ImageSigningKeys": {
+      "properties": {
+        "additional": {
+          "items": {
+            "$ref": "#/$defs/AdditionalSigningKeyEntry"
+          },
+          "type": "array",
+          "description": "Additional APK signing public keys to install under /etc/apk/keys."
         }
       },
       "additionalProperties": false,
