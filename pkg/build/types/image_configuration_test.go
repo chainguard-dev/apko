@@ -344,6 +344,20 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		expectError: `configured signing key "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "duplicate signing key name",
+		configuration: types.ImageConfiguration{
+			SigningKeys: &types.ImageSigningKeys{
+				Additional: []types.AdditionalSigningKeyEntry{{
+					Name:    "mirror.rsa.pub",
+					Content: "test",
+				}, {
+					Name:    "mirror.rsa.pub",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured signing key "mirror.rsa.pub" is a duplicate`,
 	}}
 
 	for _, tt := range tests {

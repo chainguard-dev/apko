@@ -248,6 +248,7 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 	if ic.SigningKeys != nil {
+		seen := make(map[string]struct{}, len(ic.SigningKeys.Additional))
 		for _, additional := range ic.SigningKeys.Additional {
 			if additional.Name == "" {
 				return fmt.Errorf("configured signing key has no name")
@@ -255,6 +256,10 @@ func (ic *ImageConfiguration) Validate() error {
 			if !certNameRegex.MatchString(additional.Name) {
 				return fmt.Errorf("configured signing key %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
 			}
+			if _, dup := seen[additional.Name]; dup {
+				return fmt.Errorf("configured signing key %q is a duplicate", additional.Name)
+			}
+			seen[additional.Name] = struct{}{}
 		}
 	}
 	return nil

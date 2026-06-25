@@ -82,6 +82,9 @@ func (bc *Context) installSigningKeys(ctx context.Context) error {
 		// already installed the distro trust roots (e.g. wolfi-signing.rsa.pub),
 		// so a name collision would silently replace a packaged key and change
 		// runtime verification behaviour.
+		//
+		// Note: on base-image builds inherited keys live in a lower layer, not
+		// bc.fs, so this only catches collisions within the layer being built.
 		if _, err := bc.fs.Stat(keyPath); err == nil {
 			return fmt.Errorf("signing key %q collides with an existing /etc/apk/keys entry", key.Name)
 		} else if !errors.Is(err, fs.ErrNotExist) {
