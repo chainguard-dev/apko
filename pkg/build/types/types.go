@@ -230,6 +230,12 @@ type ImageConfiguration struct {
 
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+
+	// Optional: APK signing public keys to install in /etc/apk/keys so the
+	// assembled image can verify packages from re-signing mirrors at runtime.
+	// These are a runtime trust anchor only: they are not consulted during
+	// build-time package resolution.
+	SigningKeys *ImageSigningKeys `json:"signing_keys,omitempty" yaml:"signing_keys,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -466,4 +472,17 @@ type ImageCertificates struct {
 	// Providers is a list of virtual package names that identify packages
 	// containing CA certificate files to be assembled into the system CA bundle.
 	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
+}
+
+type AdditionalSigningKeyEntry struct {
+	// Required: filename the key is written to under /etc/apk/keys. Validated
+	// against certNameRegex so it can't escape the directory.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: PEM-encoded RSA public key. Must contain exactly one key.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
+}
+
+type ImageSigningKeys struct {
+	// Additional APK signing public keys to install under /etc/apk/keys.
+	Additional []AdditionalSigningKeyEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
 }

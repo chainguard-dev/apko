@@ -198,6 +198,10 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		return nil, fmt.Errorf("failed to install certificates: %w", err)
 	}
 
+	if err := bc.installSigningKeys(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install signing keys: %w", err)
+	}
+
 	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {
 		return nil, fmt.Errorf("failed to write supervision tree: %w", err)
 	}

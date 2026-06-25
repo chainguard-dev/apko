@@ -131,6 +131,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Certificates == nil {
 		target.Certificates = ic.Certificates
 	}
+	if target.SigningKeys == nil {
+		target.SigningKeys = ic.SigningKeys
+	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
 	}
@@ -241,6 +244,16 @@ func (ic *ImageConfiguration) Validate() error {
 			}
 			if !certNameRegex.MatchString(additional.Name) {
 				return fmt.Errorf("configured additional certificate %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
+			}
+		}
+	}
+	if ic.SigningKeys != nil {
+		for _, additional := range ic.SigningKeys.Additional {
+			if additional.Name == "" {
+				return fmt.Errorf("configured signing key has no name")
+			}
+			if !certNameRegex.MatchString(additional.Name) {
+				return fmt.Errorf("configured signing key %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
 			}
 		}
 	}
