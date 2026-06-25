@@ -40,7 +40,7 @@ import (
 // directory traversal.
 var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`)
 
-// Attempt to probe an upstream VCS URL if known.
+// ProbeVCSUrl Attempts to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
 	log := clog.FromContext(ctx)
 

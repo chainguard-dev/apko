@@ -189,7 +189,7 @@
         },
         "signing_keys": {
           "$ref": "#/$defs/ImageSigningKeys",
-          "description": "Optional: APK signing public keys to install in /etc/apk/keys so the\nassembled image can verify packages from re-signing mirrors at runtime.\nThese are a runtime trust anchor only: they are not consulted during\nbuild-time package resolution."
+          "description": "Optional: APK signing public keys to install in /etc/apk/keys so the\nassembled image can verify packages from runtime repositories.\nThese are a runtime trust anchor only: they are not consulted during\nbuild-time package resolution."
         }
       },
       "additionalProperties": false,

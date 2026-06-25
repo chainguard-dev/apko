@@ -232,7 +232,7 @@ type ImageConfiguration struct {
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
 
 	// Optional: APK signing public keys to install in /etc/apk/keys so the
-	// assembled image can verify packages from re-signing mirrors at runtime.
+	// assembled image can verify packages from runtime repositories.
 	// These are a runtime trust anchor only: they are not consulted during
 	// build-time package resolution.
 	SigningKeys *ImageSigningKeys `json:"signing_keys,omitempty" yaml:"signing_keys,omitempty"`

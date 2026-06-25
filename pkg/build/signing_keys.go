@@ -33,7 +33,7 @@ import (
 )
 
 // Directory apk reads trusted signing keys from. Keys placed here let runtime
-// `apk add` verify packages from mirrors that re-sign them.
+// `apk add` verify packages from runtime repositories.
 const apkKeysDir = "etc/apk/keys"
 
 // installSigningKeys writes the image configuration's inline APK signing public
