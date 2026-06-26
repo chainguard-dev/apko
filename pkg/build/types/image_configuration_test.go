@@ -313,51 +313,47 @@ func TestValidate(t *testing.T) {
 			},
 		},
 	}, {
-		name: "signing key name with periods is valid",
+		name: "runtime_keyring name with periods is valid",
 		configuration: types.ImageConfiguration{
-			SigningKeys: &types.ImageSigningKeys{
-				Additional: []types.AdditionalSigningKeyEntry{{
-					Name:    "mirror.rsa.pub",
-					Content: "test",
-				}},
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.KeyEntry{{Name: "mirror.rsa.pub", Content: "test"}},
 			},
 		},
 	}, {
-		name: "signing key name starting with period",
+		name: "runtime_keyring name starting with period",
 		configuration: types.ImageConfiguration{
-			SigningKeys: &types.ImageSigningKeys{
-				Additional: []types.AdditionalSigningKeyEntry{{
-					Name:    ".mirror.rsa.pub",
-					Content: "test",
-				}},
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.KeyEntry{{Name: ".mirror.rsa.pub", Content: "test"}},
 			},
 		},
-		expectError: `configured signing key ".mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+		expectError: `runtime_keyring entry ".mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
 	}, {
-		name: "signing key name with path separator",
+		name: "runtime_keyring name with path separator",
 		configuration: types.ImageConfiguration{
-			SigningKeys: &types.ImageSigningKeys{
-				Additional: []types.AdditionalSigningKeyEntry{{
-					Name:    "subdir/mirror.rsa.pub",
-					Content: "test",
-				}},
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.KeyEntry{{Name: "subdir/mirror.rsa.pub", Content: "test"}},
 			},
 		},
-		expectError: `configured signing key "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+		expectError: `runtime_keyring entry "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
 	}, {
-		name: "duplicate signing key name",
+		name: "duplicate runtime_keyring name",
 		configuration: types.ImageConfiguration{
-			SigningKeys: &types.ImageSigningKeys{
-				Additional: []types.AdditionalSigningKeyEntry{{
-					Name:    "mirror.rsa.pub",
-					Content: "test",
-				}, {
-					Name:    "mirror.rsa.pub",
-					Content: "test",
-				}},
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.KeyEntry{
+					{Name: "mirror.rsa.pub", Content: "test"},
+					{Name: "mirror.rsa.pub", Content: "test"},
+				},
 			},
 		},
-		expectError: `configured signing key "mirror.rsa.pub" is a duplicate`,
+		expectError: `runtime_keyring entry "mirror.rsa.pub" is a duplicate`,
+	}, {
+		name: "runtime_keyring URI entry not yet supported",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.KeyEntry{{URI: "https://example.com/key.rsa.pub"}},
+			},
+		},
+		expectError: `runtime_keyring URI entry "https://example.com/key.rsa.pub" is not yet supported; supply an inline name/content key`,
 	}}
 
 	for _, tt := range tests {

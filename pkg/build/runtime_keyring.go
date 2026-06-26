@@ -36,19 +36,20 @@ import (
 // `apk add` verify packages from runtime repositories.
 const apkKeysDir = "etc/apk/keys"
 
-// installSigningKeys writes the image configuration's inline APK signing public
-// keys to /etc/apk/keys. It runs after package installation (post-FixateWorld),
-// so the keys are a runtime trust anchor only and never participate in build-time
+// installRuntimeKeyring writes contents.runtime_keyring's inline public keys to
+// /etc/apk/keys. It runs after package installation (post-FixateWorld), so the
+// keys are a runtime trust anchor only and never participate in build-time
 // package resolution.
 //
-// Keys are content-bearing in the config (like certificates), so the build stays
-// reproducible: identical key content and names produce identical output, with no
-// host paths leaking into the image or the locked configuration.
-func (bc *Context) installSigningKeys(ctx context.Context) error {
-	_, span := otel.Tracer("apko").Start(ctx, "installSigningKeys")
+// Keys are content-bearing in the config, so the build stays reproducible:
+// identical key content and names produce identical output, with no host paths
+// leaking into the image or the locked configuration. URI-form entries are
+// rejected during Validate (inline-first); this installer only sees inline keys.
+func (bc *Context) installRuntimeKeyring(ctx context.Context) error {
+	_, span := otel.Tracer("apko").Start(ctx, "installRuntimeKeyring")
 	defer span.End()
 
-	if bc.ic.SigningKeys == nil || len(bc.ic.SigningKeys.Additional) == 0 {
+	if len(bc.ic.Contents.RuntimeKeyring) == 0 {
 		return nil
 	}
 
@@ -61,17 +62,18 @@ func (bc *Context) installSigningKeys(ctx context.Context) error {
 		return fmt.Errorf("failed to create apk keys directory: %w", err)
 	}
 
-	// Sort by name so the write order is deterministic regardless of config
-	// ordering.
-	keys := slices.Clone(bc.ic.SigningKeys.Additional)
-	slices.SortFunc(keys, func(a, b types.AdditionalSigningKeyEntry) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
+	// Sort by name for a deterministic write order, then drop exact duplicates
+	// (an included config can contribute the same key twice via MergeInto's
+	// concat). Distinct keys with the same name remain and trip the collision
+	// check below.
+	keys := slices.Clone(bc.ic.Contents.RuntimeKeyring)
+	slices.SortFunc(keys, func(a, b types.KeyEntry) int { return cmp.Compare(a.Name, b.Name) })
+	keys = slices.CompactFunc(keys, func(a, b types.KeyEntry) bool { return a == b })
 
 	for _, key := range keys {
-		encoded, err := parseSigningKey(key.Content)
+		encoded, err := parsePublicKey(key.Content)
 		if err != nil {
-			return fmt.Errorf("failed to parse signing key %q: %w", key.Name, err)
+			return fmt.Errorf("failed to parse runtime keyring entry %q: %w", key.Name, err)
 		}
 
 		// Name is validated against certNameRegex during configuration
@@ -86,26 +88,26 @@ func (bc *Context) installSigningKeys(ctx context.Context) error {
 		// Note: on base-image builds inherited keys live in a lower layer, not
 		// bc.fs, so this only catches collisions within the layer being built.
 		if _, err := bc.fs.Stat(keyPath); err == nil {
-			return fmt.Errorf("signing key %q collides with an existing /etc/apk/keys entry", key.Name)
+			return fmt.Errorf("runtime keyring entry %q collides with an existing /etc/apk/keys entry", key.Name)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to stat %s: %w", keyPath, err)
 		}
 
 		if err := bc.fs.WriteFile(keyPath, encoded, 0o644); err != nil {
-			return fmt.Errorf("failed to write signing key %s: %w", keyPath, err)
+			return fmt.Errorf("failed to write runtime keyring entry %s: %w", keyPath, err)
 		}
 		if err := bc.fs.Chtimes(keyPath, builtTime, builtTime); err != nil {
-			return fmt.Errorf("failed to change times on signing key %s: %w", keyPath, err)
+			return fmt.Errorf("failed to change times on runtime keyring entry %s: %w", keyPath, err)
 		}
 	}
 
 	return nil
 }
 
-// parseSigningKey validates that pemData is exactly one PEM-encoded RSA public
+// parsePublicKey validates that pemData is exactly one PEM-encoded RSA public
 // key and returns it re-encoded. Re-encoding drops any trailing bytes around the
 // block, keeping the written file canonical and reproducible.
-func parseSigningKey(pemData string) ([]byte, error) {
+func parsePublicKey(pemData string) ([]byte, error) {
 	if pemData == "" {
 		return nil, fmt.Errorf("no key data provided")
 	}

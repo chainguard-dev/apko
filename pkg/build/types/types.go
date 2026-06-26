@@ -15,6 +15,7 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"runtime"
@@ -22,6 +23,7 @@ import (
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"gopkg.in/yaml.v3"
 )
 
 func processRepositoryURLs(repositories []string) error {
@@ -126,6 +128,12 @@ type ImageContents struct {
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// APK signing public keys installed into /etc/apk/keys after package
+	// resolution, so runtime `apk add` against runtime_repositories can verify
+	// re-signed packages. A runtime trust anchor only — not consulted during
+	// build-time package resolution. Each entry is a URI/path or inline
+	// {name, content}.
+	RuntimeKeyring []KeyEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
@@ -230,12 +238,6 @@ type ImageConfiguration struct {
 
 	// Optional: Certificates to install in the container image
 	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
-
-	// Optional: APK signing public keys to install in /etc/apk/keys so the
-	// assembled image can verify packages from runtime repositories.
-	// These are a runtime trust anchor only: they are not consulted during
-	// build-time package resolution.
-	SigningKeys *ImageSigningKeys `json:"signing_keys,omitempty" yaml:"signing_keys,omitempty"`
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -474,15 +476,72 @@ type ImageCertificates struct {
 	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
 }
 
-type AdditionalSigningKeyEntry struct {
-	// Required: filename the key is written to under /etc/apk/keys. Validated
-	// against certNameRegex so it can't escape the directory.
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-	// Required: PEM-encoded RSA public key. Must contain exactly one key.
-	Content string `json:"content,omitempty" yaml:"content,omitempty"`
+// KeyEntry is a single APK signing key. It is either a location — a URI or file
+// path written as a scalar — or an inline public key — a {name, content} mapping.
+// Exactly one form per entry. The same type is used by contents.runtime_keyring
+// (and, in future, contents.keyring), so a key can be referenced or inlined.
+type KeyEntry struct {
+	// URI is set when the entry is a scalar location (http(s):// or a path).
+	URI string
+	// Name is the /etc/apk/keys filename; set with Content for inline entries.
+	Name string
+	// Content is the PEM public key; set with Name for inline entries.
+	Content string
 }
 
-type ImageSigningKeys struct {
-	// Additional APK signing public keys to install under /etc/apk/keys.
-	Additional []AdditionalSigningKeyEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
+// Inline reports whether the entry carries inline key content rather than a URI.
+func (k KeyEntry) Inline() bool { return k.URI == "" }
+
+// UnmarshalYAML accepts a scalar (URI/path) or a {name, content} mapping. It
+// rejects unknown mapping keys and partial mappings explicitly, because
+// KnownFields strictness on the top-level decoder does not reach into a custom
+// element unmarshaler.
+func (k *KeyEntry) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		// A location must be a string; reject !!int / !!bool / !!null scalars.
+		if node.Tag != "" && node.Tag != "!!str" {
+			return fmt.Errorf("keyring entry must be a string (URI) or a {name, content} mapping, got %s", node.Tag)
+		}
+		k.URI = node.Value
+		return nil
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if key := node.Content[i].Value; key != "name" && key != "content" {
+				return fmt.Errorf("unknown key %q in keyring entry (allowed: name, content)", key)
+			}
+		}
+		var raw struct {
+			Name    string `yaml:"name"`
+			Content string `yaml:"content"`
+		}
+		if err := node.Decode(&raw); err != nil {
+			return err
+		}
+		if raw.Name == "" || raw.Content == "" {
+			return fmt.Errorf("inline keyring entry requires both name and content")
+		}
+		k.Name, k.Content = raw.Name, raw.Content
+		return nil
+	default:
+		return fmt.Errorf("keyring entry must be a string (URI) or a {name, content} mapping")
+	}
+}
+
+func (k KeyEntry) MarshalYAML() (any, error) {
+	if k.Inline() {
+		return map[string]string{"name": k.Name, "content": k.Content}, nil
+	}
+	return k.URI, nil
+}
+
+// MarshalJSON emits the scalar-or-object wire shape into /etc/apko.json and the
+// locked-config dedup key. ponytail: no UnmarshalJSON — config is only ever
+// parsed from YAML (image_configuration.go), never JSON; add it if a JSON read
+// path appears.
+func (k KeyEntry) MarshalJSON() ([]byte, error) {
+	if k.Inline() {
+		return json.Marshal(map[string]string{"name": k.Name, "content": k.Content})
+	}
+	return json.Marshal(k.URI)
 }

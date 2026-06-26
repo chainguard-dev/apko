@@ -17,20 +17,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "AdditionalSigningKeyEntry": {
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Required: filename the key is written to under /etc/apk/keys. Validated\nagainst certNameRegex so it can't escape the directory."
-        },
-        "content": {
-          "type": "string",
-          "description": "Required: PEM-encoded RSA public key. Must contain exactly one key."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "BaseImageDescriptor": {
       "properties": {
         "image": {
@@ -186,10 +172,6 @@
         "certificates": {
           "$ref": "#/$defs/ImageCertificates",
           "description": "Optional: Certificates to install in the container image"
-        },
-        "signing_keys": {
-          "$ref": "#/$defs/ImageSigningKeys",
-          "description": "Optional: APK signing public keys to install in /etc/apk/keys so the\nassembled image can verify packages from runtime repositories.\nThese are a runtime trust anchor only: they are not consulted during\nbuild-time package resolution."
         }
       },
       "additionalProperties": false,
@@ -224,6 +206,13 @@
           },
           "type": "array",
           "description": "A list of public keys used to verify the desired repositories"
+        },
+        "runtime_keyring": {
+          "items": {
+            "$ref": "#/$defs/KeyEntry"
+          },
+          "type": "array",
+          "description": "APK signing public keys installed into /etc/apk/keys after package\nresolution, so runtime `apk add` against runtime_repositories can verify\nre-signed packages. A runtime trust anchor only — not consulted during\nbuild-time package resolution. Each entry is a URI/path or inline\n{name, content}."
         },
         "packages": {
           "items": {
@@ -264,18 +253,27 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "ImageSigningKeys": {
-      "properties": {
-        "additional": {
-          "items": {
-            "$ref": "#/$defs/AdditionalSigningKeyEntry"
+    "KeyEntry": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
           },
-          "type": "array",
-          "description": "Additional APK signing public keys to install under /etc/apk/keys."
+          "type": "object",
+          "required": [
+            "name",
+            "content"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "type": "object"
+      ]
     },
     "Layering": {
       "properties": {

@@ -131,9 +131,6 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Certificates == nil {
 		target.Certificates = ic.Certificates
 	}
-	if target.SigningKeys == nil {
-		target.SigningKeys = ic.SigningKeys
-	}
 	if len(target.Archs) == 0 {
 		target.Archs = ic.Archs
 	}
@@ -177,6 +174,9 @@ func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 
 func (i *ImageContents) MergeInto(target *ImageContents) error {
 	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
+	// Load-bearing: the locked config is produced via input.MergeInto, so a
+	// field omitted here is silently dropped from the dedup key and /etc/apko.json.
+	target.RuntimeKeyring = slices.Concat(i.RuntimeKeyring, target.RuntimeKeyring)
 	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
 	target.RuntimeOnlyRepositories = slices.Concat(i.RuntimeOnlyRepositories, target.RuntimeOnlyRepositories)
 	target.Repositories = slices.Concat(i.Repositories, target.Repositories)
@@ -247,20 +247,20 @@ func (ic *ImageConfiguration) Validate() error {
 			}
 		}
 	}
-	if ic.SigningKeys != nil {
-		seen := make(map[string]struct{}, len(ic.SigningKeys.Additional))
-		for _, additional := range ic.SigningKeys.Additional {
-			if additional.Name == "" {
-				return fmt.Errorf("configured signing key has no name")
-			}
-			if !certNameRegex.MatchString(additional.Name) {
-				return fmt.Errorf("configured signing key %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
-			}
-			if _, dup := seen[additional.Name]; dup {
-				return fmt.Errorf("configured signing key %q is a duplicate", additional.Name)
-			}
-			seen[additional.Name] = struct{}{}
+	seen := make(map[string]struct{}, len(ic.Contents.RuntimeKeyring))
+	for _, key := range ic.Contents.RuntimeKeyring {
+		// URI-form runtime keys aren't installed yet (inline-first); the type
+		// accepts them so the schema and a future installer are forward-compatible.
+		if !key.Inline() {
+			return fmt.Errorf("runtime_keyring URI entry %q is not yet supported; supply an inline name/content key", key.URI)
 		}
+		if !certNameRegex.MatchString(key.Name) {
+			return fmt.Errorf("runtime_keyring entry %q has an invalid name, it must match %s", key.Name, certNameRegex.String())
+		}
+		if _, dup := seen[key.Name]; dup {
+			return fmt.Errorf("runtime_keyring entry %q is a duplicate", key.Name)
+		}
+		seen[key.Name] = struct{}{}
 	}
 	return nil
 }
