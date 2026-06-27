@@ -21,8 +21,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"chainguard.dev/apko/internal/cli"
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/internal/cli"
 
 	"chainguard.dev/apko/pkg/build"
 )

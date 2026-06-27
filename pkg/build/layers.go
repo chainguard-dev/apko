@@ -299,8 +299,8 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		// Maintain our "main" stack.
 		if f.header.Typeflag == tar.TypeDir {
 			// Pop off any directories that are not parents of the current file's directory.
-			for i := len(stack) - 1; i >= 0; i-- {
-				if stack[i].path == path.Dir(f.path) {
+			for i, v := range slices.Backward(stack) {
+				if v.path == path.Dir(f.path) {
 					break
 				}
 
