@@ -33,7 +33,8 @@ import (
 )
 
 // Directory apk reads trusted signing keys from. Keys placed here let runtime
-// `apk add` verify packages from runtime repositories.
+// `apk add` verify packages from runtime repositories. We are using these for
+// fs.FS so should omit the leading /
 const apkKeysDir = "etc/apk/keys"
 
 // installRuntimeKeyring writes contents.runtime_keyring's inline public keys to
