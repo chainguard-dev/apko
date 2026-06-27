@@ -38,7 +38,7 @@ func main() {
 	schema.Definitions["KeyEntry"] = &jsonschema.Schema{
 		OneOf: []*jsonschema.Schema{
 			{Type: "string"},
-			{Type: "object", Properties: keProps, Required: []string{"name", "content"}},
+			{Type: "object", Properties: keProps, Required: []string{"name", "content"}, AdditionalProperties: jsonschema.FalseSchema},
 		},
 	}
 

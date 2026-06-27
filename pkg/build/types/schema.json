@@ -267,6 +267,7 @@
               "type": "string"
             }
           },
+          "additionalProperties": false,
           "type": "object",
           "required": [
             "name",

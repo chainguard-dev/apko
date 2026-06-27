@@ -507,21 +507,23 @@ func (k *KeyEntry) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			if key := node.Content[i].Value; key != "name" && key != "content" {
+			key, val := node.Content[i].Value, node.Content[i+1]
+			if key != "name" && key != "content" {
 				return fmt.Errorf("unknown key %q in keyring entry (allowed: name, content)", key)
 			}
+			// Require a real string; node.Decode would coerce 1/true into "1"/"true".
+			if val.Kind != yaml.ScalarNode || val.Tag != "!!str" {
+				return fmt.Errorf("keyring entry %q must be a string", key)
+			}
+			if key == "name" {
+				k.Name = val.Value
+			} else {
+				k.Content = val.Value
+			}
 		}
-		var raw struct {
-			Name    string `yaml:"name"`
-			Content string `yaml:"content"`
-		}
-		if err := node.Decode(&raw); err != nil {
-			return err
-		}
-		if raw.Name == "" || raw.Content == "" {
+		if k.Name == "" || k.Content == "" {
 			return fmt.Errorf("inline keyring entry requires both name and content")
 		}
-		k.Name, k.Content = raw.Name, raw.Content
 		return nil
 	default:
 		return fmt.Errorf("keyring entry must be a string (URI) or a {name, content} mapping")

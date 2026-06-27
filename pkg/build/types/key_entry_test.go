@@ -45,6 +45,8 @@ func TestKeyEntryUnmarshalYAML(t *testing.T) {
 		{name: "mixed list", yaml: "keyring:\n  - https://example.com/k.rsa.pub\n  - {name: m.rsa.pub, content: PEM}",
 			want: []types.KeyEntry{{URI: "https://example.com/k.rsa.pub"}, {Name: "m.rsa.pub", Content: "PEM"}}},
 		{name: "unknown key rejected", yaml: "keyring:\n  - {name: m.rsa.pub, content: PEM, typo: x}", wantErr: true},
+		{name: "numeric name rejected", yaml: "keyring:\n  - {name: 1, content: PEM}", wantErr: true},
+		{name: "bool content rejected", yaml: "keyring:\n  - {name: m.rsa.pub, content: true}", wantErr: true},
 		{name: "partial mapping (name only) rejected", yaml: "keyring:\n  - {name: m.rsa.pub}", wantErr: true},
 		{name: "partial mapping (content only) rejected", yaml: "keyring:\n  - {content: PEM}", wantErr: true},
 		{name: "wrong node kind (int) rejected", yaml: `keyring: [42]`, wantErr: true},
