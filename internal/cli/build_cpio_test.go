@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cli
+package cli_test
 
 import (
 	"compress/gzip"
@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"chainguard.dev/apko/internal/cli"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/build"
@@ -29,16 +30,10 @@ import (
 func TestBuildCPIOCmd(t *testing.T) {
 	ctx := context.Background()
 
-	// Minimal config — no packages, no repositories — keeps the
-	// build fully offline and fast.
-	configFile := filepath.Join(t.TempDir(), "apko.yaml")
-	err := os.WriteFile(configFile, []byte("contents:\n  repositories:\n    - https://dl-cdn.alpinelinux.org/alpine/edge/main\n  packages: []\n"), 0644)
-	require.NoError(t, err)
-
 	t.Run("gz suffix produces gzip-compressed output", func(t *testing.T) {
 		dest := filepath.Join(t.TempDir(), "out.cpio.gz")
 
-		err := BuildCPIOCmd(ctx, dest, build.WithConfig(configFile, []string{}))
+		err := cli.BuildCPIOCmd(ctx, dest, build.WithConfig("testdata/apko.yaml", []string{}))
 		require.NoError(t, err)
 
 		f, err := os.Open(dest)
@@ -53,7 +48,7 @@ func TestBuildCPIOCmd(t *testing.T) {
 	t.Run("non-gz suffix produces plain cpio output", func(t *testing.T) {
 		dest := filepath.Join(t.TempDir(), "out.cpio")
 
-		err := BuildCPIOCmd(ctx, dest, build.WithConfig(configFile, []string{}))
+		err := cli.BuildCPIOCmd(ctx, dest, build.WithConfig("testdata/apko.yaml", []string{}))
 		require.NoError(t, err)
 
 		f, err := os.Open(dest)
