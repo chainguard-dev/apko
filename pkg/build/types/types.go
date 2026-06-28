@@ -142,6 +142,10 @@ func (i ImageContents) MarshalYAML() (any, error) {
 		return nil, err
 	}
 
+	if err := processRepositoryURLs(ri.RuntimeOnlyRepositories); err != nil {
+		return nil, err
+	}
+
 	if err := processRepositoryURLs(ri.Repositories); err != nil {
 		return nil, err
 	}
