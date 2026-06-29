@@ -538,9 +538,9 @@ func (k KeyEntry) MarshalYAML() (any, error) {
 }
 
 // MarshalJSON emits the scalar-or-object wire shape into /etc/apko.json and the
-// locked-config dedup key. ponytail: no UnmarshalJSON — config is only ever
-// parsed from YAML (image_configuration.go), never JSON; add it if a JSON read
-// path appears.
+// locked-config dedup key. UnmarshalJSON is absent because the config is only
+// ever parsed from YAML. UnmarshalJSON should be added if reading config from
+// JSON becomes a requirement.
 func (k KeyEntry) MarshalJSON() ([]byte, error) {
 	if k.Inline() {
 		return json.Marshal(map[string]string{"name": k.Name, "content": k.Content})
