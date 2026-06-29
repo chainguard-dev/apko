@@ -129,7 +129,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@59c71e96a00b28651f10369ba3359a6d730740a0 # v0.6
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
       - run: |
           make apko
           while IFS= read -r cfg; do
@@ -319,7 +319,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@59c71e96a00b28651f10369ba3359a6d730740a0 # v0.6
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
       - uses: chainguard-dev/actions/setup-registry@9978bf17926f53444b5eff45479954d94ec12e32 # v1.6.24
         with:
           port: 5000
