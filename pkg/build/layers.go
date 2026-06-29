@@ -28,6 +28,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/build/types"
 
 	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -85,6 +86,16 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
+	if bc.ic.Format.Base() == types.LayerFormatErofs {
+		if compressor := bc.ic.Format.Compressor(); compressor != "" {
+			if err := preflightMkfsErofs(ctx, bc.ic.Format); err != nil {
+				return nil, err
+			}
+			level, _ := bc.ic.Format.CompressionLevel()
+			return splitErofsLayersViaMkfs(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch, compressor, level)
+		}
+		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
+	}
 	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 }
 
@@ -299,8 +310,8 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		// Maintain our "main" stack.
 		if f.header.Typeflag == tar.TypeDir {
 			// Pop off any directories that are not parents of the current file's directory.
-			for i := len(stack) - 1; i >= 0; i-- {
-				if stack[i].path == path.Dir(f.path) {
+			for i, frame := range slices.Backward(stack) {
+				if frame.path == path.Dir(f.path) {
 					break
 				}
 
