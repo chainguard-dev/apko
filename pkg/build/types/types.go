@@ -15,6 +15,7 @@
 package types
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -126,8 +127,10 @@ type ImageContents struct {
 	// initial construction of the image, and also at runtime by seeding them
 	// into /etc/apk/repositories in the resulting image.
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
-	// A list of public keys used to verify the desired repositories
-	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// Public keys used to verify the desired repositories at build time. Each
+	// entry is a URI/path (fetched and installed by apk's keyring init) or an
+	// inline {name, content} key written straight into /etc/apk/keys.
+	Keyring []KeyEntry `json:"keyring,omitempty" yaml:"keyring,omitempty"`
 	// APK signing public keys installed into /etc/apk/keys after package
 	// resolution, so runtime `apk add` against runtime_repositories can verify
 	// re-signed packages. A runtime trust anchor only — not consulted during
@@ -154,13 +157,18 @@ func (i ImageContents) MarshalYAML() (any, error) {
 		return nil, err
 	}
 
+	// Redact userinfo from URI entries; inline keys carry no URL. Clone first so
+	// redaction for marshaling doesn't mutate the caller's configuration.
+	ri.Keyring = slices.Clone(i.Keyring)
 	for idx, key := range ri.Keyring {
-		rawURL := key
-		parsed, err := url.Parse(rawURL)
+		if key.Inline() {
+			continue
+		}
+		parsed, err := url.Parse(key.URI)
 		if err != nil {
 			return nil, fmt.Errorf("parsing public key URL: %w", err)
 		}
-		ri.Keyring[idx] = parsed.Redacted()
+		ri.Keyring[idx].URI = parsed.Redacted()
 	}
 
 	return ri, nil
@@ -491,6 +499,15 @@ type KeyEntry struct {
 
 // Inline reports whether the entry carries inline key content rather than a URI.
 func (k KeyEntry) Inline() bool { return k.URI == "" }
+
+// CompareKeyEntry orders KeyEntry values deterministically: inline entries
+// (empty URI) sort first by name, then URI entries by location.
+func CompareKeyEntry(a, b KeyEntry) int {
+	if c := cmp.Compare(a.URI, b.URI); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Name, b.Name)
+}
 
 // UnmarshalYAML accepts a scalar (URI/path) or a {name, content} mapping. It
 // rejects unknown mapping keys and partial mappings explicitly, because

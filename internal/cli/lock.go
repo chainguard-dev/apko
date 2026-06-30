@@ -167,9 +167,14 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	}
 
 	for _, keyring := range ic.Contents.Keyring {
+		// Inline keys carry their content in the config (and /etc/apko.json), so
+		// there is no URL to record in the lock; skip them like runtime_keyring.
+		if keyring.Inline() {
+			continue
+		}
 		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
-			Name: stripURLScheme(keyring),
-			URL:  keyring,
+			Name: stripURLScheme(keyring.URI),
+			URL:  keyring.URI,
 		})
 	}
 

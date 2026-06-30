@@ -253,7 +253,7 @@ func TestAuth_good(t *testing.T) {
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Repositories: []string{s.URL},
-				Keyring:      []string{s.URL + "/melange.rsa.pub"},
+				Keyring:      []types.KeyEntry{{URI: s.URL + "/melange.rsa.pub"}},
 				Packages:     []string{"pretend-baselayout"},
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
@@ -290,7 +290,7 @@ func TestAuth_bad(t *testing.T) {
 	_, err := build.New(ctx, fs.NewMemFS(),
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring: []string{s.URL + "/melange.rsa.pub"},
+				Keyring: []types.KeyEntry{{URI: s.URL + "/melange.rsa.pub"}},
 				// We don't even need to specify repository or packages, since keyring init will fail without auth.
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),

@@ -20,6 +20,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -53,7 +54,14 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 
 	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
 	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
-	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
+	// Fold --keyring flags (URI/path locations) into contents.keyring, then sort
+	// and drop exact duplicates for a deterministic locked config. KeyEntry isn't
+	// cmp.Ordered, so we can't use the sets.List idiom the repo slices use.
+	for _, f := range o.ExtraKeyFiles {
+		input.Contents.Keyring = append(input.Contents.Keyring, types.KeyEntry{URI: f})
+	}
+	slices.SortFunc(input.Contents.Keyring, types.CompareKeyEntry)
+	input.Contents.Keyring = slices.CompactFunc(input.Contents.Keyring, func(a, b types.KeyEntry) bool { return a == b })
 
 	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)
 	if err != nil {

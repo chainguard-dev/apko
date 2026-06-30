@@ -29,7 +29,7 @@ func TestOverlayWithEmptyContents(t *testing.T) {
 	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository"})
 	require.ElementsMatch(t, ic.Contents.RuntimeOnlyRepositories, []string{"runtime repository"})
 	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
-	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
+	require.ElementsMatch(t, ic.Contents.Keyring, []types.KeyEntry{{URI: "key"}})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package"})
 }
 
@@ -44,7 +44,7 @@ func TestOverlayWithAdditionalPackages(t *testing.T) {
 	require.ElementsMatch(t, ic.Contents.BuildRepositories, []string{"secret repository", "other_secret repository"})
 	require.ElementsMatch(t, ic.Contents.RuntimeOnlyRepositories, []string{"runtime repository", "other runtime repository"})
 	require.ElementsMatch(t, ic.Contents.Repositories, []string{"repository"})
-	require.ElementsMatch(t, ic.Contents.Keyring, []string{"key"})
+	require.ElementsMatch(t, ic.Contents.Keyring, []types.KeyEntry{{URI: "key"}})
 	require.ElementsMatch(t, ic.Contents.Packages, []string{"package", "other_package"})
 }
 
@@ -77,7 +77,7 @@ func TestMergeInto(t *testing.T) {
 		name: "simple blend of contents",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}},
 				BuildRepositories: []string{"foo"},
 				Repositories:      []string{"foo"},
 				Packages:          []string{"foo"},
@@ -102,7 +102,7 @@ func TestMergeInto(t *testing.T) {
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"bar"},
+				Keyring:           []types.KeyEntry{{URI: "bar"}},
 				BuildRepositories: []string{"bar"},
 				Repositories:      []string{"bar"},
 				Packages:          []string{"bar"},
@@ -110,7 +110,7 @@ func TestMergeInto(t *testing.T) {
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo", "bar"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}, {URI: "bar"}},
 				BuildRepositories: []string{"foo", "bar"},
 				Repositories:      []string{"foo", "bar"},
 				Packages:          []string{"foo", "bar"},
@@ -137,7 +137,7 @@ func TestMergeInto(t *testing.T) {
 		name: "simple blend of contents",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}},
 				BuildRepositories: []string{"foo"},
 				Repositories:      []string{"foo"},
 				Packages:          []string{"foo"},
@@ -145,7 +145,7 @@ func TestMergeInto(t *testing.T) {
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"bar"},
+				Keyring:           []types.KeyEntry{{URI: "bar"}},
 				BuildRepositories: []string{"bar"},
 				Repositories:      []string{"bar"},
 				Packages:          []string{"bar"},
@@ -153,7 +153,7 @@ func TestMergeInto(t *testing.T) {
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo", "bar"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}, {URI: "bar"}},
 				BuildRepositories: []string{"foo", "bar"},
 				Repositories:      []string{"foo", "bar"},
 				Packages:          []string{"foo", "bar"},
@@ -163,7 +163,7 @@ func TestMergeInto(t *testing.T) {
 		name: "conflict resolution",
 		source: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}},
 				BuildRepositories: []string{"foo"},
 				Repositories:      []string{"foo"},
 				Packages:          []string{"foo"},
@@ -211,7 +211,7 @@ func TestMergeInto(t *testing.T) {
 		},
 		expected: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				Keyring:           []string{"foo"},
+				Keyring:           []types.KeyEntry{{URI: "foo"}},
 				BuildRepositories: []string{"foo"},
 				Repositories:      []string{"foo"},
 				Packages:          []string{"foo"},
@@ -354,6 +354,35 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		expectError: `runtime_keyring URI entry "https://example.com/key.rsa.pub" is not yet supported; supply an inline name/content key`,
+	}, {
+		name: "keyring URI and inline entries are both valid",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring: []types.KeyEntry{
+					{URI: "https://example.com/build.rsa.pub"},
+					{Name: "mirror.rsa.pub", Content: "test"},
+				},
+			},
+		},
+	}, {
+		name: "keyring inline name with path separator",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring: []types.KeyEntry{{Name: "subdir/mirror.rsa.pub", Content: "test"}},
+			},
+		},
+		expectError: `keyring entry "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "duplicate keyring inline name",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring: []types.KeyEntry{
+					{Name: "mirror.rsa.pub", Content: "test"},
+					{Name: "mirror.rsa.pub", Content: "test"},
+				},
+			},
+		},
+		expectError: `keyring entry "mirror.rsa.pub" is a duplicate`,
 	}}
 
 	for _, tt := range tests {

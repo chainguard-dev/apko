@@ -202,10 +202,10 @@
         },
         "keyring": {
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/KeyEntry"
           },
           "type": "array",
-          "description": "A list of public keys used to verify the desired repositories"
+          "description": "Public keys used to verify the desired repositories at build time. Each\nentry is a URI/path (fetched and installed by apk's keyring init) or an\ninline {name, content} key written straight into /etc/apk/keys."
         },
         "runtime_keyring": {
           "items": {

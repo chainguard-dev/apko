@@ -21,6 +21,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"chainguard.dev/apko/pkg/build/types"
 )
 
 func (bc *Context) postBuildSetApk(ctx context.Context) error {
@@ -64,9 +66,25 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		keyring := sets.List(sets.New(bc.ic.Contents.Keyring...).Insert(bc.o.ExtraKeyFiles...))
-		if err := bc.apk.InitKeyring(ctx, keyring, nil); err != nil {
+		// contents.keyring entries are URI/path locations or inline {name, content}
+		// keys. URI/path entries are fetched and installed by InitKeyring; inline
+		// keys are written straight into /etc/apk/keys. Both happen before
+		// FixateWorld so they can verify build-repository signatures.
+		var uris []string
+		var inline []types.KeyEntry
+		for _, key := range bc.ic.Contents.Keyring {
+			if key.Inline() {
+				inline = append(inline, key)
+			} else {
+				uris = append(uris, key.URI)
+			}
+		}
+		uris = sets.List(sets.New(uris...).Insert(bc.o.ExtraKeyFiles...))
+		if err := bc.apk.InitKeyring(ctx, uris, nil); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
+		}
+		if _, err := bc.installInlineKeys(inline); err != nil {
+			return fmt.Errorf("failed to install inline keyring entries: %w", err)
 		}
 		return nil
 	})

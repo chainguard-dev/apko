@@ -247,6 +247,23 @@ func (ic *ImageConfiguration) Validate() error {
 			}
 		}
 	}
+	// contents.keyring accepts both forms: URI/path entries are validated and
+	// fetched by apk's keyring init, inline entries become /etc/apk/keys
+	// filenames so their names must be safe and unique.
+	keyringSeen := make(map[string]struct{}, len(ic.Contents.Keyring))
+	for _, key := range ic.Contents.Keyring {
+		if !key.Inline() {
+			continue
+		}
+		if !certNameRegex.MatchString(key.Name) {
+			return fmt.Errorf("keyring entry %q has an invalid name, it must match %s", key.Name, certNameRegex.String())
+		}
+		if _, dup := keyringSeen[key.Name]; dup {
+			return fmt.Errorf("keyring entry %q is a duplicate", key.Name)
+		}
+		keyringSeen[key.Name] = struct{}{}
+	}
+
 	seen := make(map[string]struct{}, len(ic.Contents.RuntimeKeyring))
 	for _, key := range ic.Contents.RuntimeKeyring {
 		// URI-form runtime keys aren't installed yet (inline-first); the type
