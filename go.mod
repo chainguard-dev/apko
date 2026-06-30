@@ -22,7 +22,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tmc/dot v0.2.0
 	github.com/u-root/u-root v0.16.0
-	go.lsp.dev/uri v0.3.0
+	go.lsp.dev/uri v1.0.1
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.step.sm/crypto v0.83.0
