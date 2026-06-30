@@ -470,6 +470,11 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 					if pp.Name != parsed.Name {
 						continue
 					}
+					// An unversioned provide can't satisfy a versioned
+					// constraint, and must not disqualify the package either.
+					if pp.Version == "" {
+						continue
+					}
 					actualVersion, err := cachedParseVersion(pp.Version)
 					// skip invalid ones
 					if err != nil {

@@ -999,6 +999,63 @@ func TestDirectDependencyPrefersVersionOverProviderPriority(t *testing.T) {
 	require.Equal(t, []string{"py3.10-pybind11-3.0.4-r0.apk"}, got)
 }
 
+// A package that carries an unversioned provide can still satisfy a versioned pin
+// on its own name. A pinned closure names every package as a versioned
+// constraint, so here both unbound-mailcow-compat (which provides unbound-config
+// unversioned) and the unbound-config pin resolve cleanly.
+//
+// The unbound-config pin resolves to the compat package alone through the compat
+// package's own version: filterPackages matches a candidate against its package
+// version, and because unbound-config and unbound-mailcow-compat are subpackages
+// of the same origin they share the version the pin asks for.
+// TestUnversionedProvideVersionMismatchDivergesFromApk covers differing versions.
+func TestUnversionedProvideDoesNotDisqualifyAgainstVersionedConstraint(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "unbound-config", Version: "1.25.1-r2", Origin: "unbound"},
+			{Name: "unbound-mailcow-compat", Version: "1.25.1-r2", Origin: "unbound",
+				Provides: []string{"unbound-config"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(),
+		[]string{"unbound-mailcow-compat=1.25.1-r2", "unbound-config=1.25.1-r2"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"unbound-mailcow-compat-1.25.1-r2.apk"}, got)
+}
+
+// apko satisfies a versioned pin from a candidate's own package version or from a
+// versioned provides: entry. apk-tools is more permissive: it treats an
+// unversioned provide as a null version that matches any versioned constraint,
+// since apk_dep_is_provided defers to apk_version_match where a null version
+// compares equal to anything:
+// https://github.com/alpinelinux/apk-tools/blob/097d611f2b7da0f6aa42955d53de7ad569133503/src/version.c#L285-L289
+//
+// So apko looks to the named package for the version, and a pin that only a
+// differently-versioned, unversioned provider could satisfy goes unmet. This is a
+// deliberate, known difference from apk-tools; the pinned closures that motivate
+// the fix above stay within apko's behaviour, because the provider and the
+// provided name share an origin and so a version.
+func TestUnversionedProvideVersionMismatchDivergesFromApk(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "unbound-mailcow-compat", Version: "9.9.9-r9", Origin: "unbound",
+				Provides: []string{"unbound-config"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	_, _, err := resolver.GetPackagesWithDependencies(context.Background(),
+		[]string{"unbound-config=1.25.1-r2"}, nil)
+	require.ErrorContains(t, err, "unbound-config=1.25.1-r2")
+}
+
 // Between different packages providing the same unversioned virtual name,
 // provider priority decides, as in apk-tools' compare_providers:
 // https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L667
