@@ -519,6 +519,27 @@ func TestInitKeyring(t *testing.T) {
 	// should be 2 keys
 	require.Len(t, fi, 2)
 
+	t.Run("remote keys use content-disposition filename", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Disposition", `attachment; filename="test@5c6bb80ae094a76863d00718d8ff0fc208ae441d0e3e302d29d185b929eea22c.rsa.pub"; filename*=UTF-8''test@5c6bb80ae094a76863d00718d8ff0fc208ae441d0e3e302d29d185b929eea22c.rsa.pub`)
+			_, _ = w.Write([]byte(testDemoKey))
+		}))
+		defer server.Close()
+
+		a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+
+		err = a.InitKeyring(context.Background(), []string{server.URL + "/key"}, nil)
+		require.NoError(t, err)
+
+		_, err = src.Stat(filepath.Join(DefaultKeyRingPath, "test@5c6bb80ae094a76863d00718d8ff0fc208ae441d0e3e302d29d185b929eea22c.rsa.pub"))
+		require.NoError(t, err)
+
+		_, err = src.Stat(filepath.Join(DefaultKeyRingPath, "key"))
+		require.Error(t, err)
+	})
+
 	// Add an invalid file
 	keyfiles = []string{
 		"/liksdjlksdjlksjlksjdl",
