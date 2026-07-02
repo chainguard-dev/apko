@@ -17,6 +17,7 @@ package ldsocache
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"debug/elf"
 	"encoding/binary"
 	"errors"
@@ -26,7 +27,6 @@ import (
 	"log"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"unsafe"
 )
@@ -351,13 +351,53 @@ func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, er
 		allEntries = append(allEntries, entries...)
 	}
 
-	// ld expects entries to be reverse-sorted by name. Otherwise
-	// it may report "No such file or directory"
-	sort.Slice(allEntries, func(i, j int) bool {
-		return filepath.Base(allEntries[j].Name) < filepath.Base(allEntries[i].Name)
+	// The dynamic linker binary-searches /etc/ld.so.cache using
+	// _dl_cache_libcmp, so entries must be ordered by that same comparison or
+	// ld.so may fail to find a library that is present in the cache (reporting
+	// "cannot open shared object file"). glibc's ldconfig emits entries in
+	// descending order, so we negate the comparison.
+	slices.SortFunc(allEntries, func(entry, other LDSOCacheEntry) int {
+		return -dlCacheLibcmp(filepath.Base(entry.Name), filepath.Base(other.Name))
 	})
 
 	return allEntries, nil
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// dlCacheLibcmp mirrors glibc's _dl_cache_libcmp (elf/dl-cache.c), the
+// comparison the dynamic linker uses to binary-search /etc/ld.so.cache. Runs of
+// digits are compared numerically, and a digit is considered greater than any
+// non-digit at the same position. It returns a negative number, 0, or a
+// positive number as libName is less than, equal to, or greater than otherName.
+func dlCacheLibcmp(libName, otherName string) int {
+	pos, otherPos := 0, 0
+	for pos < len(libName) && otherPos < len(otherName) {
+		switch char, otherChar := libName[pos], otherName[otherPos]; {
+		case isDigit(char) && isDigit(otherChar):
+			// Compare the two version-number runs numerically.
+			var version, otherVersion int
+			for ; pos < len(libName) && isDigit(libName[pos]); pos++ {
+				version = version*10 + int(libName[pos]-'0')
+			}
+			for ; otherPos < len(otherName) && isDigit(otherName[otherPos]); otherPos++ {
+				otherVersion = otherVersion*10 + int(otherName[otherPos]-'0')
+			}
+			if version != otherVersion {
+				return cmp.Compare(version, otherVersion)
+			}
+		case isDigit(char):
+			return 1 // a digit outranks a non-digit
+		case isDigit(otherChar):
+			return -1
+		case char != otherChar:
+			return cmp.Compare(char, otherChar)
+		default:
+			pos, otherPos = pos+1, otherPos+1
+		}
+	}
+	// Whichever name still has characters left is the greater one.
+	return cmp.Compare(len(libName)-pos, len(otherName)-otherPos)
 }
 
 func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error) {
