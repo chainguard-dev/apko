@@ -100,10 +100,6 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 		},
 		wantErr: true,
 	}, {
-		name:     "exact-duplicate entries dedupe (no collision)",
-		keys:     []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", keyPEM), inlineKey("mirror.rsa.pub", keyPEM)},
-		wantKeys: []string{"mirror.rsa.pub"},
-	}, {
 		name:    "same name, different content collides",
 		keys:    []types.RuntimeKeyringEntry{inlineKey("dup.rsa.pub", keyPEM), inlineKey("dup.rsa.pub", rsaPublicKeyPEM(t))},
 		wantErr: true,
@@ -162,6 +158,39 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A symlink at the key's path must never be silently written through — that
+// would land the key outside /etc/apk/keys. The existence check uses Lstat so
+// a symlink (even dangling, which Stat reports as not-exist) counts as a
+// collision on a real filesystem. MemFS's Lstat follows links (a known quirk,
+// documented in memfs.go), so there a dangling link surfaces as a write error
+// instead — either way the install fails and nothing is written through the
+// link.
+func TestInstallRuntimeKeyringRefusesSymlink(t *testing.T) {
+	t.Setenv("SOURCE_DATE_EPOCH", "1337")
+	fsys := apkfs.NewMemFS()
+	if err := fsys.MkdirAll(apkKeysDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := fsys.Symlink("/outside/target.rsa.pub", filepath.Join(apkKeysDir, "mirror.rsa.pub")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	bc := &Context{
+		o: options.Options{SourceDateEpoch: time.Unix(1337, 0)},
+		ic: types.ImageConfiguration{Contents: types.ImageContents{
+			RuntimeKeyring: []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", rsaPublicKeyPEM(t))},
+		}},
+		fs: fsys,
+	}
+
+	if err := bc.installRuntimeKeyring(t.Context()); err == nil {
+		t.Fatal("installRuntimeKeyring() = nil, want an error for a symlinked key path")
+	}
+	if _, err := fsys.Stat("/outside/target.rsa.pub"); err == nil {
+		t.Fatal("key content was written through the symlink outside /etc/apk/keys")
 	}
 }
 

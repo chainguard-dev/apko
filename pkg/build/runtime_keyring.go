@@ -62,13 +62,11 @@ func (bc *Context) installRuntimeKeyring(ctx context.Context) error {
 		return fmt.Errorf("failed to create apk keys directory: %w", err)
 	}
 
-	// Sort by name for a deterministic write order, then drop exact duplicates
-	// (an included config can contribute the same key twice via MergeInto's
-	// concat). Distinct keys with the same name remain and trip the collision
-	// check below.
+	// Sort by name for a deterministic write order. Duplicate names never reach
+	// this point: Validate rejects them on the merged configuration (includes
+	// are folded in at parse time), so duplicate policy lives there, not here.
 	keys := slices.Clone(bc.ic.Contents.RuntimeKeyring)
 	slices.SortFunc(keys, func(a, b types.RuntimeKeyringEntry) int { return cmp.Compare(a.Name, b.Name) })
-	keys = slices.CompactFunc(keys, func(a, b types.RuntimeKeyringEntry) bool { return a == b })
 
 	for _, key := range keys {
 		encoded, err := parsePublicKey(key.Content)
@@ -83,11 +81,13 @@ func (bc *Context) installRuntimeKeyring(ctx context.Context) error {
 		// Refuse to overwrite an existing key. By this point InitKeyring has
 		// already installed the distro trust roots (e.g. wolfi-signing.rsa.pub),
 		// so a name collision would silently replace a packaged key and change
-		// runtime verification behaviour.
+		// runtime verification behaviour. Lstat, not Stat: a symlink at this
+		// path (even dangling) must count as existing, or the write below would
+		// follow it and land the key outside /etc/apk/keys.
 		//
 		// Note: on base-image builds inherited keys live in a lower layer, not
 		// bc.fs, so this only catches collisions within the layer being built.
-		if _, err := bc.fs.Stat(keyPath); err == nil {
+		if _, err := bc.fs.Lstat(keyPath); err == nil {
 			return fmt.Errorf("runtime keyring entry %q collides with an existing /etc/apk/keys entry", key.Name)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to stat %s: %w", keyPath, err)
