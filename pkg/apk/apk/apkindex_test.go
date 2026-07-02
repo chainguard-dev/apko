@@ -208,6 +208,37 @@ func TestArchiveFromIndex(t *testing.T) {
 	require.Truef(t, foundDescription, "Could not locate file %s in archive", descriptionFilename)
 }
 
+func TestArchiveFromIndexFormatsInstallIf(t *testing.T) {
+	archive, err := ArchiveFromIndex(&APKIndex{
+		Packages: []*Package{{
+			Name:      "test-pkg",
+			Version:   "1.0.0-r0",
+			Arch:      "x86_64",
+			InstallIf: []string{"eudev", "openrc"},
+		}},
+	})
+	require.NoError(t, err)
+
+	zr, err := gzip.NewReader(archive)
+	require.NoError(t, err)
+	defer zr.Close()
+
+	tr := tar.NewReader(zr)
+	for {
+		hdr, err := tr.Next()
+		require.NoError(t, err)
+		if hdr.Name != apkIndexFilename {
+			continue
+		}
+
+		contents, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		require.Contains(t, string(contents), "i:eudev openrc\n")
+		require.NotContains(t, string(contents), "i:[eudev openrc]")
+		return
+	}
+}
+
 func TestEmptyRepeatedFields(t *testing.T) {
 	apkIndexFile := strings.NewReader(`C:Q1Deb0jNytkrjPW4N/eKLZ43BwOlw=
 P:a-pkg
