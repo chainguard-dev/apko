@@ -207,6 +207,13 @@
           "type": "array",
           "description": "A list of public keys used to verify the desired repositories"
         },
+        "runtime_keyring": {
+          "items": {
+            "$ref": "#/$defs/RuntimeKeyringEntry"
+          },
+          "type": "array",
+          "description": "APK signing public keys installed into /etc/apk/keys after package\nresolution, so runtime `apk add` against runtime_repositories can verify\nre-signed packages. A runtime trust anchor only — not consulted during\nbuild-time package resolution. Each entry is an inline {name, content}\npublic key."
+        },
         "packages": {
           "items": {
             "type": "string"
@@ -291,6 +298,21 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "RuntimeKeyringEntry": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Required: the filename the key is written to under /etc/apk/keys. Must\nmatch the filename the repository's APKINDEX signature references\n(.SIGN.RSA256.\u003cname\u003e), or apk will not find the key at runtime."
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: the PEM-encoded RSA public key content."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "RuntimeKeyringEntry is a single inline APK signing public key, mirroring AdditionalCertificateEntry."
     },
     "User": {
       "properties": {
