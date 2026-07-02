@@ -249,10 +249,11 @@ func (ic *ImageConfiguration) Validate() error {
 	}
 	seen := make(map[string]struct{}, len(ic.Contents.RuntimeKeyring))
 	for _, key := range ic.Contents.RuntimeKeyring {
-		// URI-form runtime keys aren't installed yet (inline-first); the type
-		// accepts them so the schema and a future installer are forward-compatible.
-		if !key.Inline() {
-			return fmt.Errorf("runtime_keyring URI entry %q is not yet supported; supply an inline name/content key", key.URI)
+		if key.Name == "" {
+			return fmt.Errorf("configured runtime_keyring entry has no name")
+		}
+		if key.Content == "" {
+			return fmt.Errorf("runtime_keyring entry %q has no content", key.Name)
 		}
 		if !certNameRegex.MatchString(key.Name) {
 			return fmt.Errorf("runtime_keyring entry %q has an invalid name, it must match %s", key.Name, certNameRegex.String())

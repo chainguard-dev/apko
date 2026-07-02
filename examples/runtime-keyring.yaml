@@ -14,7 +14,8 @@ contents:
   # /etc/apk/repositories in the image; not used at build time.
   runtime_repositories:
     - https://packages.example.com/os
-  # Each entry is either a URI/path string or an inline {name, content} key.
+  # Each entry is an inline {name, content} public key; the name must match
+  # the filename the repository's APKINDEX signature references.
   runtime_keyring:
     - name: example-mirror.rsa.pub
       content: |

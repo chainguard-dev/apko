@@ -62,8 +62,8 @@ func ecPublicKeyPEM(t *testing.T) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 }
 
-func inlineKey(name, content string) types.KeyEntry {
-	return types.KeyEntry{Name: name, Content: content}
+func inlineKey(name, content string) types.RuntimeKeyringEntry {
+	return types.RuntimeKeyringEntry{Name: name, Content: content}
 }
 
 func TestInstallRuntimeKeyring(t *testing.T) {
@@ -72,7 +72,7 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 
 	tests := []struct {
 		name string
-		keys []types.KeyEntry
+		keys []types.RuntimeKeyringEntry
 		// existing files under /etc/apk/keys, modelling keys InitKeyring
 		// installed before installRuntimeKeyring runs.
 		existing map[string][]byte
@@ -83,37 +83,37 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 		keys: nil,
 	}, {
 		name:     "writes a single key",
-		keys:     []types.KeyEntry{inlineKey("mirror.rsa.pub", keyPEM)},
+		keys:     []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", keyPEM)},
 		wantKeys: []string{"mirror.rsa.pub"},
 	}, {
 		name: "writes alongside an existing distro key",
-		keys: []types.KeyEntry{inlineKey("mirror.rsa.pub", keyPEM)},
+		keys: []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", keyPEM)},
 		existing: map[string][]byte{
 			filepath.Join(apkKeysDir, "wolfi-signing.rsa.pub"): []byte("existing-distro-key"),
 		},
 		wantKeys: []string{"mirror.rsa.pub", "wolfi-signing.rsa.pub"},
 	}, {
 		name: "refuses to overwrite an existing key",
-		keys: []types.KeyEntry{inlineKey("wolfi-signing.rsa.pub", keyPEM)},
+		keys: []types.RuntimeKeyringEntry{inlineKey("wolfi-signing.rsa.pub", keyPEM)},
 		existing: map[string][]byte{
 			filepath.Join(apkKeysDir, "wolfi-signing.rsa.pub"): []byte("existing-distro-key"),
 		},
 		wantErr: true,
 	}, {
 		name:     "exact-duplicate entries dedupe (no collision)",
-		keys:     []types.KeyEntry{inlineKey("mirror.rsa.pub", keyPEM), inlineKey("mirror.rsa.pub", keyPEM)},
+		keys:     []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", keyPEM), inlineKey("mirror.rsa.pub", keyPEM)},
 		wantKeys: []string{"mirror.rsa.pub"},
 	}, {
 		name:    "same name, different content collides",
-		keys:    []types.KeyEntry{inlineKey("dup.rsa.pub", keyPEM), inlineKey("dup.rsa.pub", rsaPublicKeyPEM(t))},
+		keys:    []types.RuntimeKeyringEntry{inlineKey("dup.rsa.pub", keyPEM), inlineKey("dup.rsa.pub", rsaPublicKeyPEM(t))},
 		wantErr: true,
 	}, {
 		name:    "rejects a non-RSA key",
-		keys:    []types.KeyEntry{inlineKey("ec.rsa.pub", ecPublicKeyPEM(t))},
+		keys:    []types.RuntimeKeyringEntry{inlineKey("ec.rsa.pub", ecPublicKeyPEM(t))},
 		wantErr: true,
 	}, {
 		name:    "rejects malformed PEM",
-		keys:    []types.KeyEntry{inlineKey("bad.rsa.pub", "not a pem block")},
+		keys:    []types.RuntimeKeyringEntry{inlineKey("bad.rsa.pub", "not a pem block")},
 		wantErr: true,
 	}}
 
@@ -170,7 +170,7 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 func TestInstallRuntimeKeyringDeterministic(t *testing.T) {
 	epoch := time.Unix(1337, 0)
 	keyPEM := rsaPublicKeyPEM(t)
-	keys := []types.KeyEntry{inlineKey("b.rsa.pub", keyPEM), inlineKey("a.rsa.pub", keyPEM)}
+	keys := []types.RuntimeKeyringEntry{inlineKey("b.rsa.pub", keyPEM), inlineKey("a.rsa.pub", keyPEM)}
 
 	run := func() map[string][]byte {
 		t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
@@ -203,7 +203,7 @@ func TestInstallRuntimeKeyringDeterministic(t *testing.T) {
 // which is the only thing InitKeyring consumes — so they are never build-trusted.
 func TestRuntimeKeyringDisjointFromBuildKeyring(t *testing.T) {
 	ic := types.ImageConfiguration{Contents: types.ImageContents{
-		RuntimeKeyring: []types.KeyEntry{inlineKey("mirror.rsa.pub", rsaPublicKeyPEM(t))},
+		RuntimeKeyring: []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", rsaPublicKeyPEM(t))},
 	}}
 	if len(ic.Contents.Keyring) != 0 {
 		t.Errorf("runtime_keyring leaked into contents.keyring (the InitKeyring source): %v", ic.Contents.Keyring)
@@ -260,7 +260,7 @@ func TestParsePublicKeyDropsTrailingBytes(t *testing.T) {
 func TestRuntimeKeyringSerializationCarriesContentNotPath(t *testing.T) {
 	keyPEM := rsaPublicKeyPEM(t)
 	ic := types.ImageConfiguration{Contents: types.ImageContents{
-		RuntimeKeyring: []types.KeyEntry{inlineKey("mirror.rsa.pub", keyPEM)},
+		RuntimeKeyring: []types.RuntimeKeyringEntry{inlineKey("mirror.rsa.pub", keyPEM)},
 	}}
 
 	a, err := json.Marshal(ic)

@@ -29,23 +29,6 @@ func main() {
 	}
 	schema := r.Reflect(types.ImageConfiguration{})
 
-	// KeyEntry is a union — a URI string or a {name, content} object — which the
-	// struct reflector can't express from field tags. We set its schema here, in
-	// the generator, rather than giving KeyEntry a JSONSchema() method: that
-	// method would require importing invopop/jsonschema into pkg/build/types, and
-	// we deliberately keep that widely-imported config package free of the
-	// dependency. The generator already depends on invopop, so the union
-	// definition belongs here.
-	keProps := jsonschema.NewProperties()
-	keProps.Set("name", &jsonschema.Schema{Type: "string"})
-	keProps.Set("content", &jsonschema.Schema{Type: "string"})
-	schema.Definitions["KeyEntry"] = &jsonschema.Schema{
-		OneOf: []*jsonschema.Schema{
-			{Type: "string"},
-			{Type: "object", Properties: keProps, Required: []string{"name", "content"}, AdditionalProperties: jsonschema.FalseSchema},
-		},
-	}
-
 	b := new(bytes.Buffer)
 	enc := json.NewEncoder(b)
 	enc.SetIndent("", "  ")

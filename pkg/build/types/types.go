@@ -15,7 +15,6 @@
 package types
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"runtime"
@@ -23,7 +22,6 @@ import (
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"gopkg.in/yaml.v3"
 )
 
 func processRepositoryURLs(repositories []string) error {
@@ -131,9 +129,9 @@ type ImageContents struct {
 	// APK signing public keys installed into /etc/apk/keys after package
 	// resolution, so runtime `apk add` against runtime_repositories can verify
 	// re-signed packages. A runtime trust anchor only — not consulted during
-	// build-time package resolution. Each entry is a URI/path or inline
-	// {name, content}.
-	RuntimeKeyring []KeyEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
+	// build-time package resolution. Each entry is an inline {name, content}
+	// public key.
+	RuntimeKeyring []RuntimeKeyringEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
@@ -476,74 +474,15 @@ type ImageCertificates struct {
 	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
 }
 
-// KeyEntry is a single APK signing key. It is either a location — a URI or file
-// path written as a scalar — or an inline public key — a {name, content} mapping.
-// Exactly one form per entry. The same type is used by contents.runtime_keyring
-// (and, in future, contents.keyring), so a key can be referenced or inlined.
-type KeyEntry struct {
-	// URI is set when the entry is a scalar location (http(s):// or a path).
-	URI string
-	// Name is the /etc/apk/keys filename; set with Content for inline entries.
-	Name string
-	// Content is the PEM public key; set with Name for inline entries.
-	Content string
-}
-
-// Inline reports whether the entry carries inline key content rather than a URI.
-func (k KeyEntry) Inline() bool { return k.URI == "" }
-
-// UnmarshalYAML accepts a scalar (URI/path) or a {name, content} mapping. It
-// rejects unknown mapping keys and partial mappings explicitly, because
-// KnownFields strictness on the top-level decoder does not reach into a custom
-// element unmarshaler.
-func (k *KeyEntry) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-	case yaml.ScalarNode:
-		// A location must be a string; reject !!int / !!bool / !!null scalars.
-		if node.Tag != "" && node.Tag != "!!str" {
-			return fmt.Errorf("keyring entry must be a string (URI) or a {name, content} mapping, got %s", node.Tag)
-		}
-		k.URI = node.Value
-		return nil
-	case yaml.MappingNode:
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			key, val := node.Content[i].Value, node.Content[i+1]
-			if key != "name" && key != "content" {
-				return fmt.Errorf("unknown key %q in keyring entry (allowed: name, content)", key)
-			}
-			// Require a real string; node.Decode would coerce 1/true into "1"/"true".
-			if val.Kind != yaml.ScalarNode || val.Tag != "!!str" {
-				return fmt.Errorf("keyring entry %q must be a string", key)
-			}
-			if key == "name" {
-				k.Name = val.Value
-			} else {
-				k.Content = val.Value
-			}
-		}
-		if k.Name == "" || k.Content == "" {
-			return fmt.Errorf("inline keyring entry requires both name and content")
-		}
-		return nil
-	default:
-		return fmt.Errorf("keyring entry must be a string (URI) or a {name, content} mapping")
-	}
-}
-
-func (k KeyEntry) MarshalYAML() (any, error) {
-	if k.Inline() {
-		return map[string]string{"name": k.Name, "content": k.Content}, nil
-	}
-	return k.URI, nil
-}
-
-// MarshalJSON emits the scalar-or-object wire shape into /etc/apko.json and the
-// locked-config dedup key. UnmarshalJSON is absent because the config is only
-// ever parsed from YAML. UnmarshalJSON should be added if reading config from
-// JSON becomes a requirement.
-func (k KeyEntry) MarshalJSON() ([]byte, error) {
-	if k.Inline() {
-		return json.Marshal(map[string]string{"name": k.Name, "content": k.Content})
-	}
-	return json.Marshal(k.URI)
+// RuntimeKeyringEntry is a single inline APK signing public key, mirroring
+// AdditionalCertificateEntry. Keys are content-bearing by design: the key bytes
+// live in the configuration itself (no URIs to fetch), so builds stay
+// reproducible and the locked configuration carries the full trust anchor.
+type RuntimeKeyringEntry struct {
+	// Required: the filename the key is written to under /etc/apk/keys. Must
+	// match the filename the repository's APKINDEX signature references
+	// (.SIGN.RSA256.<name>), or apk will not find the key at runtime.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: the PEM-encoded RSA public key content.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
 }

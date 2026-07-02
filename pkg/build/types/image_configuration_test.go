@@ -316,14 +316,14 @@ func TestValidate(t *testing.T) {
 		name: "runtime_keyring name with periods is valid",
 		configuration: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				RuntimeKeyring: []types.KeyEntry{{Name: "mirror.rsa.pub", Content: "test"}},
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "mirror.rsa.pub", Content: "test"}},
 			},
 		},
 	}, {
 		name: "runtime_keyring name starting with period",
 		configuration: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				RuntimeKeyring: []types.KeyEntry{{Name: ".mirror.rsa.pub", Content: "test"}},
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: ".mirror.rsa.pub", Content: "test"}},
 			},
 		},
 		expectError: `runtime_keyring entry ".mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
@@ -331,7 +331,7 @@ func TestValidate(t *testing.T) {
 		name: "runtime_keyring name with path separator",
 		configuration: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				RuntimeKeyring: []types.KeyEntry{{Name: "subdir/mirror.rsa.pub", Content: "test"}},
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "subdir/mirror.rsa.pub", Content: "test"}},
 			},
 		},
 		expectError: `runtime_keyring entry "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
@@ -339,7 +339,7 @@ func TestValidate(t *testing.T) {
 		name: "duplicate runtime_keyring name",
 		configuration: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				RuntimeKeyring: []types.KeyEntry{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{
 					{Name: "mirror.rsa.pub", Content: "test"},
 					{Name: "mirror.rsa.pub", Content: "test"},
 				},
@@ -347,13 +347,21 @@ func TestValidate(t *testing.T) {
 		},
 		expectError: `runtime_keyring entry "mirror.rsa.pub" is a duplicate`,
 	}, {
-		name: "runtime_keyring URI entry not yet supported",
+		name: "runtime_keyring entry without name",
 		configuration: types.ImageConfiguration{
 			Contents: types.ImageContents{
-				RuntimeKeyring: []types.KeyEntry{{URI: "https://example.com/key.rsa.pub"}},
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Content: "test"}},
 			},
 		},
-		expectError: `runtime_keyring URI entry "https://example.com/key.rsa.pub" is not yet supported; supply an inline name/content key`,
+		expectError: `configured runtime_keyring entry has no name`,
+	}, {
+		name: "runtime_keyring entry without content",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "mirror.rsa.pub"}},
+			},
+		},
+		expectError: `runtime_keyring entry "mirror.rsa.pub" has no content`,
 	}}
 
 	for _, tt := range tests {

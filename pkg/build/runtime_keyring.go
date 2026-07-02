@@ -44,8 +44,7 @@ const apkKeysDir = "etc/apk/keys"
 //
 // Keys are content-bearing in the config, so the build stays reproducible:
 // identical key content and names produce identical output, with no host paths
-// leaking into the image or the locked configuration. URI-form entries are
-// rejected during Validate (inline-first); this installer only sees inline keys.
+// leaking into the image or the locked configuration.
 func (bc *Context) installRuntimeKeyring(ctx context.Context) error {
 	_, span := otel.Tracer("apko").Start(ctx, "installRuntimeKeyring")
 	defer span.End()
@@ -68,8 +67,8 @@ func (bc *Context) installRuntimeKeyring(ctx context.Context) error {
 	// concat). Distinct keys with the same name remain and trip the collision
 	// check below.
 	keys := slices.Clone(bc.ic.Contents.RuntimeKeyring)
-	slices.SortFunc(keys, func(a, b types.KeyEntry) int { return cmp.Compare(a.Name, b.Name) })
-	keys = slices.CompactFunc(keys, func(a, b types.KeyEntry) bool { return a == b })
+	slices.SortFunc(keys, func(a, b types.RuntimeKeyringEntry) int { return cmp.Compare(a.Name, b.Name) })
+	keys = slices.CompactFunc(keys, func(a, b types.RuntimeKeyringEntry) bool { return a == b })
 
 	for _, key := range keys {
 		encoded, err := parsePublicKey(key.Content)
