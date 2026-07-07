@@ -126,6 +126,12 @@ type ImageContents struct {
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// APK signing public keys installed into /etc/apk/keys after package
+	// resolution, so runtime `apk add` against runtime_repositories can verify
+	// re-signed packages. A runtime trust anchor only — not consulted during
+	// build-time package resolution. Each entry is an inline {name, content}
+	// public key.
+	RuntimeKeyring []RuntimeKeyringEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
@@ -466,4 +472,17 @@ type ImageCertificates struct {
 	// Providers is a list of virtual package names that identify packages
 	// containing CA certificate files to be assembled into the system CA bundle.
 	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
+}
+
+// RuntimeKeyringEntry is a single inline APK signing public key, mirroring
+// AdditionalCertificateEntry. Keys are content-bearing by design: the key bytes
+// live in the configuration itself (no URIs to fetch), so builds stay
+// reproducible and the locked configuration carries the full trust anchor.
+type RuntimeKeyringEntry struct {
+	// Required: the filename the key is written to under /etc/apk/keys. Must
+	// match the filename the repository's APKINDEX signature references
+	// (.SIGN.RSA256.<name>), or apk will not find the key at runtime.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: the PEM-encoded RSA public key content.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
 }

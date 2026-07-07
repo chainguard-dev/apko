@@ -113,6 +113,16 @@ There are multiple possible child elements:
    Notice that you need to package name under `packages` with the label e.g `- alpine-baselayout@local`.
  - `packages` defines a list of alpine packages to install inside the image
  - `keyring` PGP keys to add to the keyring for verifying packages.
+ - `runtime_repositories` defines a list of alpine repositories that are written to
+   `/etc/apk/repositories` in the image but are not used at build time, so `apk add` in the
+   running container pulls from them.
+ - `runtime_keyring` defines public keys installed into `/etc/apk/keys` after package
+   resolution, so runtime `apk add` against `runtime_repositories` can verify packages from
+   mirrors that re-sign them. Each entry is an inline `{name, content}` object: `content` is a
+   PEM-encoded RSA public key, and `name` is the filename the key is written to, which must
+   match the filename the repository's APKINDEX signature references (`.SIGN.RSA256.<name>`).
+   These keys are a runtime trust anchor only and are never consulted during build-time
+   package resolution.
 
 ### Entrypoint top level element
 
