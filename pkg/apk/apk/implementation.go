@@ -983,6 +983,36 @@ type Key struct {
 	Bytes []byte
 }
 
+// FetchKeyBytes downloads a keyring from the given URL and returns its raw bytes.
+// It applies the provided authenticator (which may be nil for anonymous fetches).
+func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticator, keyURL string) ([]byte, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "FetchKeyBytes")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keyURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch key %s: %w", keyURL, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch key %s: %s", keyURL, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyURL, err)
+	}
+	return b, nil
+}
+
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
 func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
