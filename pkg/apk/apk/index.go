@@ -35,7 +35,6 @@ import (
 
 	"github.com/chainguard-dev/clog"
 	"github.com/klauspost/compress/gzip"
-	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
@@ -480,7 +479,7 @@ func redact(in string) string {
 	if err != nil {
 		// Attempt to parse non-https elements into URI's so they are translated into
 		// file:// URLs allowing them to parse into a url.URL{}
-		asURL, err := url.Parse(string(uri.New(in)))
+		asURL, err := url.Parse(string(fileURI(in)))
 		if err != nil {
 			return in
 		}
