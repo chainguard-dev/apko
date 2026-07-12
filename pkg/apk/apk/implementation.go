@@ -551,7 +551,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			} else {
 				// Attempt to parse non-https elements into URI's so they are translated into
 				// file:// URLs allowing them to parse into a url.URL{}
-				asURL, err = url.Parse(string(uri.New(element)))
+				asURL, err = url.Parse(string(fileURI(element)))
 			}
 			if err != nil {
 				return fmt.Errorf("failed to parse key as URI: %w", err)
@@ -1161,6 +1161,28 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	return nil
 }
 
+// fileURI converts a local filesystem path into a file:// URI. It mirrors the
+// behavior of the uri.New/uri.File helpers that were removed in
+// go.lsp.dev/uri v1.0.1: an input that is already a file:// URI is returned
+// unchanged, otherwise the path is made absolute and rendered as a file:// URL.
+func fileURI(s string) uri.URI {
+	if u, err := url.PathUnescape(s); err == nil {
+		s = u
+	}
+
+	if strings.HasPrefix(s, "file://") {
+		return uri.URI(s)
+	}
+
+	p := s
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p)}
+	return uri.URI(u.String())
+}
+
 func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
@@ -1168,7 +1190,7 @@ func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 		return uri.Parse(u)
 	}
 
-	return uri.New(u), nil
+	return fileURI(u), nil
 }
 
 func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
