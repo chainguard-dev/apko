@@ -237,7 +237,10 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 			continue
 		}
 
-		if len(line) > 1 && line[1:2] != ":" {
+		if len(line) < 2 {
+			return nil, fmt.Errorf("cannot parse line %d: expected \"<token>:<value>\", saw %q", linenr, line)
+		}
+		if line[1:2] != ":" {
 			return nil, fmt.Errorf("cannot parse line %d: expected \":\" in not found", linenr)
 		}
 
