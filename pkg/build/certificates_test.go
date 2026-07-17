@@ -658,7 +658,7 @@ func TestWriteCABundleChecksums(t *testing.T) {
 	// sha256sum -c compatible line for the given content and basename.
 	sumLine := func(content []byte, name string) []byte {
 		sum := sha256.Sum256(content)
-		return []byte(fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), name))
+		return fmt.Appendf(nil, "%s  %s\n", hex.EncodeToString(sum[:]), name)
 	}
 
 	bundle := []byte("-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n")
