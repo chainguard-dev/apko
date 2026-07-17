@@ -1,0 +1,36 @@
+# Demonstrates contents.runtime_keyring: public keys installed into
+# /etc/apk/keys *after* the build, so runtime `apk add` against a
+# runtime_repositories mirror (which re-signs packages with its own key)
+# verifies without --allow-untrusted. Runtime trust only — these keys are
+# not used to verify packages during the build.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+  # The repo whose packages the key above verifies at runtime. Seeded into
+  # /etc/apk/repositories in the image; not used at build time.
+  runtime_repositories:
+    - https://packages.example.com/os
+  # Each entry is an inline {name, content} public key; the name must match
+  # the filename the repository's APKINDEX signature references.
+  runtime_keyring:
+    - name: example-mirror.rsa.pub
+      content: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfLcP/XCqh9zuL8J1sIu
+        ADYZt1xafrimFkOMHgldT+0Mpi3ORy6lf29Ccc+4Hfe2P/ImlB89THtIjMNGk58C
+        fZVod8z2cc52aV5YvNbFDxSoOPSc4D+IqL9bE6ICc0HS2kef1Rm6ZY1G8JoNs2zR
+        nquL6XyV7+gPC9KNhGi16f8qyhvMy3dkGPmqtXuI+j7p0XtDB1/e3xe+Mg+kQ47A
+        DiE2XB+9nbvOKOXuuUscerhEnvYPLRjDQECkRzLN76CPJsGwoBn7In/kMFecQuLD
+        LbYPdu/s8Pvz4wDurWOzUShbrF6Ka9ARRZVN57+4u6k+zuIi0XF5UCHicrjl6jYR
+        FQIDAQAB
+        -----END PUBLIC KEY-----
+
+cmd: /bin/sh -l
+
+archs:
+  - x86_64
+  - aarch64

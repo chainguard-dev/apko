@@ -113,6 +113,16 @@ There are multiple possible child elements:
    Notice that you need to package name under `packages` with the label e.g `- alpine-baselayout@local`.
  - `packages` defines a list of alpine packages to install inside the image
  - `keyring` PGP keys to add to the keyring for verifying packages.
+ - `runtime_repositories` defines a list of alpine repositories that are written to
+   `/etc/apk/repositories` in the image but are not used at build time, so `apk add` in the
+   running container pulls from them.
+ - `runtime_keyring` defines public keys installed into `/etc/apk/keys` after package
+   resolution, so runtime `apk add` against `runtime_repositories` can verify packages from
+   mirrors that re-sign them. Each entry is an inline `{name, content}` object: `content` is a
+   PEM-encoded RSA public key, and `name` is the filename the key is written to, which must
+   match the filename the repository's APKINDEX signature references (`.SIGN.RSA256.<name>`).
+   These keys are a runtime trust anchor only and are never consulted during build-time
+   package resolution.
 
 ### Entrypoint top level element
 
@@ -210,10 +220,17 @@ The `paths` element contains the following children:
    - `symlink`: create a symbolic link (`ln -s`) at the path, linking to the value specified in
      `source`
    - `permissions`: sets file permissions on the file or directory at the path.
- - `uid`: UID to associate with the file
- - `gid`: GID to associate with the file
+ - `uid`: UID to associate with the file. If both `uid` and `gid` are omitted, ownership is left
+   untouched; if only one is set, the other defaults to `0` (root).
+ - `gid`: GID to associate with the file. See the note on `uid` above.
  - `permissions`: file permissions to set. Permissions should be specified in octal e.g. 0o755 (see `man chmod` for details).
  - `source`: used in `hardlink` and `symlink`, this represents the path to link to.
+ - `recursive`: when `true`, apply `permissions` (and `uid`/`gid` when set) to the path and, if it
+   is a directory, to every entry beneath it. Honored for the `directory` and `permissions` types
+   (ignored for `empty-file`, `hardlink`, and `symlink`). The same mode is applied to files and
+   directories alike, and only paths that already exist when the mutation runs are affected.
+   Combine with omitted `uid`/`gid` to fix permissions across an existing tree without changing
+   ownership.
 
 
 ### Includes

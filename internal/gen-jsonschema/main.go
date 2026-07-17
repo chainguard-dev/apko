@@ -28,6 +28,7 @@ func main() {
 		log.Fatal(err)
 	}
 	schema := r.Reflect(types.ImageConfiguration{})
+
 	b := new(bytes.Buffer)
 	enc := json.NewEncoder(b)
 	enc.SetIndent("", "  ")

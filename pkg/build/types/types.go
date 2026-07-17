@@ -68,6 +68,10 @@ type User struct {
 
 type GID *uint32
 
+// UID is a nullable user ID. A nil UID means "unset" (distinct from an
+// explicit 0), which lets path mutations leave ownership untouched.
+type UID *uint32
+
 type Group struct {
 	// Required: The name of the group
 	GroupName string `json:"groupname,omitempty"`
@@ -84,15 +88,19 @@ type PathMutation struct {
 	//
 	// This can be one of: directory, empty-file, hardlink, symlink, permissions
 	Type string `json:"type,omitempty"`
-	// The mutation's desired user ID
-	UID uint32 `json:"uid,omitempty"`
-	// The mutation's desired group ID
-	GID uint32 `json:"gid,omitempty"`
+	// The mutation's desired user ID. If unset (nil), ownership is left
+	// untouched unless gid is set (see Recursive).
+	UID UID `json:"uid,omitempty" yaml:"uid,omitempty"`
+	// The mutation's desired group ID. If unset (nil), ownership is left
+	// untouched unless uid is set (see Recursive).
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// The permission bits for the path
 	Permissions uint32 `json:"permissions,omitempty"`
 	// The source path to mutate
 	Source string `json:"source,omitempty"`
-	// Toggle whether to mutate recursively
+	// Toggle whether to mutate recursively. Honored for the "directory" and
+	// "permissions" types: the permissions, and uid/gid when set, are applied
+	// to every entry beneath the path.
 	Recursive bool `json:"recursive,omitempty"`
 }
 
@@ -118,6 +126,12 @@ type ImageContents struct {
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// APK signing public keys installed into /etc/apk/keys after package
+	// resolution, so runtime `apk add` against runtime_repositories can verify
+	// re-signed packages. A runtime trust anchor only — not consulted during
+	// build-time package resolution. Each entry is an inline {name, content}
+	// public key.
+	RuntimeKeyring []RuntimeKeyringEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
@@ -458,4 +472,17 @@ type ImageCertificates struct {
 	// Providers is a list of virtual package names that identify packages
 	// containing CA certificate files to be assembled into the system CA bundle.
 	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
+}
+
+// RuntimeKeyringEntry is a single inline APK signing public key, mirroring
+// AdditionalCertificateEntry. Keys are content-bearing by design: the key bytes
+// live in the configuration itself (no URIs to fetch), so builds stay
+// reproducible and the locked configuration carries the full trust anchor.
+type RuntimeKeyringEntry struct {
+	// Required: the filename the key is written to under /etc/apk/keys. Must
+	// match the filename the repository's APKINDEX signature references
+	// (.SIGN.RSA256.<name>), or apk will not find the key at runtime.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: the PEM-encoded RSA public key content.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
 }

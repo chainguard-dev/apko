@@ -8,27 +8,33 @@
     "keyring": [
       {
         "name": "./testdata/melange.rsa.pub",
-        "url": "./testdata/melange.rsa.pub"
+        "url": "./testdata/melange.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAuE9aHvpBoe7HNnWxhp2p\nx+HGjbPhzP0CyQYMNMcHjd76UcaPwWNTVqJI8JMT2u72mPsEXpC+J6KqjIggJoOa\nQYg87oYEdthoJZjyDaKzezNZKndzVQkg4RfQPiCPQkm4r9v6So0MCDa4rwRYnqrf\ns3Je9/wi8B/wG1sz7P4wOG23djxpORDsMI9CyZhnAKfNg/uqmF/sxEwOL4FaDZMg\n0oo7Kx3FjtqqKTV8uFbCDsTxV3CR0pm3WJdX9TNfjXLXfp2a6QDYk1JoYl++UUHK\n+7izMXro6xgY7OPT+F48/YNYxS/ciH90DmN7ysJnQ2otZHSqhOkJV4UrYCKBHY55\nXjpDe7+nmwXaqVyAlCS6pDqHeYUUpYTpnv4b9bbst9NtYPRY8W00Oc5Cs3KdHeV6\nLqvHAGwNTZziv91UTpi0hMf27I+MLaXx+jNWm5j40a+ZyswLAQSLI+u3LxfPlHda\nlhpaQw+CoM3ucX9rcnJaBgowXclDAAvRNIj7EJNW5sk+3SbpmKKDkrD7Cl0rMSrd\n1dixDZZPzA8UtwheNTmV+I+0r1kQMcNYcB8iUKsoWIpaur0CBCww02WTHpOMcMGw\n+rVr/wzPP3Iqo1+EVrzVI5kSnZ7VLRtO5VdMLw0PlIK4ShJ+X5OtVtWnJ9jIiLaI\nse0tr8lpqU40eV862X+jKz0CAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub",
-        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub"
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-6165ee59.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAutQkua2CAig4VFSJ7v54\nALyu/J1WB3oni7qwCZD3veURw7HxpNAj9hR+S5N/pNeZgubQvJWyaPuQDm7PTs1+\ntFGiYNfAsiibX6Rv0wci3M+z2XEVAeR9Vzg6v4qoofDyoTbovn2LztaNEjTkB+oK\ntlvpNhg1zhou0jDVYFniEXvzjckxswHVb8cT0OMTKHALyLPrPOJzVtM9C1ew2Nnc\n3848xLiApMu3NBk0JqfcS3Bo5Y2b1FRVBvdt+2gFoKZix1MnZdAEZ8xQzL/a0YS5\nHd0wj5+EEKHfOd3A75uPa/WQmA+o0cBFfrzm69QDcSJSwGpzWrD1ScH3AK8nWvoj\nv7e9gukK/9yl1b4fQQ00vttwJPSgm9EnfPHLAtgXkRloI27H6/PuLoNvSAMQwuCD\nhQRlyGLPBETKkHeodfLoULjhDi1K2gKJTMhtbnUcAA7nEphkMhPWkBpgFdrH+5z4\nLxy+3ek0cqcI7K68EtrffU8jtUj9LFTUC8dERaIBs7NgQ/LfDbDfGh9g6qVj1hZl\nk9aaIPTm/xsi8v3u+0qaq7KzIBc9s59JOoA8TlpOaYdVgSQhHHLBaahOuAigH+VI\nisbC9vmqsThF2QdDtQt37keuqoda2E6sL7PUvIyVXDRfwX7uMDjlzTxHTymvq2Ck\nhtBqojBnThmjJQFgZXocHG8CAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub",
-        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub"
+        "url": "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-616ae350.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyduVzi1mWm+lYo2Tqt/0\nXkCIWrDNP1QBMVPrE0/ZlU2bCGSoo2Z9FHQKz/mTyMRlhNqTfhJ5qU3U9XlyGOPJ\npiM+b91g26pnpXJ2Q2kOypSgOMOPA4cQ42PkHBEqhuzssfj9t7x47ppS94bboh46\nxLSDRff/NAbtwTpvhStV3URYkxFG++cKGGa5MPXBrxIp+iZf9GnuxVdST5PGiVGP\nODL/b69sPJQNbJHVquqUTOh5Ry8uuD2WZuXfKf7/C0jC/ie9m2+0CttNu9tMciGM\nEyKG1/Xhk5iIWO43m4SrrT2WkFlcZ1z2JSf9Pjm4C2+HovYpihwwdM/OdP8Xmsnr\nDzVB4YvQiW+IHBjStHVuyiZWc+JsgEPJzisNY0Wyc/kNyNtqVKpX6dRhMLanLmy+\nf53cCSI05KPQAcGj6tdL+D60uKDkt+FsDa0BTAobZ31OsFVid0vCXtsbplNhW1IF\nHwsGXBTVcfXg44RLyL8Lk/2dQxDHNHzAUslJXzPxaHBLmt++2COa2EI1iWlvtznk\nOk9WP8SOAIj+xdqoiHcC4j72BOVVgiITIJNHrbppZCq6qPR+fgXmXa+sDcGh30m6\n9Wpbr28kLMSHiENCWTdsFij+NQTd5S47H7XTROHnalYDuF1RpS+DpQidT5tUimaT\nJZDr++FjKrnnijbyNF8b98UCAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub",
-        "url": "https://apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub"
+        "url": "https://apk.cgr.dev/chainguard/chainguard-4be246965c6e2749ccbaeba0582ed0f90c7cb94f4c0397e014b322b8652e3ba4.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvasoSqEq9IKa4E+vcx7H\nijkwVuKbgG9vjds2+IJaQQoL/5EucLtYQ2dKSiizAnQmdb4EZIcj/M9DHFu8YlCW\nnTzrPinyj+pq8pRrAO3zj8GqZ5IjhC/pv2YdbwjRJHTijiT8miYiZflc2JyEuZb7\newuhEaB/VLcwaS8BIKG+QTjj7QDllhhqyiaeFJxs5ljSNl4EA6m+uSUCir7F+Jb5\nlM9n5b4SGB04p1w36a3eZMIT98jUqvWadxnGt+AeNDad3wT42d95xf4U303q+uwp\nwGqyIvltDR2OMfVqU5tvW7s3PytHuP25N+vUxjquwTj8GqQbaa/w5wl7+Mu8yZhT\nvlFVytrHTZSFqpPVbVgzprpb+HAu4tHohI9Z5G1NzKpKb4HmJe3QSOK1i7dPk8RU\nR2z2hPNfJ1fVn7rT6L3iyShqPxNLst9MT44StzEtrO6vL7mc4Fs0QD/nJJ/30Nyn\nTNsKywONj39cEnIyq6Df/RAfFWL1HbWNDl8w2xe2eqI3VSFGFIjoqNCUvy43jrZc\nzE/K7gqY3eKX6jNfKu1kCHU6YqXCf6S7p7PhcNYX+BaXT5rEuU2e0SDR1gT1gI8K\nNXELTNI4opfQ9JR7KhAwIOyQbUu/q22SDSNbrXp+9h85SGd7gfhqgzR9ivN03k4X\n7H5Er4P2M9cqgT66vN//8rECAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub",
-        "url": "https://apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub"
+        "url": "https://apk.cgr.dev/chainguard/chainguard-7fb528a64a862d44bbea6069093f1fec29fa864ba7e9754828eeceed3f487239.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAnuH20LnWxNl54a7mjSb5\nPmJssMelKeFQUDfzWZSTwCfFpBHRFq4KLWcUByqtmKphXLRMLjy0xR4xux7oh8n2\nCLP1NBt6d5skqaqHNFW24BO0ThrXUbwZ6jCAI0s2xSBaEPMea4Ipn2hmqZLwox6C\nqLGbEsbtRrkKXHva4jqFCX8h8ThwdQuKCEfr/nSk5IV+fn1Uoo8WK89cMUxlj1NB\nB5rdeJCcVaNlZTt2/Zw917BY+tjodWovbIGtqvnflOa5R28R+Q6bBh9oCDvkR6IU\n38NyT7szld5QgD9ebl5sNOFwk4mJdCNdi1wK9kSrBM7D8YEsStmawezpfvhwV55S\nQJpjuo6zJab25RAzcZoj+YhpBSl91QNRaKK3x5RlqW93tBCtpDjfpNqEHgyzHjc1\n4N46SQBU1NamkYBStTwMluc56lwmmWdKfnZXU0vULxQjCyBBeNSpsz8joyO60htD\nG52ieJ+NIqCEX7ikabWGCUfvAtEXDDDmo17JTyNSarziEfBImEtTOt8P93V6nRr7\nDz1fWKQC1pv9eFn1aS2TK50hWEgKpB+lmTf/j8UGawAWHQFND1ndDqNaJnVP/DqR\n6dt7krjlrDVEGq4s3GJabYADKxh0vXt1J4gef07dfEtEa6Aj9hikVyv3bQMeqtMK\nk/o1spotQWzE9+rffQfaUl8CAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "apk.cgr.dev/chainguard/chainguard-e3fb44d055702ed0dddf0f2acb1a0a07fc6075967092b203c7aac7db801d65f4.rsa.pub",
-        "url": "https://apk.cgr.dev/chainguard/chainguard-e3fb44d055702ed0dddf0f2acb1a0a07fc6075967092b203c7aac7db801d65f4.rsa.pub"
+        "url": "https://apk.cgr.dev/chainguard/chainguard-e3fb44d055702ed0dddf0f2acb1a0a07fc6075967092b203c7aac7db801d65f4.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAs+GdB46rERN+mqR3jdGH\nAhrLuu4xxzcyIHQFDXXhFY4Cvzox2AI1/1Kv1UCZetce0w9QMgq35qGEWe61dykC\nLoShLZ1Wgr4OGbZW1J73UGdmYzYOWWJMeXSQ3cFSAFLS23ox72HEZQG7QwDApkjl\nIp9cjt4xpSu/A+25b7t8ZtJAdZgKd+yY8MLnOqxIOqgO2kHUTR+1F8QGBAQUC7AW\nu+1UkcsJbYz3wT61ybuYREGXadEUmJmef5cfCQ66eZ2q0tioSVSWiK9SQGKZwl3w\nb7XInD6UJGQxoj/f2NFzvS9gxG7Dzql4mx9boPHNbEU9X8sdVtoCBIA52Lv9dCLO\nQCVPvm9e+/l5WXlYvoEsAcRdTGlexOQkdAs0R2RjH/teqnU2D7WgjLmtor2Nk52R\nASzESzCyXiSfDH7yBpSuKPNpI4TXXnKnxgAawlz9V7TLLP54qwPpgJ8pxGHz5GaN\n5tikOt95O3If4MMoRbfjbNH0VQ0bAnMeQlE+qbWbLlLWlK3yQq9tbmApG4vVvdpc\nWKe0NPuoxnUkw1n7JQs70RxsJf3SJoC59Fio1mkl3QIsTMl+75IPfwBy3tmdYKQS\nbV5Cb0nnjuB9esVVnEmXUuAS27TQlQJcu2kpV/Uccwv0+4Df3F61MWlTLvjfkXZm\n6uEiubGXOuhXv+QtsNwYGlECAwEAAQ==\n-----END PUBLIC KEY-----\n"
       }
     ],
     "build_repositories": [],

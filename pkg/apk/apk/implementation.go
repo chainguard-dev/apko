@@ -551,7 +551,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			} else {
 				// Attempt to parse non-https elements into URI's so they are translated into
 				// file:// URLs allowing them to parse into a url.URL{}
-				asURL, err = url.Parse(string(uri.New(element)))
+				asURL, err = url.Parse(string(fileURI(element)))
 			}
 			if err != nil {
 				return fmt.Errorf("failed to parse key as URI: %w", err)
@@ -983,6 +983,36 @@ type Key struct {
 	Bytes []byte
 }
 
+// FetchKeyBytes downloads a keyring from the given URL and returns its raw bytes.
+// It applies the provided authenticator (which may be nil for anonymous fetches).
+func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticator, keyURL string) ([]byte, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "FetchKeyBytes")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keyURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch key %s: %w", keyURL, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch key %s: %s", keyURL, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyURL, err)
+	}
+	return b, nil
+}
+
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
 func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
@@ -1131,6 +1161,28 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	return nil
 }
 
+// fileURI converts a local filesystem path into a file:// URI. It mirrors the
+// behavior of the uri.New/uri.File helpers that were removed in
+// go.lsp.dev/uri v1.0.1: an input that is already a file:// URI is returned
+// unchanged, otherwise the path is made absolute and rendered as a file:// URL.
+func fileURI(s string) uri.URI {
+	if u, err := url.PathUnescape(s); err == nil {
+		s = u
+	}
+
+	if strings.HasPrefix(s, "file://") {
+		return uri.URI(s)
+	}
+
+	p := s
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p)}
+	return uri.URI(u.String())
+}
+
 func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
@@ -1138,7 +1190,7 @@ func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 		return uri.Parse(u)
 	}
 
-	return uri.New(u), nil
+	return fileURI(u), nil
 }
 
 func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
