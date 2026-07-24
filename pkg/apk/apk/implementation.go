@@ -543,6 +543,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 	for _, element := range keyFiles {
 		eg.Go(func() error {
 			log.Debugf("installing key %v", element)
+			keyName := filepath.Base(element)
 
 			var asURL *url.URL
 			var err error
@@ -586,6 +587,9 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if resp.StatusCode < 200 || resp.StatusCode > 299 {
 					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
 				}
+				if contentDispositionFileName := keyFilenameFromContentDisposition(resp.Header.Get("Content-Disposition")); contentDispositionFileName != "" {
+					keyName = contentDispositionFileName
+				}
 
 				data, err = io.ReadAll(resp.Body)
 				if err != nil {
@@ -596,7 +600,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
-			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", filepath.Base(element)), data,
+			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", keyName), data,
 				0o644); err != nil {
 				return fmt.Errorf("failed to write apk key: %w", err)
 			}
@@ -606,6 +610,43 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 	}
 
 	return eg.Wait()
+}
+
+func keyFilenameFromContentDisposition(contentDisposition string) string {
+	if contentDisposition == "" {
+		return ""
+	}
+
+	for _, field := range strings.Split(contentDisposition, ";") {
+		field = strings.TrimSpace(field)
+		lower := strings.ToLower(field)
+
+		if strings.HasPrefix(lower, "filename*=") {
+			filename := strings.TrimSpace(field[len("filename*="):])
+			filename = strings.Trim(filename, `"`)
+			if i := strings.Index(filename, "''"); i >= 0 {
+				filename = filename[i+2:]
+			}
+			if decodedFilename, err := url.PathUnescape(filename); err == nil {
+				filename = decodedFilename
+			}
+			filename = filepath.Base(filename)
+			if filename != "" && filename != "." {
+				return filename
+			}
+		}
+
+		if strings.HasPrefix(lower, "filename=") {
+			filename := strings.TrimSpace(field[len("filename="):])
+			filename = strings.Trim(filename, `"`)
+			filename = filepath.Base(filename)
+			if filename != "" && filename != "." {
+				return filename
+			}
+		}
+	}
+
+	return ""
 }
 
 // ResolveWorld determine the target state for the requested dependencies in /etc/apk/world. Does not install anything.
