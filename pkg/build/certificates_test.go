@@ -18,6 +18,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -646,5 +648,88 @@ func TestInstallCertificates(t *testing.T) {
 				return nil
 			})
 		})
+	}
+}
+
+func TestWriteCABundleChecksums(t *testing.T) {
+	epoch := time.Unix(1337, 0)
+	t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
+
+	// sha256sum -c compatible line for the given content and basename.
+	sumLine := func(content []byte, name string) []byte {
+		sum := sha256.Sum256(content)
+		return fmt.Appendf(nil, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+	}
+
+	bundle := []byte("-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n")
+	awsBundle := []byte("-----BEGIN CERTIFICATE-----\naws\n-----END CERTIFICATE-----\n")
+	truststore := []byte("not-really-jks-but-bytes-are-hashed-as-is")
+
+	fsys := apkfs.NewMemFS()
+	existing := map[string][]byte{
+		caBundlePaths[0]:       bundle,     // etc/ssl/certs/ca-certificates.crt
+		caBundlePaths[1]:       awsBundle,  // AWS ECS bundle
+		javaTruststorePaths[0]: truststore, // Java cacerts
+	}
+	for path, content := range existing {
+		if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("failed to create dir for %s: %v", path, err)
+		}
+		if err := fsys.WriteFile(path, content, 0o644); err != nil {
+			t.Fatalf("failed to write %s: %v", path, err)
+		}
+	}
+
+	bc := &Context{
+		o:  options.Options{SourceDateEpoch: epoch},
+		fs: fsys,
+	}
+	if err := bc.writeCABundleChecksums(context.Background()); err != nil {
+		t.Fatalf("writeCABundleChecksums() error = %v", err)
+	}
+
+	wantSidecars := map[string][]byte{
+		caBundleChecksumSidecar(caBundlePaths[0]):       sumLine(bundle, "ca-certificates.crt"),
+		caBundleChecksumSidecar(caBundlePaths[1]):       sumLine(awsBundle, "tls-ca-bundle.pem"),
+		caBundleChecksumSidecar(javaTruststorePaths[0]): sumLine(truststore, "cacerts"),
+	}
+	for path, want := range wantSidecars {
+		got, err := fsys.ReadFile(path)
+		if err != nil {
+			t.Fatalf("expected sidecar %s: %v", path, err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("sidecar content mismatch for %s (-want +got):\n%s", path, diff)
+		}
+		stat, err := fsys.Stat(path)
+		if err != nil {
+			t.Fatalf("failed to stat sidecar %s: %v", path, err)
+		}
+		if stat.Mode().Perm() != 0o444 {
+			t.Errorf("sidecar %s has mode %v, want 0444", path, stat.Mode().Perm())
+		}
+		if !stat.ModTime().Equal(epoch) {
+			t.Errorf("sidecar %s has mod time %v, want %v", path, stat.ModTime(), epoch)
+		}
+	}
+}
+
+func TestWriteCABundleChecksumsNoBundles(t *testing.T) {
+	epoch := time.Unix(1337, 0)
+	t.Setenv("SOURCE_DATE_EPOCH", fmt.Sprintf("%d", epoch.Unix()))
+
+	fsys := apkfs.NewMemFS()
+	bc := &Context{
+		o:  options.Options{SourceDateEpoch: epoch},
+		fs: fsys,
+	}
+	// No bundles present: should be a no-op, not an error.
+	if err := bc.writeCABundleChecksums(context.Background()); err != nil {
+		t.Fatalf("writeCABundleChecksums() error = %v", err)
+	}
+	for _, p := range append(append([]string{}, caBundlePaths...), javaTruststorePaths...) {
+		if _, err := fsys.Stat(caBundleChecksumSidecar(p)); err == nil {
+			t.Errorf("unexpected sidecar created for missing bundle %s", p)
+		}
 	}
 }

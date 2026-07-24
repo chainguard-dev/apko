@@ -260,6 +260,59 @@ func (bc *Context) installCertificates(ctx context.Context) error {
 	return nil
 }
 
+// caBundleChecksumSidecar returns the sidecar checksum path for a given CA
+// bundle path, e.g. "etc/ssl/certs/ca-certificates.crt" becomes
+// "etc/ssl/certs/.ca-certificates.crt.sha256".
+func caBundleChecksumSidecar(bundlePath string) string {
+	return filepath.Join(filepath.Dir(bundlePath), "."+filepath.Base(bundlePath)+".sha256")
+}
+
+// writeCABundleChecksums writes a sha256sum-compatible sidecar file next to each
+// existing CA bundle and Java truststore so that downstream integrity tooling
+// (e.g. OpenSCAP) can later verify they have not been modified since build time.
+// It runs unconditionally after certificate installation, so every image that
+// ships a CA bundle or truststore gets a baseline, whether or not additional
+// certificates were configured.
+func (bc *Context) writeCABundleChecksums(ctx context.Context) error {
+	_, span := otel.Tracer("apko").Start(ctx, "writeCABundleChecksums")
+	defer span.End()
+
+	builtTime, err := bc.GetBuildDateEpoch()
+	if err != nil {
+		return fmt.Errorf("failed to get build date epoch: %w", err)
+	}
+
+	// PEM CA bundles plus the binary Java truststore(s). For the truststore the
+	// checksum is a plain file-level hash of the JKS keystore as written.
+	for _, bundlePath := range slices.Concat(caBundlePaths, javaTruststorePaths) {
+		data, err := bc.fs.ReadFile(bundlePath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// No file at this path, nothing to checksum.
+				continue
+			}
+			return fmt.Errorf("failed to read certificate store %s: %w", bundlePath, err)
+		}
+
+		sum := sha256.Sum256(data)
+		// sha256sum-compatible line ("<hex>  <basename>\n"). Using the basename
+		// keeps the sidecar verifiable with `sha256sum -c` from the file's dir.
+		line := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), filepath.Base(bundlePath))
+
+		sidecar := caBundleChecksumSidecar(bundlePath)
+		// Read-only (r--r--r--): a baseline that shouldn't be casually
+		// overwritten, matching the mode used for /etc/apko.json.
+		if err := bc.fs.WriteFile(sidecar, []byte(line), 0o444); err != nil {
+			return fmt.Errorf("failed to write certificate store checksum %s: %w", sidecar, err)
+		}
+		if err := bc.fs.Chtimes(sidecar, builtTime, builtTime); err != nil {
+			return fmt.Errorf("failed to change times on certificate store checksum %s: %w", sidecar, err)
+		}
+	}
+
+	return nil
+}
+
 // loadJavaTruststores loads all existing Java truststores from the configured paths.
 // It is ok if no truststores exist; in that case, an empty slice is returned.
 func (bc *Context) loadJavaTruststores() ([]loadedTruststore, error) {
