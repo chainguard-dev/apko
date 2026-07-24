@@ -102,16 +102,6 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return nil, fmt.Errorf("unable to add auth to request: %w", err)
 		}
 
-		resp, err := client.Do(head)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
-		}
-
 		fetchAndParse := func(etag string) (NamedIndex, error) {
 			b, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
@@ -122,6 +112,19 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 				return nil, fmt.Errorf("parsing %s: %w", asURL.Redacted(), err)
 			}
 			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
+		}
+
+		resp, err := client.Do(head)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
+				return fetchAndParse("")
+			}
+			return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 		}
 
 		etag, ok := etagFromResponse(resp)
