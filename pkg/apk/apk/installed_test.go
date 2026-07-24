@@ -653,6 +653,24 @@ func TestParseInstalledPackages(t *testing.T) {
 	}
 }
 
+func TestParseInstalledShortLine(t *testing.T) {
+	// A single-character line in an installed database has no ":" delimiter and
+	// no value. Before the length guard, the "len(line) > 1" short-circuit let a
+	// length-1 line skip the delimiter check and then "line[2:]" sliced out of
+	// range and panicked. It should now be reported as a parse error instead.
+	for _, in := range []string{
+		"P:foo\nV:1.0\nP\n",
+		"P",
+		"X",
+	} {
+		t.Run(in, func(t *testing.T) {
+			_, err := ParseInstalled(strings.NewReader(in))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "cannot parse line")
+		})
+	}
+}
+
 func TestRemoveOrphanedEntries(t *testing.T) {
 	cases := []struct {
 		name     string
