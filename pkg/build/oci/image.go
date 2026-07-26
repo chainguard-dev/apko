@@ -76,6 +76,12 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		log.Infof("layer digest: %v", digest)
 		log.Infof("layer diffID: %v", diffid)
 
+		// Apply uniform layer annotations if configured.
+		var layerAnns map[string]string
+		if len(ic.LayerAnnotations) > 0 {
+			layerAnns = maps.Clone(ic.LayerAnnotations)
+		}
+
 		adds = append(adds, mutate.Addendum{
 			Layer: layer,
 			History: v1.History{
@@ -84,6 +90,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 				CreatedBy: "apko",
 				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
 			},
+			Annotations: layerAnns,
 		})
 	}
 

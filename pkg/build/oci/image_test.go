@@ -169,3 +169,50 @@ func TestBuildImageFromLayer(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildImageFromLayersWithAnnotations(t *testing.T) {
+	layer1 := static.NewLayer([]byte("layer1"), ggcrtypes.OCILayer)
+	layer2 := static.NewLayer([]byte("layer2"), ggcrtypes.OCILayer)
+
+	now := time.Now()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		desc          string
+		cfg           types.ImageConfiguration
+		wantLayerAnns []map[string]string
+	}{{
+		desc: "uniform layer annotations",
+		cfg: types.ImageConfiguration{
+			LayerAnnotations: map[string]string{
+				"dev.chainguard.layer.source": "apko",
+			},
+		},
+		wantLayerAnns: []map[string]string{
+			{"dev.chainguard.layer.source": "apko"},
+			{"dev.chainguard.layer.source": "apko"},
+		},
+	}, {
+		desc:          "no annotations",
+		cfg:           types.ImageConfiguration{},
+		wantLayerAnns: []map[string]string{nil, nil},
+	}} {
+		t.Run(tc.desc, func(t *testing.T) {
+			layers := []v1.Layer{layer1, layer2}
+			img, err := BuildImageFromLayers(ctx, empty.Image, layers, tc.cfg, now, types.ParseArchitecture(""))
+			require.NoError(t, err)
+
+			manifest, err := img.Manifest()
+			require.NoError(t, err)
+
+			require.Len(t, manifest.Layers, 2)
+			for i, desc := range manifest.Layers {
+				if tc.wantLayerAnns[i] == nil {
+					require.Empty(t, desc.Annotations, "layer %d should have no annotations", i)
+				} else {
+					require.Equal(t, tc.wantLayerAnns[i], desc.Annotations, "layer %d annotations mismatch", i)
+				}
+			}
+		})
+	}
+}
