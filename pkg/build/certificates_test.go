@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -727,7 +728,7 @@ func TestWriteCABundleChecksumsNoBundles(t *testing.T) {
 	if err := bc.writeCABundleChecksums(context.Background()); err != nil {
 		t.Fatalf("writeCABundleChecksums() error = %v", err)
 	}
-	for _, p := range append(append([]string{}, caBundlePaths...), javaTruststorePaths...) {
+	for _, p := range slices.Concat(caBundlePaths, javaTruststorePaths) {
 		if _, err := fsys.Stat(caBundleChecksumSidecar(p)); err == nil {
 			t.Errorf("unexpected sidecar created for missing bundle %s", p)
 		}
