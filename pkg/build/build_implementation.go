@@ -198,6 +198,12 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		return nil, fmt.Errorf("failed to install certificates: %w", err)
 	}
 
+	// Record checksums of the (possibly updated) CA bundles so downstream
+	// tooling (e.g. OpenSCAP) can verify they were not modified post-build.
+	if err := bc.writeCABundleChecksums(ctx); err != nil {
+		return nil, fmt.Errorf("failed to write CA bundle checksums: %w", err)
+	}
+
 	if err := bc.installRuntimeKeyring(ctx); err != nil {
 		return nil, fmt.Errorf("failed to install runtime keyring: %w", err)
 	}
