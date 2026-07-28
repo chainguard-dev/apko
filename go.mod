@@ -3,7 +3,7 @@ module chainguard.dev/apko
 go 1.26.0
 
 require (
-	chainguard.dev/sdk v0.1.145
+	chainguard.dev/sdk v0.1.156
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/charmbracelet/log v1.0.0
 	github.com/go-git/go-git/v5 v5.19.1
@@ -31,10 +31,10 @@ require (
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.289.0
+	google.golang.org/api v0.290.0
 	gopkg.in/ini.v1 v1.67.3
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.36.2
+	k8s.io/apimachinery v0.36.3
 	sigs.k8s.io/release-utils v0.12.4
 )
 
