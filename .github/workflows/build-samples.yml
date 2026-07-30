@@ -98,6 +98,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            *.apple.com:443
             *.blob.core.windows.net:443
             *.githubapp.com:443
             9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
@@ -105,6 +106,7 @@ jobs:
             api.github.com:443
             apk.cgr.dev:443
             auth.docker.io:443
+            cp*.cloudflare.com
             cgr.dev:443
             dl-cdn.alpinelinux.org:443
             dl.google.com:443
@@ -121,6 +123,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
+            updates-http.cdn-apple.com:80
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
