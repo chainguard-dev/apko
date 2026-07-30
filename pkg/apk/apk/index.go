@@ -56,6 +56,7 @@ type Signature struct {
 var globalIndexCache = &indexCache{
 	indexes:  newFlightCache[cacheKey, NamedIndex](),
 	modtimes: map[string]time.Time{},
+	current:  map[string]NamedIndex{},
 }
 
 type cacheKey struct {
@@ -69,6 +70,39 @@ type indexCache struct {
 	// For local indexes.
 	sync.Mutex
 	modtimes map[string]time.Time
+
+	// current is the latest index object served per index URL. When a newer
+	// generation replaces an entry, derived data cached for the superseded
+	// index is purged, and the resolver caches consult isCurrent to avoid
+	// re-caching data for superseded indexes that in-flight resolutions
+	// still hold.
+	currentMu sync.Mutex
+	current   map[string]NamedIndex
+}
+
+// setCurrent records idx as the latest generation for the index URL u,
+// purging derived caches for the generation it replaces.
+func (i *indexCache) setCurrent(u string, idx NamedIndex) {
+	i.currentMu.Lock()
+	prev := i.current[u]
+	i.current[u] = idx
+	i.currentMu.Unlock()
+
+	if prev != nil && prev != idx {
+		globalResolverCache.ForgetIndex(prev)
+		globalDisqualifyCache.ForgetIndex(prev)
+	}
+}
+
+// isCurrent reports whether idx is still the latest generation of its index.
+// Indexes this cache has never served (e.g. locally constructed ones) are
+// considered current: they are not subject to generation replacement.
+func (i *indexCache) isCurrent(idx NamedIndex) bool {
+	i.currentMu.Lock()
+	defer i.currentMu.Unlock()
+
+	cur, ok := i.current[idx.Source()]
+	return !ok || cur == idx
 }
 
 func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
@@ -144,6 +178,9 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return k.url == u && k.etag != etag
 		})
 
+		if err == nil {
+			i.setCurrent(u, idx)
+		}
 		return idx, err
 	} else {
 		i.Lock()
@@ -166,7 +203,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		}
 		i.modtimes[u] = mod
 
-		return i.indexes.Do(key, func() (NamedIndex, error) {
+		idx, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			b, err := os.ReadFile(u)
 			if err != nil {
 				return nil, fmt.Errorf("reading file: %w", err)
@@ -177,6 +214,10 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			}
 			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
 		})
+		if err == nil {
+			i.setCurrent(u, idx)
+		}
+		return idx, err
 	}
 }
 

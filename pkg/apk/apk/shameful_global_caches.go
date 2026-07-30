@@ -69,6 +69,13 @@ func (r *resolverCache) fill(indexes []NamedIndex, pr *PkgResolver) {
 }
 
 func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	// A superseded index generation will never be requested again once the
+	// in-flight resolutions holding it finish, and no future replacement
+	// will purge it, so it must not (re-)enter the cache.
+	if !currentAll(indexes) {
+		return newPkgResolver(ctx, indexes)
+	}
+
 	r.Lock()
 	defer r.Unlock()
 
@@ -79,7 +86,40 @@ func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResol
 	pr := newPkgResolver(ctx, indexes)
 	r.fill(indexes, pr)
 
+	// A generation replacement that raced the fill has already run its
+	// purge, so purge its index ourselves.
+	for _, idx := range indexes {
+		if !globalIndexCache.isCurrent(idx) {
+			r.forgetIndex(idx)
+		}
+	}
+
 	return pr.Clone()
+}
+
+func currentAll(indexes []NamedIndex) bool {
+	for _, idx := range indexes {
+		if !globalIndexCache.isCurrent(idx) {
+			return false
+		}
+	}
+	return true
+}
+
+// ForgetIndex removes every cached entry whose index combination includes
+// idx: a resolver over a superseded generation is superseded itself.
+func (r *resolverCache) ForgetIndex(idx NamedIndex) {
+	r.Lock()
+	defer r.Unlock()
+
+	r.forgetIndex(idx)
+}
+
+func (r *resolverCache) forgetIndex(idx NamedIndex) {
+	delete(r.children, idx)
+	for _, child := range r.children {
+		child.forgetIndex(idx)
+	}
 }
 
 // It is expensive to compute the complement
@@ -135,6 +175,10 @@ func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedInde
 	defer r.Unlock()
 
 	indexes := slices.Concat(slices.Collect(maps.Values(byArch))...)
+	if !currentAll(indexes) {
+		return disqualifyDifference(ctx, byArch)
+	}
+
 	slices.SortFunc(indexes, func(a, b NamedIndex) int {
 		return strings.Compare(a.Name(), b.Name())
 	})
@@ -145,5 +189,27 @@ func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedInde
 	dq := disqualifyDifference(ctx, byArch)
 	r.fill(indexes, dq)
 
+	for _, idx := range indexes {
+		if !globalIndexCache.isCurrent(idx) {
+			r.forgetIndex(idx)
+		}
+	}
+
 	return maps.Clone(dq)
+}
+
+// ForgetIndex removes every cached entry whose index combination includes
+// idx: a difference over a superseded generation is superseded itself.
+func (r *disqualifyCache) ForgetIndex(idx NamedIndex) {
+	r.Lock()
+	defer r.Unlock()
+
+	r.forgetIndex(idx)
+}
+
+func (r *disqualifyCache) forgetIndex(idx NamedIndex) {
+	delete(r.children, idx)
+	for _, child := range r.children {
+		child.forgetIndex(idx)
+	}
 }
