@@ -432,6 +432,13 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
 	}
 
+	// Share package payloads with other indexes carrying the same packages.
+	// Only the repository-fetch path interns: index manipulation tooling
+	// building on IndexFromArchive directly keeps exclusive ownership.
+	for i, pkg := range index.Packages {
+		index.Packages[i] = internPackage(pkg)
+	}
+
 	return index, err
 }
 
