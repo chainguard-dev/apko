@@ -27,6 +27,7 @@ import (
 	erofs "github.com/erofs/go-erofs"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -109,6 +110,81 @@ func TestWriteErofs_Roundtrip(t *testing.T) {
 	target, err := rl.ReadLink("a/link")
 	require.NoError(t, err)
 	require.Equal(t, "b", target)
+}
+
+// TestWriteErofs_SpecialModeBits checks that setuid, setgid and sticky survive
+// the write. Go keeps them outside the low 9 bits, so anything that reduces a
+// mode with fs.FileMode.Perm() drops them and ships a broken sudo/passwd and a
+// world-writable /tmp. Also covers a devnode and a symlink, whose type bits the
+// mode fixup must not disturb.
+func TestWriteErofs_SpecialModeBits(t *testing.T) {
+	m := apkfs.NewMemFS()
+	require.NoError(t, m.MkdirAll("usr/bin", 0o755))
+	require.NoError(t, m.WriteFile("usr/bin/sudo", []byte("setuid"), fs.ModeSetuid|0o755))
+	require.NoError(t, m.WriteFile("usr/bin/unix_chkpwd", []byte("setgid"), fs.ModeSetgid|0o755))
+	require.NoError(t, m.WriteFile("usr/bin/both", []byte("both"), fs.ModeSetuid|fs.ModeSetgid|0o755))
+	require.NoError(t, m.MkdirAll("tmp", 0o777))
+	require.NoError(t, m.Chmod("tmp", fs.ModeSticky|0o777))
+	require.NoError(t, m.MkdirAll("dev", 0o755))
+	require.NoError(t, m.Mknod("dev/null", unix.S_IFCHR|0o666, int(unix.Mkdev(1, 3))))
+	require.NoError(t, m.Symlink("sudo", "usr/bin/sudo-link"))
+
+	out := filepath.Join(t.TempDir(), "image.erofs")
+	f, err := os.Create(out)
+	require.NoError(t, err)
+	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, f.Close())
+
+	r, err := os.Open(out)
+	require.NoError(t, err)
+	defer r.Close()
+	img, err := erofs.Open(r)
+	require.NoError(t, err)
+
+	// Lstat so the symlink case reports the link itself. fs.FileInfo.Mode()
+	// from the reader carries raw EROFS bits; Stat.Mode is the translated
+	// fs.FileMode, so assert against that.
+	lstat, ok := img.(interface {
+		Lstat(string) (fs.FileInfo, error)
+	})
+	require.True(t, ok, "image does not implement Lstat")
+	statOf := func(path string) *erofs.Stat {
+		t.Helper()
+		info, err := lstat.Lstat(path)
+		require.NoError(t, err)
+		st, ok := info.Sys().(*erofs.Stat)
+		require.True(t, ok, "expected *erofs.Stat on %s Sys()", path)
+		return st
+	}
+
+	for _, tc := range []struct {
+		path string
+		want fs.FileMode
+	}{
+		{"usr/bin/sudo", fs.ModeSetuid | 0o755},
+		{"usr/bin/unix_chkpwd", fs.ModeSetgid | 0o755},
+		{"usr/bin/both", fs.ModeSetuid | fs.ModeSetgid | 0o755},
+		{"tmp", fs.ModeDir | fs.ModeSticky | 0o777},
+	} {
+		require.Equal(t, tc.want, statOf(tc.path).Mode, "mode mismatch for %s", tc.path)
+	}
+
+	// Devnode: type, permissions and rdev all intact.
+	dev := statOf("dev/null")
+	require.NotZero(t, dev.Mode&fs.ModeCharDevice, "dev/null lost its char-device type")
+	require.Equal(t, fs.FileMode(0o666), dev.Mode.Perm())
+	require.Equal(t, unix.Mkdev(1, 3), uint64(dev.Rdev))
+
+	// Symlinks keep EROFS's fixed 0777 and stay symlinks.
+	link := statOf("usr/bin/sudo-link")
+	require.NotZero(t, link.Mode&fs.ModeSymlink, "sudo-link is not a symlink")
+	require.Equal(t, fs.FileMode(0o777), link.Mode.Perm())
+
+	if fsckBin, err := exec.LookPath("fsck.erofs"); err == nil {
+		cmd := exec.Command(fsckBin, "-d3", out)
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "fsck.erofs reported a malformed image:\n%s", output)
+	}
 }
 
 // TestImageLayoutToLayer_Erofs exercises ImageLayoutToLayer end-to-end via a

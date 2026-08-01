@@ -107,8 +107,6 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 			if err := w.Mkdir(absPath, mode.Perm()); err != nil {
 				return fmt.Errorf("mkdir %s: %w", absPath, err)
 			}
-		} else if err := w.Chmod(absPath, mode.Perm()); err != nil {
-			return fmt.Errorf("chmod %s: %w", absPath, err)
 		}
 	case mode&fs.ModeDevice != 0, mode&fs.ModeCharDevice != 0, mode&fs.ModeNamedPipe != 0, mode&fs.ModeSocket != 0:
 		var typeBits uint16
@@ -158,11 +156,18 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 		if err := fout.Close(); err != nil {
 			return fmt.Errorf("close %s: %w", absPath, err)
 		}
-		if err := w.Chmod(absPath, mode.Perm()); err != nil {
-			return fmt.Errorf("chmod %s: %w", absPath, err)
-		}
 	default:
 		return fmt.Errorf("unsupported file mode for %s: %v", absPath, mode)
+	}
+
+	// Mkdir, Mknod and Create all take only the permission bits, so
+	// setuid/setgid/sticky have to be applied on top — losing them would
+	// silently break su/passwd/mount and unprotect /tmp. Symlinks are
+	// exempt: EROFS pins them at 0777 and chmod on one is meaningless.
+	if mode&fs.ModeSymlink == 0 {
+		if err := w.Chmod(absPath, mode); err != nil {
+			return fmt.Errorf("chmod %s: %w", absPath, err)
+		}
 	}
 
 	uid, gid := uidGidFromInfo(info)
