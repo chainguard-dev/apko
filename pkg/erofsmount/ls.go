@@ -97,11 +97,19 @@ func formatEntry(fsys fs.FS, info fs.FileInfo, name string) string {
 		mode, uid, gid, rdev = st.Mode, st.UID, st.GID, st.Rdev
 	}
 
-	// Devices have no meaningful length; `tar tv` puts major,minor here.
 	sizeCol := strconv.FormatInt(info.Size(), 10)
-	if mode&(fs.ModeDevice|fs.ModeCharDevice) != 0 {
+	switch {
+	case mode&(fs.ModeDevice|fs.ModeCharDevice) != 0:
+		// Devices have no meaningful length; `tar tv` puts major,minor here.
 		major, minor := decodeRdev(rdev)
 		sizeCol = fmt.Sprintf("%d,%d", major, minor)
+	case mode.IsDir():
+		// A directory inode's size is the byte length of its dirent blocks in
+		// whichever single layer won the lookup, which says nothing about the
+		// merged directory being listed — and the directories Stack synthesizes
+		// for absent parents have no inode to report at all. Print 0 for every
+		// directory, as tar does, rather than mixing the two.
+		sizeCol = "0"
 	}
 
 	mt := info.ModTime().UTC().Format("2006-01-02 15:04")

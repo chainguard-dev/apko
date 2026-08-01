@@ -34,6 +34,15 @@ import (
 // whatever the host filesystem happens to hold.
 func lsFixture(t *testing.T) fs.FS {
 	t.Helper()
+	return writeImage(t, func(t *testing.T, w *erofs.Writer) {
+		lsFixtureEntries(t, w)
+	})
+}
+
+// writeImage builds an EROFS image from build and returns it opened for
+// reading.
+func writeImage(t *testing.T, build func(*testing.T, *erofs.Writer)) fs.FS {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(path)
@@ -41,6 +50,29 @@ func lsFixture(t *testing.T) fs.FS {
 		t.Fatal(err)
 	}
 	w := erofs.Create(f)
+	build(t, w)
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("finalize image: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	img, err := erofs.Open(r)
+	if err != nil {
+		t.Fatalf("open image: %v", err)
+	}
+	return img
+}
+
+func lsFixtureEntries(t *testing.T, w *erofs.Writer) {
+	t.Helper()
 
 	mkdir := func(name string, perm fs.FileMode) {
 		t.Helper()
@@ -80,24 +112,6 @@ func lsFixture(t *testing.T) fs.FS {
 	if err := w.Symlink("sudo", "/usr/bin/sudo-link"); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("finalize image: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	r, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = r.Close() })
-	img, err := erofs.Open(r)
-	if err != nil {
-		t.Fatalf("open image: %v", err)
-	}
-	return img
 }
 
 func chmodChown(t *testing.T, w *erofs.Writer, name string, mode fs.FileMode, uid, gid int) {
@@ -243,6 +257,77 @@ func TestDecodeRdev(t *testing.T) {
 		maj, min := decodeRdev(tc.rdev)
 		if maj != tc.wantMaj || min != tc.wantMinPar {
 			t.Errorf("decodeRdev(%#x): got %d,%d want %d,%d", tc.rdev, maj, min, tc.wantMaj, tc.wantMinPar)
+		}
+	}
+}
+
+// TestLs_DirectorySizeIsZero pins the size column for directories. An EROFS
+// directory inode's size is the byte length of its dirent blocks, so before
+// this it varied with the child count of whichever single layer won the
+// lookup — while the directories Stack synthesizes for absent parents reported
+// 0. Here the two layers disagree about what "usr/bin" holds, and neither
+// layer's dirent size describes the merged directory that gets listed.
+func TestLs_DirectorySizeIsZero(t *testing.T) {
+	lower := writeImage(t, func(t *testing.T, w *erofs.Writer) {
+		for _, d := range []string{"/usr", "/usr/bin"} {
+			if err := w.Mkdir(d, 0o755); err != nil {
+				t.Fatalf("Mkdir(%s): %v", d, err)
+			}
+		}
+		for _, name := range []string{"awk", "sed", "grep", "cut", "tr"} {
+			fh, err := w.Create("/usr/bin/" + name)
+			if err != nil {
+				t.Fatalf("Create(%s): %v", name, err)
+			}
+			if err := fh.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	upper := writeImage(t, func(t *testing.T, w *erofs.Writer) {
+		for _, d := range []string{"/usr", "/usr/bin"} {
+			if err := w.Mkdir(d, 0o755); err != nil {
+				t.Fatalf("Mkdir(%s): %v", d, err)
+			}
+		}
+		fh, err := w.Create("/usr/bin/sh")
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := fh.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Sanity: the layers really do report different directory sizes, so the
+	// assertion below is not vacuous.
+	lowerDir, err := fs.Stat(lower, "usr/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upperDir, err := fs.Stat(upper, "usr/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lowerDir.Size() == upperDir.Size() {
+		t.Fatalf("fixture layers report the same dir size (%d); test proves nothing", lowerDir.Size())
+	}
+
+	got := lsLines(t, NewStack(lower, upper))
+	for _, dir := range []string{"usr", "usr/bin"} {
+		cols, ok := got[dir]
+		if !ok {
+			t.Errorf("%s missing from listing", dir)
+			continue
+		}
+		if cols[2] != "0" {
+			t.Errorf("%s size column: got %s, want 0", dir, cols[2])
+		}
+	}
+	// The merged listing must still show both layers' files.
+	for _, want := range []string{"usr/bin/awk", "usr/bin/sh"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("%s missing from merged listing", want)
 		}
 	}
 }
