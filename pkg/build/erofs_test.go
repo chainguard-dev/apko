@@ -15,12 +15,16 @@
 package build
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,6 +188,96 @@ func TestWriteErofs_SpecialModeBits(t *testing.T) {
 		cmd := exec.Command(fsckBin, "-d3", out)
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "fsck.erofs reported a malformed image:\n%s", output)
+	}
+}
+
+// TestWriteErofs_Xattrs covers extended attributes, file capabilities in
+// particular: melange's guest init untars its rootfs with
+// --xattrs-include='security.capability', so an EROFS rootfs that dropped
+// them would regress silently. Every xattr must reach the image byte-for-byte
+// and match what the tar writer records for the same source tree.
+func TestWriteErofs_Xattrs(t *testing.T) {
+	// A real VFS_CAP_REVISION_2 payload: CAP_NET_RAW, effective.
+	caps := []byte{
+		0x01, 0x00, 0x00, 0x02, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	want := map[string]map[string]string{
+		"usr/bin/ping": {
+			// Distinct EROFS name-index prefixes: security., trusted., user.
+			"security.capability": string(caps),
+			"trusted.origin":      "apko",
+			"user.note":           "hello",
+		},
+		"usr/bin": {"security.selinux": "system_u:object_r:bin_t:s0"},
+	}
+
+	m := apkfs.NewMemFS()
+	require.NoError(t, m.MkdirAll("usr/bin", 0o755))
+	require.NoError(t, m.WriteFile("usr/bin/ping", []byte("ping"), 0o755))
+	for path, xattrs := range want {
+		for name, value := range xattrs {
+			require.NoError(t, m.SetXattr(path, name, []byte(value)))
+		}
+	}
+
+	out := filepath.Join(t.TempDir(), "image.erofs")
+	f, err := os.Create(out)
+	require.NoError(t, err)
+	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, f.Close())
+
+	r, err := os.Open(out)
+	require.NoError(t, err)
+	defer r.Close()
+	img, err := erofs.Open(r)
+	require.NoError(t, err)
+
+	for path, xattrs := range want {
+		info, err := fs.Stat(img, path)
+		require.NoError(t, err)
+		st, ok := info.Sys().(*erofs.Stat)
+		require.True(t, ok, "expected *erofs.Stat on %s Sys()", path)
+		require.Equal(t, xattrs, st.Xattrs, "xattrs differ for %s", path)
+	}
+
+	// Parity with the tar writer over the same source tree: whatever a tar
+	// layer would carry as SCHILY.xattr.* records, the EROFS layer must too.
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, writeTar(context.Background(), tw, m))
+	require.NoError(t, tw.Close())
+
+	tr := tar.NewReader(&buf)
+	seen := 0
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		path := strings.TrimSuffix(strings.TrimPrefix(hdr.Name, "./"), "/")
+		xattrs, ok := want[path]
+		if !ok {
+			continue
+		}
+		seen++
+		fromTar := map[string]string{}
+		for k, v := range hdr.PAXRecords {
+			if name, ok := strings.CutPrefix(k, "SCHILY.xattr."); ok {
+				fromTar[name] = v
+			}
+		}
+		require.Equal(t, xattrs, fromTar, "tar layer xattrs differ for %s", path)
+	}
+	require.Equal(t, len(want), seen, "not every path under test appeared in the tar layer")
+
+	// erofs-utils must also accept the xattr encoding. Extraction can't apply
+	// security.*/trusted.* as a normal user, so this is a validity check; the
+	// read-back above is what verifies the values.
+	if fsckBin, err := exec.LookPath("fsck.erofs"); err == nil {
+		output, err := exec.Command(fsckBin, "-d3", out).CombinedOutput()
+		require.NoError(t, err, "fsck.erofs rejected the image:\n%s", output)
 	}
 }
 
