@@ -331,3 +331,52 @@ func TestLs_DirectorySizeIsZero(t *testing.T) {
 		}
 	}
 }
+
+// TestLs_ErofsStatIsTheMetadataSource pins the go-erofs assumption the listing
+// depends on. formatEntry reads mode, ownership and rdev off the *erofs.Stat
+// that Sys() returns; if a future go-erofs returned something else, formatEntry
+// would silently fall back to the plain fs.FileInfo and go back to printing
+// 0/0 with no special mode bits. Fail loudly here instead.
+//
+// go-erofs's own docs point callers at the accessor interfaces on the
+// fs.FileInfo rather than at Stat's fields (the fields cannot satisfy those
+// interfaces — a struct cannot have a field and a method of the same name), so
+// this also checks the two sources agree.
+func TestLs_ErofsStatIsTheMetadataSource(t *testing.T) {
+	img := lsFixture(t)
+	lstat, ok := img.(interface {
+		Lstat(string) (fs.FileInfo, error)
+	})
+	if !ok {
+		t.Fatal("image does not implement Lstat")
+	}
+	info, err := lstat.Lstat("usr/bin/sudo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, ok := info.Sys().(*erofs.Stat)
+	if !ok {
+		t.Fatalf("Sys() is %T, not *erofs.Stat: formatEntry has no metadata source", info.Sys())
+	}
+	if st.UID != 13 || st.GID != 15 {
+		t.Errorf("Stat ownership: got %d/%d, want 13/15", st.UID, st.GID)
+	}
+	// Stat.Mode is the translated fs.FileMode. FileInfo.Mode() is not — it
+	// carries raw on-disk bits, which is why formatEntry does not use it.
+	if st.Mode&fs.ModeSetuid == 0 {
+		t.Errorf("Stat.Mode lost setuid: %v (%#o)", st.Mode, uint32(st.Mode))
+	}
+
+	acc, ok := info.(interface {
+		UID() uint32
+		GID() uint32
+	})
+	if !ok {
+		t.Fatal("FileInfo no longer exposes UID()/GID() accessors")
+	}
+	if acc.UID() != st.UID || acc.GID() != st.GID {
+		t.Errorf("accessors disagree with Stat fields: %d/%d vs %d/%d",
+			acc.UID(), acc.GID(), st.UID, st.GID)
+	}
+}
