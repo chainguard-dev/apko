@@ -106,9 +106,12 @@ func erofsLs() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ls SOURCE",
 		Short: "List the contents of an EROFS blob or image",
-		Long: `Mount SOURCE read-only to a temporary directory, walk its
-contents, and print a 'tar tvf'-style listing. Unmounts automatically when
-finished.`,
+		Long: `Walk the contents of SOURCE and print a 'tar tvf'-style listing:
+mode, uid/gid, size (major,minor for devices), mtime, and path.
+
+SOURCE is read directly with go-erofs and nothing is mounted, so this works
+without root and on any platform. Uncompressed images only; for a compressed
+image use 'apko erofs mount' and list the mountpoint instead.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src, err := erofsmount.ParseSource(args[0])
@@ -121,7 +124,7 @@ finished.`,
 			}, os.Stdout)
 		},
 	}
-	cmd.Flags().StringVar(&mode, "mode", string(erofsmount.ModeAuto), "mount mode: kernel, fuse, or auto")
+	cmd.Flags().StringVar(&mode, "mode", string(erofsmount.ModeAuto), "accepted for symmetry with 'mount' and ignored: ls never mounts")
 	cmd.Flags().StringVar(&arch, "arch", "host", "architecture to select from a multi-arch OCI index")
 	return cmd
 }

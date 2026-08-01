@@ -147,10 +147,16 @@ cat extracted/etc/os-release
 
 For a quick `tar tvf`-style listing of any EROFS source (raw blob or OCI image directory), use `apko erofs ls`. It opens the EROFS blobs directly, walks the merged view in user space, and prints one line per entry — no mounts, no root or FUSE required, works on Linux/macOS/Windows.
 
+Each line is mode, uid/gid, size, mtime and path; setuid/setgid/sticky show up in the mode string as `ls -l` renders them, and devices print `major,minor` in place of a size.
+
 ```sh
 apko erofs ls out/blobs/sha256/$LAYER | head
-# lrwxrwxrwx  0/0    7    2026-04-17 19:17  bin -> usr/bin
-# drwxr-xr-x  0/0    115  2026-04-17 19:17  dev
+# lrwxrwxrwx  0/0     7    2026-04-17 19:17  bin -> usr/bin
+# drwxr-xr-x  0/0     115  2026-04-17 19:17  dev
+# crw-rw-rw-  0/0     1,3  2026-04-17 19:17  dev/null
+# drwxrwxrwt  0/0     23   2026-04-17 19:17  tmp
+# -rwsr-xr-x  0/0     178528  2026-04-17 19:17  usr/bin/sudo
+# -rw-r--r--  13/15   1183    2026-04-17 19:17  usr/share/man/whatis
 # ...
 
 apko erofs ls out/      # works against the whole OCI image too

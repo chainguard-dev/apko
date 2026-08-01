@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"strings"
+	"strconv"
 	"text/tabwriter"
 
 	erofs "github.com/erofs/go-erofs"
@@ -88,17 +88,30 @@ func walkAndPrint(ctx context.Context, fsys fs.FS, w io.Writer) error {
 	return tw.Flush()
 }
 
-// formatEntry renders one entry. uid/gid are pulled from go-erofs's accessor
-// interfaces on info.Sys(); they're zero for entries from filesystems that
-// don't expose them. Symlink targets come from fs.ReadLinkFS when fsys
-// implements it.
+// formatEntry renders one entry. Mode, ownership and device numbers come from
+// the *erofs.Stat on info.Sys() when present: fs.FileInfo.Mode() alone reports
+// raw on-disk bits and no setuid/setgid/sticky, and fs.FileInfo has nowhere to
+// put a uid. Entries without one (synthesized parent directories) fall back to
+// the plain FileInfo and show 0/0. Symlink targets come from fs.ReadLinkFS
+// when fsys implements it.
 func formatEntry(fsys fs.FS, info fs.FileInfo, name string) string {
-	uid, gid := uidGidFromSys(info.Sys())
-	size := info.Size()
+	mode := info.Mode()
+	var uid, gid, rdev uint32
+	if st, ok := info.Sys().(*erofs.Stat); ok {
+		mode, uid, gid, rdev = st.Mode, st.UID, st.GID, st.Rdev
+	}
+
+	// Devices have no meaningful length; `tar tv` puts major,minor here.
+	sizeCol := strconv.FormatInt(info.Size(), 10)
+	if mode&(fs.ModeDevice|fs.ModeCharDevice) != 0 {
+		major, minor := decodeRdev(rdev)
+		sizeCol = fmt.Sprintf("%d,%d", major, minor)
+	}
+
 	mt := info.ModTime().UTC().Format("2006-01-02 15:04")
 
 	suffix := ""
-	if info.Mode()&fs.ModeSymlink != 0 {
+	if mode&fs.ModeSymlink != 0 {
 		if rl, ok := fsys.(fs.ReadLinkFS); ok {
 			if t, err := rl.ReadLink(name); err == nil {
 				suffix = " -> " + t
@@ -106,56 +119,60 @@ func formatEntry(fsys fs.FS, info fs.FileInfo, name string) string {
 		}
 	}
 
-	return fmt.Sprintf("%s\t%d/%d\t%d\t%s\t%s%s",
-		formatMode(info.Mode()), uid, gid, size, mt, name, suffix)
+	return fmt.Sprintf("%s\t%d/%d\t%s\t%s\t%s%s",
+		formatMode(mode), uid, gid, sizeCol, mt, name, suffix)
 }
 
-// uidGidFromSys extracts numeric ownership from info.Sys() via the
-// single-method accessor interfaces that go-erofs documents on its Stat
-// type. Anything else (including nil) yields (0, 0).
-func uidGidFromSys(sys any) (uint32, uint32) {
-	if sys == nil {
-		return 0, 0
-	}
-	type uider interface{ UID() uint32 }
-	type gider interface{ GID() uint32 }
-	var uid, gid uint32
-	if u, ok := sys.(uider); ok {
-		uid = u.UID()
-	}
-	if g, ok := sys.(gider); ok {
-		gid = g.GID()
-	}
-	return uid, gid
+// decodeRdev splits a device number as stored in an EROFS inode into major and
+// minor. EROFS records what Linux's new_encode_dev() produced, so decode it the
+// same way rather than with unix.Major/Minor, whose encoding is host-specific.
+func decodeRdev(rdev uint32) (major, minor uint32) {
+	return (rdev & 0xfff00) >> 8, (rdev & 0xff) | ((rdev >> 12) & 0xfff00)
 }
 
-// formatMode renders a 10-character mode string in the style of `ls -l`.
+// formatMode renders a 10-character mode string in the style of `ls -l`,
+// including the setuid/setgid/sticky overloads of the execute columns.
 func formatMode(mode fs.FileMode) string {
-	var b strings.Builder
-	b.Grow(10)
+	out := []byte("----------")
 	switch {
 	case mode.IsDir():
-		b.WriteByte('d')
+		out[0] = 'd'
 	case mode&fs.ModeSymlink != 0:
-		b.WriteByte('l')
+		out[0] = 'l'
 	case mode&fs.ModeNamedPipe != 0:
-		b.WriteByte('p')
+		out[0] = 'p'
 	case mode&fs.ModeSocket != 0:
-		b.WriteByte('s')
+		out[0] = 's'
 	case mode&fs.ModeCharDevice != 0:
-		b.WriteByte('c')
+		out[0] = 'c'
 	case mode&fs.ModeDevice != 0:
-		b.WriteByte('b')
-	default:
-		b.WriteByte('-')
+		out[0] = 'b'
 	}
 	perm := mode.Perm()
-	for i, ch := range "rwxrwxrwx" {
+	for i, ch := range []byte("rwxrwxrwx") {
 		if perm&(1<<(8-i)) != 0 {
-			b.WriteByte(byte(ch))
-		} else {
-			b.WriteByte('-')
+			out[i+1] = ch
 		}
 	}
-	return b.String()
+	// setuid/setgid/sticky take over the matching execute column, upper-case
+	// when the execute bit itself is clear.
+	for _, s := range []struct {
+		bit       fs.FileMode
+		col       int
+		set, only byte
+	}{
+		{fs.ModeSetuid, 3, 's', 'S'},
+		{fs.ModeSetgid, 6, 's', 'S'},
+		{fs.ModeSticky, 9, 't', 'T'},
+	} {
+		if mode&s.bit == 0 {
+			continue
+		}
+		if out[s.col] == 'x' {
+			out[s.col] = s.set
+		} else {
+			out[s.col] = s.only
+		}
+	}
+	return string(out)
 }
