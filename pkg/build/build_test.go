@@ -16,6 +16,9 @@ package build_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -179,6 +182,18 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 		_, err := fsys.Stat(p)
 		require.NoError(t, err, "cert file %s should exist", p)
 	}
+
+	// A sha256 sidecar should be written next to the bundle, in sha256sum -c
+	// format, matching the final (post-append) contents of the bundle.
+	sidecarPath := "etc/ssl/certs/.ca-certificates.crt.sha256"
+	sidecarData, err := fsys.ReadFile(sidecarPath)
+	require.NoError(t, err, "CA bundle checksum sidecar should exist at %s", sidecarPath)
+
+	sum := sha256.Sum256(bundleData)
+	require.Equal(t,
+		fmt.Sprintf("%s  ca-certificates.crt\n", hex.EncodeToString(sum[:])),
+		string(sidecarData),
+		"sidecar must record the sha256 of the updated bundle")
 }
 
 func TestBuildImageFromLockFile(t *testing.T) {
