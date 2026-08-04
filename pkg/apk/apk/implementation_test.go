@@ -111,6 +111,31 @@ func TestInitDB(t *testing.T) {
 	require.Len(t, ent, 0) // No keys discovered
 }
 
+func TestInitDBWithoutCacheReturnsAlpineKeyFetchError(t *testing.T) {
+	const repository = "https://example.invalid/alpine/v3.22/main"
+
+	src := apkfs.NewMemFS()
+	a, err := New(t.Context(),
+		WithFS(src),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithTransport(&testLocalTransport{fail: true}),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err = a.InitDB(ctx, repository)
+	var got *AlpineKeyFetchError
+	require.ErrorAs(t, err, &got)
+	require.Equal(t, &AlpineKeyFetchError{
+		Repository: repository,
+		Version:    "v3.22",
+		Err:        got.Err,
+	}, got)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	src := apkfs.NewMemFS()
 	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
