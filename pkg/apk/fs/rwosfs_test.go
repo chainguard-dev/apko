@@ -826,3 +826,103 @@ func TestRelPath(t *testing.T) {
 		})
 	}
 }
+
+// TestSeedOverride_CharDevice covers seeding a character device from the
+// backing tree. Go reports a character device as ModeDevice|ModeCharDevice, so
+// dispatching on mode.Type() == fs.ModeCharDevice never matched and every
+// device in a pre-existing tree was seeded as an empty regular file — which is
+// then what Lstat, ReadDir and the tar/EROFS layer writers all saw.
+//
+// The FileInfo comes from the host's own /dev/null because creating a
+// character device needs CAP_MKNOD; the on-disk side is the zero-byte
+// placeholder dirFS itself falls back to when mknod is not permitted.
+func TestSeedOverride_CharDevice(t *testing.T) {
+	devInfo, err := os.Lstat("/dev/null")
+	if err != nil || devInfo.Mode()&fs.ModeCharDevice == 0 {
+		t.Skip("no /dev/null character device to seed from")
+	}
+	// The bug in one line: this is why a Type() equality check misses.
+	require.NotEqual(t, fs.ModeCharDevice, devInfo.Mode().Type(),
+		"a character device's Type() carries ModeDevice too")
+
+	dir := t.TempDir()
+	fsys, ok := DirFS(t.Context(), dir).(*dirFS)
+	require.True(t, ok)
+
+	// Placed after construction so the constructor's seeding walk doesn't
+	// claim these paths first.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "dev"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dev", "null"), nil, 0o666))
+	require.NoError(t, fsys.overrides.MkdirAll("dev", os.ModeDir|0o755))
+
+	require.NoError(t, fsys.seedOverride("dev/null", devInfo, fsys.root.Readlink))
+
+	// ReadDir is the view fs.WalkDir gives the tar and EROFS layer writers,
+	// and dirEntry.Type() reports the override, so this is what decides
+	// whether the layer gets a device node or an empty file.
+	ents, err := fs.ReadDir(fsys, "dev")
+	require.NoError(t, err)
+	require.Len(t, ents, 1)
+	require.NotZero(t, ents[0].Type()&fs.ModeCharDevice,
+		"seeded entry must be a character device, got %v", ents[0].Type())
+
+	fi, err := ents[0].Info()
+	require.NoError(t, err)
+	require.Equal(t, devInfo.Mode().Perm(), fi.Mode().Perm())
+
+	dev, err := fsys.Readnod("dev/null")
+	require.NoError(t, err)
+	wantRdev, err := rdevFromInfo(devInfo)
+	require.NoError(t, err)
+	require.Equal(t, wantRdev, dev, "device number must survive seeding")
+}
+
+// TestSeedOverride_TypesFromWalk checks the types a test can actually create
+// without privileges still seed correctly through the constructor's walk.
+func TestSeedOverride_TypesFromWalk(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "etc"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "etc", "hostname"), []byte("host"), 0o640))
+	require.NoError(t, os.Symlink("hostname", filepath.Join(dir, "etc", "link")))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "etc", "fifo"), 0o644))
+
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys)
+
+	// Types come from ReadDir rather than Lstat: memFS.getNode resolves every
+	// component including the last, so dirFS.Lstat on a symlink reports its
+	// target. That predates this change and is left alone here.
+	byName := map[string]fs.DirEntry{}
+	ents, err := fs.ReadDir(fsys, "etc")
+	require.NoError(t, err)
+	for _, e := range ents {
+		byName[e.Name()] = e
+	}
+
+	for _, tt := range []struct {
+		name string
+		mode fs.FileMode
+	}{
+		{"hostname", 0o640},
+		{"link", fs.ModeSymlink | 0o777},
+		// A FIFO is not representable in the overrides and is deliberately
+		// seeded as a regular file; its content still comes off disk.
+		{"fifo", 0o644},
+	} {
+		e, ok := byName[tt.name]
+		require.True(t, ok, "%s missing from etc", tt.name)
+		require.Equal(t, tt.mode.Type(), e.Type(), "%s type", tt.name)
+		fi, err := e.Info()
+		require.NoError(t, err, tt.name)
+		require.Equal(t, tt.mode.Perm(), fi.Mode().Perm(), "%s perm", tt.name)
+	}
+
+	dirInfo, err := fsys.Lstat("etc")
+	require.NoError(t, err)
+	require.True(t, dirInfo.IsDir())
+	require.Equal(t, fs.FileMode(0o750), dirInfo.Mode().Perm())
+
+	target, err := fsys.Readlink("etc/link")
+	require.NoError(t, err)
+	require.Equal(t, "hostname", target)
+}
