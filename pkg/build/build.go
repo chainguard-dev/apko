@@ -289,22 +289,18 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			HTTPResponseMaxSize:         bc.o.SizeLimits.HTTPResponseMaxSize,
 		}),
 	}
-	// only try to pass the cache dir if one of the following is true:
-	// - the user has explicitly set a cache dir
-	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
-	// if neither of these are true, then we don't want to pass a cache dir, because
-	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
-	// is not set.
-
-	// note that this is not easy to do in a switch statement, because of the second
-	// condition, if err := ...; err == nil {}
-	if bc.o.CacheDir != "" {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
-	} else if _, err := os.UserCacheDir(); err == nil {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
-	} else {
-		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	// WithCache resolves an empty directory through os.UserCacheDir. Check it
+	// here so builds can run in environments without a system cache directory.
+	if bc.o.DiskCacheEnabled {
+		if bc.o.CacheDir != "" {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else if _, err := os.UserCacheDir(); err == nil {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else {
+			log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+		}
 	}
+	apkOpts = append(apkOpts, apk.WithOffline(bc.o.Offline))
 
 	if bc.ic.Contents.BaseImage != nil {
 		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)

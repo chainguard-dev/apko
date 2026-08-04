@@ -33,6 +33,7 @@ type opts struct {
 	fs                 apkfs.FullFS
 	version            string
 	cache              *cache
+	offline            bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	ignoreSignatures   bool
@@ -113,10 +114,19 @@ func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 			}
 		}
 		o.cache = &cache{
-			dir:     cacheDir,
-			offline: offline,
-			shared:  shared,
+			dir:    cacheDir,
+			shared: shared,
 		}
+		o.offline = offline
+		return nil
+	}
+}
+
+// WithOffline controls whether network requests are permitted. Cached and
+// local resources remain available in offline mode.
+func WithOffline(offline bool) Option {
+	return func(o *opts) error {
+		o.offline = offline
 		return nil
 	}
 }

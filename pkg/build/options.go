@@ -202,12 +202,32 @@ func WithAnnotations(annotations map[string]string) Option {
 	}
 }
 
-// WithCache set the cache directory to use
+// WithCache enables disk caching in cacheDir. An empty cacheDir uses the
+// system cache directory.
 func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	return func(bc *Context) error {
 		bc.o.CacheDir = cacheDir
+		bc.o.DiskCacheEnabled = true
 		bc.o.Offline = offline
 		bc.o.SharedCache = shared
+		return nil
+	}
+}
+
+// WithOffline controls whether network requests are permitted. Cached and
+// local resources remain available in offline mode.
+func WithOffline(offline bool) Option {
+	return func(bc *Context) error {
+		bc.o.Offline = offline
+		return nil
+	}
+}
+
+// WithoutDiskCache keeps downloaded packages and repository indexes out of
+// the filesystem cache. In-memory package-resolution caches remain available.
+func WithoutDiskCache() Option {
+	return func(bc *Context) error {
+		bc.o.DiskCacheEnabled = false
 		return nil
 	}
 }

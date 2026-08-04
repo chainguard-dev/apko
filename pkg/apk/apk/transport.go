@@ -21,6 +21,25 @@ import (
 	"net/http"
 )
 
+// OfflineNetworkError reports a network request blocked by offline mode.
+type OfflineNetworkError struct {
+	Method string
+	URL    string
+}
+
+func (e *OfflineNetworkError) Error() string {
+	return fmt.Sprintf("network request blocked in offline mode: %s %s", e.Method, e.URL)
+}
+
+type offlineTransport struct{}
+
+func (offlineTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, &OfflineNetworkError{
+		Method: req.Method,
+		URL:    req.URL.Redacted(),
+	}
+}
+
 type rangeRetryTransport struct {
 	base http.RoundTripper
 }
