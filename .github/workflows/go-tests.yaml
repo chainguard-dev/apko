@@ -48,4 +48,21 @@ jobs:
           check-latest: true
 
       - name: Test
-        run: make test
+        run: |
+          # The tests golden fixtures all expect `SOURCE_DATE_EPOCH` to be `0`.
+          # They set this themselves. This environment variable is a guard to
+          # ensure that if the test environment happens to have
+          # `SOURCE_DATE_EPOCH` set, it does not end up being used. The `awk`
+          # program returns a random integer between `1` and now.
+          SOURCE_DATE_EPOCH=$(
+            awk 'BEGIN {
+              now = systime()
+              srand(now)
+
+              print 1 + int(rand() * now)
+            }'
+          )
+
+          export SOURCE_DATE_EPOCH
+
+          make test
