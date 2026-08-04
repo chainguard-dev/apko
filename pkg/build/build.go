@@ -41,6 +41,7 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/ecosystem"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
@@ -64,6 +65,11 @@ type Context struct {
 	fs      apkfs.FullFS
 	apk     *apk.APK
 	baseimg *baseimg.BaseImage
+
+	// ecosystemPkgs holds resolved ecosystem packages with InstalledSize
+	// populated after installation. Used by buildLayers to create
+	// separate layers for ecosystem packages.
+	ecosystemPkgs []ecosystem.ResolvedPackage
 }
 
 func (bc *Context) Summarize(ctx context.Context) {

@@ -59,6 +59,29 @@ type tarEntry struct {
 
 type memFS struct {
 	tree *node
+
+	// currentOwner is the owner name to stamp on new nodes.
+	// Set via SetCurrentOwner during ecosystem package installation.
+	currentOwner string
+
+	// ownerSizes tracks the cumulative bytes written per owner,
+	// used to estimate installed size for layering budget decisions.
+	ownerSizes map[string]uint64
+}
+
+// SetCurrentOwner sets the owner name for any new filesystem nodes
+// created via MkdirAll, WriteFile, Symlink, etc. Pass "" to clear.
+// This is used by ecosystem package installers to tag files for layering.
+func (m *memFS) SetCurrentOwner(owner string) {
+	m.currentOwner = owner
+}
+
+// OwnerSize returns the total bytes written for the given owner.
+func (m *memFS) OwnerSize(owner string) uint64 {
+	if m.ownerSizes == nil {
+		return 0
+	}
+	return m.ownerSizes[owner]
 }
 
 func New() *memFS {
@@ -267,6 +290,7 @@ func (m *memFS) Mkdir(path string, perms fs.FileMode) error {
 		children:  map[string]*node{},
 		xattrs:    map[string][]byte{},
 		hardlinks: map[string]*tar.Header{},
+		owner:     m.currentOwner,
 	}
 	return nil
 }
@@ -316,6 +340,7 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 				children:  map[string]*node{},
 				xattrs:    map[string][]byte{},
 				hardlinks: map[string]*tar.Header{},
+				owner:     m.currentOwner,
 			}
 			anode.children[part] = newnode
 		}
@@ -386,6 +411,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 				dir:       false,
 				xattrs:    map[string][]byte{},
 				hardlinks: map[string]*tar.Header{},
+				owner:     m.currentOwner,
 			}
 			parentAnode.children[base] = anode
 		}
@@ -599,6 +625,7 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		xattrs:    map[string][]byte{},
 		hardlinks: map[string]*tar.Header{},
 		modTime:   anode.modTime,
+		owner:     m.currentOwner,
 	}
 
 	return nil
@@ -677,6 +704,7 @@ func (m *memFS) Symlink(oldname, newname string) error {
 		xattrs:     map[string][]byte{},
 		hardlinks:  map[string]*tar.Header{},
 		modTime:    anode.modTime,
+		owner:      m.currentOwner,
 	}
 	return nil
 }
@@ -949,6 +977,15 @@ func (f *memFile) Write(p []byte) (n int, err error) {
 		copy(f.node.data[f.offset:], p)
 	}
 	f.offset += int64(len(p))
+
+	// Track installed size per owner for ecosystem package layering.
+	if f.node.owner != "" && f.fs != nil {
+		if f.fs.ownerSizes == nil {
+			f.fs.ownerSizes = map[string]uint64{}
+		}
+		f.fs.ownerSizes[f.node.owner] += uint64(len(p))
+	}
+
 	return len(p), nil
 }
 
@@ -970,6 +1007,10 @@ type node struct {
 
 	// This stores metadata for a tarfs-backed file.
 	te *tarEntry
+
+	// owner is set for files created by ecosystem package installers
+	// to track ownership for layering purposes.
+	owner string
 }
 
 func (n *node) fileInfo(parent, name string) fs.FileInfo {
@@ -1034,4 +1075,14 @@ func (m *memFileInfo) Package() *apk.Package {
 	}
 
 	return m.te.pkg
+}
+
+// Owner returns the name of the owner of this file.
+// For APK-installed files, this is the package name.
+// For ecosystem-installed files, this is the owner string set during install.
+func (m *memFileInfo) Owner() string {
+	if m.te != nil && m.te.pkg != nil {
+		return m.te.pkg.Name
+	}
+	return m.owner
 }
