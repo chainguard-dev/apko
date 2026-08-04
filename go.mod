@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.21.7
+	github.com/google/go-containerregistry v0.21.8
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-retryablehttp v0.7.8
@@ -66,7 +66,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/cli v29.6.1+incompatible // indirect
+	github.com/docker/cli v29.6.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/moby/api v1.55.0 // indirect
-	github.com/moby/moby/client v0.5.0 // indirect
+	github.com/moby/moby/client v0.5.1 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
