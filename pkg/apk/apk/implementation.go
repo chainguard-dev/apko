@@ -95,6 +95,9 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 			return nil, err
 		}
 	}
+	if opt.cache != nil {
+		opt.cache.offline = opt.offline
+	}
 
 	if opt.fs == nil {
 		// This is expensive so we only want to do it if we aren't passed WithFS.
@@ -114,6 +117,9 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	client.Logger = clog.FromContext(ctx)
 
 	httpClient := client.StandardClient()
+	if opt.offline {
+		httpClient.Transport = offlineTransport{}
+	}
 
 	// Create default PackageGetter if none provided
 	packageGetter := opt.packageGetter

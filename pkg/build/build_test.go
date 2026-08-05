@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
@@ -125,6 +128,125 @@ func TestBuildImage(t *testing.T) {
 	require.Equal(t, installed[0].Version, "1.0.0-r0")
 	require.Equal(t, installed[1].Name, "replayout")
 	require.Equal(t, installed[1].Version, "1.0.0-r0")
+}
+
+func TestLockImageConfigurationWithoutDiskCache(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+
+	srv := httptest.NewServer(http.FileServer(http.Dir("testdata/packages")))
+	defer srv.Close()
+
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{
+			Repositories: []string{srv.URL},
+			Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+			Packages:     []string{"pretend-baselayout"},
+		},
+		Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+	}
+
+	_, _, err := build.LockImageConfiguration(t.Context(), ic, build.WithoutDiskCache())
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestLockImageConfigurationOfflineWithoutDiskCache(t *testing.T) {
+	t.Run("local repository", func(t *testing.T) {
+		repository, err := filepath.Abs("testdata/packages")
+		require.NoError(t, err)
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{repository},
+				Keyring:      []string{filepath.Join(repository, "melange.rsa.pub")},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err = build.LockImageConfiguration(t.Context(), ic,
+			build.WithOffline(true),
+			build.WithoutDiskCache(),
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("remote repository", func(t *testing.T) {
+		var requests atomic.Int64
+		files := http.FileServer(http.Dir("testdata/packages"))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			files.ServeHTTP(w, r)
+		}))
+		defer srv.Close()
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{srv.URL},
+				Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err := build.LockImageConfiguration(t.Context(), ic,
+			build.WithCache(t.TempDir(), true, apk.NewCache(false)),
+			build.WithoutDiskCache(),
+		)
+		var got *apk.OfflineNetworkError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, &apk.OfflineNetworkError{
+			Method: http.MethodGet,
+			URL:    srv.URL + "/melange.rsa.pub",
+		}, got)
+		require.Equal(t, int64(0), requests.Load())
+	})
+}
+
+func TestDiskCacheOptions(t *testing.T) {
+	sharedCache := apk.NewCache(false)
+
+	tests := []struct {
+		name        string
+		options     []build.Option
+		wantEnabled bool
+	}{
+		{
+			name:        "default",
+			wantEnabled: true,
+		},
+		{
+			name:    "disabled",
+			options: []build.Option{build.WithoutDiskCache()},
+		},
+		{
+			name: "empty directory enables automatic location",
+			options: []build.Option{
+				build.WithoutDiskCache(),
+				build.WithCache("", false, sharedCache),
+			},
+			wantEnabled: true,
+		},
+		{
+			name: "last option disables",
+			options: []build.Option{
+				build.WithCache("custom", false, sharedCache),
+				build.WithoutDiskCache(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := build.NewOptions(tt.options...)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantEnabled, got.DiskCacheEnabled)
+		})
+	}
 }
 
 func TestBuildImageWithCertPackages(t *testing.T) {

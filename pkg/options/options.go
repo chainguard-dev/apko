@@ -76,6 +76,7 @@ type Options struct {
 	TagSuffix               string                `json:"tagSuffix,omitempty"`
 	Local                   bool                  `json:"local,omitempty"`
 	CacheDir                string                `json:"cacheDir,omitempty"`
+	DiskCacheEnabled        bool                  `json:"-"`
 	Offline                 bool                  `json:"offline,omitempty"`
 	SharedCache             *apk.Cache            `json:"-"`
 	Lockfile                string                `json:"lockfile,omitempty"`
@@ -90,11 +91,12 @@ type Options struct {
 type Auth struct{ User, Pass string }
 
 var Default = Options{
-	Arch:            types.ParseArchitecture(runtime.GOARCH),
-	SourceDateEpoch: time.Unix(0, 0).UTC(),
-	Auth:            auth.DefaultAuthenticators,
-	SharedCache:     apk.NewCache(false),
-	SizeLimits:      DefaultSizeLimits(),
+	Arch:             types.ParseArchitecture(runtime.GOARCH),
+	SourceDateEpoch:  time.Unix(0, 0).UTC(),
+	Auth:             auth.DefaultAuthenticators,
+	DiskCacheEnabled: true,
+	SharedCache:      apk.NewCache(false),
+	SizeLimits:       DefaultSizeLimits(),
 }
 
 // Tempdir returns the temporary directory where apko will create
