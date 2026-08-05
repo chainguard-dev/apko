@@ -351,8 +351,12 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
-				if !a.cache.offline && !errors.As(err, &nokeysErr) {
-					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+				if (a.cache == nil || !a.cache.offline) && !errors.As(err, &nokeysErr) {
+					return &AlpineKeyFetchError{
+						Repository: repo,
+						Version:    ver,
+						Err:        err,
+					}
 				}
 				log.Debugf("ignoring missing keys: %v", err)
 			}
@@ -900,6 +904,22 @@ type NoKeysFoundError struct {
 
 func (e *NoKeysFoundError) Error() string {
 	return fmt.Sprintf("no keys found for arch %s and releases %v", e.arch, e.releases)
+}
+
+// AlpineKeyFetchError reports a failure to retrieve signing keys for an
+// Alpine package repository.
+type AlpineKeyFetchError struct {
+	Repository string
+	Version    string
+	Err        error
+}
+
+func (e *AlpineKeyFetchError) Error() string {
+	return fmt.Sprintf("failed to fetch Alpine keys for %s: %v", e.Repository, e.Err)
+}
+
+func (e *AlpineKeyFetchError) Unwrap() error {
+	return e.Err
 }
 
 // FetchAlpineReleases fetches and returns the Alpine releases metadata from alpinelinux.org.
