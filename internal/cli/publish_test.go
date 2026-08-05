@@ -16,7 +16,6 @@ package cli_test
 
 import (
 	"archive/tar"
-	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -45,7 +44,9 @@ import (
 )
 
 func TestPublish(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
@@ -119,7 +120,9 @@ func (s *sentinel) RoundTrip(in *http.Request) (*http.Response, error) {
 }
 
 func TestPublishLayering(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
