@@ -22,6 +22,12 @@ You can install apko from Homebrew:
 brew install apko
 ```
 
+You can also install apko from polyglot [mise](https://github.com/jdx/mise) software manager tool specifying the version you want (here latest in sample):
+
+```shell
+mise use -g apko@latest
+```
+
 You can also install apko from source:
 
 ```shell
