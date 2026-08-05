@@ -50,6 +50,8 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
+          # Disable caching to avoid cache poisoning of release artifacts.
+          cache: false
 
       - name: build
         run: |
