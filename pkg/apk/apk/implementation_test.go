@@ -136,6 +136,23 @@ func TestInitDBWithoutCacheReturnsAlpineKeyFetchError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestInitDBOfflineWithoutCacheIgnoresMissingAlpineKeys(t *testing.T) {
+	src := apkfs.NewMemFS()
+	a, err := New(t.Context(),
+		WithFS(src),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithOffline(true),
+	)
+	require.NoError(t, err)
+
+	err = a.InitDB(t.Context(), "https://example.invalid/alpine/v3.22/main")
+	require.NoError(t, err)
+
+	ent, err := fs.ReadDir(src, "etc/apk/keys")
+	require.NoError(t, err)
+	require.Empty(t, ent)
+}
+
 func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	src := apkfs.NewMemFS()
 	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))

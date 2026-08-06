@@ -66,6 +66,7 @@ type APK struct {
 	ignoreMknodErrors  bool
 	client             *http.Client
 	cache              *cache
+	offline            bool
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
@@ -144,6 +145,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		ignoreMknodErrors:  opt.ignoreMknodErrors,
 		version:            opt.version,
 		cache:              opt.cache,
+		offline:            opt.offline,
 		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
@@ -351,7 +353,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
-				if (a.cache == nil || !a.cache.offline) && !errors.As(err, &nokeysErr) {
+				if !a.offline && !errors.As(err, &nokeysErr) {
 					return &AlpineKeyFetchError{
 						Repository: repo,
 						Version:    ver,
