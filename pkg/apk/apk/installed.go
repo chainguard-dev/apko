@@ -48,6 +48,17 @@ func (a *APK) GetInstalled() ([]*InstalledPackage, error) {
 // AddInstalledPackage add a package to the list of installed packages and returns
 // the _incremental_ diff installing the package had on the idb file.
 func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, error) {
+	// A record with an empty P: value is written without complaint and then
+	// discarded wholesale by ParseInstalled, which gates on pkg.Name != "". The
+	// package's files are left in the image belonging to no package at all, and
+	// absent from the generated SBOM. Refuse to write a record we cannot read
+	// back: at best it vanishes silently, and nothing downstream can tell that
+	// from a package that was never installed.
+	if pkg.Name == "" {
+		return nil, fmt.Errorf("refusing to add a package with an empty name: the record " +
+			"would be silently discarded when the installed database is read back")
+	}
+
 	// be sure to open the file in append mode so we add to the end
 	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
