@@ -36,7 +36,7 @@ import (
 //   2. allows pulling in dependencies for the tagged package from the tagged repository (though it prefers to use untagged repositories to satisfy dependencies if possible)
 
 var (
-	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
+	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?$`)
 	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
 )
 
@@ -75,17 +75,20 @@ type Version struct {
 	postSuffix       packageVersionPostModifier
 	postSuffixNumber int
 	revision         int
+	revisions        []int
 }
 
 // ParseVersion parses a version string into a Version struct.
 func ParseVersion(version string) (Version, error) {
-	parts := versionRegex.FindAllStringSubmatch(version, -1)
+	baseVersion, revisions := splitRevisionSuffixes(version)
+
+	parts := versionRegex.FindAllStringSubmatch(baseVersion, -1)
 	if len(parts) == 0 {
 		return Version{}, fmt.Errorf("invalid version %s, could not parse", version)
 	}
 	actuals := parts[0]
 	numbers := make([]int, 0, 10)
-	if len(actuals) != 14 {
+	if len(actuals) != 11 {
 		return Version{}, fmt.Errorf("invalid version %s, could not find enough components", version)
 	}
 
@@ -165,13 +168,14 @@ func ParseVersion(version string) (Version, error) {
 	}
 
 	var revision int
-	if actuals[13] != "" {
-		num, err := strconv.Atoi(actuals[13])
-		if err != nil {
-			return Version{}, fmt.Errorf("invalid version %s, revision %s is not number: %w", version, actuals[13], err)
-		}
-		revision = num
+	if len(revisions) != 0 {
+		revision = revisions[len(revisions)-1]
 	}
+	storedRevisions := revisions
+	if len(storedRevisions) <= 1 {
+		storedRevisions = nil
+	}
+
 	return Version{
 		numbers:          numbers,
 		letter:           letter,
@@ -180,7 +184,45 @@ func ParseVersion(version string) (Version, error) {
 		postSuffix:       postSuffix,
 		postSuffixNumber: postSuffixNumber,
 		revision:         revision,
+		revisions:        storedRevisions,
 	}, nil
+}
+
+func splitRevisionSuffixes(version string) (string, []int) {
+	baseVersion := version
+	revisions := []int{}
+
+	for {
+		idx := strings.LastIndex(baseVersion, "-r")
+		if idx == -1 {
+			break
+		}
+
+		rawRevision := baseVersion[idx+len("-r"):]
+		revision, err := strconv.Atoi(rawRevision)
+		if err != nil {
+			break
+		}
+
+		revisions = append(revisions, revision)
+		baseVersion = baseVersion[:idx]
+	}
+
+	for i, j := 0, len(revisions)-1; i < j; i, j = i+1, j-1 {
+		revisions[i], revisions[j] = revisions[j], revisions[i]
+	}
+
+	return baseVersion, revisions
+}
+
+func revisionNumbers(v Version) []int {
+	if len(v.revisions) != 0 {
+		return v.revisions
+	}
+	if v.revision != 0 {
+		return []int{v.revision}
+	}
+	return nil
 }
 
 const (
@@ -259,10 +301,20 @@ func CompareVersions(actual, required Version) int {
 	}
 	// same post-suffix numbers
 	// compare revisions
-	if actual.revision > required.revision {
+	actualRevisions := revisionNumbers(actual)
+	requiredRevisions := revisionNumbers(required)
+	for i := 0; i < len(actualRevisions) && i < len(requiredRevisions); i++ {
+		if actualRevisions[i] > requiredRevisions[i] {
+			return greater
+		}
+		if actualRevisions[i] < requiredRevisions[i] {
+			return less
+		}
+	}
+	if len(actualRevisions) > len(requiredRevisions) {
 		return greater
 	}
-	if actual.revision < required.revision {
+	if len(actualRevisions) < len(requiredRevisions) {
 		return less
 	}
 	return equal
@@ -308,8 +360,15 @@ func includesVersion(actual, required Version) bool {
 	}
 
 	// compare revisions
-	if required.revision != 0 && actual.revision != required.revision {
+	actualRevisions := revisionNumbers(actual)
+	requiredRevisions := revisionNumbers(required)
+	if len(actualRevisions) < len(requiredRevisions) {
 		return false
+	}
+	for i, requiredRevision := range requiredRevisions {
+		if actualRevisions[i] != requiredRevision {
+			return false
+		}
 	}
 	return true
 }
