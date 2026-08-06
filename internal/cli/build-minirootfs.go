@@ -27,6 +27,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/tarfs"
 )
 
@@ -48,7 +49,7 @@ func buildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return BuildMinirootFSCmd(cmd.Context(),
+			opts := []build.Option{
 				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
@@ -60,7 +61,11 @@ func buildMinirootFS() *cobra.Command {
 				build.WithArch(types.ParseArchitecture(buildArch)),
 				build.WithIgnoreSignatures(ignoreSignatures),
 				build.WithSizeLimits(sizeLimits),
-			)
+			}
+			if sbomPath != "" {
+				opts = append(opts, build.WithSBOMGenerators(generator.Generators("spdx")...))
+			}
+			return BuildMinirootFSCmd(cmd.Context(), opts...)
 		},
 	}
 
@@ -97,11 +102,17 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	}
 
 	log.Debugf("building minirootfs %s", bc.TarballPath())
-	layerTarGZ, _, err := bc.BuildLayer(ctx)
+	layerTarGZ, layer, err := bc.BuildLayer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to build layer image: %w", err)
 	}
 	log.Debugf("wrote minirootfs to %s", layerTarGZ)
+
+	if bc.WantSBOM() {
+		if _, err := bc.GenerateLayerSBOM(ctx, bc.Arch(), layer); err != nil {
+			return fmt.Errorf("generating sbom: %w", err)
+		}
+	}
 
 	return nil
 }
