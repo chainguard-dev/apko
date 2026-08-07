@@ -65,8 +65,19 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		keyring := sets.List(sets.New(bc.ic.Contents.Keyring...).Insert(bc.o.ExtraKeyFiles...))
+		if bc.offlineOnly() {
+			var err error
+			if keyring, err = bc.offlineKeyring(keyring); err != nil {
+				return err
+			}
+		}
 		if err := bc.apk.InitKeyring(ctx, keyring, nil); err != nil {
 			return fmt.Errorf("failed to initialize apk keyring: %w", err)
+		}
+		if bc.o.OfflineCacheDir != "" && !bc.o.Offline {
+			if err := bc.saveOfflineKeyring(ctx, keyring); err != nil {
+				return fmt.Errorf("failed to save apk keyring to offline cache: %w", err)
+			}
 		}
 		return nil
 	})

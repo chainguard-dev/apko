@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/chainguard-dev/clog"
@@ -152,7 +153,18 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		pkgs []apk.InstalledDiff
 		err  error
 	)
-	if bc.o.Lockfile != "" {
+	switch {
+	case bc.offlineOnly():
+		log.Debugf("Using offline cache: %s", bc.o.OfflineCacheDir)
+		allPkgs, err := bc.offlineInstallablePackages(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pkgs, err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
+		if err != nil {
+			return nil, fmt.Errorf("failed installation from offline cache %s: %w", bc.o.OfflineCacheDir, err)
+		}
+	case bc.o.Lockfile != "":
 		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
@@ -170,7 +182,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		if err != nil {
 			return nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-	} else {
+	default:
 		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("installing apk packages: %w", err)
@@ -280,12 +292,21 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 }
 
 func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
+	ic := bc.ic
+	if bc.offlineOnly() {
+		// A resolving build records its package set sorted (see unify), while an
+		// offline build keeps the configured order, because offline that is also the
+		// order the packages are installed in. Sort the record and not the install
+		// order, so that both kinds of build produce byte-identical images.
+		ic.Contents.Packages = slices.Sorted(slices.Values(bc.ic.Contents.Packages))
+	}
+
 	// Encode the image configuration and write it to /etc/apko.json
 	f, err := bc.fs.Create("/etc/apko.json")
 	if err != nil {
 		return fmt.Errorf("creating /etc/apko.json: %w", err)
 	}
-	if err := json.NewEncoder(f).Encode(bc.ic); err != nil {
+	if err := json.NewEncoder(f).Encode(ic); err != nil {
 		return fmt.Errorf("encoding image config: %w", err)
 	}
 	if err := f.Close(); err != nil {
@@ -319,6 +340,9 @@ func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.Repos
 
 	if bc.o.Lockfile != "" {
 		return nil, nil, fmt.Errorf("assertion: cannot ResolveWorld if LockFile:%s is given", bc.o.Lockfile)
+	}
+	if bc.offlineOnly() {
+		return nil, nil, fmt.Errorf("assertion: cannot ResolveWorld with --offline and --offline-cache %s, which install without an index", bc.o.OfflineCacheDir)
 	}
 
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -117,6 +118,7 @@ type defaultPackageGetter struct {
 	auth              auth.Authenticator
 	apkControlMaxSize int64
 	apkDataMaxSize    int64
+	offlineCacheDir   string
 }
 
 // packageGetterOption is a functional option for configuring defaultPackageGetter.
@@ -133,6 +135,14 @@ func withAPKControlMaxSize(size int64) packageGetterOption {
 func withAPKDataMaxSize(size int64) packageGetterOption {
 	return func(d *defaultPackageGetter) {
 		d.apkDataMaxSize = size
+	}
+}
+
+// withOfflineCacheDir makes the getter mirror every remote apk it fetches into
+// dir, and verify any apk already there against the index's checksum.
+func withOfflineCacheDir(dir string) packageGetterOption {
+	return func(d *defaultPackageGetter) {
+		d.offlineCacheDir = dir
 	}
 }
 
@@ -189,6 +199,19 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "getPackageImpl", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
 	defer span.End()
 
+	// When an offline cache is configured, every apk is read through it, so that
+	// one already sitting there is checked against the index's checksum on each
+	// run rather than only when it was first written. That means bypassing the
+	// expanded cache below, whose hit path would otherwise skip the apk entirely.
+	offlinePath := ""
+	if d.offlineCacheDir != "" && IsRemoteURL(pkg.URL()) {
+		var err error
+		offlinePath, err = OfflineCachePath(d.offlineCacheDir, pkg.URL())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cacheDir := ""
 	if d.cache != nil {
 		var err error
@@ -197,13 +220,15 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 			return nil, err
 		}
 
-		exp, err := d.cachedPackage(ctx, pkg, cacheDir)
-		if err == nil {
-			log.Debugf("cache hit (%s)", pkg.PackageName())
-			return exp, nil
-		}
+		if offlinePath == "" {
+			exp, err := d.cachedPackage(ctx, pkg, cacheDir)
+			if err == nil {
+				log.Debugf("cache hit (%s)", pkg.PackageName())
+				return exp, nil
+			}
 
-		log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
+			log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
+		}
 
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			return nil, fmt.Errorf("unable to create cache directory %q: %w", cacheDir, err)
@@ -218,7 +243,7 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 		expandOpts = append(expandOpts, expandapk.WithMaxDataSize(d.apkDataMaxSize))
 	}
 
-	exp, err := d.fetchExpandAndVerify(ctx, pkg, cacheDir, expandOpts)
+	exp, err := d.fetchExpandAndVerify(ctx, pkg, cacheDir, offlinePath, expandOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +257,7 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 }
 
 // fetchExpandAndVerify fetches, expands, and verifies a package, retrying on transient errors.
-func (d *defaultPackageGetter) fetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
+func (d *defaultPackageGetter) fetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir, offlinePath string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
 	var lastErr error
 	for attempt := range maxFetchRetries + 1 {
 		if attempt > 0 {
@@ -245,7 +270,7 @@ func (d *defaultPackageGetter) fetchExpandAndVerify(ctx context.Context, pkg Ins
 			}
 		}
 
-		exp, err := d.doFetchExpandAndVerify(ctx, pkg, cacheDir, expandOpts)
+		exp, err := d.doFetchExpandAndVerify(ctx, pkg, cacheDir, offlinePath, expandOpts)
 		if err == nil {
 			return exp, nil
 		}
@@ -258,16 +283,44 @@ func (d *defaultPackageGetter) fetchExpandAndVerify(ctx context.Context, pkg Ins
 }
 
 // doFetchExpandAndVerify performs a single fetch+expand+verify cycle for a package.
-func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
-	rc, err := d.fetchPackage(ctx, pkg)
+//
+// If offlinePath is set, the apk is read from there when it already exists, and
+// otherwise downloaded to a temporary name beside it. Either way the verification
+// below runs against those exact bytes, and the apk is only published into the
+// offline cache once it has passed.
+func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir, offlinePath string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
+	var (
+		rc        io.ReadCloser
+		fromCache bool
+		tmpPath   string
+		err       error
+	)
+	if offlinePath != "" {
+		rc, fromCache, tmpPath, err = d.openViaOfflineCache(ctx, pkg, offlinePath)
+	} else {
+		rc, err = d.fetchPackage(ctx, pkg)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("fetching package %q: %w", pkg.PackageName(), err)
 	}
 	defer rc.Close()
+	if tmpPath != "" {
+		// Removed unless the rename below claims it.
+		defer os.Remove(tmpPath)
+	}
+
+	// Point mismatches at the offline cache, since the fix there is to remove the
+	// stale file rather than to retry the download.
+	verifyErr := func(err error) error {
+		if !fromCache {
+			return err
+		}
+		return fmt.Errorf("%w (from offline cache %s; the repository index describes different content under this name, remove the file to re-fetch it)", err, offlinePath)
+	}
 
 	exp, err := expandapk.ExpandApkWithOptions(ctx, rc, cacheDir, expandOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
+		return nil, verifyErr(fmt.Errorf("expanding %s: %w", pkg.PackageName(), err))
 	}
 
 	chk := pkg.ChecksumString()
@@ -282,7 +335,7 @@ func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg I
 	}
 	if !bytes.Equal(expectedControlHash, exp.ControlHash) {
 		_ = exp.Close()
-		return nil, fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash)
+		return nil, verifyErr(fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash))
 	}
 
 	pkgInfo, err := exp.PkgInfo()
@@ -297,10 +350,82 @@ func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg I
 	}
 	if !bytes.Equal(expectedDataHash, exp.PackageHash) {
 		_ = exp.Close()
-		return nil, fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash)
+		return nil, verifyErr(fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash))
+	}
+
+	if offlinePath != "" {
+		if err := publishToOfflineCache(offlinePath, tmpPath, chk); err != nil {
+			_ = exp.Close()
+			return nil, fmt.Errorf("caching %s in offline cache: %w", pkg.PackageName(), err)
+		}
 	}
 
 	return exp, nil
+}
+
+// openViaOfflineCache returns a reader over the package's apk at path, which is
+// downloaded first if it is not already there. A downloaded apk is left at a
+// temporary name, reported as tmpPath, until publishToOfflineCache renames it, so
+// that bytes which fail verification are never left behind for a later run to
+// pick up. fromCache reports whether the apk was already present.
+func (d *defaultPackageGetter) openViaOfflineCache(ctx context.Context, pkg InstallablePackage, path string) (rc io.ReadCloser, fromCache bool, tmpPath string, err error) {
+	if f, err := os.Open(path); err == nil {
+		clog.FromContext(ctx).Debugf("offline cache hit (%s): %s", pkg.PackageName(), path)
+		return f, true, "", nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, false, "", fmt.Errorf("reading %s from offline cache: %w", pkg.PackageName(), err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, false, "", fmt.Errorf("creating offline cache directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
+	if err != nil {
+		return nil, false, "", fmt.Errorf("creating offline cache temp file: %w", err)
+	}
+	tmpPath = tmp.Name()
+
+	// Download in full before expanding, rather than teeing the body through the
+	// expander: that keeps the cached file exactly the bytes that get verified,
+	// with no dependence on the expander consuming its reader to EOF.
+	if err := func() error {
+		defer tmp.Close()
+		src, err := d.fetchPackage(ctx, pkg)
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+		if _, err := io.Copy(tmp, src); err != nil {
+			return err
+		}
+		return tmp.Chmod(0o644)
+	}(); err != nil {
+		os.Remove(tmpPath)
+		return nil, false, "", err
+	}
+
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return nil, false, "", err
+	}
+	return f, false, tmpPath, nil
+}
+
+// publishToOfflineCache moves a freshly downloaded apk into place, if tmpPath
+// names one, and records the checksum the index reported for it. The sidecar is
+// written even for an apk that was already cached, so that one lacking a record
+// gains one on the next populating run.
+func publishToOfflineCache(path, tmpPath, checksum string) error {
+	if tmpPath != "" {
+		if err := os.Rename(tmpPath, path); err != nil {
+			return err
+		}
+	}
+	if existing, err := ReadOfflineChecksum(path); err == nil && existing == checksum {
+		return nil
+	}
+	return writeOfflineChecksum(path, checksum)
 }
 
 // sha1File returns the SHA-1 of the file at path.

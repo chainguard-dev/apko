@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -219,6 +220,30 @@ func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 func WithOffline(offline bool) Option {
 	return func(bc *Context) error {
 		bc.o.Offline = offline
+		return nil
+	}
+}
+
+// WithOfflineCache keeps a mirror of the raw .apk files a build uses in dir, as
+// <dir>/<host>/<repo path>/<arch>/<name>-<version>.apk plus a sidecar recording
+// the checksum the repository index reported for each one.
+//
+// Combined with WithOffline, dir becomes the only source of packages: no index
+// is read and no network request is made, which requires that every package in
+// the configuration be pinned to an exact version.
+func WithOfflineCache(dir string) Option {
+	return func(bc *Context) error {
+		if dir == "" {
+			bc.o.OfflineCacheDir = ""
+			return nil
+		}
+		// Absolutized to match apk.WithOfflineCache, so both layers agree on the
+		// path even if the working directory changes (apko -C).
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		bc.o.OfflineCacheDir = abs
 		return nil
 	}
 }

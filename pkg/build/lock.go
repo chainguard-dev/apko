@@ -51,6 +51,10 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 		return nil, nil, nil, err
 	}
 
+	if err := validateOffline(o); err != nil {
+		return nil, nil, nil, err
+	}
+
 	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
 	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
 	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
@@ -66,7 +70,17 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 	var pls map[string][]string
 	var resolvedPkgs map[types.Architecture][]*apk.RepositoryPackage
 	missing := map[string][]string{}
-	if o.Lockfile == "" {
+	switch {
+	case o.Offline && o.OfflineCacheDir != "":
+		// Nothing to resolve: an offline build reads no index, so the
+		// configuration's package list is already the exact set to install. Its
+		// order is kept as written, since that is the order they are installed in.
+		pls = make(map[string][]string, len(input.Archs)+1)
+		pls["index"] = input.Contents.Packages
+		for _, arch := range input.Archs {
+			pls[arch.String()] = input.Contents.Packages
+		}
+	case o.Lockfile == "":
 		archs, pkgs, err := resolvePackageList(ctx, mc)
 		if err != nil {
 			return nil, nil, nil, err
@@ -76,7 +90,7 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 		if err != nil {
 			return nil, missing, nil, err
 		}
-	} else {
+	default:
 		l, err := pkglock.FromFile(o.Lockfile)
 		if err != nil {
 			return nil, nil, nil, err

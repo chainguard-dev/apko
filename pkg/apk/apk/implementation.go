@@ -134,6 +134,11 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 				getterOpts = append(getterOpts, withAPKDataMaxSize(opt.sizeLimits.APKDataMaxSize))
 			}
 		}
+		// Offline builds read apks from the offline cache through the ordinary
+		// installer rather than this getter, so there is nothing to populate.
+		if opt.offlineCacheDir != "" && !opt.offline {
+			getterOpts = append(getterOpts, withOfflineCacheDir(opt.offlineCacheDir))
+		}
 		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
 	}
 
