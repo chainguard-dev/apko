@@ -68,6 +68,25 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 
 		if f.Typeflag == tar.TypeDir {
 			dirName := strings.TrimSuffix(f.Name, fmt.Sprintf("%c", filepath.Separator))
+			// The database spells the top-level directory as a bare "F:" with no
+			// value. An entry whose name is nothing but separators denotes that
+			// same directory, so normalise every spelling of it to the marker
+			// rather than emitting "F:/" or "F://" for some of them.
+			if strings.Trim(dirName, "/") == "" {
+				dirName = ""
+			}
+			// ParseInstalled rejects an "M:" line following the bare marker
+			// ("M entry cannot be associated with top level dir"), and that
+			// error aborts the whole read, so the record would take the entire
+			// database down rather than merely being wrong. A root entry with
+			// default ownership and mode emits no M: line and is representable,
+			// so only the non-default case has to be refused.
+			if dirName == "" && (perm != 0o755 || user != 0 || group != 0) {
+				return nil, fmt.Errorf("refusing to record ownership or permissions for the "+
+					"top-level directory of package %q (entry %q, mode %04o, uid %d, gid %d): "+
+					"the installed database cannot express them and the resulting record "+
+					"would make the whole database unreadable", pkg.Name, f.Name, perm, user, group)
+			}
 			pkgLines = append(pkgLines, fmt.Sprintf("F:%s", dirName))
 			if perm != 0o755 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("M:%d:%d:%04o", user, group, perm))
@@ -431,7 +450,14 @@ func removeOrphanedEntries(headers []tar.Header) int {
 					keep = false
 					break
 				}
-				parentPath = filepath.Dir(parentPath)
+				parent := filepath.Dir(parentPath)
+				if parent == parentPath {
+					// filepath.Dir("/") is "/", so an absolute path would walk
+					// here forever. A fixed point means the root has been
+					// reached and the hierarchy is exhausted.
+					break
+				}
+				parentPath = parent
 			}
 		}
 
