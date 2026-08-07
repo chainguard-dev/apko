@@ -32,6 +32,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/klauspost/compress/zstd"
 	"go.opentelemetry.io/otel"
 	"gopkg.in/yaml.v3"
 
@@ -187,7 +188,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	bc.o.TarballPath = outfile.Name()
 	defer outfile.Close()
 
-	lw := newLayerWriter(outfile)
+	lw := newLayerWriter(outfile, bc.o.Compression)
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
 		return "", nil, fmt.Errorf("generating tarball: %w", err)
@@ -361,6 +362,7 @@ type layer struct {
 	mu           sync.Mutex
 	uncompressed string
 	compressed   string
+	compression  options.Compression
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
 }
@@ -379,7 +381,9 @@ func (l *layer) compress() error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(l.uncompressed + ".gz")
+	ext := l.compression.Extension()
+
+	out, err := os.Create(l.uncompressed + ext)
 	if err != nil {
 		return err
 	}
@@ -388,23 +392,39 @@ func (l *layer) compress() error {
 	defer bufioPool.Put(buf)
 
 	digest := sha256.New()
-	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
-	defer pgzipPool.Put(gzw)
+	var cw io.WriteCloser
+	if l.compression == options.Zstd {
+		zw, err := zstd.NewWriter(io.MultiWriter(digest, buf), zstd.WithEncoderConcurrency(pgzipThreads))
+		if err != nil {
+			out.Close()
+			return err
+		}
+		cw = zw
+	} else {
+		gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+		defer pgzipPool.Put(gzw)
+		cw = gzw
+	}
 
-	if _, err := io.Copy(gzw, in); err != nil {
+	if _, err := io.Copy(cw, in); err != nil {
+		cw.Close()
+		out.Close()
 		return err
 	}
 
-	if err := gzw.Close(); err != nil {
-		return fmt.Errorf("closing gzip writer: %w", err)
+	if err := cw.Close(); err != nil {
+		out.Close()
+		return fmt.Errorf("closing compressor: %w", err)
 	}
 
 	if err := buf.Flush(); err != nil {
+		out.Close()
 		return fmt.Errorf("flushing %s: %w", out.Name(), err)
 	}
 
 	stat, err := out.Stat()
 	if err != nil {
+		out.Close()
 		return fmt.Errorf("statting %s: %w", out.Name(), err)
 	}
 
@@ -420,7 +440,7 @@ func (l *layer) compress() error {
 	descCopy := *l.desc
 	compressionCache.Store(l.diffid.String(), &descCopy)
 
-	l.compressed = l.uncompressed + ".gz"
+	l.compressed = l.uncompressed + ext
 
 	return out.Close()
 }
