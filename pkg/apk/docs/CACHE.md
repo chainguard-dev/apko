@@ -7,7 +7,7 @@ This is completely independent of the target FS where you install the packages t
 install runs, all using similar packages. For example, if you need `busybox-1.36.2-r0.apk` for multiple installs,
 you only would need to download it once.
 
-The cache is **not** enabled by default. It only is enabled by providing the [WithCache()](./pkg/apk/options.go) option to the `New()` function.
+The cache is **not** enabled by default. It only is enabled by providing the [WithCache()](../apk/options.go) option to the `New()` function.
 
 ## Cache Location
 
@@ -50,6 +50,9 @@ Behaviour if no local etag is available depends on how it was called:
 * `.apk` files - we assume that they do not change, and thus no etag found locally means the file is accepted as is.
 
 # Offline Cache
+
+For a task-oriented guide to using this from Go, including populating a cache and
+reproducing a build from one, see [offline-cache.md](../../../docs/offline-cache.md).
 
 The cache described above stores apks pre-split into their component sections, so
 it is not usable as a standalone source of apks. The *offline cache*, enabled with
