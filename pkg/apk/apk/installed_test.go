@@ -671,6 +671,34 @@ func TestParseInstalledShortLine(t *testing.T) {
 	}
 }
 
+// mustNotHang runs fn on its own goroutine and fails, rather than wedging the
+// whole test binary, if it does not return. removeOrphanedEntries walks each
+// entry's parent chain, and a bug in the termination condition turns that into
+// an infinite loop -- which without this helper costs the package's full
+// -timeout and reports a goroutine dump instead of naming the offending input.
+//
+// The budget is derived from the harness's own deadline so that a short
+// `go test -timeout` is not consumed by the watchdog. The guarded calls take
+// microseconds, so any budget above a few milliseconds is ample. On timeout the
+// goroutine is deliberately leaked: the guarded functions take no context and
+// cannot be cancelled, and the test is failing anyway.
+func mustNotHang(t *testing.T, what string, fn func()) {
+	t.Helper()
+	budget := time.Second
+	if d, ok := t.Deadline(); ok {
+		if quarter := time.Until(d) / 4; quarter > 0 && quarter < budget {
+			budget = quarter
+		}
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); fn() }()
+	select {
+	case <-done:
+	case <-time.After(budget):
+		t.Fatalf("%s did not return within %s; the parent walk is not terminating", what, budget)
+	}
+}
+
 func TestRemoveOrphanedEntries(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -728,6 +756,80 @@ func TestRemoveOrphanedEntries(t *testing.T) {
 			headers:  []tar.Header{},
 			expected: nil,
 		},
+		{
+			// filepath.Dir("/") is "/", so an absolute path never reaches "" or
+			// "." and the walk spun forever before the fixed-point check. These
+			// rows assert which entries survive, not merely that we return:
+			// a walk that gave up at the root and dropped everything would
+			// terminate just as happily.
+			name: "absolute root dir and a file under it",
+			headers: []tar.Header{
+				{Name: "/x", Typeflag: tar.TypeReg},
+				{Name: "/", Typeflag: tar.TypeDir},
+			},
+			expected: []string{"/x", "/"},
+		},
+		{
+			name:     "double-slash dir alone",
+			headers:  []tar.Header{{Name: "//", Typeflag: tar.TypeDir}},
+			expected: []string{"//"},
+		},
+		{
+			name: "deep absolute hierarchy, all reachable",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "/usr", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin/sh", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"/", "/usr", "/usr/bin", "/usr/bin/sh"},
+		},
+		{
+			name: "absolute hierarchy with a gap in the middle",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "/usr", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin/sh", Typeflag: tar.TypeReg}, // missing /usr/bin
+			},
+			expected: []string{"/", "/usr"},
+		},
+		{
+			name:     "absolute file whose parent is absent",
+			headers:  []tar.Header{{Name: "/usr/bin/sh", Typeflag: tar.TypeReg}},
+			expected: nil,
+		},
+		{
+			name: "mixed absolute and relative entries",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "/etc", Typeflag: tar.TypeDir},
+				{Name: "/etc/hosts", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"/", "usr", "usr/bin", "/etc", "/etc/hosts"},
+		},
+		{
+			// The walk must check the WHOLE ancestor chain, not just the
+			// immediate parent. dirPaths is built from the original headers, so
+			// "usr/bin" stays in the set even though it is itself dropped --
+			// a walk that stopped one level up would let the child through.
+			name: "grandparent missing though immediate parent is present",
+			headers: []tar.Header{
+				{Name: "usr/bin", Typeflag: tar.TypeDir}, // missing usr
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: nil,
+		},
+		{
+			name: "gap three levels up",
+			headers: []tar.Header{
+				{Name: "usr/share/doc", Typeflag: tar.TypeDir}, // missing usr, usr/share
+				{Name: "usr/share/doc/x", Typeflag: tar.TypeDir},
+				{Name: "usr/share/doc/x/y", Typeflag: tar.TypeReg},
+			},
+			expected: nil,
+		},
 	}
 
 	for _, tt := range cases {
@@ -735,7 +837,10 @@ func TestRemoveOrphanedEntries(t *testing.T) {
 			headersCopy := make([]tar.Header, len(tt.headers))
 			copy(headersCopy, tt.headers)
 
-			newLen := removeOrphanedEntries(headersCopy)
+			var newLen int
+			mustNotHang(t, "removeOrphanedEntries", func() {
+				newLen = removeOrphanedEntries(headersCopy)
+			})
 			results := headersCopy[:newLen]
 
 			var resultNames []string
