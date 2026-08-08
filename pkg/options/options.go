@@ -78,6 +78,7 @@ type Options struct {
 	CacheDir                string                `json:"cacheDir,omitempty"`
 	DiskCacheEnabled        bool                  `json:"-"`
 	Offline                 bool                  `json:"offline,omitempty"`
+	OfflineCacheDir         string                `json:"offlineCacheDir,omitempty"`
 	SharedCache             *apk.Cache            `json:"-"`
 	Lockfile                string                `json:"lockfile,omitempty"`
 	Auth                    auth.Authenticator    `json:"-"`

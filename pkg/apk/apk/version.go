@@ -356,6 +356,18 @@ type ParsedConstraint struct {
 	pin     string
 }
 
+// IsExactVersion reports whether the constraint pins one version, as in
+// "foo=1.2.3-r4", rather than naming a range, a tilde match, or no version.
+func (p ParsedConstraint) IsExactVersion() bool {
+	return p.dep == versionEqual && p.Version != ""
+}
+
+// Pin returns the repository tag the constraint is pinned to, as in "foo@edge",
+// or the empty string if it is not pinned to one.
+func (p ParsedConstraint) Pin() string {
+	return p.pin
+}
+
 func (p ParsedConstraint) SatisfiedBy(v Version) (bool, error) {
 	if p.Version == "" {
 		return true, nil

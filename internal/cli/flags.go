@@ -20,6 +20,15 @@ import (
 	"chainguard.dev/apko/pkg/options"
 )
 
+// addOfflineCacheFlag adds the flag naming a mirror of the raw .apk files a
+// build uses. On its own it only populates the mirror; combined with --offline it
+// becomes the sole source of packages.
+func addOfflineCacheFlag(cmd *cobra.Command, dir *string) {
+	cmd.Flags().StringVar(dir, "offline-cache", "",
+		"directory to mirror the .apk files used by this build into, as <dir>/<host>/<repo path>/<arch>/<name>-<version>.apk. "+
+			"Combined with --offline it becomes the only source of packages: no index is read and every package must be pinned to an exact version")
+}
+
 // addClientLimitFlags adds size limit flags for APK client operations (fetching indexes, expanding packages).
 func addClientLimitFlags(cmd *cobra.Command, limits *options.SizeLimits) {
 	defaults := options.DefaultSizeLimits()

@@ -253,6 +253,10 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		}
 	}
 
+	if err := validateOffline(&bc.o); err != nil {
+		return nil, err
+	}
+
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
 	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
 		// The value MUST be an ASCII representation of an integer
@@ -301,6 +305,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		}
 	}
 	apkOpts = append(apkOpts, apk.WithOffline(bc.o.Offline))
+	apkOpts = append(apkOpts, apk.WithOfflineCache(bc.o.OfflineCacheDir))
 
 	if bc.ic.Contents.BaseImage != nil {
 		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)

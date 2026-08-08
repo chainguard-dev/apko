@@ -74,6 +74,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	var includePaths []string
 	var ignoreSignatures bool
 	var cacheDir string
+	var offlineCache string
 
 	cmd := &cobra.Command{
 		Use: cmdName,
@@ -101,6 +102,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 					build.WithIncludePaths(includePaths),
 					build.WithIgnoreSignatures(ignoreSignatures),
 					build.WithCache(cacheDir, false, apk.NewCache(true)),
+					build.WithOfflineCache(offlineCache),
 				},
 			)
 		},
@@ -114,6 +116,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	addOfflineCacheFlag(cmd, &offlineCache)
 
 	return cmd
 }

@@ -34,6 +34,7 @@ type opts struct {
 	version            string
 	cache              *cache
 	offline            bool
+	offlineCacheDir    string
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	ignoreSignatures   bool
@@ -118,6 +119,32 @@ func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 			shared: shared,
 		}
 		o.offline = offline
+		return nil
+	}
+}
+
+// WithOfflineCache keeps a copy of every remote apk that is fetched under dir,
+// as the original .apk file plus a sidecar recording the checksum the repository
+// index reported for it. The layout is <dir>/<host>/<repo path>/<arch>/<name>-<version>.apk.
+//
+// An apk already present under dir is read from there instead of being
+// re-downloaded, and is verified against the index on every run, so a repository
+// that republishes different content under the same name and version is an error
+// rather than a silent mismatch between the cache and the index.
+//
+// This is distinct from WithCache, which stores apks pre-split into their
+// component sections and is not usable as a standalone apk source.
+func WithOfflineCache(dir string) Option {
+	return func(o *opts) error {
+		if dir == "" {
+			o.offlineCacheDir = ""
+			return nil
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		o.offlineCacheDir = abs
 		return nil
 	}
 }

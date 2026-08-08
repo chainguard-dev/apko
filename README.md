@@ -107,6 +107,8 @@ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
 
 See the [docs](./docs/apko_file.md) for details of the file format and the [examples directory](./examples) for more, err, examples!
 
+To build without network access from a mirror of the apks a build used, see the [offline cache docs](./docs/offline-cache.md).
+
 ## Why
 
 apko was created by [Chainguard](https://www.chainguard.dev), who require secure and reproducible
