@@ -48,6 +48,7 @@ var (
 	caBundlePaths = []string{
 		"etc/ssl/certs/ca-certificates.crt",                        // Alpine default.
 		"var/lib/ecs/deps/execute-command/certs/tls-ca-bundle.pem", // AWS ECS-specific.
+		"kaniko/ssl/certs/ca-certificates.crt",                     // Kaniko
 	}
 
 	// Common paths for Java truststores.
