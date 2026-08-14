@@ -858,8 +858,25 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 
 	diffs := make([]InstalledDiff, 0, len(allFiles))
 
-	// update the installed file
-	for i, files := range allFiles {
+	// update the installed file, writing the records sorted by package name:
+	// apk-tools rewrites the database sorted on its first operation, so writing
+	// it sorted keeps apko's output canonical instead of install-ordered
+	// (https://github.com/chainguard-dev/apko/issues/1969). Installation order
+	// above is unaffected; consumers key the returned diffs by package.
+	order := make([]int, 0, len(allFiles))
+	for i := range allFiles {
+		order = append(order, i)
+	}
+	slices.SortStableFunc(order, func(x, y int) int {
+		px, py := infos[x], infos[y]
+		if px == nil || py == nil {
+			// nil entries are skipped below; their position is irrelevant
+			return 0
+		}
+		return strings.Compare(px.Name, py.Name)
+	})
+	for _, i := range order {
+		files := allFiles[i]
 		pkg := infos[i]
 
 		// TODO: We currently skip over packages that are already installed.

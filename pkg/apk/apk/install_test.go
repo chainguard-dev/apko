@@ -479,3 +479,43 @@ provider_priority = {{ .Dependencies.ProviderPriority }}
 {{- end }}
 datahash = {{.DataHash}}
 `
+
+func TestInstallPackagesWritesSortedInstalledDB(t *testing.T) {
+	apk, _, err := testGetTestAPK()
+	require.NoErrorf(t, err, "failed to get test APK")
+
+	// Install deliberately out of name order; the installed database must
+	// still come out sorted by package name, matching what apk-tools
+	// produces when it rewrites the database.
+	pkgZ := &Package{Name: "zzz-last", Origin: "zzz-last"}
+	fpZ := fakePackage(t, pkgZ, []testDirEntry{
+		{"etc", 0o755, true, nil, nil},
+		{"etc/zzz-file", 0o644, false, []byte("z"), nil},
+	}, "")
+	pkgM := &Package{Name: "mmm-middle", Origin: "mmm-middle"}
+	fpM := fakePackage(t, pkgM, []testDirEntry{
+		{"etc", 0o755, true, nil, nil},
+		{"etc/mmm-file", 0o644, false, []byte("m"), nil},
+	}, "")
+	pkgA := &Package{Name: "aaa-first", Origin: "aaa-first"}
+	fpA := fakePackage(t, pkgA, []testDirEntry{
+		{"etc", 0o755, true, nil, nil},
+		{"etc/aaa-file", 0o644, false, []byte("a"), nil},
+	}, "")
+
+	_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fpZ, fpM, fpA})
+	require.NoError(t, err)
+
+	installed, err := apk.GetInstalled()
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(installed))
+	for _, p := range installed {
+		names = append(names, p.Name)
+	}
+	// The test fixture ships a pre-populated installed database, so assert on
+	// the records this InstallPackages call appended: they must be sorted by
+	// name even though they were installed in reverse order.
+	require.GreaterOrEqual(t, len(names), 3)
+	require.Equal(t, []string{"aaa-first", "mmm-middle", "zzz-last"}, names[len(names)-3:])
+}
