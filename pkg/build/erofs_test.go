@@ -89,9 +89,9 @@ func TestWriteErofs_Roundtrip(t *testing.T) {
 		return nil
 	}))
 
-	require.Contains(t, got, "a", "directory a missing from image")
-	require.Contains(t, got, "a/b", "file a/b missing from image")
-	require.Contains(t, got, "a/link", "symlink a/link missing from image")
+	require.Contains(t, got, "a", "directory %q missing from image", "a")
+	require.Contains(t, got, "a/b", "file %q missing from image", "a/b")
+	require.Contains(t, got, "a/link", "symlink %q missing from image", "a/link")
 
 	// File content
 	data, err := fs.ReadFile(img, "a/b")
@@ -184,7 +184,7 @@ func TestWriteErofs_SpecialModeBits(t *testing.T) {
 	require.NotZero(t, link.Mode&fs.ModeSymlink, "sudo-link is not a symlink")
 	require.Equal(t, fs.FileMode(0o777), link.Mode.Perm())
 
-	if fsckBin, err := exec.LookPath("fsck.erofs"); err == nil {
+	if fsckBin := optionalFsckErofs(t); fsckBin != "" {
 		cmd := exec.Command(fsckBin, "-d3", out)
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "fsck.erofs reported a malformed image:\n%s", output)
@@ -275,7 +275,7 @@ func TestWriteErofs_Xattrs(t *testing.T) {
 	// erofs-utils must also accept the xattr encoding. Extraction can't apply
 	// security.*/trusted.* as a normal user, so this is a validity check; the
 	// read-back above is what verifies the values.
-	if fsckBin, err := exec.LookPath("fsck.erofs"); err == nil {
+	if fsckBin := optionalFsckErofs(t); fsckBin != "" {
 		output, err := exec.Command(fsckBin, "-d3", out).CombinedOutput()
 		require.NoError(t, err, "fsck.erofs rejected the image:\n%s", output)
 	}
@@ -387,7 +387,7 @@ func TestSplitErofsLayers(t *testing.T) {
 	require.Len(t, layers, 3, "expected 2 group layers + 1 top layer")
 
 	// All three layers should be valid EROFS images.
-	fsckBin, _ := lookFsckErofs()
+	fsckBin := optionalFsckErofs(t)
 	for i, l := range layers {
 		erl, ok := l.(*erofsLayer)
 		require.True(t, ok, "layer[%d] not *erofsLayer", i)
@@ -452,8 +452,23 @@ func newPkg(name string) *apk.Package {
 	return &apk.Package{Name: name, Origin: name, Version: "1.0.0", InstalledSize: 1024}
 }
 
-func lookFsckErofs() (string, error) {
-	return exec.LookPath("fsck.erofs")
+// optionalFsckErofs returns the path to fsck.erofs, or "" when erofs-utils is
+// not installed. It is deliberately optional: every caller has already parsed
+// the image with go-erofs, so fsck is a second opinion from the C reference
+// implementation rather than the only check, and contributors without
+// erofs-utils still get a green build. The log line keeps the reduced coverage
+// visible in test output instead of silently passing.
+//
+// Tests whose entire point is the erofs-utils cross-check skip explicitly
+// instead — see TestWriteErofs_FsckErofs.
+func optionalFsckErofs(t *testing.T) string {
+	t.Helper()
+	bin, err := exec.LookPath("fsck.erofs")
+	if err != nil {
+		t.Log("fsck.erofs not on PATH; skipping the erofs-utils cross-check (go-erofs validation still runs)")
+		return ""
+	}
+	return bin
 }
 
 func TestWriteErofs_Reproducible(t *testing.T) {
