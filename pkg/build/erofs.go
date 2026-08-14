@@ -182,7 +182,13 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 	}
 
 	if mode.IsRegular() || mode.IsDir() {
-		xattrs, _ := fsys.ListXattrs(fsysPath)
+		// apko's FullFS implementations keep xattrs in memory for every node
+		// they know about, so an error here means the path we just walked has
+		// gone missing — a bug worth surfacing, not something to skip past.
+		xattrs, err := fsys.ListXattrs(fsysPath)
+		if err != nil {
+			return fmt.Errorf("list xattrs %s: %w", fsysPath, err)
+		}
 		for name, value := range xattrs {
 			if err := w.Setxattr(absPath, name, string(value)); err != nil {
 				return fmt.Errorf("setxattr %s %s: %w", absPath, name, err)

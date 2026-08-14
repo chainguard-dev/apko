@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"strings"
@@ -261,9 +262,14 @@ func writeErofsRegularBytes(w *erofs.Writer, absPath string, info fs.FileInfo, d
 		return fmt.Errorf("create %s: %w", absPath, err)
 	}
 	if len(data) > 0 {
-		if _, err := fout.Write(data); err != nil {
+		n, err := fout.Write(data)
+		if err != nil {
 			_ = fout.Close()
 			return fmt.Errorf("write %s: %w", absPath, err)
+		}
+		if n != len(data) {
+			_ = fout.Close()
+			return fmt.Errorf("write %s: %w (wrote %d of %d bytes)", absPath, io.ErrShortWrite, n, len(data))
 		}
 	}
 	if err := fout.Close(); err != nil {
