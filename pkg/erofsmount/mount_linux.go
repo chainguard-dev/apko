@@ -117,9 +117,8 @@ func mountImage(ctx context.Context, drv Driver, src Source, dest string, opts O
 	}()
 
 	// Single-layer read-only short-circuit: overlay buys nothing when there's
-	// one lower and no upper, and a lowerdir-only overlay over a single
-	// EROFS mount has been flaky across overlayfs versions. Mount the layer
-	// straight at DEST/merged.
+	// one lower and no upper, so mount the layer straight at DEST/merged.
+	// Multi-layer and writable mounts still compose through overlayfs.
 	if opts.ReadOnly && len(layers) == 1 {
 		merged := filepath.Join(dest, "merged")
 		if err := ensureDir(merged); err != nil {

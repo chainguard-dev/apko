@@ -59,6 +59,23 @@ type Source struct {
 	Raw string
 }
 
+// Scheme prefixes. They select *how the path is interpreted*, not what the
+// bytes at the far end turn out to be:
+//
+//   - "erofs:" names one EROFS filesystem image file — the single blob apko
+//     writes with --format=erofs, or a layer blob lifted out of an OCI layout.
+//     There is no manifest, so there is nothing to compose: it mounts as a
+//     single layer.
+//   - "oci:" / "oci-dir:" name an OCI *layout directory*. OpenLayers walks
+//     index.json and the selected manifest to collect every EROFS layer blob
+//     (and its org.erofs.role annotation), and all of them get composed.
+//
+// So they are not interchangeable, even against the same image. "erofs:" on an
+// OCI layout directory fails at parse time ("not a regular file"), because a
+// directory is not a blob. In the other direction, "erofs:" on a regular file
+// that is not an EROFS image parses fine — the prefix asserts intent, not
+// content — and fails later when the mount is attempted, since only the kernel
+// (or go-erofs) can judge the superblock.
 const (
 	prefixErofs  = "erofs:"
 	prefixOCI    = "oci:"
@@ -68,8 +85,8 @@ const (
 // ParseSource resolves a user-supplied source spec into a Source. Accepted
 // forms (checked in order):
 //
-//   - "erofs:PATH"           force KindBlob.
-//   - "oci:PATH[:TAG]"       force KindOCIDir.
+//   - "erofs:PATH"           force KindBlob (single layer, no manifest).
+//   - "oci:PATH[:TAG]"       force KindOCIDir (all layers from the manifest).
 //   - "oci-dir:PATH[:TAG]"   force KindOCIDir.
 //   - "PATH"                 auto-detect: regular file → blob; directory
 //     containing an `oci-layout` file → OCI dir.
