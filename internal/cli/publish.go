@@ -152,7 +152,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
-	cmd.Flags().StringVar(&format, "format", "", "layer payload format: 'tar' (default) or 'erofs' (experimental, tracks erofs-image-spec draft)")
+	cmd.Flags().StringVar(&format, "format", "", "layer payload format: 'tar' (default), 'erofs', or 'erofs+ALGO[,level=N]' where ALGO is zstd|lz4|lz4hc|deflate (experimental, tracks erofs-image-spec draft)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")

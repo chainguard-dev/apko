@@ -29,4 +29,8 @@ const (
 	// §3.8 rule 1, every non-final layer carries this; the final layer
 	// carries no role annotation.
 	ErofsRoleOverlayLower = "overlay-lower"
+	// ErofsUncompressedDigestAnnotation is the layer-descriptor annotation
+	// holding the SHA-256 of the equivalent uncompressed EROFS image. Equals
+	// the layer's DiffID in the OCI image config's rootfs.diff_ids.
+	ErofsUncompressedDigestAnnotation = "org.erofs.uncompressed-digest"
 )

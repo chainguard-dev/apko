@@ -186,12 +186,33 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	}
 	bc.o.TarballPath = outfile.Name()
 
-	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
-		// The EROFS path does not defer Close: it hashes the finished file, so
-		// the close has to happen first and its error has to be reported
-		// rather than swallowed by a defer. No Sync is needed either —
-		// *os.File does no userspace buffering, so once Close returns, a fresh
-		// Open sees every byte.
+	if bc.ic.Format.Base() == types.LayerFormatErofs {
+		// Neither EROFS path defers Close: both hash the finished file, so the
+		// close has to happen first and its error has to be reported rather
+		// than swallowed by a defer. No Sync is needed either — *os.File does
+		// no userspace buffering, so once Close returns, a fresh Open sees
+		// every byte.
+		if compressor := bc.ic.Format.Compressor(); compressor != "" {
+			// Compressed EROFS routes to mkfs.erofs (go-erofs can't write
+			// compressed images yet). Close our handle before invoking it so
+			// it can recreate the file.
+			//
+			// CompressionLevel's second return says whether "level=" was given,
+			// not whether parsing failed; 0 means "let mkfs.erofs choose".
+			level, _ := bc.ic.Format.CompressionLevel()
+			outName := outfile.Name()
+			if err := outfile.Close(); err != nil {
+				return "", nil, fmt.Errorf("closing erofs outfile before mkfs.erofs: %w", err)
+			}
+			if err := preflightMkfsErofs(ctx, bc.ic.Format); err != nil {
+				return "", nil, err
+			}
+			l, err := writeErofsViaMkfs(ctx, outName, bc.o.TempDir(), bc.fs, bc.o.SourceDateEpoch, compressor, level)
+			if err != nil {
+				return "", nil, fmt.Errorf("generating erofs image via mkfs.erofs: %w", err)
+			}
+			return outName, l, nil
+		}
 		outName := outfile.Name()
 		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
 			_ = outfile.Close()

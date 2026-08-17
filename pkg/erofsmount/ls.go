@@ -16,6 +16,7 @@ package erofsmount
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -79,6 +80,9 @@ func walkAndPrint(ctx context.Context, fsys fs.FS, w io.Writer) error {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, erofs.ErrNotImplemented) {
+			return fmt.Errorf("walk: this EROFS image uses a feature go-erofs does not yet support (typically compression); use `apko erofs mount` to inspect via the kernel or erofsfuse instead: %w", err)
+		}
 		return err
 	}
 	return tw.Flush()

@@ -84,7 +84,7 @@ func WithFormat(format string) Option {
 		}
 		f := types.LayerFormat(format)
 		if !f.Valid() {
-			return fmt.Errorf("invalid --format %q (must be %q or %q)", format, types.LayerFormatTar, types.LayerFormatErofs)
+			return fmt.Errorf("invalid --format %q (must be %q, %q, or %q with one of zstd|lz4|lz4hc|deflate and optional ,level=N)", format, types.LayerFormatTar, types.LayerFormatErofs, "erofs+ALGO")
 		}
 		bc.ic.Format = f
 		return nil
