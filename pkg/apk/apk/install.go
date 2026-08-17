@@ -18,7 +18,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -30,6 +29,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 )
 
@@ -39,7 +39,7 @@ func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool)
 	if _, err := a.fs.Stat(header.Name); err == nil {
 		if !allowOverwrite {
 			// get the sum of the file, so we can compare it to the new file
-			w := sha1.New() //nolint:gosec // this is what apk tools is using
+			w := sha1cd.New()
 			f, err := a.fs.Open(header.Name)
 			if err != nil {
 				return fmt.Errorf("unable to open existing file to calculate sum %s: %w", header.Name, err)
@@ -48,7 +48,11 @@ func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool)
 			if _, err := io.Copy(w, f); err != nil {
 				return fmt.Errorf("unable to calculate sum of existing file %s: %w", header.Name, err)
 			}
-			return FileExistsError{Path: header.Name, Sha1: w.Sum(nil)}
+			sum, err := sha1cd.Sum(w)
+			if err != nil {
+				return fmt.Errorf("unable to calculate sum of existing file %s: %w", header.Name, err)
+			}
+			return FileExistsError{Path: header.Name, Sha1: sum}
 		}
 		// allowOverwrite, so remove the file
 		if err := a.fs.Remove(header.Name); err != nil {
@@ -85,7 +89,7 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 	if checksum == nil {
 		// There was no checksum header, which is unexpected, but we can just recalculate it.
 
-		w := sha1.New() //nolint:gosec // this is what apk tools is using
+		w := sha1cd.New()
 		tee := io.TeeReader(tr, w)
 
 		// we need to calculate the checksum of the file, and then pass it to the writeOneFile,
@@ -105,7 +109,10 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 		if offset != 0 {
 			return false, fmt.Errorf("error seeking to start of temp file for %s: offset is %d", header.Name, offset)
 		}
-		checksum = w.Sum(nil)
+		checksum, err = sha1cd.Sum(w)
+		if err != nil {
+			return false, fmt.Errorf("hashing %s: %w", header.Name, err)
+		}
 
 		r = f
 	}

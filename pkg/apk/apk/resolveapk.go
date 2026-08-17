@@ -4,12 +4,11 @@ package apk
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
-	"hash"
 	"io"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 
 	"go.opentelemetry.io/otel"
@@ -47,13 +46,15 @@ func ResolveApk(ctx context.Context, source io.Reader) (*APKResolved, error) {
 		// When it's signed the control section is the second stream
 		control, data = split[1], split[2]
 
-		var h hash.Hash = sha1.New() //nolint:gosec
+		h := sha1cd.New()
 		size, err := io.Copy(h, split[0])
 		if err != nil {
 			return nil, fmt.Errorf("hashing signature: %w", err)
 		}
 		resolved.SignatureSize = int(size)
-		resolved.SignatureHash = h.Sum(nil)
+		if resolved.SignatureHash, err = sha1cd.Sum(h); err != nil {
+			return nil, fmt.Errorf("hashing signature: %w", err)
+		}
 	}
 
 	buf := bytes.NewBuffer(nil)
@@ -61,8 +62,11 @@ func ResolveApk(ctx context.Context, source io.Reader) (*APKResolved, error) {
 		return nil, fmt.Errorf("hashing control: %w", err)
 	}
 	resolved.ControlSize = buf.Len()
-	ctrlHash := sha1.Sum(buf.Bytes())
-	resolved.ControlHash = ctrlHash[:]
+	ctrlHash, err := sha1cd.SumBytes(buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("hashing control: %w", err)
+	}
+	resolved.ControlHash = ctrlHash
 
 	dataHash := sha256.New()
 	size, err := io.Copy(dataHash, data)

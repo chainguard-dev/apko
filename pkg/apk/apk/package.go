@@ -19,13 +19,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"fmt"
-	"hash"
 	"io"
 	"strings"
 	"time"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	"chainguard.dev/apko/pkg/apk/types"
 )
@@ -108,7 +107,7 @@ type Package = types.Package
 
 // ParsePackage parses a .apk file and returns a Package struct
 func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Package, error) {
-	pkginfo, h, err := ParsePackageInfo(apkPackage)
+	pkginfo, checksum, err := ParsePackageInfo(apkPackage)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +121,7 @@ func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Pack
 		Origin:           pkginfo.Origin,
 		Maintainer:       pkginfo.Maintainer,
 		URL:              pkginfo.URL,
-		Checksum:         h.Sum(nil),
+		Checksum:         checksum,
 		Dependencies:     pkginfo.Dependencies,
 		Provides:         pkginfo.Provides,
 		InstallIf:        pkginfo.InstallIf,
@@ -137,8 +136,11 @@ func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Pack
 	}, nil
 }
 
-// ParsePackageInfo returns a parsed .PKGINFO from an APK reader and the control section hash.
-func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, hash.Hash, error) {
+// ParsePackageInfo returns a parsed .PKGINFO from an APK reader and the SHA-1 of
+// the control section. The control section hash is returned finalised, rather
+// than as an unfinalised hash.Hash for the caller to sum, so that it cannot be
+// used without its SHA-1 collision check having run.
+func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, []byte, error) {
 	split, err := expandapk.Split(apkPackage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("splitting apk: %w", err)
@@ -154,9 +156,9 @@ func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, hash.Hash, error) {
 		return nil, nil, err
 	}
 
-	h := sha1.New() //nolint:gosec
-	if _, err = h.Write(b); err != nil {
-		return nil, nil, err
+	checksum, err := sha1cd.SumBytes(b)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hashing control section: %w", err)
 	}
 
 	zr, err := gzip.NewReader(bytes.NewReader(b))
@@ -177,7 +179,7 @@ func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, hash.Hash, error) {
 				return nil, nil, fmt.Errorf("parsing .PKGINFO: %w", err)
 			}
 
-			return pkg, h, nil
+			return pkg, checksum, nil
 		}
 	}
 }

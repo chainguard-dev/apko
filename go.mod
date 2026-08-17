@@ -3,7 +3,7 @@ module chainguard.dev/apko
 go 1.26.0
 
 require (
-	chainguard.dev/sdk v0.1.184
+	chainguard.dev/sdk v0.1.191
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/charmbracelet/log v1.0.0
 	github.com/go-git/go-git/v5 v5.19.2
@@ -17,6 +17,7 @@ require (
 	github.com/klauspost/pgzip v1.2.6
 	github.com/package-url/packageurl-go v0.1.6
 	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
+	github.com/pjbgf/sha1cd v0.6.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -104,7 +105,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
-	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect

@@ -11,7 +11,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"strings"
 	"sync"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
 	"chainguard.dev/apko/pkg/limitio"
@@ -450,8 +450,10 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 	hashes := [][]byte{}
 	maxStreamsReached := false
 	for {
-		// Control section uses sha1.
-		var h hash.Hash = sha1.New() //nolint:gosec // this is what apk tools is using
+		// Control section uses sha1, data section uses sha256 (below), so h is
+		// either. Both are finalised with sha1cd.Sum, which checks for a SHA-1
+		// collision when h is the sha1 one and plainly finalises the sha256 one.
+		var h hash.Hash = sha1cd.New()
 
 		if err := sw.Next(); err != nil {
 			if err == errExpandApkWriterMaxStreams {
@@ -486,7 +488,11 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 				return nil, fmt.Errorf("expandApk error 3: %w", err)
 			}
 
-			hashes = append(hashes, h.Sum(nil))
+			sum, err := sha1cd.Sum(h)
+			if err != nil {
+				return nil, fmt.Errorf("hashing %s: %w", sw.CurrentName(), err)
+			}
+			hashes = append(hashes, sum)
 			gzipStreams = append(gzipStreams, sw.CurrentName())
 		} else {
 			// While we verify checksums, also tee the tar to a separate file.
@@ -517,7 +523,11 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 				return nil, fmt.Errorf("closing tarfile: %w", err)
 			}
 			gzipStreams = append(gzipStreams, sw.CurrentName())
-			hashes = append(hashes, h.Sum(nil))
+			sum, err := sha1cd.Sum(h)
+			if err != nil {
+				return nil, fmt.Errorf("hashing %s: %w", sw.CurrentName(), err)
+			}
+			hashes = append(hashes, sum)
 			break
 		}
 	}
@@ -640,13 +650,18 @@ func checkSums(ctx context.Context, r io.Reader) error {
 			continue
 		}
 
-		w := sha1.New() //nolint:gosec // this is what apk tools is using
+		w := sha1cd.New()
 
 		if _, err := io.Copy(w, tr); err != nil {
 			return fmt.Errorf("hashing %s: %w", header.Name, err)
 		}
 
-		if want, got := checksum, w.Sum(nil); !bytes.Equal(want, got) {
+		sum, err := sha1cd.Sum(w)
+		if err != nil {
+			return fmt.Errorf("hashing %s: %w", header.Name, err)
+		}
+
+		if want, got := checksum, sum; !bytes.Equal(want, got) {
 			return fmt.Errorf("checksum mismatch: %s header was %x, computed %x", header.Name, want, got)
 		}
 	}

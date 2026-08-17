@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -38,6 +39,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
 )
@@ -446,11 +448,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		for _, sig := range sigs {
 			// compute the digest if not already done
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
-				h := sig.DigestAlgorithm.New()
-				if n, err := h.Write(indexData); err != nil || n != len(indexData) {
-					return nil, fmt.Errorf("unable to hash data: %w", err)
+				digest, err := hashIndex(sig.DigestAlgorithm, indexData)
+				if err != nil {
+					return nil, err
 				}
-				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
+				indexDigest[sig.DigestAlgorithm] = digest
 			}
 			if err := sign.RSAVerifyDigest(indexDigest[sig.DigestAlgorithm], sig.DigestAlgorithm, sig.Signature, keys[sig.KeyID]); err == nil {
 				verified = true
@@ -481,6 +483,27 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 	}
 
 	return index, err
+}
+
+// hashIndex digests the index data under the algorithm a signature was made
+// with.
+func hashIndex(algorithm crypto.Hash, indexData []byte) ([]byte, error) {
+	switch algorithm {
+	case crypto.SHA1:
+		// Legacy apk index signatures are RSA over SHA-1, so this digest carries
+		// collision detection: an index crafted around a SHA-1 collision must be
+		// rejected, not verified against someone else's signature.
+		digest, err := sha1cd.SumBytes(indexData)
+		if err != nil {
+			return nil, fmt.Errorf("hashing repository index: %w", err)
+		}
+		return digest, nil
+	case crypto.SHA256:
+		digest := sha256.Sum256(indexData)
+		return digest[:], nil
+	default:
+		return nil, fmt.Errorf("unsupported index digest algorithm: %s", algorithm)
+	}
 }
 
 type indexOpts struct {
