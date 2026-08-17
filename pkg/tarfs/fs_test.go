@@ -17,7 +17,6 @@ package tarfs_test
 import (
 	"archive/tar"
 	"context"
-	"crypto/sha1"
 	"encoding/hex"
 	"io/fs"
 	"path/filepath"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
@@ -124,8 +124,9 @@ func TestTarFS(t *testing.T) {
 			Typeflag: tar.TypeSymlink,
 			Linkname: "etc/os-release-symlink",
 		}
-		originalDigest := sha1.Sum([]byte(original.Linkname)) //nolint:gosec
-		originalChecksum := hex.EncodeToString(originalDigest[:])
+		originalDigest, err := sha1cd.SumBytes([]byte(original.Linkname))
+		require.NoError(t, err)
+		originalChecksum := hex.EncodeToString(originalDigest)
 		original.PAXRecords = map[string]string{
 			"APK-TOOLS.checksum.SHA1": originalChecksum,
 		}
@@ -139,8 +140,9 @@ func TestTarFS(t *testing.T) {
 			Typeflag: tar.TypeSymlink,
 			Linkname: "etc/somewhere-else",
 		}
-		linkDigest := sha1.Sum([]byte(link.Linkname)) //nolint:gosec
-		linkChecksum := hex.EncodeToString(linkDigest[:])
+		linkDigest, err := sha1cd.SumBytes([]byte(link.Linkname))
+		require.NoError(t, err)
+		linkChecksum := hex.EncodeToString(linkDigest)
 		link.PAXRecords = map[string]string{
 			"APK-TOOLS.checksum.SHA1": linkChecksum,
 		}

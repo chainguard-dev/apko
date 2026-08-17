@@ -17,7 +17,6 @@ package apk
 import (
 	"bytes"
 	"context"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -35,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"chainguard.dev/apko/internal/sha1cd"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
@@ -310,11 +310,11 @@ func sha1File(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	h := sha1.New() //nolint:gosec // this is what apk tools is using
+	h := sha1cd.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return nil, err
 	}
-	return h.Sum(nil), nil
+	return sha1cd.Sum(h)
 }
 
 // fetchPackage fetches a package from the network or local filesystem.
@@ -498,8 +498,11 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 		if err != nil {
 			return nil, err
 		}
-		signatureHash := sha1.Sum(signatureData) //nolint:gosec // this is what apk tools is using
-		exp.SignatureHash = signatureHash[:]
+		signatureHash, err := sha1cd.SumBytes(signatureData)
+		if err != nil {
+			return nil, fmt.Errorf("hashing cached signature %q: %w", sig, err)
+		}
+		exp.SignatureHash = signatureHash
 	}
 
 	pkgInfo, err := exp.PkgInfo()

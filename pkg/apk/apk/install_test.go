@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -31,6 +30,8 @@ import (
 	"text/template"
 
 	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/internal/sha1cd"
 )
 
 type testDirEntry struct {
@@ -374,7 +375,7 @@ func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry, dataHashOve
 	f, err := os.CreateTemp(t.TempDir(), pkg.Name+"*.apk")
 	require.NoError(t, err)
 
-	h := sha1.New() //nolint:gosec
+	h := sha1cd.New()
 	ctlZw := gzip.NewWriter(io.MultiWriter(f, h))
 	ctlTw := tar.NewWriter(ctlZw)
 
@@ -393,10 +394,13 @@ func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry, dataHashOve
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
+	sum, err := sha1cd.Sum(h)
+	require.NoError(t, err)
+
 	return &testPackage{
 		file:     f.Name(),
 		pkg:      pkg,
-		checksum: "Q1" + base64.StdEncoding.EncodeToString(h.Sum(nil)),
+		checksum: "Q1" + base64.StdEncoding.EncodeToString(sum),
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	_ "crypto/sha1" //nolint:gosec
 	_ "crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
@@ -76,6 +75,14 @@ func RSASignDigest(digest []byte, digestType crypto.Hash, keyFile, passphrase st
 // RSAVerifyDigest is exported for use in tests and verifies a
 // signature over the provided hash of a message. The key file must be
 // in the PEM format.
+//
+// digestType may be crypto.SHA1, for the legacy apk index signatures that are
+// still in the wild. Note that crypto/sha1 is deliberately not registered as
+// crypto.SHA1 anywhere in apko: every SHA-1 digest apko computes goes through
+// chainguard.dev/apko/internal/sha1cd, which refuses digests of input bearing
+// the signature of a collision attack, and a registered crypto.SHA1 would offer
+// a collision-blind way to compute one. Verification does not need the hash
+// registered, only its digest size.
 func RSAVerifyDigest(digest []byte, digestType crypto.Hash, signature []byte, publicKey []byte) error {
 	if len(digest) != digestType.Size() {
 		return errDigestLength
