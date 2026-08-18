@@ -155,43 +155,63 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 		if err != nil {
 			return err
 		}
-		mode := fi.Mode()
-		perm := mode.Perm()
-		switch mode.Type() {
-		case fs.ModeDir:
-			fullPerm := os.ModeDir | perm
-			err = f.overrides.Mkdir(path, fullPerm)
-		case fs.ModeSymlink:
-			var target string
-			target, err = root.Readlink(path)
-			if err == nil {
-				err = f.overrides.Symlink(target, path)
-			}
-		case fs.ModeCharDevice:
-			var dev int
-			sys := fi.Sys()
-			st1, ok1 := sys.(*syscall.Stat_t)
-			st2, ok2 := sys.(*unix.Stat_t)
-			switch {
-			case ok1:
-				dev = int(st1.Rdev)
-			case ok2:
-				dev = int(st2.Rdev)
-			default:
-				return fmt.Errorf("unsupported type %T", sys)
-			}
-			err = f.overrides.Mknod(path, uint32(unix.S_IFCHR|mode), dev)
-		default:
-			var memFile File
-			memFile, err = f.overrides.OpenFile(path, os.O_CREATE, perm)
-			if memFile != nil {
-				_ = memFile.Close()
-			}
-		}
-		return err
+		return f.seedOverride(path, fi, root.Readlink)
 	})
 
 	return f
+}
+
+// seedOverride mirrors one entry of the backing tree into the in-memory
+// overrides. Those overrides are what every type and mode lookup on a dirFS
+// resolves against (Lstat reads them directly, Stat takes Mode() from them),
+// so an entry seeded as the wrong type is reported as the wrong type from then
+// on. readlink resolves a symlink's target through the sandboxed root.
+func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) (string, error)) error {
+	mode := fi.Mode()
+	perm := mode.Perm()
+	switch {
+	case mode.IsDir():
+		return f.overrides.Mkdir(path, os.ModeDir|perm)
+	case mode&fs.ModeSymlink != 0:
+		target, err := readlink(path)
+		if err != nil {
+			return err
+		}
+		return f.overrides.Symlink(target, path)
+	case mode&fs.ModeCharDevice != 0:
+		// Must be a bit test: Go reports a character device as
+		// ModeDevice|ModeCharDevice (os.Lstat sets both), so comparing
+		// mode.Type() against fs.ModeCharDevice alone never matches and the
+		// device lands in the default branch as an empty regular file.
+		dev, err := rdevFromInfo(fi)
+		if err != nil {
+			return err
+		}
+		return f.overrides.Mknod(path, unix.S_IFCHR|uint32(perm), dev)
+	default:
+		// Everything else — regular files, and the block devices, FIFOs and
+		// sockets the memFS overrides cannot represent — becomes an empty
+		// regular file whose content is served from disk.
+		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, perm)
+		if memFile != nil {
+			_ = memFile.Close()
+		}
+		return err
+	}
+}
+
+// rdevFromInfo extracts a raw device number from a FileInfo's Sys(). os.Lstat
+// yields *syscall.Stat_t; callers holding a value from x/sys/unix yield
+// *unix.Stat_t.
+func rdevFromInfo(fi fs.FileInfo) (int, error) {
+	switch st := fi.Sys().(type) {
+	case *syscall.Stat_t:
+		return int(st.Rdev), nil
+	case *unix.Stat_t:
+		return int(st.Rdev), nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T", fi.Sys())
+	}
 }
 
 // dirFS represents a FullFS implementation based on a directory on disk.

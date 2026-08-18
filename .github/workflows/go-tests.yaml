@@ -25,6 +25,8 @@ jobs:
             alpinelinux.org:443
             api.github.com:443
             apk.cgr.dev:443
+            archive.ubuntu.com:80
+            azure.archive.ubuntu.com:80
             dl-cdn.alpinelinux.org:443
             dl.google.com:443
             files.example.com:443
@@ -33,6 +35,7 @@ jobs:
             objects.githubusercontent.com:443
             proxy.golang.org:443
             release-assets.githubusercontent.com:443
+            security.ubuntu.com:80
             storage.googleapis.com:443
             sum.golang.org:443
 
@@ -46,6 +49,21 @@ jobs:
         with:
           go-version-file: 'go.mod'
           check-latest: true
+
+      # erofs-utils supplies fsck.erofs, which several EROFS writer tests use as
+      # a second opinion from the C reference implementation. Those checks are
+      # optional by design so contributors without the package still get a green
+      # build -- which means that without this step they never run anywhere, and
+      # a misunderstanding shared by our writer and our reader would go
+      # unnoticed. Not conditional on changed paths: a mismatch can be
+      # introduced by a go-erofs bump as easily as by an apko change.
+      - name: Install erofs-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils
+          # Assert it landed on PATH: the tests degrade to a t.Log if it did
+          # not, so a silent install failure would look like a pass.
+          command -v fsck.erofs
 
       - name: Test
         run: |

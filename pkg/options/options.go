@@ -122,3 +122,17 @@ func (o Options) TarballFileName() string {
 	}
 	return tarName
 }
+
+// LayerFileName returns a deterministic filename for a layer blob in the given
+// format. It exists because TarballFileName's ".tar.gz" is a lie for an EROFS
+// image -- neither a tar nor gzipped -- and anything that sniffs by extension
+// would be misled by it.
+func (o Options) LayerFileName(format types.LayerFormat) string {
+	if format.Resolved() != types.LayerFormatErofs {
+		return o.TarballFileName()
+	}
+	if o.Arch.String() != "" {
+		return fmt.Sprintf("apko-%s.erofs", o.Arch.ToAPK())
+	}
+	return "apko.erofs"
+}

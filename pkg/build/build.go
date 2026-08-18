@@ -179,14 +179,35 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	if bc.o.TarballPath != "" {
 		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
 	}
 	bc.o.TarballPath = outfile.Name()
-	defer outfile.Close()
 
+	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
+		// The EROFS path does not defer Close: it hashes the finished file, so
+		// the close has to happen first and its error has to be reported
+		// rather than swallowed by a defer. No Sync is needed either —
+		// *os.File does no userspace buffering, so once Close returns, a fresh
+		// Open sees every byte.
+		outName := outfile.Name()
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
+			_ = outfile.Close()
+			return "", nil, fmt.Errorf("generating erofs image: %w", err)
+		}
+		if err := outfile.Close(); err != nil {
+			return "", nil, fmt.Errorf("closing erofs image: %w", err)
+		}
+		l, err := buildErofsLayerFromFile(outName, nil)
+		if err != nil {
+			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
+		}
+		return outName, l, nil
+	}
+
+	defer outfile.Close()
 	lw := newLayerWriter(outfile)
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {

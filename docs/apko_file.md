@@ -274,3 +274,18 @@ It contains the following children:
  - `budget`: The number of additional layers apko will use for layering.
 
 See [layering.md](layering.md) for more information.
+
+### Format (experimental)
+
+`format` selects the on-wire layer payload format:
+
+ - `tar` (default): gzip-compressed tar layers (`application/vnd.oci.image.layer.v1.tar+gzip`).
+ - `erofs`: EROFS filesystem images (`application/vnd.erofs`), per the draft [erofs/erofs-image-spec](https://github.com/erofs/erofs-image-spec). Written by a pure-Go writer with no internal compression.
+
+EROFS layers advertise `erofs` in the image config's `os.features` so consumers that do not implement the spec can identify and skip them.
+
+`format` may also be selected on the command line with `--format=erofs` on `apko build` and `apko publish`. The CLI flag overrides whatever is in the config file.
+
+**Status:** EROFS support is experimental and tracks the draft spec at https://github.com/erofs/erofs-image-spec; media types and annotations may change before the spec reaches a stable release. `format: erofs` produces a single layer: combining it with `layering` is rejected, and compression and dm-verity are not implemented.
+
+See [erofs.md](erofs.md) for a step-by-step guide to building, inspecting, mounting, and pulling EROFS images.
