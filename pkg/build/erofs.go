@@ -158,8 +158,9 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 		// reported link count but does not share the inode, so it would only
 		// make the metadata lie.) Every link therefore costs another full copy
 		// of the data, rounded up to the block size, and st_nlink/st_ino
-		// identity is lost. Spec §3.7 permits materializing links -- a producer
-		// must either materialize or fail -- so this is conformant, not a bug.
+		// identity is lost. Spec §3.7's materialize-or-fail rule governs
+		// cross-layer links; for links within one layer the spec says nothing,
+		// so materializing is conformant but not something §3.7 blesses.
 		fout, err := w.Create(absPath)
 		if err != nil {
 			return fmt.Errorf("create %s: %w", absPath, err)
