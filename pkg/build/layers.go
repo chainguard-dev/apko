@@ -86,8 +86,10 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	}
 
 	// Then partition that single fs.FS into multiple layers based on our layering strategy.
+	// ImageConfiguration.Validate rejects this combination up front; this guards
+	// library callers that build a configuration without validating it.
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
-		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
+		return nil, fmt.Errorf("layering is not supported with format %q yet", types.LayerFormatErofs)
 	}
 	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
 }
