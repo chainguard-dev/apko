@@ -179,7 +179,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	if bc.o.TarballPath != "" {
 		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
