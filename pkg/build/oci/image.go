@@ -196,7 +196,9 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 
 	// Signal EROFS-bearing manifests via os.features per
 	// erofs/erofs-image-spec §5.4 so hosts that don't implement the spec can
-	// identify and skip them without parsing layer bytes.
+	// identify and skip them without parsing layer bytes. §5.4 wants this in
+	// two places; the index platform descriptor is the other, handled in
+	// generateIndexWithMediaType, which copies it from here.
 	if ic.Format.Resolved() == types.LayerFormatErofs {
 		if !slices.Contains(cfg.OSFeatures, "erofs") {
 			cfg.OSFeatures = append(cfg.OSFeatures, "erofs")

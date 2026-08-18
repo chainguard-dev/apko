@@ -150,6 +150,16 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 			return fmt.Errorf("mknod %s: %w", absPath, err)
 		}
 	case mode.IsRegular():
+		// Hardlinks are materialized as independent copies. apko's FullFS
+		// surfaces a hardlink as an ordinary second dirent -- its linkness
+		// shows up only in the *tar.Header from Sys() (TypeLink/Linkname),
+		// which the tar layer path uses via tar.FileInfoHeader -- and go-erofs
+		// v0.3.1 has no API to point two names at one NID. (SetNlink sets the
+		// reported link count but does not share the inode, so it would only
+		// make the metadata lie.) Every link therefore costs another full copy
+		// of the data, rounded up to the block size, and st_nlink/st_ino
+		// identity is lost. Spec §3.7 permits materializing links -- a producer
+		// must either materialize or fail -- so this is conformant, not a bug.
 		fout, err := w.Create(absPath)
 		if err != nil {
 			return fmt.Errorf("create %s: %w", absPath, err)
@@ -182,6 +192,18 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 	// setuid/setgid/sticky have to be applied on top — losing them would
 	// silently break su/passwd/mount and unprotect /tmp. Symlinks are
 	// exempt: EROFS pins them at 0777 and chmod on one is meaningless.
+	//
+	// This is a workaround for a bug in the pinned go-erofs, not a permanent
+	// shape. erofs/go-erofs#41 fixed both halves of it -- Mkdir dropping the
+	// special bits on write, and FileInfo.Mode() misreporting them on read --
+	// but it merged 2026-08-02, after v0.3.1 was tagged 2026-07-21, so the
+	// pinned version has neither half.
+	//
+	// The read half matters even though this Chmod covers the write half:
+	// FileInfo.Mode() from the pinned reader cannot be trusted for
+	// setuid/setgid/sticky. Code that needs a mode must read *erofs.Stat.Mode
+	// off Sys() instead, which is what pkg/erofsmount/ls.go does. Revisit both
+	// once a release containing #41 is out.
 	if mode&fs.ModeSymlink == 0 {
 		if err := w.Chmod(absPath, mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", absPath, err)
@@ -285,10 +307,6 @@ type erofsLayer struct {
 	size        int64
 	annotations map[string]string
 }
-
-// LayerPath returns the on-disk path of this layer's payload. Used by callers
-// that need to copy the file (e.g. into an OCI layout).
-func (l *erofsLayer) LayerPath() string { return l.path }
 
 // LayerAnnotations returns annotations to apply to this layer's manifest
 // descriptor. apko/oci consults this via an opt-in interface assertion.

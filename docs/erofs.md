@@ -1,8 +1,9 @@
 # EROFS Output Format (experimental)
 
 apko can emit image layers as [EROFS](https://erofs.docs.kernel.org/) filesystem images instead of the default gzip-compressed tar.
-The format tracks the draft [erofs/erofs-image-spec](https://github.com/erofs/erofs-image-spec) (PR [#1](https://github.com/erofs/erofs-image-spec/pull/1)).
-Until the spec reaches a stable release, the media types, annotations, and layer layout used here may change.
+The format tracks [erofs/erofs-image-spec](https://github.com/erofs/erofs-image-spec); section numbers below refer to [`spec.md`](https://github.com/erofs/erofs-image-spec/blob/main/spec.md) on `main`.
+The spec is still in its draft phase — there is no tagged release, and it says media-type strings, annotation keys, and the binary chunk-index layout are subject to change until the first stable one.
+So the media types, annotations, and layer layout used here may change too.
 
 ## Why EROFS?
 
@@ -247,12 +248,13 @@ For inspection, apko *does* expose a focused leaf library — see `chainguard.de
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
 - **No chunk index.** Lazy-loading runtimes (per spec §3.4) won't get an index; reads are sequential.
 - **No `overlay-data` or `device` roles.** apko emits one unannotated EROFS layer; `org.erofs.role` is never set.
+- **Hardlinks become independent copies.** go-erofs has no API to point two names at one inode, so each link costs another full copy of the file's data (rounded up to the block size) and `st_nlink`/`st_ino` identity is lost. Spec §3.7 allows this — a producer must either materialize links or fail — but a hardlink-heavy image will be larger as EROFS than as tar, where extra links are zero-byte entries.
 - **Spec is draft.** Media-type strings and annotation keys may change before the spec stabilizes. Treat any image built today as experimental.
 
 If you need any of the above, please open an issue.
 
 ## See also
 
-- [erofs/erofs-image-spec PR #1](https://github.com/erofs/erofs-image-spec/pull/1) — the layer format spec apko tracks.
+- [erofs/erofs-image-spec `spec.md`](https://github.com/erofs/erofs-image-spec/blob/main/spec.md) — the layer format spec apko tracks.
 - [EROFS kernel documentation](https://erofs.docs.kernel.org/) — on-disk format reference.
 - [Layering in apko](layering.md) — how the multi-layer strategy partitions packages into groups.
