@@ -400,3 +400,52 @@ func TestWriteErofs_Reproducible(t *testing.T) {
 	require.Equal(t, len(a), len(b), "image sizes differ between identical builds")
 	require.True(t, bytes.Equal(a, b), "two identical builds produced byte-different images")
 }
+
+// A zero buildTime must still be deterministic. go-erofs stamps
+// time.Now().Unix() into the superblock when WithBuildTime is absent, so
+// omitting the option for a zero timestamp -- which apko's CLI never produces
+// but a library caller easily can -- silently made the digest depend on the
+// wall clock.
+//
+// Asserting that two zero-time builds match would not catch that: the default
+// has one-second granularity, so back-to-back builds would agree anyway.
+// Instead pin the zero case to the epoch case, which is what the clamp in
+// erofsBuildTime promises and what a wall-clock stamp could not produce.
+func TestWriteErofs_ZeroBuildTimeIsEpoch(t *testing.T) {
+	build := func(path string, bt time.Time) []byte {
+		m := seedFS(t)
+		f, err := os.Create(path)
+		require.NoError(t, err)
+		require.NoError(t, writeErofs(context.Background(), f, m, bt))
+		require.NoError(t, f.Close())
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		return data
+	}
+
+	tmp := t.TempDir()
+	zero := build(filepath.Join(tmp, "zero.erofs"), time.Time{})
+	epochBuild := build(filepath.Join(tmp, "epoch.erofs"), time.Unix(0, 0))
+	require.True(t, bytes.Equal(zero, epochBuild),
+		"a zero buildTime must produce the same image as an explicit epoch, not a wall-clock stamp")
+}
+
+func TestErofsBuildTime(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		in       time.Time
+		wantSec  uint64
+		wantNsec uint32
+	}{
+		{"zero clamps to epoch", time.Time{}, 0, 0},
+		{"pre-epoch clamps to epoch", time.Unix(-1, 0), 0, 0},
+		{"epoch", time.Unix(0, 0), 0, 0},
+		{"normal", time.Unix(1700000000, 1234), 1700000000, 1234},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sec, nsec := erofsBuildTime(tc.in)
+			require.Equal(t, tc.wantSec, sec)
+			require.Equal(t, tc.wantNsec, nsec)
+		})
+	}
+}

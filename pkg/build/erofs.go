@@ -39,18 +39,15 @@ import (
 // out. out must be both writable and seekable: go-erofs's Writer rewrites the
 // superblock at offset 0 after streaming file data.
 //
-// If buildTime is non-zero it sets the EROFS image build time (used to seed
-// per-entry mtime defaulting and recorded in the superblock), making the image
-// reproducible.
+// buildTime sets the EROFS image build time, which seeds per-entry mtime
+// defaulting and is recorded in the superblock. It is always passed through, so
+// the image is reproducible for any caller; see erofsBuildTime.
 func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, buildTime time.Time) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "writeErofs")
 	defer span.End()
 
-	var createOpts []erofs.CreateOpt
-	if !buildTime.IsZero() {
-		createOpts = append(createOpts, erofs.WithBuildTime(uint64(buildTime.Unix()), uint32(buildTime.Nanosecond())))
-	}
-	w := erofs.Create(out, createOpts...)
+	sec, nsec := erofsBuildTime(buildTime)
+	w := erofs.Create(out, erofs.WithBuildTime(sec, nsec))
 
 	buf := make([]byte, 1<<20)
 
@@ -74,6 +71,27 @@ func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, buil
 		return fmt.Errorf("finalizing erofs image: %w", err)
 	}
 	return nil
+}
+
+// erofsBuildTime converts a build timestamp into the seconds/nanoseconds pair
+// erofs.WithBuildTime takes.
+//
+// The option is always passed, never omitted: go-erofs v0.3.1 stamps
+// time.Now().Unix() into the superblock from Writer.Close when it is absent, so
+// a caller who leaves the timestamp zero would get a different digest on every
+// build -- exactly where they would least expect it. apko's own CLI is covered
+// because options.Default sets SourceDateEpoch to time.Unix(0, 0), but library
+// callers construct their own.
+//
+// A zero time.Time has a large negative Unix seconds value, which would wrap
+// when converted to uint64, so a zero or pre-epoch timestamp is clamped to
+// epoch 0. That is what an unset SOURCE_DATE_EPOCH already means to apko, and
+// it is at least reproducible.
+func erofsBuildTime(t time.Time) (sec uint64, nsec uint32) {
+	if t.Unix() < 0 {
+		return 0, 0
+	}
+	return uint64(t.Unix()), uint32(t.Nanosecond())
 }
 
 // erofsAbsPath maps an fs.WalkDir-style path (rooted at ".") to the
