@@ -22,6 +22,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -97,13 +98,29 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 			return name.Digest{}, nil, fmt.Errorf("failed to compute size: %w", err)
 		}
 
+		platform := arch.ToOCIPlatform()
+		// Carry the config's os.features onto the index platform descriptor.
+		// A consumer that filters on the index -- selecting a manifest before
+		// fetching any config -- can only see the signal if it is here. For
+		// EROFS images this is half of a MUST: erofs/erofs-image-spec §5.4
+		// requires the feature in both the config and the index platform
+		// descriptor, and §8.2 item 1 has consumers refuse an image whose
+		// os.features they do not implement.
+		cfg, err := img.ConfigFile()
+		if err != nil {
+			return name.Digest{}, nil, fmt.Errorf("failed to get config file: %w", err)
+		}
+		if len(cfg.OSFeatures) > 0 {
+			platform.OSFeatures = slices.Clone(cfg.OSFeatures)
+		}
+
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
 				MediaType: mt,
 				Digest:    h,
 				Size:      size,
-				Platform:  arch.ToOCIPlatform(),
+				Platform:  platform,
 			},
 		})
 	}
