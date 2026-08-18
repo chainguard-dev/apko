@@ -20,23 +20,39 @@ import (
 	"path"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 )
 
-// Stack presents N fs.FS layers as a single fs.FS using AUFS-style overlay
-// semantics. Layers are stored bottom-up: layers[0] is the base, the last
-// element is the topmost. Topmost-wins is the rule for lookups.
+// Stack presents N fs.FS layers as a single fs.FS, applying the overlay
+// semantics the kernel would apply if the same layers were assembled as
+// overlayfs lowerdirs. Layers are stored bottom-up: layers[0] is the base, the
+// last element is the topmost. Topmost-wins is the rule for lookups.
 //
-// Whiteout encoding (matches OCI tar layers and go-erofs Writer.Merge):
+// Deletions use the overlayfs-native encoding the EROFS image spec mandates
+// (§3.6), not the `.wh.` filename convention of OCI tar layers:
 //
-//   - `.wh.NAME` as a sibling of NAME hides NAME from lower layers.
-//   - `.wh..wh..opq` in a directory hides all entries from lower layers in
-//     that directory; entries that the same layer also has live remain.
+//   - A whiteout is a character device with rdev 0 (major 0, minor 0). It
+//     hides the same-named entry in every lower layer, and is itself absent
+//     from the merged view.
+//   - An opaque directory is one whose `trusted.overlay.opaque` xattr is "y".
+//     It hides all lower-layer children of that directory; entries the opaque
+//     layer itself carries remain.
+//
+// §8.1 item 9 forbids `.wh.`-prefixed names in EROFS images outright, so such
+// a name is treated as the literal filename it is — the same thing the kernel
+// would do.
+//
+// Whiteouts are only interpreted when there are at least two layers. A lone
+// EROFS layer is mountable directly as a root filesystem (§7 step 6), and in
+// that case the kernel never applies overlay semantics, so neither do we: a
+// rdev-0 char device in a single-layer image is reported as the device it is.
 //
 // Stack implements fs.FS, fs.ReadDirFS, fs.StatFS, and fs.ReadLinkFS.
 type Stack struct {
 	layers []fs.FS
+	// whiteouts records whether overlay deletion semantics apply, i.e.
+	// whether an overlay stack is assembled at all (§7 Constraints).
+	whiteouts bool
 }
 
 // NewStack returns a Stack over layers, in bottom-up order (layers[0] is the
@@ -45,7 +61,7 @@ type Stack struct {
 func NewStack(layers ...fs.FS) *Stack {
 	cp := make([]fs.FS, len(layers))
 	copy(cp, layers)
-	return &Stack{layers: cp}
+	return &Stack{layers: cp, whiteouts: len(cp) > 1}
 }
 
 // Open implements fs.FS. For regular files, symlinks, and devices the
@@ -153,17 +169,14 @@ func (s *Stack) ReadLink(name string) (string, error) {
 }
 
 // lookup walks layers top-down looking for name. It returns the index of the
-// topmost layer that has name live (not whitedout). It checks the parent
-// directory of name in each layer for sibling whiteouts (.wh.NAME) and
-// opaque markers (.wh..wh..opq) before descending to lower layers.
+// topmost layer that has name live (not whited out). In each layer it asks
+// two questions before descending: is name itself a whiteout here, and is
+// name's parent directory opaque here?
 //
-// Ancestors are resolved recursively: if any ancestor of name is whitedout,
+// Ancestors are resolved recursively: if any ancestor of name is whited out,
 // opaqued out, or shadowed by a non-directory in a higher layer, name is
 // not reachable. The root (".") is always live; lookup(".") returns
 // (-1, nil) to signal "root, no owning layer".
-//
-// If a layer contains both name and its whiteout (a malformed but possible
-// state), the live entry wins.
 func (s *Stack) lookup(name string) (int, error) {
 	if name == "." {
 		return -1, nil
@@ -192,25 +205,24 @@ func (s *Stack) lookup(name string) (int, error) {
 	for i, layer := range slices.Backward(s.layers) {
 		entries, err := readDirOn(layer, parent)
 		if err != nil {
-			// Parent doesn't exist in this layer; can't have a whiteout or
+			// Parent doesn't exist in this layer; can't hold a whiteout or
 			// the entry. Move down.
 			continue
 		}
-		var foundBase, foundWhiteout, foundOpaque bool
 		for _, e := range entries {
-			switch e.Name() {
-			case base:
-				foundBase = true
-			case whiteoutPrefix + base:
-				foundWhiteout = true
-			case opaqueMarker:
-				foundOpaque = true
+			if e.Name() != base {
+				continue
 			}
-		}
-		switch {
-		case foundBase:
+			if s.isWhiteout(e) {
+				// A whiteout hides every lower layer's entry, and is not
+				// itself part of the merged view.
+				return -1, fs.ErrNotExist
+			}
 			return i, nil
-		case foundWhiteout, foundOpaque:
+		}
+		// Not in this layer. If this layer's copy of the parent directory is
+		// opaque, it hides everything below.
+		if s.isOpaqueDir(layer, parent) {
 			return -1, fs.ErrNotExist
 		}
 	}
@@ -218,53 +230,80 @@ func (s *Stack) lookup(name string) (int, error) {
 }
 
 // mergeDir produces the union of name's entries across layers, top-down,
-// applying whiteouts and stopping at the first opaque marker. Within a
-// single layer, if a name is both live and whitedout, the live entry wins
-// and the in-layer whiteout is treated as a no-op (lower layers still see
-// the layer's live entry shadowing them).
+// applying whiteouts and stopping below the first opaque directory.
+//
+// A whiteout occupies the name it deletes, so one pass suffices: recording the
+// name as seen both suppresses the whiteout itself and shadows every lower
+// layer's entry of that name.
 func (s *Stack) mergeDir(name string) ([]fs.DirEntry, error) {
-	seen := map[string]bool{} // covers live entries returned so far + tombstones
+	seen := map[string]bool{} // live entries returned so far + tombstones
 	var out []fs.DirEntry
 	for _, layer := range slices.Backward(s.layers) {
 		entries, err := readDirOn(layer, name)
 		if err != nil {
 			continue
 		}
-		var opaqueInThisLayer bool
-		liveInThisLayer := map[string]fs.DirEntry{}
-		whiteoutInThisLayer := map[string]bool{}
 		for _, e := range entries {
 			n := e.Name()
-			switch {
-			case n == opaqueMarker:
-				opaqueInThisLayer = true
-			case strings.HasPrefix(n, whiteoutPrefix):
-				whiteoutInThisLayer[strings.TrimPrefix(n, whiteoutPrefix)] = true
-			default:
-				liveInThisLayer[n] = e
+			if seen[n] {
+				continue
 			}
-		}
-		// Add this layer's live entries that haven't already been provided
-		// by an upper layer.
-		for n, e := range liveInThisLayer {
-			if !seen[n] {
-				seen[n] = true
-				out = append(out, e)
+			seen[n] = true
+			if s.isWhiteout(e) {
+				continue // tombstone: shadows lower layers, never listed
 			}
+			out = append(out, e)
 		}
-		// Apply tombstones from this layer for lower layers. If a name is
-		// also live here, the live entry shadows lower layers already.
-		for n := range whiteoutInThisLayer {
-			if _, live := liveInThisLayer[n]; !live {
-				seen[n] = true
-			}
-		}
-		if opaqueInThisLayer {
-			break // lower layers' entries are hidden
+		// This layer's own entries are already in; an opaque directory hides
+		// only what lies below it.
+		if s.isOpaqueDir(layer, name) {
+			break
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out, nil
+}
+
+// isWhiteout reports whether e is an overlayfs whiteout: a character device
+// with rdev 0 (major 0, minor 0), per spec §3.6. It returns false for every
+// entry when the stack has no overlay to apply.
+//
+// The cheap Type() check comes first so the common case costs nothing: only a
+// char device is worth an Info() call, which for a real EROFS layer reads the
+// inode.
+func (s *Stack) isWhiteout(e fs.DirEntry) bool {
+	if !s.whiteouts || e.Type()&fs.ModeCharDevice == 0 {
+		return false
+	}
+	info, err := e.Info()
+	if err != nil {
+		return false
+	}
+	// go-erofs advertises Rdev() on the FileInfo it returns; an fs.FS with no
+	// notion of device numbers cannot express a whiteout at all.
+	rd, ok := info.(interface{ Rdev() uint64 })
+	return ok && rd.Rdev() == 0
+}
+
+// isOpaqueDir reports whether fsys's copy of dir is an opaque directory --
+// `trusted.overlay.opaque` set to "y", per spec §3.6 -- which hides every
+// lower layer's children of that directory.
+func (s *Stack) isOpaqueDir(fsys fs.FS, dir string) bool {
+	if !s.whiteouts {
+		return false
+	}
+	info, err := statOn(fsys, dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	gx, ok := info.(interface {
+		GetXattr(string) (string, bool)
+	})
+	if !ok {
+		return false
+	}
+	v, _ := gx.GetXattr(overlayOpaqueXattr)
+	return v == "y"
 }
 
 // rootInfo returns FileInfo for ".". The topmost layer that has a root wins
@@ -369,10 +408,10 @@ func splitParent(name string) (parent, base string) {
 	return parent, base
 }
 
-const (
-	whiteoutPrefix = ".wh."
-	opaqueMarker   = ".wh..wh..opq"
-)
+// overlayOpaqueXattr is the extended attribute the kernel's overlayfs uses to
+// mark a directory as hiding all lower-layer children. Spec §3.6 adopts it
+// verbatim.
+const overlayOpaqueXattr = "trusted.overlay.opaque"
 
 // syntheticDirInfo produces a minimal fs.FileInfo for a synthetic directory
 // (used only when Stack has zero layers, so callers don't crash).

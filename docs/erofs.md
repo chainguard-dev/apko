@@ -162,7 +162,7 @@ apko erofs ls out/blobs/sha256/$LAYER | head
 apko erofs ls out/      # works against the whole OCI image too
 ```
 
-For multi-layer images, `ls` applies AUFS-style overlay semantics in user space (whiteouts, opaque markers) to present the merged view the kernel would assemble.
+For multi-layer images, `ls` applies overlay semantics in user space to present the merged view the kernel would assemble. It uses the overlayfs-native deletion encoding the spec mandates (§3.6) — a whiteout is a character device with rdev 0, an opaque directory sets `trusted.overlay.opaque="y"` — not the `.wh.` filename convention of tar layers, which §8.1 forbids in EROFS images. A single-layer image is listed as-is: the kernel would mount it directly, applying no overlay semantics, so neither does `ls`.
 
 ## Mount the layer
 
