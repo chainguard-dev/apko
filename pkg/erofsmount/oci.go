@@ -80,6 +80,18 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 		if string(desc.MediaType) != types.ErofsLayerMediaType {
 			return nil, fmt.Errorf("layer %d has mediaType %q; expected %q (this command only handles EROFS images)", i, desc.MediaType, types.ErofsLayerMediaType)
 		}
+		// org.erofs.role is OPTIONAL on any layer (spec §2.3), and §7 step 1
+		// classifies both "overlay-lower" and an absent role as overlay lowers
+		// at any position -- so both are accepted here, wherever they appear.
+		// The other two roles name compositions we don't implement; say so
+		// rather than calling a conformant image malformed.
+		switch role := desc.Annotations[types.ErofsRoleAnnotation]; role {
+		case "", types.ErofsRoleOverlayLower:
+		case types.ErofsRoleDevice, types.ErofsRoleOverlayData:
+			return nil, fmt.Errorf("layer %d has %s=%s, which is not supported yet (only overlay lowers are)", i, types.ErofsRoleAnnotation, role)
+		default:
+			return nil, fmt.Errorf("layer %d has unknown %s=%q", i, types.ErofsRoleAnnotation, role)
+		}
 		blob := filepath.Join(ociDir, "blobs", desc.Digest.Algorithm, desc.Digest.Hex)
 		if _, err := os.Stat(blob); err != nil {
 			return nil, fmt.Errorf("layer %d blob %s: %w", i, blob, err)
@@ -93,21 +105,9 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 		})
 	}
 
-	// Validate role placement: per the EROFS image spec rule, every layer
-	// except the final (top) one must carry role=overlay-lower; the final
-	// layer must carry no role. We accept role==""/role==overlay-lower in
-	// either position so single-layer images (one unannotated layer) work.
-	if len(refs) > 1 {
-		for i := 0; i < len(refs)-1; i++ {
-			if refs[i].Role != types.ErofsRoleOverlayLower {
-				return nil, fmt.Errorf("layer %d: missing %s=%s annotation (only the final layer may be unannotated)", i, types.ErofsRoleAnnotation, types.ErofsRoleOverlayLower)
-			}
-		}
-		if refs[len(refs)-1].Role != "" {
-			return nil, fmt.Errorf("layer %d (final): unexpected role %q (final layer must carry no role)", len(refs)-1, refs[len(refs)-1].Role)
-		}
-	}
-
+	// §3.8 rule 1 -- the last entry must be a mountable EROFS layer whose role
+	// is absent or overlay-lower -- now holds by construction: every layer got
+	// past the mediaType and role checks above.
 	return refs, nil
 }
 
@@ -166,7 +166,8 @@ func selectImage(idx v1.ImageIndex, tag, arch string) (v1.Image, error) {
 		return nil, fmt.Errorf("no manifest for arch=%q (saw: %s)", arch, availableArchList(images))
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("multiple manifests match arch=%q; pass --tag to disambiguate", arch)
+		// There is no --tag flag; a tag is given as a SOURCE:TAG suffix.
+		return nil, fmt.Errorf("multiple manifests match arch=%q; name a tag as SOURCE:TAG to disambiguate (available: %s)", arch, availableTagsList(images))
 	}
 
 	return idx.Image(matches[0].Digest)

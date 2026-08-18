@@ -187,16 +187,78 @@ func TestReadOCILayers_WrongMediaType(t *testing.T) {
 	}
 }
 
-func TestReadOCILayers_BadRoleOrder(t *testing.T) {
+// org.erofs.role is OPTIONAL on any layer (§2.3), and §3.8 rule 1 allows the
+// final layer's role to be absent *or* overlay-lower, so neither an
+// unannotated non-final layer nor an overlay-lower final layer is an error.
+// apko's own writer emits only one of the legal shapes; a reader that accepted
+// just that one would reject conformant images from other producers.
+func TestReadOCILayers_SpecValidRoleShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		layers []fakeLayer
+	}{
+		{
+			name: "role absent on a non-final layer",
+			layers: []fakeLayer{
+				{body: []byte("a")},
+				{body: []byte("b"), role: types.ErofsRoleOverlayLower},
+			},
+		},
+		{
+			name: "overlay-lower on the final layer",
+			layers: []fakeLayer{
+				{body: []byte("a"), role: types.ErofsRoleOverlayLower},
+				{body: []byte("b"), role: types.ErofsRoleOverlayLower},
+			},
+		},
+		{
+			name: "apko's own shape: lower then unannotated",
+			layers: []fakeLayer{
+				{body: []byte("a"), role: types.ErofsRoleOverlayLower},
+				{body: []byte("b")},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFakeOCILayout(t, dir, tc.layers)
+			refs, err := ReadOCILayers(dir, "", "amd64")
+			if err != nil {
+				t.Fatalf("ReadOCILayers: %v", err)
+			}
+			if len(refs) != len(tc.layers) {
+				t.Fatalf("got %d refs, want %d", len(refs), len(tc.layers))
+			}
+		})
+	}
+}
+
+// The roles we don't implement must be refused, and say so as an unsupported
+// composition rather than a malformed image.
+func TestReadOCILayers_UnsupportedRole(t *testing.T) {
+	for _, role := range []string{types.ErofsRoleDevice, types.ErofsRoleOverlayData} {
+		t.Run(role, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFakeOCILayout(t, dir, []fakeLayer{
+				{body: []byte("a"), role: role},
+				{body: []byte("b")},
+			})
+			_, err := ReadOCILayers(dir, "", "amd64")
+			if err == nil || !strings.Contains(err.Error(), "not supported") {
+				t.Fatalf("expected unsupported-role error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestReadOCILayers_UnknownRole(t *testing.T) {
 	dir := t.TempDir()
-	// First layer lacks role annotation: invalid.
 	writeFakeOCILayout(t, dir, []fakeLayer{
-		{body: []byte("a")},
-		{body: []byte("b"), role: types.ErofsRoleOverlayLower},
+		{body: []byte("a"), role: "sideways"},
 	})
 	_, err := ReadOCILayers(dir, "", "amd64")
-	if err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("expected role-annotation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("expected unknown-role error, got %v", err)
 	}
 }
 
