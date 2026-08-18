@@ -88,10 +88,10 @@ type layerWriter struct {
 	finalize func() (*layer, error)
 }
 
-// newLayerWriter wraps a file with a gzipping tar writer that computes
+// newLayerWriter wraps a file with a tar writer that computes
 // everything we need to know to implement a v1.Layer, which it will
 // produce when finalize() is called.
-func newLayerWriter(out *os.File) *layerWriter {
+func newLayerWriter(out *os.File, compression options.Compression) *layerWriter {
 	diffid := sha256.New()
 
 	buf := pooledBufioWriter(out)
@@ -114,10 +114,18 @@ func newLayerWriter(out *os.File) *layerWriter {
 				return nil, fmt.Errorf("flushing %s: %w", out.Name(), err)
 			}
 
+			var mediaType v1types.MediaType
+			if compression == options.Zstd {
+				mediaType = v1types.OCILayerZStd
+			} else {
+				mediaType = v1types.OCILayer
+			}
+
 			l := &layer{
 				uncompressed: out.Name(),
+				compression:  compression,
 				desc: &v1.Descriptor{
-					MediaType: v1types.OCILayer,
+					MediaType: mediaType,
 				},
 				diffid: &v1.Hash{
 					Algorithm: "sha256",

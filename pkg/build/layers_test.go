@@ -280,7 +280,8 @@ func TestSplitLayersDirectoryCreation(t *testing.T) {
 
 	// Call splitLayers to create the layers
 	ctx := context.Background()
-	layers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir)
+	bc := &Context{}
+	layers, err := bc.splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir)
 	if err != nil {
 		t.Fatalf("splitLayers failed: %v", err)
 	}

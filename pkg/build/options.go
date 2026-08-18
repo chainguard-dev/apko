@@ -286,3 +286,15 @@ func WithSizeLimits(limits options.SizeLimits) Option {
 		return nil
 	}
 }
+
+// WithCompression sets the compression algorithm for building layers.
+func WithCompression(compression string) Option {
+	return func(bc *Context) error {
+		comp := options.Compression(compression)
+		if !comp.IsValid() {
+			return fmt.Errorf("invalid compression algorithm %q (supported: gzip, zstd)", compression)
+		}
+		bc.o.Compression = comp
+		return nil
+	}
+}
