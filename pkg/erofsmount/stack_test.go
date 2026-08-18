@@ -477,6 +477,66 @@ func TestStack_OpaqueDir_KeepsOwnChildren(t *testing.T) {
 	}
 }
 
+// errCorruptXattr stands in for whatever a layer with a damaged xattr region
+// makes go-erofs return. The only property that matters is that it is not
+// fs.ErrNotExist.
+var errCorruptXattr = errors.New("simulated corrupt xattr region")
+
+// brokenStatFS fails Stat for named paths while ReadDir keeps working, which is
+// how an unreadable inode presents: the parent directory still lists it.
+type brokenStatFS struct {
+	overlayFS
+	statErr map[string]error
+}
+
+func (b brokenStatFS) Stat(name string) (fs.FileInfo, error) {
+	if err := b.statErr[name]; err != nil {
+		return nil, err
+	}
+	return b.overlayFS.Stat(name)
+}
+
+// A layer we cannot stat is a layer whose opacity we cannot determine. Treating
+// that as "not opaque" would un-hide the lower layers it may have been hiding,
+// so both callers must surface the error instead.
+//
+// The middle layer is the broken one on purpose: it is the only position where
+// isOpaqueDir is the first thing to fail. If the top layer were broken, the
+// ancestor stat in lookup would raise first and the fixture would pass without
+// isOpaqueDir being consulted at all.
+func TestStack_OpaqueDir_StatErrorIsNotSilentlyPermissive(t *testing.T) {
+	lower := fstest.MapFS{
+		"etc":        {Mode: fs.ModeDir | 0o755},
+		"etc/secret": {Data: []byte("hidden"), Mode: 0o644},
+	}
+	middle := brokenStatFS{
+		overlayFS: overlayFS{MapFS: fstest.MapFS{
+			"etc": {Mode: fs.ModeDir | 0o755},
+		}},
+		statErr: map[string]error{"etc": errCorruptXattr},
+	}
+	top := overlayFS{MapFS: fstest.MapFS{
+		"etc":     {Mode: fs.ModeDir | 0o755},
+		"etc/foo": {Data: []byte("F"), Mode: 0o644},
+	}}
+	s := NewStack(lower, middle, top)
+
+	// mergeDir: the union must not quietly include etc/secret.
+	if ents, err := fs.ReadDir(s, "etc"); !errors.Is(err, errCorruptXattr) {
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Errorf("ReadDir(etc) = %v, %v; want error wrapping %v", names, err, errCorruptXattr)
+	}
+
+	// lookup: reaching an entry only the bottom layer has must not quietly
+	// succeed either.
+	if _, err := fs.Stat(s, "etc/secret"); !errors.Is(err, errCorruptXattr) {
+		t.Errorf("Stat(etc/secret) err = %v; want error wrapping %v", err, errCorruptXattr)
+	}
+}
+
 func TestStack_SingleLayer(t *testing.T) {
 	only := fstest.MapFS{
 		"etc/foo": {Data: []byte("X"), Mode: 0o644},
