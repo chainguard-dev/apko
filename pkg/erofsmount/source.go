@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // Package erofsmount provides the building blocks for the `apko erofs`
-// subcommands (mount, umount, ls). It exposes a small library: parse a source
-// spec, read an OCI layout's EROFS layers, drive kernel or FUSE mounts, and
-// persist/restore mount state for tear-down.
+// subcommands. It exposes a small library: parse a source spec, read an OCI
+// layout's EROFS layers, and present them as a single merged fs.FS. Everything
+// here is pure Go and cross-platform; nothing mounts anything.
 package erofsmount
 
 import (
@@ -64,7 +64,7 @@ type Source struct {
 //
 //   - "erofs:" names one EROFS filesystem image file — the single blob apko
 //     writes with --format=erofs, or a layer blob lifted out of an OCI layout.
-//     There is no manifest, so there is nothing to compose: it mounts as a
+//     There is no manifest, so there is nothing to compose: it is read as a
 //     single layer.
 //   - "oci:" / "oci-dir:" name an OCI *layout directory*. OpenLayers walks
 //     index.json and the selected manifest to collect every EROFS layer blob
@@ -74,8 +74,8 @@ type Source struct {
 // OCI layout directory fails at parse time ("not a regular file"), because a
 // directory is not a blob. In the other direction, "erofs:" on a regular file
 // that is not an EROFS image parses fine — the prefix asserts intent, not
-// content — and fails later when the mount is attempted, since only the kernel
-// (or go-erofs) can judge the superblock.
+// content — and fails later when the blob is opened, since only go-erofs (or
+// the kernel) can judge the superblock.
 const (
 	prefixErofs  = "erofs:"
 	prefixOCI    = "oci:"

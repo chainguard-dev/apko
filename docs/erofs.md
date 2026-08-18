@@ -166,33 +166,23 @@ For multi-layer images, `ls` applies AUFS-style overlay semantics in user space 
 
 ## Mount the layer
 
-`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `--read-only` mounts the image without an upper/work overlay; for a single-layer image that means the lone layer is mounted straight at `DEST/merged` with no overlayfs in the path. `apko erofs umount DEST` tears it back down.
+A layer blob is a complete filesystem image, so mounting it takes no apko-specific tooling — either the kernel `erofs` driver (needs root) or `erofsfuse` (unprivileged):
 
 ```sh
 mkdir -p /mnt/apko-erofs
-apko erofs mount out/blobs/sha256/$LAYER /mnt/apko-erofs
-ls /mnt/apko-erofs/
-file /mnt/apko-erofs/bin/sh
-apko erofs umount /mnt/apko-erofs
-```
 
-If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
-
-### Doing it manually
-
-For reference, `apko erofs mount` is equivalent to one of:
-
-```sh
 # Kernel (root):
 sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
-# ...later:
+ls /mnt/apko-erofs/
+file /mnt/apko-erofs/bin/sh
 sudo umount /mnt/apko-erofs
 
 # FUSE (unprivileged):
 erofsfuse out/blobs/sha256/$LAYER /mnt/apko-erofs
-# ...later:
 fusermount3 -u /mnt/apko-erofs       # or `fusermount -u`
 ```
+
+If `mount` reports "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or use `erofsfuse`, which needs no root and works inside CI containers that lack the module.
 
 ## Pulling from a registry
 
@@ -263,33 +253,7 @@ Each layer is independently mountable as an EROFS filesystem, and each carries i
 
 ### Assemble the full rootfs with overlayfs
 
-The OCI spec composes layers with `overlayfs`-style semantics; for EROFS layers the composition is straightforward.
-The simplest way is `apko erofs mount`, which mounts each layer and assembles the overlay in one step:
-
-```sh
-mkdir -p mnt
-apko erofs mount out-layered/ mnt/
-ls mnt/merged/                     # full rootfs
-cat mnt/.apko-erofs-mount.json     # records the mounts for teardown
-apko erofs umount mnt/             # unwinds the overlay and every layer
-```
-
-The directory layout produced under `DEST` is:
-
-```
-mnt/
-├── layers/00..NN              # one EROFS mountpoint per layer (00 is base)
-├── upper/                     # overlayfs upperdir
-├── work/                      # overlayfs workdir
-├── merged/                    # combined view
-└── .apko-erofs-mount.json     # state file consumed by `apko erofs umount`
-```
-
-`apko erofs mount` picks kernel mounts when running as root and falls back to `erofsfuse` + (kernel overlay over FUSE, then `fuse-overlayfs`) otherwise. Force one path with `--mode=kernel|fuse|auto`.
-
-#### Doing it manually
-
-For reference, the equivalent without `apko erofs mount`:
+The OCI spec composes layers with `overlayfs`-style semantics; for EROFS layers the composition is straightforward — mount each layer read-only, then stack them as `lowerdir`s:
 
 ```sh
 # Pull each layer blob out of the OCI layout.
@@ -325,7 +289,7 @@ sudo umount mnt/merged
 for d in mnt/lower*; do sudo umount "$d" 2>/dev/null || fusermount -u "$d"; done
 ```
 
-Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; both `apko erofs mount` and the manual steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
+Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; the steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
 
 ## Using EROFS support as a Go library
 
@@ -354,7 +318,7 @@ _, layer, err := bc.ImageLayoutToLayer(ctx)
 
 If you have a plain `fs.FS` and want an EROFS image, **use [go-erofs](https://github.com/erofs/go-erofs) directly** — apko doesn't expose its EROFS writer as a standalone library (and wrapping go-erofs wouldn't add meaningful value over its existing `Writer.CopyFrom(fs.FS)` API).
 
-For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Mount`/`Unmount`/`Ls` (the CLI subcommand helpers, Linux-only for mount/umount; `Ls` is cross-platform).
+For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Ls` (the `apko erofs ls` helper). All of it is cross-platform: go-erofs is pure Go and nothing here mounts anything.
 
 ## Current limitations
 

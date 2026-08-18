@@ -34,13 +34,12 @@ import (
 // Ls does not mount anything and is cross-platform — it works wherever
 // go-erofs builds, regardless of kernel features.
 //
-// The opts.Mode, opts.Arch, and opts.ReadOnly fields are inherited from the
-// Mount API for shape parity; only Arch is meaningful here (used to pick a
-// manifest from a multi-arch OCI index).
-func Ls(ctx context.Context, src Source, opts Options, w io.Writer) error {
+// arch picks a manifest from a multi-arch OCI index; "" or "host" means the
+// running process's architecture.
+func Ls(ctx context.Context, src Source, arch string, w io.Writer) error {
 	log := clog.FromContext(ctx)
 
-	layers, cleanup, err := OpenLayers(src, opts.Arch)
+	layers, cleanup, err := OpenLayers(src, arch)
 	if err != nil {
 		return fmt.Errorf("open layers: %w", err)
 	}
