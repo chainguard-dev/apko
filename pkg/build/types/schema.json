@@ -169,6 +169,10 @@
           "$ref": "#/$defs/Layering",
           "description": "Optional: Configuration to control layering of the OCI image."
         },
+        "format": {
+          "type": "string",
+          "description": "Optional: Layer payload format. One of:\n  \"tar\"                     gzip-compressed tar (default)\n  \"erofs\"                   raw EROFS via the pure-Go writer\n  \"erofs+ALGO[,level=N]\"    compressed EROFS via mkfs.erofs;\n                            ALGO is one of zstd|lz4|lz4hc|deflate\n\"erofs\" forms are experimental and track the draft erofs/erofs-image-spec."
+        },
         "certificates": {
           "$ref": "#/$defs/ImageCertificates",
           "description": "Optional: Certificates to install in the container image"

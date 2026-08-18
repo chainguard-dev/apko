@@ -74,6 +74,23 @@ func WithTarball(path string) Option {
 	}
 }
 
+// WithFormat sets the layer payload format ("tar" or "erofs"). The value
+// overrides any format declared in the image configuration. Empty means
+// "leave the configured value alone".
+func WithFormat(format string) Option {
+	return func(bc *Context) error {
+		if format == "" {
+			return nil
+		}
+		f := types.LayerFormat(format)
+		if !f.Valid() {
+			return fmt.Errorf("invalid --format %q (must be %q, %q, or %q with one of zstd|lz4|lz4hc|deflate and optional ,level=N)", format, types.LayerFormatTar, types.LayerFormatErofs, "erofs+ALGO")
+		}
+		bc.ic.Format = f
+		return nil
+	}
+}
+
 // WithBuildDate sets the timestamps for the build context.
 // The string is parsed according to RFC3339.
 // An empty string is a special case and will default to
