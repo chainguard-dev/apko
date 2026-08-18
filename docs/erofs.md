@@ -138,11 +138,13 @@ This is the strongest unprivileged validation you can run: if the image is malfo
 
 ```sh
 mkdir extracted
-fsck.erofs --extract=extracted --xattrs --force out/blobs/sha256/$LAYER
+fsck.erofs --extract=extracted --force out/blobs/sha256/$LAYER
 ls extracted/
 # bin  dev  etc  home  lib  ...
 cat extracted/etc/os-release
 ```
+
+Flag availability varies between erofs-utils releases — `--xattrs`, for instance, is not in the version Debian and Ubuntu ship — so check `fsck.erofs --help` on your machine before reaching for anything beyond the above.
 
 ### List contents with `apko erofs ls`
 

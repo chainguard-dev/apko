@@ -345,11 +345,17 @@ func TestWriteErofs_FsckErofs(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "fsck.erofs reported a malformed image:\n%s", output)
 
-	// Full content extraction with xattr verification. This walks every
-	// inode, decompresses any data, and writes files to disk — a stronger
-	// signal than the integrity check alone.
+	// Full content extraction. This walks every inode, decompresses any data,
+	// and writes files to disk — a stronger signal than the integrity check
+	// alone.
+	//
+	// Only flags the erofs-utils in Debian/Ubuntu understands are used here.
+	// --xattrs, for one, is not universal: the version Ubuntu ships rejects it
+	// outright, which broke this test the moment CI first installed the package.
+	// Nothing below asserts on xattrs anyway; TestWriteErofs_Xattrs covers them
+	// by reading the image back with go-erofs.
 	extractDir := t.TempDir()
-	cmd = exec.Command(fsckBin, "--extract="+extractDir, "--xattrs", "--force", out)
+	cmd = exec.Command(fsckBin, "--extract="+extractDir, "--force", out)
 	output, err = cmd.CombinedOutput()
 	require.NoError(t, err, "fsck.erofs --extract failed:\n%s", output)
 

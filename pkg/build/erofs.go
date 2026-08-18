@@ -249,25 +249,6 @@ func uidGidFromInfo(info fs.FileInfo) (int, int) {
 	return 0, 0
 }
 
-// newErofsLayerFile creates a temp file backing a single EROFS layer. The
-// caller is responsible for closing and removing it. Permissions are 0600 to
-// keep intermediate build artifacts off other users' eyes.
-func newErofsLayerFile(tmpdir, pattern string) (*os.File, error) {
-	if pattern == "" {
-		pattern = "apko-erofs-*.bin"
-	}
-	f, err := os.CreateTemp(tmpdir, pattern)
-	if err != nil {
-		return nil, err
-	}
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return nil, err
-	}
-	return f, nil
-}
-
 // buildErofsLayerFromFile takes a finalized EROFS image already serialized to
 // path and returns a v1.Layer wrapping it. For the raw `application/vnd.erofs`
 // media type the DiffID and Digest are identical: the SHA-256 of the on-wire
