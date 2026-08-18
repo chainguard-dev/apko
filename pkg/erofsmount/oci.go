@@ -77,8 +77,15 @@ func ReadOCILayers(ociDir, tag, arch string) ([]LayerRef, error) {
 
 	refs := make([]LayerRef, 0, len(manifest.Layers))
 	for i, desc := range manifest.Layers {
-		if string(desc.MediaType) != types.ErofsLayerMediaType {
-			return nil, fmt.Errorf("layer %d has mediaType %q; expected %q (this command only handles EROFS images)", i, desc.MediaType, types.ErofsLayerMediaType)
+		if mt := string(desc.MediaType); mt != types.ErofsLayerMediaType {
+			// A "+codec" suffix names an externally compressed EROFS layer:
+			// really an EROFS image, just not one we can read without
+			// decompressing it first. Saying "not an EROFS image" would be
+			// wrong and unhelpful.
+			if codec, ok := strings.CutPrefix(mt, types.ErofsLayerMediaType+"+"); ok && codec != "" {
+				return nil, fmt.Errorf("layer %d is a %s-compressed EROFS layer (mediaType %q), which apko cannot read yet; see https://github.com/chainguard-dev/apko/pull/2406", i, codec, mt)
+			}
+			return nil, fmt.Errorf("layer %d has mediaType %q; expected %q (this command only handles EROFS images)", i, mt, types.ErofsLayerMediaType)
 		}
 		// org.erofs.role is OPTIONAL on any layer (spec §2.3), and §7 step 1
 		// classifies both "overlay-lower" and an absent role as overlay lowers
