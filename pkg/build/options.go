@@ -36,7 +36,9 @@ import (
 type Option func(*Context) error
 
 // WithConfig sets the image configuration for the build context.
-// The image configuration is parsed from given config file.
+// The image configuration is parsed from given config file. Like
+// WithImageConfiguration it replaces the configuration rather than merging into
+// it.
 // TODO(jason): Remove this.
 func WithConfig(configFile string, includePaths []string) Option {
 	return func(bc *Context) error {
@@ -75,8 +77,9 @@ func WithTarball(path string) Option {
 }
 
 // WithFormat sets the layer payload format ("tar" or "erofs"). The value
-// overrides any format declared in the image configuration. Empty means
-// "leave the configured value alone".
+// overrides any format declared in the image configuration, wherever this
+// Option appears in the slice relative to WithImageConfiguration or
+// WithConfig. Empty means "leave the configured value alone".
 func WithFormat(format string) Option {
 	return func(bc *Context) error {
 		if format == "" {
@@ -86,7 +89,7 @@ func WithFormat(format string) Option {
 		if !f.Valid() {
 			return fmt.Errorf("invalid --format %q (must be %q or %q)", format, types.LayerFormatTar, types.LayerFormatErofs)
 		}
-		bc.ic.Format = f
+		bc.formatOverride = f
 		return nil
 	}
 }
@@ -183,7 +186,10 @@ func WithIncludePaths(includePaths []string) Option {
 }
 
 // WithImageConfiguration sets the ImageConfiguration object
-// to use when building.
+// to use when building. It replaces the configuration rather than merging into
+// it, so any earlier Option that set one of its fields directly is discarded.
+// The field-level Options (WithFormat) are exempt: they are resolved after
+// every Option has been applied.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
 		bc.ic = ic

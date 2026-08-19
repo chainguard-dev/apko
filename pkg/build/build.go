@@ -60,6 +60,11 @@ type Context struct {
 	ic types.ImageConfiguration
 	o  options.Options
 
+	// formatOverride is the layer format an explicit WithFormat asked for. It
+	// is held here rather than written straight to ic, and resolved onto ic by
+	// resolveImageConfiguration once every Option has been applied.
+	formatOverride types.LayerFormat
+
 	s6      *s6.Context
 	fs      apkfs.FullFS
 	apk     *apk.APK
@@ -239,6 +244,16 @@ func (bc *Context) checkPaths(ctx context.Context) error {
 	return nil
 }
 
+// resolveImageConfiguration applies the overrides recorded by the field-level
+// Options onto ic. It runs after every Option has been applied, so that an
+// Option which replaces ic wholesale -- WithImageConfiguration, WithConfig --
+// cannot discard them by appearing later in the slice.
+func (bc *Context) resolveImageConfiguration() {
+	if bc.formatOverride != "" {
+		bc.ic.Format = bc.formatOverride
+	}
+}
+
 // NewOptions evaluates the build.Options in the same way as New().
 func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
 	bc := Context{
@@ -250,6 +265,7 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 			return nil, nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	return &bc.o, &bc.ic, nil
 }
@@ -273,6 +289,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			return nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
 	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
