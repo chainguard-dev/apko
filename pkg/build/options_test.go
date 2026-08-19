@@ -15,6 +15,7 @@
 package build
 
 import (
+	"maps"
 	"testing"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -59,6 +60,67 @@ func TestWithFormatOrderIndependent(t *testing.T) {
 				t.Errorf("Format = %q, want %q", ic.Format, tc.want)
 			}
 		})
+	}
+}
+
+// TestWithAnnotationsOrderIndependent pins that WithAnnotations merges into,
+// and takes precedence over, the configured annotations regardless of where it
+// appears relative to WithImageConfiguration.
+func TestWithAnnotationsOrderIndependent(t *testing.T) {
+	override := map[string]string{"a": "override", "b": "added"}
+	configured := func() types.ImageConfiguration {
+		return types.ImageConfiguration{Annotations: map[string]string{"a": "configured", "c": "kept"}}
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts []Option
+		want map[string]string
+	}{{
+		name: "override before config",
+		opts: []Option{WithAnnotations(override), WithImageConfiguration(configured())},
+		want: map[string]string{"a": "override", "b": "added", "c": "kept"},
+	}, {
+		name: "override after config",
+		opts: []Option{WithImageConfiguration(configured()), WithAnnotations(override)},
+		want: map[string]string{"a": "override", "b": "added", "c": "kept"},
+	}, {
+		name: "no override leaves configured annotations",
+		opts: []Option{WithImageConfiguration(configured())},
+		want: map[string]string{"a": "configured", "c": "kept"},
+	}, {
+		name: "empty override leaves configured annotations",
+		opts: []Option{WithAnnotations(nil), WithImageConfiguration(configured())},
+		want: map[string]string{"a": "configured", "c": "kept"},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ic, err := NewOptions(tc.opts...)
+			if err != nil {
+				t.Fatalf("NewOptions: %v", err)
+			}
+			if !maps.Equal(ic.Annotations, tc.want) {
+				t.Errorf("Annotations = %v, want %v", ic.Annotations, tc.want)
+			}
+		})
+	}
+}
+
+// TestWithAnnotationsDoesNotMutateCaller checks that resolving the annotations
+// leaves the ImageConfiguration the caller handed to WithImageConfiguration
+// alone; ic is copied by value but its Annotations map is not.
+func TestWithAnnotationsDoesNotMutateCaller(t *testing.T) {
+	caller := types.ImageConfiguration{Annotations: map[string]string{"a": "configured"}}
+
+	if _, _, err := NewOptions(
+		WithImageConfiguration(caller),
+		WithAnnotations(map[string]string{"a": "override", "b": "added"}),
+	); err != nil {
+		t.Fatalf("NewOptions: %v", err)
+	}
+
+	want := map[string]string{"a": "configured"}
+	if !maps.Equal(caller.Annotations, want) {
+		t.Errorf("caller annotations mutated: got %v, want %v", caller.Annotations, want)
 	}
 }
 

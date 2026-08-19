@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -60,10 +61,12 @@ type Context struct {
 	ic types.ImageConfiguration
 	o  options.Options
 
-	// formatOverride is the layer format an explicit WithFormat asked for. It
-	// is held here rather than written straight to ic, and resolved onto ic by
-	// resolveImageConfiguration once every Option has been applied.
-	formatOverride types.LayerFormat
+	// formatOverride and annotationOverrides are what the field-level Options
+	// asked for. They are held here rather than written straight to ic, and
+	// resolved onto ic by resolveImageConfiguration once every Option has been
+	// applied.
+	formatOverride      types.LayerFormat
+	annotationOverrides map[string]string
 
 	s6      *s6.Context
 	fs      apkfs.FullFS
@@ -251,6 +254,15 @@ func (bc *Context) checkPaths(ctx context.Context) error {
 func (bc *Context) resolveImageConfiguration() {
 	if bc.formatOverride != "" {
 		bc.ic.Format = bc.formatOverride
+	}
+	if len(bc.annotationOverrides) > 0 {
+		// Clone: ic.Annotations may still be the caller's map.
+		m := maps.Clone(bc.ic.Annotations)
+		if m == nil {
+			m = make(map[string]string, len(bc.annotationOverrides))
+		}
+		maps.Copy(m, bc.annotationOverrides)
+		bc.ic.Annotations = m
 	}
 }
 

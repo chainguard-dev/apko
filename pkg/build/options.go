@@ -188,8 +188,8 @@ func WithIncludePaths(includePaths []string) Option {
 // WithImageConfiguration sets the ImageConfiguration object
 // to use when building. It replaces the configuration rather than merging into
 // it, so any earlier Option that set one of its fields directly is discarded.
-// The field-level Options (WithFormat) are exempt: they are resolved after
-// every Option has been applied.
+// The field-level Options (WithFormat, WithAnnotations) are exempt: they are
+// resolved after every Option has been applied.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
 		bc.ic = ic
@@ -214,13 +214,14 @@ func WithVCS(enable bool) Option {
 }
 
 // WithAnnotations adds annotations from commandline to those in the config.
-// Commandline annotations take precedence.
+// Commandline annotations take precedence, wherever this Option appears in the
+// slice relative to WithImageConfiguration or WithConfig.
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
-		if bc.ic.Annotations == nil {
-			bc.ic.Annotations = make(map[string]string)
+		if bc.annotationOverrides == nil {
+			bc.annotationOverrides = make(map[string]string, len(annotations))
 		}
-		maps.Copy(bc.ic.Annotations, annotations)
+		maps.Copy(bc.annotationOverrides, annotations)
 		return nil
 	}
 }
