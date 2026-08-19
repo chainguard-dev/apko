@@ -210,7 +210,7 @@ fusermount3 -u /mnt/apko-erofs       # or `fusermount -u`
 
 If `mount` reports "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or use `erofsfuse`, which needs no root and works inside CI containers that lack the module.
 
-`hack/test-erofs.sh` runs everything above in one go — build, `fsck.erofs`, kernel mount, and a comparison of `apko erofs ls` against the mounted tree — and is what the `EROFS` CI workflow executes.
+`hack/test-erofs.sh` runs everything above in one go — build, `fsck.erofs`, kernel mount, a comparison of `apko erofs ls` against the mounted tree, and a round trip through `apko erofs mount` and `apko erofs umount` (read-only, `--rw`, a raw blob, and a tampered state file) — and is what the `EROFS` CI workflow executes.
 
 ## Pulling from a registry
 
