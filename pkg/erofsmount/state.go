@@ -45,9 +45,11 @@ type MountOptions struct {
 	// Arch picks a manifest from a multi-arch OCI index. "" or "host"
 	// means runtime.GOARCH.
 	Arch string
-	// ReadOnly, when true, skips upper/work overlay dirs and produces a
-	// pure read-only overlay during Mount.
-	ReadOnly bool
+	// Writable, when true, gives the mount an overlayfs upperdir so it can
+	// be written through. The zero value is read-only, which is what
+	// inspecting an image wants; writes are opt-in because a writable
+	// mount accumulates state that has nowhere to go when it comes down.
+	Writable bool
 }
 
 // stateSchemaVersion is the current mountState JSON schema version.
@@ -67,6 +69,9 @@ type mountState struct {
 	Source        string    `json:"source"`  // the original `spec` argument
 	Dest          string    `json:"dest"`    // absolute path of the mount target
 	Created       time.Time `json:"created"` // wall-clock timestamp at mount completion
+	// Writable records whether the mount has an upperdir, so Unmount knows
+	// whether <dest>/upper holds anything worth keeping.
+	Writable bool `json:"writable"`
 	// Mounts lists every mountpoint produced by Mount in unmount order
 	// (LIFO): the first element is unmounted first. For an image mount this
 	// is [<dest>/merged, <dest>/layers/NN, ..., <dest>/layers/00].

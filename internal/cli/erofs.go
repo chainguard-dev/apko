@@ -39,7 +39,7 @@ anywhere.`,
 
 func erofsMount() *cobra.Command {
 	var mode, arch string
-	var readOnly bool
+	var writable bool
 	cmd := &cobra.Command{
 		Use:   "mount [flags] SOURCE DEST",
 		Short: "Mount an EROFS blob or an EROFS OCI image at DEST",
@@ -54,16 +54,19 @@ SOURCE may be:
 
 For OCI sources, DEST gets this layout:
   DEST/layers/00..NN  one per EROFS layer (00 is base)
-  DEST/upper          overlayfs upperdir (writable mounts only)
-  DEST/work           overlayfs workdir (writable mounts only)
+  DEST/upper          overlayfs upperdir (--rw only)
+  DEST/work           overlayfs workdir (--rw only)
   DEST/merged         the combined view
   DEST/.apko-erofs-mount.json  state for 'apko erofs umount'
 
-With --read-only on a single-layer image, overlayfs is skipped and the
-sole layer is mounted directly at DEST/merged.`,
+The mount is read-only unless --rw is given. A single-layer image
+mounted read-only skips overlayfs entirely: the sole layer is mounted
+directly at DEST/merged. With --rw, writes land in DEST/upper, and
+'apko erofs umount' leaves that directory behind rather than deleting
+what was written.`,
 		Example: `  apko erofs mount ./out:latest /mnt/x
   apko erofs mount --mode=fuse ./image.erofs /mnt/y
-  apko erofs mount --read-only oci-dir:./out:latest /mnt/z`,
+  apko erofs mount --rw oci-dir:./out:latest /mnt/z`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src, err := erofsmount.ParseSource(args[0])
@@ -73,13 +76,13 @@ sole layer is mounted directly at DEST/merged.`,
 			return erofsmount.Mount(cmd.Context(), src, args[1], erofsmount.MountOptions{
 				Mode:     mode,
 				Arch:     arch,
-				ReadOnly: readOnly,
+				Writable: writable,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "mount mode: kernel, fuse, or auto (auto = kernel if root else fuse)")
 	cmd.Flags().StringVar(&arch, "arch", "host", "architecture to select from a multi-arch OCI index (host = process arch)")
-	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mount the image read-only (omits upperdir/workdir; single-layer images skip overlayfs entirely)")
+	cmd.Flags().BoolVar(&writable, "rw", false, "mount read-write, adding an overlayfs upperdir and workdir under DEST (default is read-only)")
 	return cmd
 }
 

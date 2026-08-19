@@ -217,7 +217,9 @@ func TestMountImage_SingleLayerReadOnlySkipsOverlay(t *testing.T) {
 	dest := t.TempDir()
 	f := newFakeDriver()
 
-	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", ReadOnly: true}); err != nil {
+	// Read-only is the default, so this is the shape an apko-produced
+	// single-layer image gets.
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
 		t.Fatalf("mountWith: %v", err)
 	}
 
@@ -342,5 +344,80 @@ func TestUnmountImage_PartialFailureIsResumable(t *testing.T) {
 	}
 	if _, err := os.Stat(statePath(dest)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("state file after the rerun: stat err = %v, want ErrNotExist", err)
+	}
+}
+
+func TestMountImage_ReadOnlyByDefault(t *testing.T) {
+	src, _ := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	f := newFakeDriver()
+
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+
+	if len(f.overlays) != 1 {
+		t.Fatalf("got %d AssembleOverlay calls, want 1", len(f.overlays))
+	}
+	if !f.overlays[0].readOnly {
+		t.Error("overlay assembled read-write; the default must be read-only")
+	}
+	// No upperdir means nothing to create and nothing to lose on umount.
+	for _, sub := range []string{"upper", "work"} {
+		if _, err := os.Stat(filepath.Join(dest, sub)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s exists for a read-only mount: stat err = %v", sub, err)
+		}
+	}
+	st, err := loadState(dest)
+	if err != nil {
+		t.Fatalf("loadState: %v", err)
+	}
+	if st.Writable {
+		t.Error("state records a writable mount")
+	}
+}
+
+func TestMountImage_WritableKeepsUpperOnUnmount(t *testing.T) {
+	src, _ := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	f := newFakeDriver()
+
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", Writable: true}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+	if len(f.overlays) != 1 {
+		t.Fatalf("got %d AssembleOverlay calls, want 1", len(f.overlays))
+	}
+	if f.overlays[0].readOnly {
+		t.Error("overlay assembled read-only despite Writable")
+	}
+	upper := filepath.Join(dest, "upper")
+	for _, sub := range []string{"upper", "work"} {
+		if _, err := os.Stat(filepath.Join(dest, sub)); err != nil {
+			t.Errorf("%s missing for a writable mount: %v", sub, err)
+		}
+	}
+
+	// Something written through the mount lands in upper.
+	written := filepath.Join(upper, "written-through-the-mount")
+	if err := os.WriteFile(written, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unmountWith(context.Background(), f.factory(), dest); err != nil {
+		t.Fatalf("unmountWith: %v", err)
+	}
+
+	// The whole point: umount must not silently discard it.
+	if got, err := os.ReadFile(written); err != nil {
+		t.Errorf("upper contents discarded by umount: %v", err)
+	} else if string(got) != "keep me" {
+		t.Errorf("upper contents changed: got %q", got)
+	}
+	// Everything else still goes.
+	for _, sub := range []string{"merged", "work", "layers"} {
+		if _, err := os.Stat(filepath.Join(dest, sub)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s after unmount: stat err = %v, want ErrNotExist", sub, err)
+		}
 	}
 }

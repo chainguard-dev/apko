@@ -117,7 +117,7 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 	// Single-layer read-only short-circuit: overlay buys nothing when there's
 	// one lower and no upper, so mount the layer straight at DEST/merged.
 	// Multi-layer and writable mounts still compose through overlayfs.
-	if opts.ReadOnly && len(layers) == 1 {
+	if !opts.Writable && len(layers) == 1 {
 		merged := filepath.Join(dest, "merged")
 		if err := ensureDir(merged); err != nil {
 			return err
@@ -137,13 +137,21 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 			Created:       time.Now().UTC(),
 			Mounts:        []string{merged},
 		}
+		// Writable is false here by construction: this path only runs for a
+		// read-only mount.
 		if err := writeState(dest, state); err != nil {
 			return fmt.Errorf("write state: %w", err)
 		}
 		return nil
 	}
 
-	for _, sub := range []string{"layers", "upper", "work", "merged"} {
+	// upper and work only exist for a writable mount; overlayfs takes a
+	// lowerdir-only stack for the read-only case.
+	subs := []string{"layers", "merged"}
+	if opts.Writable {
+		subs = append(subs, "upper", "work")
+	}
+	for _, sub := range subs {
 		if err := ensureDir(filepath.Join(dest, sub)); err != nil {
 			return err
 		}
@@ -176,7 +184,7 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 	upper := filepath.Join(dest, "upper")
 	work := filepath.Join(dest, "work")
 	merged := filepath.Join(dest, "merged")
-	umount, err := drv.AssembleOverlay(ctx, lowers, upper, work, merged, opts.ReadOnly)
+	umount, err := drv.AssembleOverlay(ctx, lowers, upper, work, merged, !opts.Writable)
 	if err != nil {
 		return fmt.Errorf("overlay merge into %s: %w", merged, err)
 	}
@@ -190,6 +198,7 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 		Source:        src.Raw,
 		Dest:          dest,
 		Created:       time.Now().UTC(),
+		Writable:      opts.Writable,
 		Mounts:        mountsLIFO,
 	}
 	if err := writeState(dest, state); err != nil {
@@ -252,10 +261,16 @@ func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mo
 		st.Mounts = st.Mounts[1:]
 		log.Infof("unmounted %s", mp)
 	}
-	for _, sub := range []string{"merged", "upper", "work", "layers"} {
+	// upper is not in this list. For a read-only mount it was never created;
+	// for a writable one it holds everything written through the mount, and
+	// deleting it here silently discarded that.
+	for _, sub := range []string{"merged", "work", "layers"} {
 		if err := os.RemoveAll(filepath.Join(dest, sub)); err != nil {
 			log.Warnf("remove %s: %v", filepath.Join(dest, sub), err)
 		}
+	}
+	if st.Writable {
+		log.Infof("writes made through the mount are left in %s", filepath.Join(dest, "upper"))
 	}
 	if err := removeState(dest); err != nil {
 		return fmt.Errorf("remove state file: %w", err)
