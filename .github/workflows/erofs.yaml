@@ -31,7 +31,9 @@ jobs:
             9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
             api.github.com:443
             apk.cgr.dev:443
+            archive.ubuntu.com:443
             archive.ubuntu.com:80
+            azure.archive.ubuntu.com:443
             azure.archive.ubuntu.com:80
             dl.google.com:443
             github.com:443
@@ -40,6 +42,7 @@ jobs:
             packages.wolfi.dev:443
             proxy.golang.org:443
             release-assets.githubusercontent.com:443
+            security.ubuntu.com:443
             security.ubuntu.com:80
             spdx.org:443
             storage.googleapis.com:443
