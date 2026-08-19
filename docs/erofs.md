@@ -188,6 +188,8 @@ If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel
 
 `umount` works from `DEST/.apko-erofs-mount.json`, which `mount` wrote. It only accepts mountpoints that a mount creates under `DEST` — `DEST/merged` and `DEST/layers/NN` — so a tampered file cannot redirect a root `umount` elsewhere. Still, prefer a `DEST` only you can write to: anything else lets another user decide what your `umount` takes down within it.
 
+If a mountpoint is busy, `umount` stops there and rewrites the state file to list only what is still mounted, so rerunning it once the mount is free finishes the teardown.
+
 ### Doing it manually
 
 A layer blob is a complete filesystem image, so mounting it needs no apko-specific tooling. For reference, `apko erofs mount` is equivalent to one of:

@@ -236,10 +236,20 @@ func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mo
 	// would also leave the state file out of sync with reality. The user
 	// can rerun `apko erofs umount` after addressing whatever is keeping
 	// the mount busy.
-	for _, mp := range st.Mounts {
+	// Drop each entry as it comes down and rewrite the state file if one
+	// fails, so the file always describes what is still mounted. Without that
+	// a rerun starts again at merged -- already gone -- and fails there
+	// without ever reaching the entry that was busy.
+	for len(st.Mounts) > 0 {
+		mp := st.Mounts[0]
 		if err := drv.Unmount(ctx, mp); err != nil {
-			return fmt.Errorf("umount %s: %w (remaining mounts left intact; rerun once they are no longer busy)", mp, err)
+			if werr := writeState(dest, st); werr != nil {
+				log.Warnf("rewrite state after partial unmount: %v", werr)
+			}
+			return fmt.Errorf("umount %s: %w (%d mount(s) still up; rerun `apko erofs umount %s` once they are no longer busy)",
+				mp, err, len(st.Mounts), dest)
 		}
+		st.Mounts = st.Mounts[1:]
 		log.Infof("unmounted %s", mp)
 	}
 	for _, sub := range []string{"merged", "upper", "work", "layers"} {

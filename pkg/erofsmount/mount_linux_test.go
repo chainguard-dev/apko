@@ -19,6 +19,7 @@ package erofsmount
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -80,6 +81,12 @@ func (f *fakeDriver) AssembleOverlay(_ context.Context, lowers []string, upper, 
 func (f *fakeDriver) Unmount(_ context.Context, mp string) error {
 	if err := f.unmountErr[mp]; err != nil {
 		return err
+	}
+	if slices.Contains(f.unmounted, mp) {
+		// umount(8) exits 32 on a path that is not a mountpoint. Mirroring
+		// that keeps a rerun from passing just because the fake is willing to
+		// unmount the same path twice.
+		return fmt.Errorf("umount %s: not mounted", mp)
 	}
 	f.unmounted = append(f.unmounted, mp)
 	return nil
@@ -290,5 +297,50 @@ func TestUnmount_PlantedStateFileNeverReachesUmount(t *testing.T) {
 	}
 	if _, err := os.Stat(victim); err != nil {
 		t.Errorf("victim dir disturbed: %v", err)
+	}
+}
+
+func TestUnmountImage_PartialFailureIsResumable(t *testing.T) {
+	src, _ := ociDirWithLayers(t, 3)
+	dest := t.TempDir()
+	f := newFakeDriver()
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+
+	merged := filepath.Join(dest, "merged")
+	top := filepath.Join(dest, "layers", "02")
+	busy := filepath.Join(dest, "layers", "01")
+	base := filepath.Join(dest, "layers", "00")
+
+	// Something still has layers/01 open.
+	f.unmountErr = map[string]error{busy: errors.New("target is busy")}
+	if err := unmountWith(context.Background(), f.factory(), dest); err == nil {
+		t.Fatal("unmountWith succeeded with a busy mount")
+	}
+	if want := []string{merged, top}; !slices.Equal(f.unmounted, want) {
+		t.Errorf("unmounted before the failure:\n got %v\nwant %v", f.unmounted, want)
+	}
+
+	// The state file must now describe only what is still up, or the rerun
+	// below starts at merged -- already gone -- and dies there.
+	st, err := loadState(dest)
+	if err != nil {
+		t.Fatalf("loadState after partial unmount: %v", err)
+	}
+	if want := []string{busy, base}; !slices.Equal(st.Mounts, want) {
+		t.Fatalf("state Mounts after partial unmount:\n got %v\nwant %v", st.Mounts, want)
+	}
+
+	// Whatever held it open lets go; the rerun finishes the job.
+	f.unmountErr = nil
+	if err := unmountWith(context.Background(), f.factory(), dest); err != nil {
+		t.Fatalf("rerun after the busy mount cleared: %v", err)
+	}
+	if want := []string{merged, top, busy, base}; !slices.Equal(f.unmounted, want) {
+		t.Errorf("unmounted overall:\n got %v\nwant %v", f.unmounted, want)
+	}
+	if _, err := os.Stat(statePath(dest)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("state file after the rerun: stat err = %v, want ErrNotExist", err)
 	}
 }
