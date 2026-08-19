@@ -1,0 +1,83 @@
+name: EROFS
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # Everything else that touches EROFS runs unprivileged and reads the image
+  # back with go-erofs -- the same library that wrote it, so a shared
+  # misunderstanding stays invisible. This job is the only place an
+  # apko-produced EROFS layer meets the kernel driver and the C tools.
+  mount:
+    name: build and mount an erofs layer
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            api.github.com:443
+            apk.cgr.dev:443
+            archive.ubuntu.com:80
+            azure.archive.ubuntu.com:80
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            security.ubuntu.com:80
+            spdx.org:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Install erofs-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils
+          command -v fsck.erofs
+          command -v dump.erofs
+
+      # erofs is a module, not built in, and the runner image does not ship
+      # every module by default. Try the cheap path first and only reach for
+      # the ~50MB linux-modules-extra download if the module is genuinely
+      # absent.
+      - name: Ensure the kernel erofs driver is available
+        run: |
+          if ! grep -qw erofs /proc/filesystems && ! sudo modprobe erofs; then
+            sudo apt-get install -y --no-install-recommends "linux-modules-extra-$(uname -r)"
+            sudo modprobe erofs
+          fi
+          # Fail here rather than inside the test, where an absent driver would
+          # look like a mount bug.
+          grep -qw erofs /proc/filesystems
+
+      - name: Build, fsck and mount
+        run: |
+          make apko
+          ./hack/test-erofs.sh ./examples/wolfi-base.yaml
