@@ -174,19 +174,31 @@ The merge approximates what the kernel would assemble, and diverges in two corne
 
 ## Mount the layer
 
-A layer blob is a complete filesystem image, so mounting it takes no apko-specific tooling — either the kernel `erofs` driver (needs root) or `erofsfuse` (unprivileged):
+`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `--read-only` mounts the image without an upper/work overlay; for a single-layer image that means the lone layer is mounted straight at `DEST/merged` with no overlayfs in the path. `apko erofs umount DEST` tears it back down.
 
 ```sh
 mkdir -p /mnt/apko-erofs
-
-# Kernel (root):
-sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
+apko erofs mount out/blobs/sha256/$LAYER /mnt/apko-erofs
 ls /mnt/apko-erofs/
 file /mnt/apko-erofs/bin/sh
+apko erofs umount /mnt/apko-erofs
+```
+
+If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
+
+### Doing it manually
+
+A layer blob is a complete filesystem image, so mounting it needs no apko-specific tooling. For reference, `apko erofs mount` is equivalent to one of:
+
+```sh
+# Kernel (root):
+sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
 sudo umount /mnt/apko-erofs
 
 # FUSE (unprivileged):
 erofsfuse out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
 fusermount3 -u /mnt/apko-erofs       # or `fusermount -u`
 ```
 
@@ -248,7 +260,7 @@ _, layer, err := bc.ImageLayoutToLayer(ctx)
 
 If you have a plain `fs.FS` and want an EROFS image, **use [go-erofs](https://github.com/erofs/go-erofs) directly** — apko doesn't expose its EROFS writer as a standalone library (and wrapping go-erofs wouldn't add meaningful value over its existing `Writer.CopyFrom(fs.FS)` API).
 
-For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Ls` (the `apko erofs ls` helper). All of it is cross-platform: go-erofs is pure Go and nothing here mounts anything.
+For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Mount`/`Unmount`/`Ls` (the CLI subcommand helpers, Linux-only for mount/umount; `Ls` is cross-platform).
 
 ## Current limitations
 

@@ -13,9 +13,11 @@
 // limitations under the License.
 
 // Package erofsmount provides the building blocks for the `apko erofs`
-// subcommands. It exposes a small library: parse a source spec, read an OCI
-// layout's EROFS layers, and present them as a single merged fs.FS. Everything
-// here is pure Go and cross-platform; nothing mounts anything.
+// subcommands (mount, umount, ls). It exposes a small library: parse a source
+// spec, read an OCI layout's EROFS layers, present them as a single merged
+// fs.FS, and drive kernel or FUSE mounts. The reading side is pure Go and
+// cross-platform; Mount and Unmount are implemented for Linux only and return
+// an error elsewhere.
 package erofsmount
 
 import (
