@@ -120,7 +120,7 @@ func TestLoadStateRejectsMountsOutsideDest(t *testing.T) {
 		mount func(dest string) string
 	}{
 		{"absolute elsewhere", func(string) string { return "/home" }},
-		{"parent of dest", func(dest string) string { return filepath.Dir(dest) }},
+		{"parent of dest", filepath.Dir},
 		{"traversal through dest", func(dest string) string { return filepath.Join(dest, "..", "..", "etc") }},
 		{"traversal through layers", func(dest string) string { return filepath.Join(dest, "layers", "..", "..", "home") }},
 		{"relative", func(string) string { return "merged" }},

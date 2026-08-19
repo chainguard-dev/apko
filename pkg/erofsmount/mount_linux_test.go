@@ -103,7 +103,7 @@ func newFakeDriver() *fakeDriver {
 
 // ociDirWithLayers writes a fake OCI layout with n EROFS layers and returns a
 // Source for it.
-func ociDirWithLayers(t *testing.T, n int) (Source, string) {
+func ociDirWithLayers(t *testing.T, n int) Source {
 	t.Helper()
 	dir := t.TempDir()
 	layers := make([]fakeLayer, 0, n)
@@ -119,11 +119,11 @@ func ociDirWithLayers(t *testing.T, n int) (Source, string) {
 	if err != nil {
 		t.Fatalf("ParseSource(%s): %v", dir, err)
 	}
-	return src, dir
+	return src
 }
 
 func TestMountImage_MountOrderAndState(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 3)
+	src := ociDirWithLayers(t, 3)
 	dest := t.TempDir()
 	f := newFakeDriver()
 
@@ -169,7 +169,7 @@ func TestMountImage_MountOrderAndState(t *testing.T) {
 }
 
 func TestMountImage_CleansUpInLIFOOnOverlayFailure(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 3)
+	src := ociDirWithLayers(t, 3)
 	dest := t.TempDir()
 	f := newFakeDriver()
 	f.overlayErr = errors.New("overlay boom")
@@ -196,7 +196,7 @@ func TestMountImage_CleansUpInLIFOOnOverlayFailure(t *testing.T) {
 }
 
 func TestMountImage_RefusesExistingStateFile(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 2)
+	src := ociDirWithLayers(t, 2)
 	dest := t.TempDir()
 	if err := os.WriteFile(statePath(dest), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestMountImage_RefusesExistingStateFile(t *testing.T) {
 }
 
 func TestMountImage_SingleLayerReadOnlySkipsOverlay(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 1)
+	src := ociDirWithLayers(t, 1)
 	dest := t.TempDir()
 	f := newFakeDriver()
 
@@ -240,7 +240,7 @@ func TestMountImage_SingleLayerReadOnlySkipsOverlay(t *testing.T) {
 }
 
 func TestUnmountImage_OrderAndStateRemoval(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 3)
+	src := ociDirWithLayers(t, 3)
 	dest := t.TempDir()
 	f := newFakeDriver()
 	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
@@ -303,7 +303,7 @@ func TestUnmount_PlantedStateFileNeverReachesUmount(t *testing.T) {
 }
 
 func TestUnmountImage_PartialFailureIsResumable(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 3)
+	src := ociDirWithLayers(t, 3)
 	dest := t.TempDir()
 	f := newFakeDriver()
 	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
@@ -348,7 +348,7 @@ func TestUnmountImage_PartialFailureIsResumable(t *testing.T) {
 }
 
 func TestMountImage_ReadOnlyByDefault(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 2)
+	src := ociDirWithLayers(t, 2)
 	dest := t.TempDir()
 	f := newFakeDriver()
 
@@ -378,7 +378,7 @@ func TestMountImage_ReadOnlyByDefault(t *testing.T) {
 }
 
 func TestMountImage_WritableKeepsUpperOnUnmount(t *testing.T) {
-	src, _ := ociDirWithLayers(t, 2)
+	src := ociDirWithLayers(t, 2)
 	dest := t.TempDir()
 	f := newFakeDriver()
 
