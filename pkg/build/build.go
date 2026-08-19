@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -59,6 +60,13 @@ type Context struct {
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ic types.ImageConfiguration
 	o  options.Options
+
+	// formatOverride and annotationOverrides are what the field-level Options
+	// asked for. They are held here rather than written straight to ic, and
+	// resolved onto ic by resolveImageConfiguration once every Option has been
+	// applied.
+	formatOverride      types.LayerFormat
+	annotationOverrides map[string]string
 
 	s6      *s6.Context
 	fs      apkfs.FullFS
@@ -239,6 +247,25 @@ func (bc *Context) checkPaths(ctx context.Context) error {
 	return nil
 }
 
+// resolveImageConfiguration applies the overrides recorded by the field-level
+// Options onto ic. It runs after every Option has been applied, so that an
+// Option which replaces ic wholesale -- WithImageConfiguration, WithConfig --
+// cannot discard them by appearing later in the slice.
+func (bc *Context) resolveImageConfiguration() {
+	if bc.formatOverride != "" {
+		bc.ic.Format = bc.formatOverride
+	}
+	if len(bc.annotationOverrides) > 0 {
+		// Merge onto the configured annotations, overrides winning per key. A
+		// new map rather than a write in place: bc.ic.Annotations may still be
+		// the map the caller passed to WithImageConfiguration.
+		merged := make(map[string]string, len(bc.ic.Annotations)+len(bc.annotationOverrides))
+		maps.Copy(merged, bc.ic.Annotations)
+		maps.Copy(merged, bc.annotationOverrides)
+		bc.ic.Annotations = merged
+	}
+}
+
 // NewOptions evaluates the build.Options in the same way as New().
 func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
 	bc := Context{
@@ -250,6 +277,7 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 			return nil, nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	return &bc.o, &bc.ic, nil
 }
@@ -273,6 +301,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			return nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
 	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
