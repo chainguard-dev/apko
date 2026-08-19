@@ -165,7 +165,12 @@ apko erofs ls out/blobs/sha256/$LAYER | head
 apko erofs ls out/      # works against the whole OCI image too
 ```
 
-For multi-layer images, `ls` applies overlay semantics in user space to present the merged view the kernel would assemble. It uses the overlayfs-native deletion encoding the spec mandates (§3.6) — a whiteout is a character device with rdev 0, an opaque directory sets `trusted.overlay.opaque="y"` — not the `.wh.` filename convention of tar layers, which §8.1 forbids in EROFS images. A single-layer image is listed as-is: the kernel would mount it directly, applying no overlay semantics, so neither does `ls`.
+For multi-layer images, `ls` applies overlay semantics in user space. It uses the overlayfs-native deletion encoding the spec mandates (§3.6) — a whiteout is a character device with rdev 0, an opaque directory sets `trusted.overlay.opaque="y"` — not the `.wh.` filename convention of tar layers, which §8.1 forbids in EROFS images. A single-layer image is listed as-is: the kernel would mount it directly, applying no overlay semantics, so neither does `ls`.
+
+The merge approximates what the kernel would assemble, and diverges in two corners (see [#2408](https://github.com/chainguard-dev/apko/issues/2408)), both of which need two or more layers:
+
+- A whiteout — or a plain file — at a directory's own name in a middle layer does not cut off lower layers when a higher layer recreates that directory. `ls` shows the union of the recreated directory and the layers below the whiteout; the kernel shows only the recreated directory.
+- Opacity is not inherited by descendant directories. Marking `a` opaque hides lower layers' children of `a`, but not lower layers' children of `a/b`; the kernel's cut covers the whole subtree.
 
 ## Mount the layer
 
@@ -250,7 +255,7 @@ For inspection, apko *does* expose a focused leaf library — see `chainguard.de
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
 - **No chunk index.** Lazy-loading runtimes (per spec §3.4) won't get an index; reads are sequential.
 - **No `overlay-data` or `device` roles.** apko emits one unannotated EROFS layer; `org.erofs.role` is never set.
-- **Hardlinks become independent copies.** go-erofs has no API to point two names at one inode, so each link costs another full copy of the file's data (rounded up to the block size) and `st_nlink`/`st_ino` identity is lost. Spec §3.7 allows this — a producer must either materialize links or fail — but a hardlink-heavy image will be larger as EROFS than as tar, where extra links are zero-byte entries.
+- **Hardlinks become independent copies.** go-erofs has no API to point two names at one inode, so each link costs another full copy of the file's data (rounded up to the block size) and `st_nlink`/`st_ino` identity is lost. Spec §3.7's materialize-or-fail rule covers *cross-layer* hardlinks; within a single layer the spec is silent, so this is conformant but not blessed by that section. Either way, a hardlink-heavy image will be larger as EROFS than as tar, where extra links are zero-byte entries.
 - **Spec is draft.** Media-type strings and annotation keys may change before the spec stabilizes. Treat any image built today as experimental.
 
 If you need any of the above, please open an issue.

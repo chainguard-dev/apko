@@ -45,8 +45,9 @@ func (n nakedFS) Open(name string) (fs.File, error) { return n.inner.Open(name) 
 // (rdev 0). A real device names its rdev explicitly.
 type overlayFS struct {
 	fstest.MapFS
-	rdev   map[string]uint64 // char-device path -> device number; absent means 0
-	opaque map[string]bool   // directory paths carrying trusted.overlay.opaque=y
+	rdev    map[string]uint64 // char-device path -> device number; absent means 0
+	opaque  map[string]bool   // directory paths carrying trusted.overlay.opaque=y
+	infoErr map[string]error  // paths whose DirEntry.Info() fails
 }
 
 func (o overlayFS) wrap(p string, fi fs.FileInfo) fs.FileInfo {
@@ -80,6 +81,9 @@ type overlayEntry struct {
 }
 
 func (e overlayEntry) Info() (fs.FileInfo, error) {
+	if err := e.fsys.infoErr[e.path]; err != nil {
+		return nil, err
+	}
 	fi, err := e.DirEntry.Info()
 	if err != nil {
 		return nil, err
@@ -474,6 +478,104 @@ func TestStack_OpaqueDir_KeepsOwnChildren(t *testing.T) {
 	got := readDirNames(t, s)
 	if !reflect.DeepEqual(got, []string{"foo"}) {
 		t.Errorf("ReadDir got %v, want [foo]", got)
+	}
+}
+
+// errCorruptXattr stands in for whatever a layer with a damaged xattr region
+// makes go-erofs return. The only property that matters is that it is not
+// fs.ErrNotExist.
+var errCorruptXattr = errors.New("simulated corrupt xattr region")
+
+// brokenStatFS fails Stat for named paths while ReadDir keeps working, which is
+// how an unreadable inode presents: the parent directory still lists it.
+type brokenStatFS struct {
+	overlayFS
+	statErr map[string]error
+}
+
+func (b brokenStatFS) Stat(name string) (fs.FileInfo, error) {
+	if err := b.statErr[name]; err != nil {
+		return nil, err
+	}
+	return b.overlayFS.Stat(name)
+}
+
+// A layer we cannot stat is a layer whose opacity we cannot determine. Treating
+// that as "not opaque" would un-hide the lower layers it may have been hiding,
+// so both callers must surface the error instead.
+//
+// The middle layer is the broken one on purpose: it is the only position where
+// isOpaqueDir is the first thing to fail. If the top layer were broken, the
+// ancestor stat in lookup would raise first and the fixture would pass without
+// isOpaqueDir being consulted at all.
+func TestStack_OpaqueDir_StatErrorIsNotSilentlyPermissive(t *testing.T) {
+	lower := fstest.MapFS{
+		"etc":        {Mode: fs.ModeDir | 0o755},
+		"etc/secret": {Data: []byte("hidden"), Mode: 0o644},
+	}
+	middle := brokenStatFS{
+		overlayFS: overlayFS{MapFS: fstest.MapFS{
+			"etc": {Mode: fs.ModeDir | 0o755},
+		}},
+		statErr: map[string]error{"etc": errCorruptXattr},
+	}
+	top := overlayFS{MapFS: fstest.MapFS{
+		"etc":     {Mode: fs.ModeDir | 0o755},
+		"etc/foo": {Data: []byte("F"), Mode: 0o644},
+	}}
+	s := NewStack(lower, middle, top)
+
+	// mergeDir: the union must not quietly include etc/secret.
+	if ents, err := fs.ReadDir(s, "etc"); !errors.Is(err, errCorruptXattr) {
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Errorf("ReadDir(etc) = %v, %v; want error wrapping %v", names, err, errCorruptXattr)
+	}
+
+	// lookup: reaching an entry only the bottom layer has must not quietly
+	// succeed either.
+	if _, err := fs.Stat(s, "etc/secret"); !errors.Is(err, errCorruptXattr) {
+		t.Errorf("Stat(etc/secret) err = %v; want error wrapping %v", err, errCorruptXattr)
+	}
+}
+
+// errCorruptInode stands in for whatever go-erofs returns for an inode it
+// cannot read. Like errCorruptXattr, the only property that matters is that it
+// is not fs.ErrNotExist.
+var errCorruptInode = errors.New("simulated unreadable inode")
+
+// A char device whose inode we cannot read may or may not be a whiteout, and
+// both answers change the merged view. Surface the error instead of picking one,
+// matching isOpaqueDir.
+func TestStack_Whiteout_InfoErrorIsNotSilentlyPermissive(t *testing.T) {
+	lower := fstest.MapFS{
+		"etc":        {Mode: fs.ModeDir | 0o755},
+		"etc/secret": {Data: []byte("hidden"), Mode: 0o644},
+	}
+	top := overlayFS{
+		MapFS: fstest.MapFS{
+			"etc":        {Mode: fs.ModeDir | 0o755},
+			"etc/secret": whiteout(),
+		},
+		infoErr: map[string]error{"etc/secret": errCorruptInode},
+	}
+	s := NewStack(lower, top)
+
+	// mergeDir: neither the tombstone nor the entry it may delete may be
+	// listed on a guess.
+	if ents, err := fs.ReadDir(s, "etc"); !errors.Is(err, errCorruptInode) {
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Errorf("ReadDir(etc) = %v, %v; want error wrapping %v", names, err, errCorruptInode)
+	}
+
+	// lookup: same for resolving the name directly.
+	if _, err := fs.Stat(s, "etc/secret"); !errors.Is(err, errCorruptInode) {
+		t.Errorf("Stat(etc/secret) err = %v; want error wrapping %v", err, errCorruptInode)
 	}
 }
 

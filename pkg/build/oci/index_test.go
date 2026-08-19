@@ -21,6 +21,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
@@ -75,6 +76,40 @@ func TestGenerateIndex_PropagatesOSFeatures(t *testing.T) {
 	// A tar build must not gain the feature, and the propagation must not
 	// invent an empty OSFeatures slice where the config has none.
 	tarImg := buildImage(t, types.ImageConfiguration{}, ggcrtypes.OCILayer)
-	require.Empty(t, platformOf(t, tarImg).OSFeatures,
+	require.Nil(t, platformOf(t, tarImg).OSFeatures,
 		"tar-format builds must not declare os.features on the index descriptor")
+}
+
+// The propagation reads whatever os.features the finished config carries, and
+// BuildImageFromLayers DeepCopies the base image's config -- so a base image
+// that already declares features surfaces them on the index platform
+// descriptor, for a tar build as much as an EROFS one. That is what §5.4 asks
+// for (the descriptor should describe the image), and it changes the index
+// digest for such builds, so pin it rather than leave it to be rediscovered.
+func TestGenerateIndex_PropagatesOSFeaturesFromBaseImage(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	arch := types.ParseArchitecture("amd64")
+
+	base, err := mutate.ConfigFile(empty.Image, &v1.ConfigFile{
+		OSFeatures: []string{"example-feature"},
+	})
+	require.NoError(t, err)
+
+	img, err := BuildImageFromLayer(ctx, base, static.NewLayer([]byte("hello"), ggcrtypes.OCILayer), types.ImageConfiguration{}, now, arch)
+	require.NoError(t, err)
+
+	cfg, err := img.ConfigFile()
+	require.NoError(t, err)
+	require.Equal(t, []string{"example-feature"}, cfg.OSFeatures,
+		"the base image's os.features must survive into the built config")
+
+	_, idx, err := GenerateIndex(ctx, types.ImageConfiguration{}, map[types.Architecture]v1.Image{arch: img}, now)
+	require.NoError(t, err)
+	mf, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.Len(t, mf.Manifests, 1)
+	require.NotNil(t, mf.Manifests[0].Platform, "index descriptor has no platform")
+	require.Equal(t, []string{"example-feature"}, mf.Manifests[0].Platform.OSFeatures,
+		"a base image's os.features must reach the index platform descriptor")
 }

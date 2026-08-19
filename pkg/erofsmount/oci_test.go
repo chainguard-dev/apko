@@ -187,6 +187,27 @@ func TestReadOCILayers_WrongMediaType(t *testing.T) {
 	}
 }
 
+// An externally compressed layer is a real EROFS image apko cannot read yet,
+// not a foreign layer, so the error must not tell the user it isn't EROFS.
+func TestReadOCILayers_CompressedMediaType(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeOCILayout(t, dir, []fakeLayer{
+		{body: []byte("compressed-erofs"), mediaType: types.ErofsLayerMediaType + "+zstd"},
+	})
+	_, err := ReadOCILayers(dir, "", "amd64")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{"zstd", "2406"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "only handles EROFS images") {
+		t.Errorf("error %q calls a compressed EROFS layer non-EROFS", err)
+	}
+}
+
 // org.erofs.role is OPTIONAL on any layer (§2.3), and §3.8 rule 1 allows the
 // final layer's role to be absent *or* overlay-lower, so neither an
 // unannotated non-final layer nor an overlay-lower final layer is an error.

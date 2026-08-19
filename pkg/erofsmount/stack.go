@@ -15,6 +15,8 @@
 package erofsmount
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"path"
@@ -213,7 +215,11 @@ func (s *Stack) lookup(name string) (int, error) {
 			if e.Name() != base {
 				continue
 			}
-			if s.isWhiteout(e) {
+			white, err := s.isWhiteout(e)
+			if err != nil {
+				return -1, err
+			}
+			if white {
 				// A whiteout hides every lower layer's entry, and is not
 				// itself part of the merged view.
 				return -1, fs.ErrNotExist
@@ -222,7 +228,11 @@ func (s *Stack) lookup(name string) (int, error) {
 		}
 		// Not in this layer. If this layer's copy of the parent directory is
 		// opaque, it hides everything below.
-		if s.isOpaqueDir(layer, parent) {
+		opaque, err := s.isOpaqueDir(layer, parent)
+		if err != nil {
+			return -1, err
+		}
+		if opaque {
 			return -1, fs.ErrNotExist
 		}
 	}
@@ -249,14 +259,22 @@ func (s *Stack) mergeDir(name string) ([]fs.DirEntry, error) {
 				continue
 			}
 			seen[n] = true
-			if s.isWhiteout(e) {
+			white, err := s.isWhiteout(e)
+			if err != nil {
+				return nil, err
+			}
+			if white {
 				continue // tombstone: shadows lower layers, never listed
 			}
 			out = append(out, e)
 		}
 		// This layer's own entries are already in; an opaque directory hides
 		// only what lies below it.
-		if s.isOpaqueDir(layer, name) {
+		opaque, err := s.isOpaqueDir(layer, name)
+		if err != nil {
+			return nil, err
+		}
+		if opaque {
 			break
 		}
 	}
@@ -270,40 +288,54 @@ func (s *Stack) mergeDir(name string) ([]fs.DirEntry, error) {
 //
 // The cheap Type() check comes first so the common case costs nothing: only a
 // char device is worth an Info() call, which for a real EROFS layer reads the
-// inode.
-func (s *Stack) isWhiteout(e fs.DirEntry) bool {
+// inode. That call's failure is reported rather than swallowed, for the same
+// reason as isOpaqueDir: whether the entry is a tombstone decides what the
+// merged view shows, and answering it from an inode we could not read is a
+// guess either way.
+func (s *Stack) isWhiteout(e fs.DirEntry) (bool, error) {
 	if !s.whiteouts || e.Type()&fs.ModeCharDevice == 0 {
-		return false
+		return false, nil
 	}
 	info, err := e.Info()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("stat %s to check for whiteout: %w", e.Name(), err)
 	}
 	// go-erofs advertises Rdev() on the FileInfo it returns; an fs.FS with no
 	// notion of device numbers cannot express a whiteout at all.
 	rd, ok := info.(interface{ Rdev() uint64 })
-	return ok && rd.Rdev() == 0
+	return ok && rd.Rdev() == 0, nil
 }
 
 // isOpaqueDir reports whether fsys's copy of dir is an opaque directory --
 // `trusted.overlay.opaque` set to "y", per spec §3.6 -- which hides every
 // lower layer's children of that directory.
-func (s *Stack) isOpaqueDir(fsys fs.FS, dir string) bool {
+//
+// A stat failure is reported, not swallowed: opacity hides content, so
+// answering "not opaque" for a layer we could not read would silently un-hide
+// whatever the image meant to hide. dir being absent from this layer is the one
+// benign case, and means exactly "not opaque here".
+func (s *Stack) isOpaqueDir(fsys fs.FS, dir string) (bool, error) {
 	if !s.whiteouts {
-		return false
+		return false, nil
 	}
 	info, err := statOn(fsys, dir)
-	if err != nil || !info.IsDir() {
-		return false
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat %s to check for %s: %w", dir, overlayOpaqueXattr, err)
+	}
+	if !info.IsDir() {
+		return false, nil
 	}
 	gx, ok := info.(interface {
 		GetXattr(string) (string, bool)
 	})
 	if !ok {
-		return false
+		return false, nil
 	}
 	v, _ := gx.GetXattr(overlayOpaqueXattr)
-	return v == "y"
+	return v == "y", nil
 }
 
 // rootInfo returns FileInfo for ".". The topmost layer that has a root wins
