@@ -127,7 +127,12 @@ awk '{
     print line
 }' "${workdir}/ls.raw" | LC_ALL=C sort >"${workdir}/from-apko"
 
-find "${mnt}" -mindepth 1 -printf '%M\t%U/%G\t%P\t%y\t%l\n' |
+# The walk runs privileged.  The image intentionally contains mode-0700
+# directories owned by other uids (root, usr/man, var/adm), which an
+# unprivileged find cannot descend into; `apko erofs ls` reads the image
+# directly and is not subject to that, so the two would disagree for a reason
+# that has nothing to do with apko.
+"${sudo[@]}" find "${mnt}" -mindepth 1 -printf '%M\t%U/%G\t%P\t%y\t%l\n' |
     awk -F'\t' '{
         line = $1 " " $2 " " $3
         if ($4 == "l") line = line " -> " $5
