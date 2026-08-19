@@ -98,3 +98,73 @@ func TestLoadStateWrongSchema(t *testing.T) {
 		t.Fatal("expected schema version error")
 	}
 }
+
+// planted writes a state file with the given mounts directly, as an attacker
+// with write access to dest would.
+func planted(t *testing.T, dest string, recordedDest string, mounts []string) {
+	t.Helper()
+	if err := writeState(dest, &mountState{
+		SchemaVersion: stateSchemaVersion,
+		Mode:          modeKernel,
+		Dest:          recordedDest,
+		Created:       time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC),
+		Mounts:        mounts,
+	}); err != nil {
+		t.Fatalf("writeState: %v", err)
+	}
+}
+
+func TestLoadStateRejectsMountsOutsideDest(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mount func(dest string) string
+	}{
+		{"absolute elsewhere", func(string) string { return "/home" }},
+		{"parent of dest", func(dest string) string { return filepath.Dir(dest) }},
+		{"traversal through dest", func(dest string) string { return filepath.Join(dest, "..", "..", "etc") }},
+		{"traversal through layers", func(dest string) string { return filepath.Join(dest, "layers", "..", "..", "home") }},
+		{"relative", func(string) string { return "merged" }},
+		{"dest itself", func(dest string) string { return dest }},
+		{"unexpected subdir", func(dest string) string { return filepath.Join(dest, "upper") }},
+		{"layer name not numeric", func(dest string) string { return filepath.Join(dest, "layers", "evil") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := t.TempDir()
+			planted(t, dest, dest, []string{tc.mount(dest)})
+			if _, err := loadState(dest); err == nil {
+				t.Fatalf("loadState accepted mount %q", tc.mount(dest))
+			}
+		})
+	}
+}
+
+func TestLoadStateRejectsDestMismatch(t *testing.T) {
+	dest := t.TempDir()
+	// The recorded dest is a directory the attacker does control, while the
+	// mount path is inside the dest being unmounted -- so a containment-only
+	// check would pass this.
+	planted(t, dest, t.TempDir(), []string{filepath.Join(dest, "merged")})
+	if _, err := loadState(dest); err == nil {
+		t.Fatal("loadState accepted a state file recording a different dest")
+	}
+}
+
+func TestLoadStateRejectsNoMounts(t *testing.T) {
+	dest := t.TempDir()
+	planted(t, dest, dest, nil)
+	if _, err := loadState(dest); err == nil {
+		t.Fatal("loadState accepted a state file with no mounts")
+	}
+}
+
+func TestLoadStateAcceptsWhatMountWrites(t *testing.T) {
+	dest := t.TempDir()
+	planted(t, dest, dest, []string{
+		filepath.Join(dest, "merged"),
+		filepath.Join(dest, "layers", "99"),
+		filepath.Join(dest, "layers", "000"),
+	})
+	if _, err := loadState(dest); err != nil {
+		t.Fatalf("loadState rejected a legitimate layout: %v", err)
+	}
+}

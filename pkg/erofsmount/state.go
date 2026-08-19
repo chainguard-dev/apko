@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 )
 
@@ -128,7 +129,44 @@ func loadState(dest string) (*mountState, error) {
 	if s.SchemaVersion != stateSchemaVersion {
 		return nil, fmt.Errorf("state %s: unsupported schemaVersion %d (want %d)", path, s.SchemaVersion, stateSchemaVersion)
 	}
+	if err := s.validate(dest); err != nil {
+		return nil, fmt.Errorf("state %s: %w", path, err)
+	}
 	return &s, nil
+}
+
+// mountRelPattern matches the per-layer mountpoints Mount creates, relative to
+// dest. The only other one it creates is "merged".
+var mountRelPattern = regexp.MustCompile(`^layers/[0-9]{2,}$`)
+
+// validate checks a state file before any path it names is handed to umount,
+// which in kernel mode runs as root. The file lives inside dest, so anyone who
+// can write there controls its contents; unvalidated, a planted file naming
+// /home would have root unmount /home.
+//
+// Rather than only checking containment, this requires each entry to be one of
+// the paths Mount actually creates. Nothing legitimate is rejected: mounts are
+// made at <dest>/merged and <dest>/layers/NN and nowhere else.
+func (s *mountState) validate(dest string) error {
+	if s.Dest != dest {
+		return fmt.Errorf("records dest %q but was read from %q", s.Dest, dest)
+	}
+	if len(s.Mounts) == 0 {
+		return errors.New("records no mounts")
+	}
+	for _, mp := range s.Mounts {
+		if !filepath.IsAbs(mp) {
+			return fmt.Errorf("mount %q is not an absolute path", mp)
+		}
+		rel, err := filepath.Rel(dest, filepath.Clean(mp))
+		if err != nil {
+			return fmt.Errorf("mount %q is not under %s: %w", mp, dest, err)
+		}
+		if rel != "merged" && !mountRelPattern.MatchString(rel) {
+			return fmt.Errorf("mount %q is not a path a mount creates under %s (merged, layers/NN)", mp, dest)
+		}
+	}
+	return nil
 }
 
 // removeState deletes statePath(dest). It is a no-op if the file is already

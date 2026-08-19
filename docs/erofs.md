@@ -186,6 +186,8 @@ apko erofs umount /mnt/apko-erofs
 
 If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
 
+`umount` works from `DEST/.apko-erofs-mount.json`, which `mount` wrote. It only accepts mountpoints that a mount creates under `DEST` — `DEST/merged` and `DEST/layers/NN` — so a tampered file cannot redirect a root `umount` elsewhere. Still, prefer a `DEST` only you can write to: anything else lets another user decide what your `umount` takes down within it.
+
 ### Doing it manually
 
 A layer blob is a complete filesystem image, so mounting it needs no apko-specific tooling. For reference, `apko erofs mount` is equivalent to one of:

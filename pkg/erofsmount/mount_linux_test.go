@@ -272,3 +272,23 @@ func TestUnmount_NoStateFileUnmountsDestItself(t *testing.T) {
 		t.Errorf("unmounted %v, want the blob mountpoint %s", f.unmounted, dest)
 	}
 }
+
+func TestUnmount_PlantedStateFileNeverReachesUmount(t *testing.T) {
+	dest := t.TempDir()
+	victim := t.TempDir()
+	planted(t, dest, dest, []string{victim})
+
+	f := newFakeDriver()
+	err := unmountWith(context.Background(), f.factory(), dest)
+	if err == nil {
+		t.Fatal("unmountWith succeeded on a state file naming a path outside dest")
+	}
+	// The point of the check: nothing is handed to umount at all, rather than
+	// the escape being noticed after the fact.
+	if len(f.unmounted) != 0 {
+		t.Errorf("unmounted %v; a planted state file must not reach umount", f.unmounted)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("victim dir disturbed: %v", err)
+	}
+}
