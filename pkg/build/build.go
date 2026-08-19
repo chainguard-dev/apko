@@ -256,13 +256,13 @@ func (bc *Context) resolveImageConfiguration() {
 		bc.ic.Format = bc.formatOverride
 	}
 	if len(bc.annotationOverrides) > 0 {
-		// Clone: ic.Annotations may still be the caller's map.
-		m := maps.Clone(bc.ic.Annotations)
-		if m == nil {
-			m = make(map[string]string, len(bc.annotationOverrides))
-		}
-		maps.Copy(m, bc.annotationOverrides)
-		bc.ic.Annotations = m
+		// Merge onto the configured annotations, overrides winning per key. A
+		// new map rather than a write in place: bc.ic.Annotations may still be
+		// the map the caller passed to WithImageConfiguration.
+		merged := make(map[string]string, len(bc.ic.Annotations)+len(bc.annotationOverrides))
+		maps.Copy(merged, bc.ic.Annotations)
+		maps.Copy(merged, bc.annotationOverrides)
+		bc.ic.Annotations = merged
 	}
 }
 
