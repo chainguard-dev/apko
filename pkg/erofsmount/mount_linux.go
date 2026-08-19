@@ -42,6 +42,12 @@ import (
 // is internal, so Mount reports only an error. On any error after a partial
 // mount, all partially-completed mounts are torn down before returning.
 func Mount(ctx context.Context, src Source, dest string, opts MountOptions) error {
+	return mountWith(ctx, newDriver, src, dest, opts)
+}
+
+// mountWith is Mount with the driver constructor injected, so tests can drive
+// the orchestration -- cleanup ordering, state file lifecycle -- with a fake.
+func mountWith(ctx context.Context, newDrv driverFactory, src Source, dest string, opts MountOptions) error {
 	log := clog.FromContext(ctx)
 
 	absDest, err := filepath.Abs(dest)
@@ -53,7 +59,7 @@ func Mount(ctx context.Context, src Source, dest string, opts MountOptions) erro
 	if opts.Mode == "" {
 		opts.Mode = string(modeAuto)
 	}
-	drv, err := newDriver(resolveMode(mode(opts.Mode)))
+	drv, err := newDrv(resolveMode(mode(opts.Mode)))
 	if err != nil {
 		return err
 	}
@@ -197,6 +203,11 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 // if the state file is absent it falls back to treating dest as a single
 // (blob) mountpoint and runs umount/fusermount.
 func Unmount(ctx context.Context, dest string) error {
+	return unmountWith(ctx, newDriver, dest)
+}
+
+// unmountWith is Unmount with the driver constructor injected. See mountWith.
+func unmountWith(ctx context.Context, newDrv driverFactory, dest string) error {
 	log := clog.FromContext(ctx)
 	absDest, err := filepath.Abs(dest)
 	if err != nil {
@@ -206,16 +217,16 @@ func Unmount(ctx context.Context, dest string) error {
 
 	st, err := loadState(dest)
 	if err == nil {
-		return unmountImage(ctx, dest, st, log)
+		return unmountImage(ctx, newDrv, dest, st, log)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return unmountBlob(ctx, dest, log)
+	return unmountBlob(ctx, newDrv, dest, log)
 }
 
-func unmountImage(ctx context.Context, dest string, st *mountState, log *clog.Logger) error {
-	drv, err := newDriver(st.Mode)
+func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mountState, log *clog.Logger) error {
+	drv, err := newDrv(st.Mode)
 	if err != nil {
 		return err
 	}
@@ -226,7 +237,7 @@ func unmountImage(ctx context.Context, dest string, st *mountState, log *clog.Lo
 	// can rerun `apko erofs umount` after addressing whatever is keeping
 	// the mount busy.
 	for _, mp := range st.Mounts {
-		if err := unmountOne(ctx, drv, mp); err != nil {
+		if err := drv.Unmount(ctx, mp); err != nil {
 			return fmt.Errorf("umount %s: %w (remaining mounts left intact; rerun once they are no longer busy)", mp, err)
 		}
 		log.Infof("unmounted %s", mp)
@@ -242,51 +253,21 @@ func unmountImage(ctx context.Context, dest string, st *mountState, log *clog.Lo
 	return nil
 }
 
-// unmountBlob tears down a single mountpoint produced by mountBlob. Since
-// blobs do not have a state file we have to guess which umount tool applies;
-// we try kernel umount first (which works for both kernel-erofs and any
-// kernel-overlay-over-fuse cases by transitively triggering fuse teardown
-// where appropriate) and fall back to fusermount.
-func unmountBlob(ctx context.Context, dest string, log *clog.Logger) error {
-	if err := runCmd(ctx, "umount", dest); err == nil {
-		log.Infof("unmounted %s", dest)
-		return nil
-	}
-	fm, err := lookupFusermount()
+// unmountBlob tears down a single mountpoint produced by mountBlob. Blobs have
+// no state file, so the mode they were mounted with is unknown. The fuse
+// driver's Unmount is already the kernel-umount-then-fusermount chain that
+// covers both cases, so it is what we use here regardless of how the mount was
+// made.
+func unmountBlob(ctx context.Context, newDrv driverFactory, dest string, log *clog.Logger) error {
+	drv, err := newDrv(modeFuse)
 	if err != nil {
-		return fmt.Errorf("umount %s: kernel umount failed and no fusermount available", dest)
+		return err
 	}
-	if err := runCmd(ctx, fm, "-u", dest); err != nil {
+	if err := drv.Unmount(ctx, dest); err != nil {
 		return fmt.Errorf("umount %s: %w", dest, err)
 	}
 	log.Infof("unmounted %s", dest)
 	return nil
-}
-
-// unmountOne unmounts mp using the appropriate tool for the recorded driver.
-// We don't try to be clever about kernel-vs-fuse here beyond what the state
-// file tells us; if the user mounted with kernel they need kernel umount.
-func unmountOne(ctx context.Context, drv driver, mp string) error {
-	switch drv.Name() {
-	case modeKernel:
-		return runCmd(ctx, "umount", mp)
-	case modeFuse:
-		// For fuse mounts: the merged view may itself be a kernel overlay
-		// (when overlayfs over FUSE worked) or a fuse-overlayfs mount.
-		// `umount` handles both kernel-side overlays; `fusermount -u`
-		// handles fuse-overlayfs and the per-layer erofsfuse mounts. Try
-		// kernel umount first (cheap, no-op if not applicable), then
-		// fusermount.
-		if err := runCmd(ctx, "umount", mp); err == nil {
-			return nil
-		}
-		fm, err := lookupFusermount()
-		if err != nil {
-			return err
-		}
-		return runCmd(ctx, fm, "-u", mp)
-	}
-	return fmt.Errorf("unknown mode %q", drv.Name())
 }
 
 func ensureDir(path string) error {

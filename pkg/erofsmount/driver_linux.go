@@ -47,7 +47,17 @@ type driver interface {
 	// true, upper and work are ignored and the overlay is built as
 	// lowerdir-only (which overlayfs supports for read-only stacks).
 	AssembleOverlay(ctx context.Context, lowers []string, upper, work, merged string, readOnly bool) (func() error, error)
+	// Unmount tears down a single mountpoint with the tool this driver
+	// mounts with. Unlike the closures returned by MountLayer and
+	// AssembleOverlay it needs no prior call in this process, so it is what
+	// Unmount uses when working from a state file.
+	Unmount(ctx context.Context, mp string) error
 }
+
+// driverFactory builds the driver for a mode. Mount and Unmount pass newDriver;
+// tests pass a factory returning a fake, which is the only way to exercise the
+// mount and unmount orchestration without root and real filesystems.
+type driverFactory func(m mode) (driver, error)
 
 // newDriver returns the driver that corresponds to m. m must be one of
 // modeKernel or modeFuse — modeAuto must be resolved by the caller via
@@ -102,6 +112,11 @@ func (d *kernelDriver) MountLayer(ctx context.Context, blob, mp string) (func() 
 	}, nil
 }
 
+func (d *kernelDriver) Unmount(ctx context.Context, mp string) error {
+	uargs := buildKernelUmountArgs(mp)
+	return runCmd(ctx, uargs[0], uargs[1:]...)
+}
+
 func (d *kernelDriver) AssembleOverlay(ctx context.Context, lowers []string, upper, work, merged string, readOnly bool) (func() error, error) {
 	args := buildKernelOverlayArgs(lowers, upper, work, merged, readOnly)
 	if err := runCmd(ctx, args[0], args[1:]...); err != nil {
@@ -142,6 +157,23 @@ func (d *fuseDriver) MountLayer(ctx context.Context, blob, mp string) (func() er
 		uargs := buildFusermountUmountArgs(fm, mp)
 		return runCmd(context.Background(), uargs[0], uargs[1:]...)
 	}, nil
+}
+
+// Unmount tries kernel umount before fusermount. A merged view mounted in fuse
+// mode may itself be a kernel overlay (when overlayfs over FUSE worked) or a
+// fuse-overlayfs mount, and per-layer mounts are erofsfuse; umount handles the
+// first, fusermount -u the other two.
+func (d *fuseDriver) Unmount(ctx context.Context, mp string) error {
+	uargs := buildKernelUmountArgs(mp)
+	if err := runCmd(ctx, uargs[0], uargs[1:]...); err == nil {
+		return nil
+	}
+	fm, err := lookupFusermount()
+	if err != nil {
+		return err
+	}
+	fargs := buildFusermountUmountArgs(fm, mp)
+	return runCmd(ctx, fargs[0], fargs[1:]...)
 }
 
 func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper, work, merged string, readOnly bool) (func() error, error) {
