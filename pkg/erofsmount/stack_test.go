@@ -45,8 +45,9 @@ func (n nakedFS) Open(name string) (fs.File, error) { return n.inner.Open(name) 
 // (rdev 0). A real device names its rdev explicitly.
 type overlayFS struct {
 	fstest.MapFS
-	rdev   map[string]uint64 // char-device path -> device number; absent means 0
-	opaque map[string]bool   // directory paths carrying trusted.overlay.opaque=y
+	rdev    map[string]uint64 // char-device path -> device number; absent means 0
+	opaque  map[string]bool   // directory paths carrying trusted.overlay.opaque=y
+	infoErr map[string]error  // paths whose DirEntry.Info() fails
 }
 
 func (o overlayFS) wrap(p string, fi fs.FileInfo) fs.FileInfo {
@@ -80,6 +81,9 @@ type overlayEntry struct {
 }
 
 func (e overlayEntry) Info() (fs.FileInfo, error) {
+	if err := e.fsys.infoErr[e.path]; err != nil {
+		return nil, err
+	}
 	fi, err := e.DirEntry.Info()
 	if err != nil {
 		return nil, err
@@ -534,6 +538,44 @@ func TestStack_OpaqueDir_StatErrorIsNotSilentlyPermissive(t *testing.T) {
 	// succeed either.
 	if _, err := fs.Stat(s, "etc/secret"); !errors.Is(err, errCorruptXattr) {
 		t.Errorf("Stat(etc/secret) err = %v; want error wrapping %v", err, errCorruptXattr)
+	}
+}
+
+// errCorruptInode stands in for whatever go-erofs returns for an inode it
+// cannot read. Like errCorruptXattr, the only property that matters is that it
+// is not fs.ErrNotExist.
+var errCorruptInode = errors.New("simulated unreadable inode")
+
+// A char device whose inode we cannot read may or may not be a whiteout, and
+// both answers change the merged view. Surface the error instead of picking one,
+// matching isOpaqueDir.
+func TestStack_Whiteout_InfoErrorIsNotSilentlyPermissive(t *testing.T) {
+	lower := fstest.MapFS{
+		"etc":        {Mode: fs.ModeDir | 0o755},
+		"etc/secret": {Data: []byte("hidden"), Mode: 0o644},
+	}
+	top := overlayFS{
+		MapFS: fstest.MapFS{
+			"etc":        {Mode: fs.ModeDir | 0o755},
+			"etc/secret": whiteout(),
+		},
+		infoErr: map[string]error{"etc/secret": errCorruptInode},
+	}
+	s := NewStack(lower, top)
+
+	// mergeDir: neither the tombstone nor the entry it may delete may be
+	// listed on a guess.
+	if ents, err := fs.ReadDir(s, "etc"); !errors.Is(err, errCorruptInode) {
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Errorf("ReadDir(etc) = %v, %v; want error wrapping %v", names, err, errCorruptInode)
+	}
+
+	// lookup: same for resolving the name directly.
+	if _, err := fs.Stat(s, "etc/secret"); !errors.Is(err, errCorruptInode) {
+		t.Errorf("Stat(etc/secret) err = %v; want error wrapping %v", err, errCorruptInode)
 	}
 }
 

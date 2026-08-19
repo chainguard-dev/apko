@@ -215,7 +215,11 @@ func (s *Stack) lookup(name string) (int, error) {
 			if e.Name() != base {
 				continue
 			}
-			if s.isWhiteout(e) {
+			white, err := s.isWhiteout(e)
+			if err != nil {
+				return -1, err
+			}
+			if white {
 				// A whiteout hides every lower layer's entry, and is not
 				// itself part of the merged view.
 				return -1, fs.ErrNotExist
@@ -255,7 +259,11 @@ func (s *Stack) mergeDir(name string) ([]fs.DirEntry, error) {
 				continue
 			}
 			seen[n] = true
-			if s.isWhiteout(e) {
+			white, err := s.isWhiteout(e)
+			if err != nil {
+				return nil, err
+			}
+			if white {
 				continue // tombstone: shadows lower layers, never listed
 			}
 			out = append(out, e)
@@ -280,19 +288,22 @@ func (s *Stack) mergeDir(name string) ([]fs.DirEntry, error) {
 //
 // The cheap Type() check comes first so the common case costs nothing: only a
 // char device is worth an Info() call, which for a real EROFS layer reads the
-// inode.
-func (s *Stack) isWhiteout(e fs.DirEntry) bool {
+// inode. That call's failure is reported rather than swallowed, for the same
+// reason as isOpaqueDir: whether the entry is a tombstone decides what the
+// merged view shows, and answering it from an inode we could not read is a
+// guess either way.
+func (s *Stack) isWhiteout(e fs.DirEntry) (bool, error) {
 	if !s.whiteouts || e.Type()&fs.ModeCharDevice == 0 {
-		return false
+		return false, nil
 	}
 	info, err := e.Info()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("stat %s to check for whiteout: %w", e.Name(), err)
 	}
 	// go-erofs advertises Rdev() on the FileInfo it returns; an fs.FS with no
 	// notion of device numbers cannot express a whiteout at all.
 	rd, ok := info.(interface{ Rdev() uint64 })
-	return ok && rd.Rdev() == 0
+	return ok && rd.Rdev() == 0, nil
 }
 
 // isOpaqueDir reports whether fsys's copy of dir is an opaque directory --
