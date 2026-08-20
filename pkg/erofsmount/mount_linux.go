@@ -239,19 +239,25 @@ func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mo
 	if err != nil {
 		return err
 	}
-	// st.Mounts is overlay-first then per-layer mounts in LIFO order. If
-	// any umount fails, stop: layer mounts that come after a still-pinned
-	// overlay would only return EBUSY noise, and continuing past an error
-	// would also leave the state file out of sync with reality. The user
-	// can rerun `apko erofs umount` after addressing whatever is keeping
-	// the mount busy.
-	// Drop each entry as it comes down and rewrite the state file if one
-	// fails, so the file always describes what is still mounted. Without that
-	// a rerun starts again at merged -- already gone -- and fails there
-	// without ever reaching the entry that was busy.
+	// checkResolved compares each mountpoint against dest with its own
+	// symlinks resolved, so resolve dest once here.
+	realDest, err := filepath.EvalSymlinks(dest)
+	if err != nil {
+		return fmt.Errorf("resolve dest %s: %w", dest, err)
+	}
+	// st.Mounts is overlay-first then per-layer mounts in LIFO order. If any
+	// umount fails, stop: layer mounts that come after a still-pinned overlay
+	// would only return EBUSY noise. Drop each entry as it comes down and
+	// rewrite the state file if one fails, so the file always describes what
+	// is still mounted -- without that a rerun starts again at merged, already
+	// gone, and fails there without ever reaching the entry that was busy.
 	for len(st.Mounts) > 0 {
 		mp := st.Mounts[0]
-		if err := drv.Unmount(ctx, mp); err != nil {
+		err := checkResolved(dest, realDest, mp)
+		if err == nil {
+			err = drv.Unmount(ctx, mp)
+		}
+		if err != nil {
 			if werr := writeState(dest, st); werr != nil {
 				log.Warnf("rewrite state after partial unmount: %v", werr)
 			}
@@ -298,6 +304,17 @@ func unmountBlob(ctx context.Context, newDrv driverFactory, dest string, log *cl
 func ensureDir(path string) error {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", path, err)
+	}
+	// MkdirAll is satisfied by a symlink to an existing directory, so a link
+	// planted at <dest>/merged would have the mount land wherever it points --
+	// and Unmount, which requires the same path to resolve to itself, would
+	// then refuse to take it back down. Only a real directory will do.
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%s is a %s, not a directory; refusing to mount there", path, fi.Mode().Type())
 	}
 	return nil
 }

@@ -302,6 +302,40 @@ func TestUnmount_PlantedStateFileNeverReachesUmount(t *testing.T) {
 	}
 }
 
+// The whitelist in validate constrains the path string; this covers the other
+// half, a name that passes it but resolves somewhere else. umount(8)
+// canonicalizes its argument, so following the symlink would take the victim
+// down instead.
+func TestUnmountImage_SymlinkedMountpointNeverReachesUmount(t *testing.T) {
+	src := ociDirWithLayers(t, 3)
+	dest := t.TempDir()
+	f := newFakeDriver()
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+
+	// Stand in for an attacker with write access to dest swapping merged --
+	// the first entry in the state file -- for a link elsewhere.
+	victim := t.TempDir()
+	merged := filepath.Join(dest, "merged")
+	if err := os.Remove(merged); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, merged); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unmountWith(context.Background(), f.factory(), dest); err == nil {
+		t.Fatal("unmountWith succeeded on a mountpoint that resolves outside dest")
+	}
+	if len(f.unmounted) != 0 {
+		t.Errorf("unmounted %v; a redirected mountpoint must not reach umount", f.unmounted)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("victim dir disturbed: %v", err)
+	}
+}
+
 func TestUnmountImage_PartialFailureIsResumable(t *testing.T) {
 	src := ociDirWithLayers(t, 3)
 	dest := t.TempDir()
@@ -419,5 +453,26 @@ func TestMountImage_WritableKeepsUpperOnUnmount(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dest, sub)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s after unmount: stat err = %v, want ErrNotExist", sub, err)
 		}
+	}
+}
+
+// The mount-side half of the symlink problem: MkdirAll accepts a link to an
+// existing directory, so without a check the layer would be mounted over
+// whatever it points at -- and Unmount would then refuse to take it down.
+func TestMountImage_RefusesASymlinkedMountpoint(t *testing.T) {
+	src := ociDirWithLayers(t, 1)
+	dest := t.TempDir()
+	victim := t.TempDir()
+	if err := os.Symlink(victim, filepath.Join(dest, "merged")); err != nil {
+		t.Fatal(err)
+	}
+
+	f := newFakeDriver()
+	err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"})
+	if err == nil {
+		t.Fatal("mountWith succeeded with merged symlinked out of dest")
+	}
+	if len(f.mounted) != 0 {
+		t.Errorf("mounted %v, want nothing", f.mounted)
 	}
 }

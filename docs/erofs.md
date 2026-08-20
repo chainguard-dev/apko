@@ -188,7 +188,7 @@ apko erofs umount /mnt/apko-erofs
 
 If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
 
-`umount` works from `DEST/.apko-erofs-mount.json`, which `mount` wrote. It only accepts mountpoints that a mount creates under `DEST` — `DEST/merged` and `DEST/layers/NN` — so a tampered file cannot redirect a root `umount` elsewhere. Still, prefer a `DEST` only you can write to: anything else lets another user decide what your `umount` takes down within it.
+For an OCI source, `umount` works from `DEST/.apko-erofs-mount.json`, which `mount` wrote; a raw blob has no enclosing directory to hold one, so `umount` falls back to unmounting `DEST` itself. It only accepts mountpoints that a mount creates under `DEST` — `DEST/merged` and `DEST/layers/NN` — and checks that each still resolves to itself, so a tampered file can neither name a path outside `DEST` nor reach one through a symlink. That check and the `umount` it guards are separate steps, though, so **use a `DEST` only you can write to**: anywhere else, another user can race the two and choose what your `umount` takes down.
 
 If a mountpoint is busy, `umount` stops there and rewrites the state file to list only what is still mounted, so rerunning it once the mount is free finishes the teardown.
 

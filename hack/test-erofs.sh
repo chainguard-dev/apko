@@ -101,6 +101,20 @@ assert_state() {
     [ "${got}" = "$3" ] || fail "state of $1: $2 is ${got}, expected $3"
 }
 
+# plant_state DEST MOUNTPOINT.  Writes the state file an attacker with write
+# access to DEST would, naming MOUNTPOINT as the thing to take down.
+plant_state() {
+    jq -n --arg dest "$1" --arg mp "$2" '{
+        schemaVersion: 1,
+        mode: "kernel",
+        source: "tampered",
+        dest: $dest,
+        created: "2026-01-01T00:00:00Z",
+        writable: false,
+        mounts: [$mp]
+    }' >"$1/${state}"
+}
+
 # Both listings below collapse to "mode uid/gid path [-> target]" so they can
 # be diffed.  `apko erofs ls` columns: mode uid/gid size date time path
 # [-> target].
@@ -262,29 +276,34 @@ echo "::endgroup::"
 
 echo "::group::apko erofs umount rejects a tampered state file"
 # The state file lives inside DEST, so whoever can write there decides what a
-# root umount is asked to take down.  Plant one naming a mount outside DEST and
-# check that it is refused -- and that the decoy is still mounted afterwards,
-# which is the part a message-only check would miss.
+# root umount is asked to take down.  Two shapes have to be refused: a
+# mountpoint plainly outside DEST, and one named DEST/merged -- which the
+# whitelist allows -- that is a symlink pointing out.  umount(8) canonicalizes
+# its argument, so following the second lands on the decoy just as surely as
+# the first.  Both check that the decoy is still mounted afterwards, which is
+# the part a message-only check would miss.
 decoy="${workdir}/decoy"
-tampered="${workdir}/tampered"
-mkdir -p "${decoy}" "${tampered}"
+mkdir -p "${decoy}"
 "${sudo[@]}" mount -t tmpfs -o size=1m tmpfs "${decoy}"
 assert_mounted "${decoy}"
 
-jq -n --arg dest "${tampered}" --arg mp "${decoy}" '{
-    schemaVersion: 1,
-    mode: "kernel",
-    source: "tampered",
-    dest: $dest,
-    created: "2026-01-01T00:00:00Z",
-    writable: false,
-    mounts: [$mp]
-}' >"${tampered}/${state}"
-
-if "${sudo[@]}" "${apko}" erofs umount "${tampered}"; then
+outside="${workdir}/tampered-outside"
+mkdir -p "${outside}"
+plant_state "${outside}" "${decoy}"
+if "${sudo[@]}" "${apko}" erofs umount "${outside}"; then
     fail "umount accepted a state file naming a mount outside DEST"
 fi
 assert_mounted "${decoy}"
+
+symlinked="${workdir}/tampered-symlink"
+mkdir -p "${symlinked}"
+ln -s "${decoy}" "${symlinked}/merged"
+plant_state "${symlinked}" "${symlinked}/merged"
+if "${sudo[@]}" "${apko}" erofs umount "${symlinked}"; then
+    fail "umount followed a symlinked DEST/merged out of DEST"
+fi
+assert_mounted "${decoy}"
+
 "${sudo[@]}" umount "${decoy}"
 echo "::endgroup::"
 

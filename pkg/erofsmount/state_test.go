@@ -157,6 +157,83 @@ func TestLoadStateRejectsNoMounts(t *testing.T) {
 	}
 }
 
+// resolved is checkResolved with dest resolved the way unmountImage does it.
+func resolved(t *testing.T, dest, mp string) error {
+	t.Helper()
+	realDest, err := filepath.EvalSymlinks(dest)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", dest, err)
+	}
+	return checkResolved(dest, realDest, mp)
+}
+
+func TestCheckResolvedAcceptsRealDirectories(t *testing.T) {
+	dest := t.TempDir()
+	for _, sub := range []string{"merged", "layers/00"} {
+		mp := filepath.Join(dest, sub)
+		if err := os.MkdirAll(mp, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := resolved(t, dest, mp); err != nil {
+			t.Errorf("checkResolved rejected the real directory %s: %v", mp, err)
+		}
+	}
+}
+
+// The name passes validate -- it is literally <dest>/merged -- but umount(8)
+// canonicalizes, so following it would take down the victim instead.
+func TestCheckResolvedRejectsSymlinkedMountpoint(t *testing.T) {
+	dest := t.TempDir()
+	victim := t.TempDir()
+	mp := filepath.Join(dest, "merged")
+	if err := os.Symlink(victim, mp); err != nil {
+		t.Fatal(err)
+	}
+	if err := resolved(t, dest, mp); err == nil {
+		t.Fatalf("checkResolved accepted %s -> %s", mp, victim)
+	}
+}
+
+// A symlink higher up the recorded path is the same attack one level out.
+func TestCheckResolvedRejectsSymlinkedParent(t *testing.T) {
+	dest := t.TempDir()
+	victim := t.TempDir()
+	if err := os.Mkdir(filepath.Join(victim, "00"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dest, "layers")); err != nil {
+		t.Fatal(err)
+	}
+	mp := filepath.Join(dest, "layers", "00")
+	if err := resolved(t, dest, mp); err == nil {
+		t.Fatalf("checkResolved accepted %s through a symlinked parent", mp)
+	}
+}
+
+// A dest that is itself reached through a symlink -- /var/run/... and the like
+// -- is legitimate, and the check must not reject it just because dest and its
+// resolution differ.
+func TestCheckResolvedToleratesSymlinkedDest(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(real, "merged"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := resolved(t, link, filepath.Join(link, "merged")); err != nil {
+		t.Errorf("checkResolved rejected a dest reached through a symlink: %v", err)
+	}
+}
+
+func TestCheckResolvedRejectsMissingPath(t *testing.T) {
+	dest := t.TempDir()
+	if err := resolved(t, dest, filepath.Join(dest, "merged")); err == nil {
+		t.Fatal("checkResolved accepted a path that does not exist")
+	}
+}
+
 func TestLoadStateAcceptsWhatMountWrites(t *testing.T) {
 	dest := t.TempDir()
 	planted(t, dest, dest, []string{
