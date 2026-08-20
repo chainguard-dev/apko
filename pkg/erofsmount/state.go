@@ -15,6 +15,7 @@
 package erofsmount
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,6 +128,9 @@ func loadState(dest string) (*mountState, error) {
 		}
 		return nil, fmt.Errorf("read state %s: %w", path, err)
 	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, fmt.Errorf("state %s is empty: a mount was interrupted before it finished; remove the file and clean up by hand", path)
+	}
 	var s mountState
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse state %s: %w", path, err)
@@ -159,10 +163,18 @@ func (s *mountState) validate(dest string) error {
 	if len(s.Mounts) == 0 {
 		return errors.New("records no mounts")
 	}
+	seen := make(map[string]bool, len(s.Mounts))
 	for _, mp := range s.Mounts {
 		if !filepath.IsAbs(mp) {
 			return fmt.Errorf("mount %q is not an absolute path", mp)
 		}
+		// A repeat would be unmounted twice; the second attempt fails because
+		// the path is no longer a mountpoint, which wedges the teardown at an
+		// entry that is already done.
+		if seen[mp] {
+			return fmt.Errorf("mount %q is listed more than once", mp)
+		}
+		seen[mp] = true
 		rel, err := filepath.Rel(dest, filepath.Clean(mp))
 		if err != nil {
 			return fmt.Errorf("mount %q is not under %s: %w", mp, dest, err)
@@ -203,6 +215,24 @@ func checkResolved(dest, realDest, mp string) error {
 		return fmt.Errorf("resolves to %q, not %q; a path component is a symlink", resolved, want)
 	}
 	return nil
+}
+
+// claimState reserves dest by creating the state file empty and exclusively,
+// before anything is mounted; writeState replaces it with the real record once
+// the mount is complete. O_EXCL rather than a stat first is what makes it a
+// claim: two mounts racing for the same dest cannot both decide it is free.
+// It also refuses a symlink sitting at that path, which O_CREATE alone would
+// have followed.
+func claimState(dest string) error {
+	path := statePath(dest)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("dest %s already has a mount state file (%s); umount first", dest, path)
+		}
+		return fmt.Errorf("create state file %s: %w", path, err)
+	}
+	return f.Close()
 }
 
 // removeState deletes statePath(dest). It is a no-op if the file is already

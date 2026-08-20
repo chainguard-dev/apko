@@ -96,13 +96,6 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 		return err
 	}
 
-	// Refuse to clobber an existing mount.
-	if _, err := os.Stat(statePath(dest)); err == nil {
-		return fmt.Errorf("dest %s already has a mount state file (%s); umount first", dest, statePath(dest))
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stat state file: %w", err)
-	}
-
 	var cleanups []func() error
 	defer func() {
 		if retErr == nil {
@@ -114,6 +107,17 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 			}
 		}
 	}()
+
+	// Claim dest before mounting anything. An empty state file goes down
+	// first and writeState replaces it at the end, so a second mount racing
+	// for the same dest loses here rather than both of them proceeding.
+	if err := ensureDir(dest); err != nil {
+		return err
+	}
+	if err := claimState(dest); err != nil {
+		return err
+	}
+	cleanups = append(cleanups, func() error { return removeState(dest) })
 
 	// Single-layer read-only short-circuit: overlay buys nothing when there's
 	// one lower and no upper, so mount the layer straight at DEST/merged.

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -231,6 +232,51 @@ func TestCheckResolvedRejectsMissingPath(t *testing.T) {
 	dest := t.TempDir()
 	if err := resolved(t, dest, filepath.Join(dest, "merged")); err == nil {
 		t.Fatal("checkResolved accepted a path that does not exist")
+	}
+}
+
+// A repeat is inside dest, so it escapes nothing -- but the second umount of
+// it fails on a path that is no longer a mountpoint, wedging the teardown at
+// an entry that is already done.
+func TestLoadStateRejectsDuplicateMounts(t *testing.T) {
+	dest := t.TempDir()
+	merged := filepath.Join(dest, "merged")
+	planted(t, dest, dest, []string{merged, merged})
+	if _, err := loadState(dest); err == nil {
+		t.Fatal("loadState accepted a mount listed twice")
+	}
+}
+
+// claimState leaves an empty file behind if the mount dies before writeState;
+// say so rather than reporting a JSON syntax error.
+func TestLoadStateRejectsAnEmptyFile(t *testing.T) {
+	dest := t.TempDir()
+	if err := claimState(dest); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadState(dest)
+	if err == nil {
+		t.Fatal("loadState accepted an empty state file")
+	}
+	if !strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("error %q does not explain the empty file", err)
+	}
+}
+
+func TestClaimStateIsExclusive(t *testing.T) {
+	dest := t.TempDir()
+	if err := claimState(dest); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if err := claimState(dest); err == nil {
+		t.Fatal("second claim succeeded; the first must win the dest")
+	}
+	// And the claim is what a later writeState replaces.
+	if err := removeState(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := claimState(dest); err != nil {
+		t.Fatalf("claim after release: %v", err)
 	}
 }
 
