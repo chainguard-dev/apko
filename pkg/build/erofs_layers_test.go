@@ -270,8 +270,46 @@ func TestSplitErofsLayers_UngroupedPackageIsAnError(t *testing.T) {
 	groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
 	pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
 
-	_, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, t.TempDir(), epoch)
+	tmpdir := t.TempDir()
+	_, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, tmpdir, epoch)
 	require.ErrorContains(t, err, "orphan")
+
+	// And nothing is left behind on the way out.
+	require.Empty(t, lsDir(t, tmpdir), "temp layer files leaked on the error path")
+}
+
+// TestSplitErofsLayers_CleansUpOnError covers the other shape of failure: an
+// error raised part-way through the walk rather than before it starts.
+func TestSplitErofsLayers_CleansUpOnError(t *testing.T) {
+	pkg1 := newPkg("pkg1")
+	fsys := tarfsFixture(t, []entry{
+		{path: "usr/bin/one", data: "one\n", pkg: pkg1},
+		{path: "etc/hello", data: "hi\n"},
+	})
+
+	groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
+	pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpdir := t.TempDir()
+	_, err := splitErofsLayers(ctx, fsys, groups, pkgToDiff, tmpdir, epoch)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, lsDir(t, tmpdir), "temp layer files leaked on the error path")
+}
+
+func lsDir(t *testing.T, dir string) []string {
+	t.Helper()
+
+	ents, err := os.ReadDir(dir)
+	require.NoError(t, err)
+
+	out := make([]string, 0, len(ents))
+	for _, e := range ents {
+		out = append(out, e.Name())
+	}
+	return out
 }
 
 func readLayerFile(t *testing.T, l v1.Layer, name string) []byte {

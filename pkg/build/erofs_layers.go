@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -47,49 +48,29 @@ import (
 func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, buildTime time.Time) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
-	type erofsGroupWriter struct {
-		path    string
-		w       *erofs.Writer
-		closer  func() error
-		emitted map[string]bool // absPath -> already emitted into this writer
-		pkgs    map[string]bool // package names owned by this group
-	}
-
-	newWriter := func() (*erofsGroupWriter, error) {
-		f, err := newErofsLayerFile(tmpdir, "apko-erofs-*.bin")
-		if err != nil {
-			return nil, err
-		}
-		var createOpts []erofs.CreateOpt
-		if !buildTime.IsZero() {
-			createOpts = append(createOpts, erofs.WithBuildTime(uint64(buildTime.Unix()), uint32(buildTime.Nanosecond())))
-		}
-		gw := &erofsGroupWriter{
-			path:    f.Name(),
-			w:       erofs.Create(f, createOpts...),
-			emitted: map[string]bool{},
-			pkgs:    map[string]bool{},
-		}
-		// Close the file only after closing the erofs writer (which may seek
-		// back to rewrite the superblock).
-		gw.closer = func() error {
-			if err := gw.w.Close(); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("finalizing erofs image %s: %w", f.Name(), err)
-			}
-			return f.Close()
-		}
-		return gw, nil
-	}
-
 	// One writer per group, plus a top writer for entries not owned by any
 	// package.
 	packageToWriter := map[string]*erofsGroupWriter{}
 	groupToWriter := map[*group]*erofsGroupWriter{}
 	writers := make([]*erofsGroupWriter, 0, len(groups)+1)
 
+	// Nothing here is usable half-built: a caller that gets an error gets no
+	// layers, so every writer opened along the way has to be released and its
+	// temp file removed. Library callers have no MkdirTemp/RemoveAll wrapper
+	// around this the way the CLI does, and each writer holds an unlinked
+	// spool fd besides.
+	done := false
+	defer func() {
+		if done {
+			return
+		}
+		for _, gw := range writers {
+			gw.discard()
+		}
+	}()
+
 	for _, g := range groups {
-		gw, err := newWriter()
+		gw, err := newErofsGroupWriter(tmpdir, buildTime)
 		if err != nil {
 			return nil, err
 		}
@@ -97,10 +78,9 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		groupToWriter[g] = gw
 		for _, pkg := range g.pkgs {
 			packageToWriter[pkg.Name] = gw
-			gw.pkgs[pkg.Name] = true
 		}
 	}
-	top, err := newWriter()
+	top, err := newErofsGroupWriter(tmpdir, buildTime)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +254,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 	// Finalize each writer and produce v1.Layer values.
 	layers := make([]v1.Layer, 0, len(writers))
 	for i, gw := range writers {
-		if err := gw.closer(); err != nil {
+		if err := gw.finish(); err != nil {
 			return nil, err
 		}
 		// All layers except the final (top) carry role=overlay-lower per
@@ -289,7 +269,63 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		}
 		layers = append(layers, l)
 	}
+	done = true
 	return layers, nil
+}
+
+// erofsGroupWriter is one output layer under construction: a go-erofs Writer
+// over a temp file, plus the set of paths already written into it.
+type erofsGroupWriter struct {
+	path    string
+	file    *os.File
+	w       *erofs.Writer
+	emitted map[string]bool // absPath -> already emitted into this writer
+	closed  bool
+}
+
+func newErofsGroupWriter(tmpdir string, buildTime time.Time) (*erofsGroupWriter, error) {
+	f, err := newErofsLayerFile(tmpdir, "apko-erofs-*.bin")
+	if err != nil {
+		return nil, err
+	}
+	var createOpts []erofs.CreateOpt
+	if !buildTime.IsZero() {
+		createOpts = append(createOpts, erofs.WithBuildTime(uint64(buildTime.Unix()), uint32(buildTime.Nanosecond())))
+	}
+	return &erofsGroupWriter{
+		path:    f.Name(),
+		file:    f,
+		w:       erofs.Create(f, createOpts...),
+		emitted: map[string]bool{},
+	}, nil
+}
+
+// finish serializes the image and closes the temp file, which stays on disk
+// for the v1.Layer to read back. The erofs writer is closed first: it seeks
+// back to rewrite the superblock.
+func (gw *erofsGroupWriter) finish() error {
+	gw.closed = true
+	if err := gw.w.Close(); err != nil {
+		_ = gw.file.Close()
+		return fmt.Errorf("finalizing erofs image %s: %w", gw.path, err)
+	}
+	return gw.file.Close()
+}
+
+// discard releases everything gw holds and removes its temp file. It is safe
+// to call on a writer that has already been finished, and safe to call twice.
+//
+// go-erofs offers no abort: Writer.Close is the only thing that releases the
+// unlinked spool fd holding the file data, and it writes the whole image out
+// as a side effect. So the image gets written and then thrown away, which
+// costs some IO on a path that is already failing.
+func (gw *erofsGroupWriter) discard() {
+	if !gw.closed {
+		gw.closed = true
+		_ = gw.w.Close()
+		_ = gw.file.Close()
+	}
+	_ = os.Remove(gw.path)
 }
 
 // writeErofsRegularBytes writes a regular file with the given content into w
