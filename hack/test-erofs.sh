@@ -13,8 +13,8 @@
 # Example:
 #   hack/test-erofs.sh ./examples/wolfi-base.yaml
 #
-# Requires: jq, erofs-utils (fsck.erofs, dump.erofs), the kernel erofs driver,
-# and root (or passwordless sudo) for the mount.  Set APKO to use a binary
+# Requires: jq, mountpoint (util-linux), erofs-utils (fsck.erofs, dump.erofs),
+# the kernel erofs driver, and root (or passwordless sudo) for the mount.  Set APKO to use a binary
 # other than ./apko.  The --rw section needs a TMPDIR that overlayfs accepts
 # as an upperdir, which rules out tmpfs on older kernels.
 
@@ -38,7 +38,7 @@ fi
 # Resolved once: the mount sections run it through sudo.
 apko=$(readlink -f "${apko}")
 
-for tool in jq fsck.erofs dump.erofs; do
+for tool in jq mountpoint fsck.erofs dump.erofs; do
     command -v "${tool}" >/dev/null || {
         echo "missing required tool: ${tool}" >&2
         exit 1
@@ -257,6 +257,7 @@ echo "written through the mount" | "${sudo[@]}" tee "${rw}/merged/sentinel" >/de
 assert_not_mounted "${rw}/merged"
 assert_absent "${rw}/merged"
 assert_absent "${rw}/layers"
+assert_absent "${rw}/work"
 assert_absent "${rw}/${state}"
 # upper is the one directory umount must leave alone once something has been
 # written through it: removing it would silently discard those writes.
@@ -309,6 +310,10 @@ if "${sudo[@]}" "${apko}" erofs umount "${outside}"; then
     fail "umount accepted a state file naming a mount outside DEST"
 fi
 assert_mounted "${decoy}"
+# A nonzero exit on its own would also match a crash before the check ran.
+# The state file surviving untouched is what says it was refused.
+[ -f "${outside}/${state}" ] ||
+    fail "umount removed the state file it was supposed to refuse"
 
 symlinked="${workdir}/tampered-symlink"
 mkdir -p "${symlinked}"
@@ -318,6 +323,10 @@ if "${sudo[@]}" "${apko}" erofs umount "${symlinked}"; then
     fail "umount followed a symlinked DEST/merged out of DEST"
 fi
 assert_mounted "${decoy}"
+[ -f "${symlinked}/${state}" ] ||
+    fail "umount removed the state file it was supposed to refuse"
+[ -L "${symlinked}/merged" ] ||
+    fail "umount disturbed the symlink instead of refusing it"
 
 # The two refusals above are both decided before umount(2) is reached, so
 # neither exercises UMOUNT_NOFOLLOW.  This does: a symlink pointing straight at
