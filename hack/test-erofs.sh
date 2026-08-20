@@ -469,7 +469,10 @@ tmanifest="${tout}/blobs/sha256/${tmanifest}"
 while read -r digest; do
     [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
         fail "bad tar layer digest: ${digest}"
-    "${sudo[@]}" tar -C "${tarroot}" -xpf "${tout}/blobs/sha256/${digest#sha256:}"
+    # --numeric-owner or GNU tar resolves the layer's uname/gname against the
+    # runner's /etc/passwd, which has its own ids for lp, mail, news and uucp.
+    "${sudo[@]}" tar -C "${tarroot}" --numeric-owner -xpf \
+        "${tout}/blobs/sha256/${digest#sha256:}"
 done < <(jq -r '.layers[].digest' "${tmanifest}")
 
 tree_listing "${tarroot}" >"${workdir}/from-tar"
