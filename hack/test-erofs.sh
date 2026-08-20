@@ -7,6 +7,9 @@
 # EROFS filesystem that erofs-utils accepts and the kernel will mount, and
 # `apko erofs ls` reports the same tree the kernel does.
 #
+# The same yaml is then built again with `layering`, and the check repeats
+# against the overlayfs stack the kernel assembles from those layers.
+#
 # Usage: hack/test-erofs.sh <yaml>
 #
 # Example:
@@ -51,14 +54,83 @@ mnt="${workdir}/mnt"
 out="${workdir}/out"
 mkdir -p "${mnt}" "${out}"
 
-mounted=""
+# Every mountpoint this script creates, in the order it created them.  The
+# layered section stacks an overlay on top of several erofs mounts, so cleanup
+# has to come down in reverse.
+mounts=()
 cleanup() {
     # Unmount before removing anything, on the failure paths too: leaving a
-    # mount behind wedges the rest of the job.
-    [ -n "${mounted}" ] && "${sudo[@]}" umount "${mnt}" || true
-    rm -rf "${workdir}"
+    # mount behind wedges the rest of the job.  do_umount leaves gaps in the
+    # array, so walk the indices that are actually set.
+    local i
+    for i in $(printf '%s\n' "${!mounts[@]}" | sort -rn); do
+        "${sudo[@]}" umount "${mounts[i]}" 2>/dev/null || true
+    done
+    # Part of the tree is unpacked as root, so the removal has to be too.
+    "${sudo[@]}" rm -rf "${workdir}"
 }
 trap cleanup EXIT
+
+# do_mount records the mountpoint before mounting, so a mount that succeeds
+# and then trips `set -e` somewhere later is still torn down.
+do_mount() {
+    local mp="${*: -1}"
+    mounts+=("${mp}")
+    "${sudo[@]}" mount "$@"
+    mountpoint -q "${mp}"
+}
+
+do_umount() {
+    local mp="$1" i
+    "${sudo[@]}" umount "${mp}"
+    if mountpoint -q "${mp}"; then
+        echo "${mp} still mounted after umount" >&2
+        exit 1
+    fi
+    for i in "${!mounts[@]}"; do
+        if [ "${mounts[i]}" = "${mp}" ]; then
+            unset 'mounts[i]'
+        fi
+    done
+}
+
+# normalize_apko_ls turns `apko erofs ls` output into a sorted
+# "mode uid/gid path [-> target]" listing, comparable with normalize_kernel_ls.
+# ls columns: mode uid/gid size date time path [-> target]
+normalize_apko_ls() {
+    local raw="$1" out="$2"
+
+    # Both listings are whitespace-delimited, so a path containing a space
+    # would silently misalign them.  Fail instead.
+    if grep -qE '[[:space:]]$|  +->' "${raw}"; then
+        echo "unexpected whitespace in listing; comparison would be unreliable" >&2
+        exit 1
+    fi
+
+    awk '{
+        line = $1 " " $2 " " $6
+        if ($7 == "->") line = line " -> " $8
+        print line
+    }' "${raw}" | LC_ALL=C sort >"${out}"
+}
+
+# normalize_kernel_ls produces the same shape by walking a mounted tree.
+#
+# The walk runs privileged.  The image intentionally contains mode-0700
+# directories owned by other uids (root, usr/man, var/adm), which an
+# unprivileged find cannot descend into; `apko erofs ls` reads the image
+# directly and is not subject to that, so the two would disagree for a reason
+# that has nothing to do with apko.
+normalize_kernel_ls() {
+    local mp="$1" out="$2"
+
+    "${sudo[@]}" find "${mp}" -mindepth 1 -printf '%M\t%U/%G\t%P\t%y\t%l\n' |
+        awk -F'\t' '{
+            line = $1 " " $2 " " $3
+            if ($4 == "l") line = line " -> " $5
+            print line
+        }' | LC_ALL=C sort >"${out}"
+}
 
 echo "::group::build ${name} as erofs"
 "${apko}" build "${yaml}" "${name}:build" "${out}/" --format=erofs --arch=host
@@ -71,8 +143,7 @@ manifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${out}/index.json")
 [[ "${manifest}" =~ ^[0-9a-f]{64}$ ]] ||
     { echo "bad manifest digest: ${manifest}" >&2; exit 1; }
 
-# A single layer is what apko produces today; `layering` with `format: erofs`
-# is rejected during validation.  Loosen this when splitting returns.
+# Without `layering` in the config, apko emits exactly one layer.
 [ "$(jq -r '.layers | length' "${out}/blobs/sha256/${manifest}")" = 1 ] ||
     { echo "expected a single layer" >&2; exit 1; }
 layer=$(jq -r '.layers[0].digest | split(":")[1]' "${out}/blobs/sha256/${manifest}")
@@ -101,9 +172,7 @@ if ! grep -qw erofs /proc/filesystems; then
         { echo "erofs absent from /proc/filesystems after modprobe" >&2; exit 1; }
 fi
 
-"${sudo[@]}" mount -t erofs -o ro "${blob}" "${mnt}"
-mounted=1
-mountpoint -q "${mnt}"
+do_mount -t erofs -o ro "${blob}" "${mnt}"
 echo "::endgroup::"
 
 # Cross-check apko's own reader against the kernel's: same paths, same mode
@@ -112,32 +181,8 @@ echo "::endgroup::"
 # bug that motivated the v0.3.1 bump.
 echo "::group::compare 'apko erofs ls' against the mounted tree"
 "${apko}" erofs ls "${out}/" >"${workdir}/ls.raw"
-
-# Both listings are whitespace-delimited, so a path containing a space would
-# silently misalign them.  Fail instead.
-if grep -qE '[[:space:]]$|  +->' "${workdir}/ls.raw"; then
-    echo "unexpected whitespace in listing; comparison would be unreliable" >&2
-    exit 1
-fi
-
-# ls columns: mode uid/gid size date time path [-> target]
-awk '{
-    line = $1 " " $2 " " $6
-    if ($7 == "->") line = line " -> " $8
-    print line
-}' "${workdir}/ls.raw" | LC_ALL=C sort >"${workdir}/from-apko"
-
-# The walk runs privileged.  The image intentionally contains mode-0700
-# directories owned by other uids (root, usr/man, var/adm), which an
-# unprivileged find cannot descend into; `apko erofs ls` reads the image
-# directly and is not subject to that, so the two would disagree for a reason
-# that has nothing to do with apko.
-"${sudo[@]}" find "${mnt}" -mindepth 1 -printf '%M\t%U/%G\t%P\t%y\t%l\n' |
-    awk -F'\t' '{
-        line = $1 " " $2 " " $3
-        if ($4 == "l") line = line " -> " $5
-        print line
-    }' | LC_ALL=C sort >"${workdir}/from-kernel"
+normalize_apko_ls "${workdir}/ls.raw" "${workdir}/from-apko"
+normalize_kernel_ls "${mnt}" "${workdir}/from-kernel"
 
 if ! diff -u "${workdir}/from-kernel" "${workdir}/from-apko"; then
     echo "'apko erofs ls' disagrees with the kernel about the layer contents" >&2
@@ -146,11 +191,147 @@ fi
 echo "$(wc -l <"${workdir}/from-apko") entries agree"
 echo "::endgroup::"
 
-"${sudo[@]}" umount "${mnt}"
-mounted=""
-if mountpoint -q "${mnt}"; then
-    echo "${mnt} still mounted after umount" >&2
-    exit 1
+do_umount "${mnt}"
+
+########################################################################
+# Multi-layer: the same rootfs split across one EROFS layer per package
+# group.  Nothing else executes the split against a real kernel, and the
+# overlay stack is the only thing that shows whether the layers actually
+# compose back into the rootfs they came from.
+########################################################################
+
+layered_yaml="${workdir}/layered.yaml"
+cp "${yaml}" "${layered_yaml}"
+if ! grep -qE '^layering:' "${layered_yaml}"; then
+    cat >>"${layered_yaml}" <<'EOF'
+
+layering:
+  strategy: origin
+  budget: 4
+EOF
 fi
 
-echo "PASS: ${name} erofs layer mounts and matches 'apko erofs ls'"
+lout="${workdir}/out-layered"
+tout="${workdir}/out-tar"
+mkdir -p "${lout}" "${tout}"
+
+# The tar build of the same config is the reference for what the split must
+# preserve.  Both builds resolve from one lockfile, so a package published
+# between them cannot make them differ.
+lock="${workdir}/apko.lock.json"
+
+echo "::group::build ${name} as layered erofs, and as layered tar to compare"
+"${apko}" lock "${layered_yaml}" --output "${lock}" --arch=host
+"${apko}" build "${layered_yaml}" "${name}:layered" "${lout}/" \
+    --format=erofs --arch=host --lockfile "${lock}"
+"${apko}" build "${layered_yaml}" "${name}:layered-tar" "${tout}/" \
+    --arch=host --lockfile "${lock}"
+echo "::endgroup::"
+
+lmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${lout}/index.json")
+[[ "${lmanifest}" =~ ^[0-9a-f]{64}$ ]] ||
+    { echo "bad layered manifest digest: ${lmanifest}" >&2; exit 1; }
+lmanifest="${lout}/blobs/sha256/${lmanifest}"
+
+nlayers=$(jq -r '.layers | length' "${lmanifest}")
+[ "${nlayers}" -gt 1 ] ||
+    { echo "expected more than one layer with layering, got ${nlayers}" >&2; exit 1; }
+
+# Spec §3.8 rule 1 as apko produces it: every layer but the last is an
+# overlay-lower, the last carries no role at all.
+roles=$(jq -r '.layers[] | .annotations["org.erofs.role"] // "null"' "${lmanifest}")
+expected=$(
+    for ((i = 1; i < nlayers; i++)); do echo overlay-lower; done
+    echo null
+)
+[ "${roles}" = "${expected}" ] || {
+    echo "unexpected layer roles:" >&2
+    printf '%s\n' "${roles}" >&2
+    exit 1
+}
+
+echo "::group::mount ${nlayers} layers and stack them"
+# overlayfs lists lowerdirs top-down (highest priority first) while OCI orders
+# layers bottom-up, so each new layer is prepended.
+lowers=""
+i=0
+while read -r digest; do
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        { echo "bad layer digest: ${digest}" >&2; exit 1; }
+    lblob="${lout}/blobs/sha256/${digest#sha256:}"
+
+    mediatype=$(jq -r ".layers[${i}].mediaType" "${lmanifest}")
+    [ "${mediatype}" = "application/vnd.erofs" ] ||
+        { echo "unexpected mediaType on layer ${i}: ${mediatype}" >&2; exit 1; }
+    echo "${digest#sha256:}  ${lblob}" | sha256sum -c -
+    fsck.erofs -d3 "${lblob}" >/dev/null
+
+    lmnt=$(printf '%s/layer%02d' "${workdir}" "${i}")
+    mkdir -p "${lmnt}"
+    do_mount -t erofs -o ro "${lblob}" "${lmnt}"
+
+    # Every layer but the top one holds a package group, so it must carry that
+    # group's files -- not just the ancestor directories and the partial
+    # installed db it needs to describe them.  This is the shape the routing
+    # bug produced.
+    if [ "${i}" -lt "$((nlayers - 1))" ]; then
+        found=$("${sudo[@]}" find "${lmnt}" -type f \
+            ! -path "${lmnt}/usr/lib/apk/db/installed" -print -quit)
+        [ -n "${found}" ] ||
+            { echo "layer ${i} holds no package files" >&2; exit 1; }
+    fi
+
+    lowers="${lmnt}${lowers:+:${lowers}}"
+    i=$((i + 1))
+done < <(jq -r '.layers[].digest' "${lmanifest}")
+
+merged="${workdir}/merged"
+mkdir -p "${merged}"
+# No upperdir, so the overlay is read-only, which is all this needs and keeps
+# a stray write from ending up in the comparison.
+do_mount -t overlay overlay -o "ro,lowerdir=${lowers}" "${merged}"
+echo "::endgroup::"
+
+echo "::group::compare 'apko erofs ls' against the overlay stack"
+"${apko}" erofs ls "${lout}/" >"${workdir}/ls-layered.raw"
+normalize_apko_ls "${workdir}/ls-layered.raw" "${workdir}/from-apko-layered"
+normalize_kernel_ls "${merged}" "${workdir}/from-kernel-layered"
+
+if ! diff -u "${workdir}/from-kernel-layered" "${workdir}/from-apko-layered"; then
+    echo "'apko erofs ls' disagrees with overlayfs about the merged tree" >&2
+    exit 1
+fi
+echo "$(wc -l <"${workdir}/from-apko-layered") entries agree across ${nlayers} layers"
+echo "::endgroup::"
+
+# The tar split of the same config is the reference: unpacking its layers in
+# order reproduces the rootfs both formats started from.  A directory that
+# reaches no EROFS layer, or a file routed into a layer something else
+# shadows, shows up here and nowhere else in this script.
+echo "::group::compare the merged tree against the tar build of the same config"
+tarroot="${workdir}/tarroot"
+mkdir -p "${tarroot}"
+tmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${tout}/index.json")
+tmanifest="${tout}/blobs/sha256/${tmanifest}"
+while read -r digest; do
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        { echo "bad tar layer digest: ${digest}" >&2; exit 1; }
+    # --numeric-owner or GNU tar resolves the layer's uname/gname against the
+    # runner's /etc/passwd, which has its own ids for lp, mail, news and uucp.
+    "${sudo[@]}" tar -C "${tarroot}" --numeric-owner -xpf \
+        "${tout}/blobs/sha256/${digest#sha256:}"
+done < <(jq -r '.layers[].digest' "${tmanifest}")
+
+normalize_kernel_ls "${tarroot}" "${workdir}/from-tar"
+if ! diff -u "${workdir}/from-tar" "${workdir}/from-apko-layered"; then
+    echo "the merged EROFS tree differs from the tar build of the same config" >&2
+    exit 1
+fi
+echo "::endgroup::"
+
+do_umount "${merged}"
+for ((i = nlayers - 1; i >= 0; i--)); do
+    do_umount "$(printf '%s/layer%02d' "${workdir}" "${i}")"
+done
+
+echo "PASS: ${name} erofs layers mount and match 'apko erofs ls', single and layered"

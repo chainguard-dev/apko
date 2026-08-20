@@ -213,13 +213,93 @@ Once you have the blob on disk you can inspect or mount it exactly as in the pre
 
 ## Multi-layer builds
 
-Not yet. `format: erofs` currently emits a single layer; combining it with apko's
-[layering](layering.md) configuration is rejected at config-validation time rather
-than silently producing a one-layer image.
+Combine `format: erofs` with apko's [layering](layering.md) configuration to get one EROFS layer per package group plus a top layer for unowned files.
 
-Support for splitting a rootfs into one EROFS layer per package group (each tagged
-`org.erofs.role=overlay-lower` per spec §3.8, with the final layer carrying no role)
-is in progress.
+`erofs-layered.yaml`:
+
+```yaml
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+
+cmd: /bin/sh -l
+archs:
+  - host
+
+layering:
+  strategy: origin
+  budget: 4
+
+format: erofs
+```
+
+```sh
+mkdir -p out-layered
+apko build erofs-layered.yaml apko-erofs-layered:latest out-layered/ --arch=host
+```
+
+Inspect the manifest:
+
+```sh
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+jq '.layers[] | {mediaType, role: .annotations["org.erofs.role"]}' out-layered/blobs/sha256/$MANIFEST
+```
+
+Expected (last layer carries no role per spec §3.8 rule 1):
+
+```json
+{ "mediaType": "application/vnd.erofs", "role": "overlay-lower" }
+{ "mediaType": "application/vnd.erofs", "role": "overlay-lower" }
+{ "mediaType": "application/vnd.erofs", "role": "overlay-lower" }
+{ "mediaType": "application/vnd.erofs", "role": "overlay-lower" }
+{ "mediaType": "application/vnd.erofs", "role": null }
+```
+
+Each layer is independently mountable as an EROFS filesystem, and each carries its own partial `usr/lib/apk/db/installed` so per-layer scanners (Trivy, Snyk, Grype) can identify the packages it contributes.
+
+### Assemble the full rootfs with overlayfs
+
+The OCI spec composes layers with `overlayfs`-style semantics; for EROFS layers the composition is straightforward — mount each layer read-only, then stack them as `lowerdir`s:
+
+```sh
+# Pull each layer blob out of the OCI layout.
+BLOBS=$(pwd)/out-layered/blobs/sha256
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+mkdir -p mnt/{merged,work,upper}
+
+# Mount every layer; build the overlay lowerdir as we go. overlayfs lists
+# lowerdirs top-down (highest priority first), while OCI orders layers
+# bottom-up (index 0 is the base), so prepend each new layer.
+LOWERS=
+i=0
+for d in $(jq -r '.layers[].digest | split(":")[1]' "$BLOBS/$MANIFEST"); do
+  mp=mnt/lower$(printf %02d $i)
+  mkdir -p "$mp"
+  sudo mount -t erofs -o ro "$BLOBS/$d" "$mp" 2>/dev/null || \
+    erofsfuse "$BLOBS/$d" "$mp"
+  LOWERS="$mp${LOWERS:+:$LOWERS}"
+  i=$((i+1))
+done
+
+sudo mount -t overlay overlay \
+  -o "lowerdir=$LOWERS,upperdir=mnt/upper,workdir=mnt/work" \
+  mnt/merged
+
+ls mnt/merged/   # full rootfs
+```
+
+Clean up:
+
+```sh
+sudo umount mnt/merged
+for d in mnt/lower*; do sudo umount "$d" 2>/dev/null || fusermount -u "$d"; done
+```
+
+Production runtimes (containerd's erofs snapshotter, podman/CRI-O with the erofs-aware plugin, etc.) automate this assembly; the steps above are for verifying that an apko-built EROFS image really does compose into a valid rootfs.
 
 ## Using EROFS support as a Go library
 
@@ -252,11 +332,10 @@ For inspection, apko *does* expose a focused leaf library — see `chainguard.de
 
 ## Current limitations
 
-- **Single layer only.** `layering` and `format: erofs` cannot be combined yet; see [Multi-layer builds](#multi-layer-builds) above.
 - **No compression.** apko emits raw `application/vnd.erofs` layers only. The draft spec defines `application/vnd.erofs+zstd` but neither apko's writer nor the underlying go-erofs library writes compressed images yet.
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
 - **No chunk index.** Lazy-loading runtimes (per spec §3.4) won't get an index; reads are sequential.
-- **No `overlay-data` or `device` roles.** apko emits one unannotated EROFS layer; `org.erofs.role` is never set.
+- **No `overlay-data` or `device` roles.** Only `overlay-lower` (and unannotated final) layers are emitted.
 - **Hardlinks become independent copies.** go-erofs has no API to point two names at one inode, so each link costs another full copy of the file's data (rounded up to the block size) and `st_nlink`/`st_ino` identity is lost. Spec §3.7's materialize-or-fail rule covers *cross-layer* hardlinks; within a single layer the spec is silent, so this is conformant but not blessed by that section. Either way, a hardlink-heavy image will be larger as EROFS than as tar, where extra links are zero-byte entries.
 - **Spec is draft.** Media-type strings and annotation keys may change before the spec stabilizes. Treat any image built today as experimental.
 
