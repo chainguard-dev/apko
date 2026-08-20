@@ -163,17 +163,26 @@ func (d *fuseDriver) MountLayer(ctx context.Context, blob, mp string) (func() er
 // mode may itself be a kernel overlay (when overlayfs over FUSE worked) or a
 // fuse-overlayfs mount, and per-layer mounts are erofsfuse; umount handles the
 // first, fusermount -u the other two.
+//
+// Both failures are reported. Unmount is also the fall-back for a blob mount,
+// whose mode is unknown, so the kernel attempt is the one that failed for the
+// interesting reason -- returning only the fusermount error turns "target is
+// busy" into "neither fusermount3 nor fusermount found in PATH".
 func (d *fuseDriver) Unmount(ctx context.Context, mp string) error {
 	uargs := buildKernelUmountArgs(mp)
-	if err := runCmd(ctx, uargs[0], uargs[1:]...); err == nil {
+	kerr := runCmd(ctx, uargs[0], uargs[1:]...)
+	if kerr == nil {
 		return nil
 	}
 	fm, err := lookupFusermount()
 	if err != nil {
-		return err
+		return errors.Join(kerr, err)
 	}
 	fargs := buildFusermountUmountArgs(fm, mp)
-	return runCmd(ctx, fargs[0], fargs[1:]...)
+	if ferr := runCmd(ctx, fargs[0], fargs[1:]...); ferr != nil {
+		return errors.Join(kerr, ferr)
+	}
+	return nil
 }
 
 func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper, work, merged string, readOnly bool) (func() error, error) {

@@ -17,10 +17,30 @@
 package erofsmount
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+// The kernel umount is the attempt that fails for the interesting reason
+// (EBUSY, say), and Unmount is also the blob fall-back, so losing it behind
+// whatever fusermount says next would misreport why the unmount failed.
+func TestFuseDriverUnmountReportsBothFailures(t *testing.T) {
+	// An empty PATH makes both halves fail: umount is not found, and neither
+	// is fusermount.
+	t.Setenv("PATH", t.TempDir())
+
+	err := (&fuseDriver{}).Unmount(context.Background(), "/mnt/x")
+	if err == nil {
+		t.Fatal("Unmount succeeded with no umount or fusermount on PATH")
+	}
+	for _, want := range []string{"umount /mnt/x", "neither fusermount3 nor fusermount"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
 
 func TestBuildKernelLayerArgs(t *testing.T) {
 	got := buildKernelLayerArgs("/blobs/abc", "/mnt/x")
