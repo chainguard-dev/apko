@@ -238,22 +238,46 @@ func buildFusermountUmountArgs(fusermountBin, mp string) []string {
 	return []string{fusermountBin, "-u", mp}
 }
 
-func buildKernelOverlayArgs(lowers []string, upper, work, merged string, readOnly bool) []string {
-	opts := "lowerdir=" + strings.Join(lowers, ":")
+// escapeOverlayPath quotes a path for use inside an overlayfs mount option
+// value. overlayfs splits the option string on "," and lowerdir on ":", and
+// treats "\" as an escape (ovl_next_opt and ovl_split_lowerdirs on the way in,
+// ovl_unescape for upperdir and workdir), so all three have to be quoted. An
+// unescaped ":" is the one that matters: it turns one lowerdir into two, which
+// can compose a wrong stack instead of failing.
+//
+// These paths all derive from the DEST the user named, so they are arbitrary.
+// The single-pass replacer is what keeps the backslash rule from re-escaping
+// the backslashes the other two rules introduce.
+func escapeOverlayPath(p string) string {
+	return strings.NewReplacer(`\`, `\\`, `:`, `\:`, `,`, `\,`).Replace(p)
+}
+
+// overlayOpts builds the shared "lowerdir=...[,upperdir=...,workdir=...]" that
+// both the kernel and fuse-overlayfs option strings start from.
+func overlayOpts(lowers []string, upper, work string, readOnly bool) string {
+	escaped := make([]string, len(lowers))
+	for i, l := range lowers {
+		escaped[i] = escapeOverlayPath(l)
+	}
+	opts := "lowerdir=" + strings.Join(escaped, ":")
 	if !readOnly {
-		opts += ",upperdir=" + upper + ",workdir=" + work
-	} else {
+		opts += ",upperdir=" + escapeOverlayPath(upper) + ",workdir=" + escapeOverlayPath(work)
+	}
+	return opts
+}
+
+func buildKernelOverlayArgs(lowers []string, upper, work, merged string, readOnly bool) []string {
+	opts := overlayOpts(lowers, upper, work, readOnly)
+	if readOnly {
 		opts += ",ro"
 	}
+	// merged is its own argv element rather than an option value, so it is
+	// passed through unescaped.
 	return []string{"mount", "-t", "overlay", "-o", opts, "overlay", merged}
 }
 
 func buildFuseOverlayArgs(lowers []string, upper, work, merged string, readOnly bool) []string {
-	opts := "lowerdir=" + strings.Join(lowers, ":")
-	if !readOnly {
-		opts += ",upperdir=" + upper + ",workdir=" + work
-	}
-	return []string{"fuse-overlayfs", "-o", opts, merged}
+	return []string{"fuse-overlayfs", "-o", overlayOpts(lowers, upper, work, readOnly), merged}
 }
 
 // lookupFusermount returns the path to whichever of `fusermount3` or

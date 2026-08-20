@@ -109,6 +109,35 @@ func TestBuildFuseOverlayArgs(t *testing.T) {
 	}
 }
 
+// Every one of these paths comes from the DEST the user named. ':' is the one
+// that can silently compose a wrong stack rather than failing, since overlayfs
+// would read a single lowerdir as two.
+func TestOverlayArgsEscapeSeparators(t *testing.T) {
+	dest := `/mnt/od:d,d\d`
+	lowers := []string{dest + "/layers/01", dest + "/layers/00"}
+	upper, work, merged := dest+"/upper", dest+"/work", dest+"/merged"
+	esc := `/mnt/od\:d\,d\\d`
+
+	kernel := buildKernelOverlayArgs(lowers, upper, work, merged, false)
+	wantOpts := "lowerdir=" + esc + `/layers/01:` + esc + `/layers/00` +
+		",upperdir=" + esc + "/upper,workdir=" + esc + "/work"
+	if kernel[4] != wantOpts {
+		t.Errorf("kernel opts:\n got %s\nwant %s", kernel[4], wantOpts)
+	}
+	// The mountpoint is its own argv element, so it must stay verbatim.
+	if kernel[6] != merged {
+		t.Errorf("mountpoint: got %s want %s", kernel[6], merged)
+	}
+
+	fuse := buildFuseOverlayArgs(lowers, upper, work, merged, false)
+	if fuse[2] != wantOpts {
+		t.Errorf("fuse opts:\n got %s\nwant %s", fuse[2], wantOpts)
+	}
+	if fuse[3] != merged {
+		t.Errorf("mountpoint: got %s want %s", fuse[3], merged)
+	}
+}
+
 func TestBuildKernelUmountArgs(t *testing.T) {
 	got := buildKernelUmountArgs("/mnt/x")
 	want := []string{"umount", "/mnt/x"}
