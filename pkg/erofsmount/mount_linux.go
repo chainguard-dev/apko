@@ -276,8 +276,9 @@ func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mo
 				mp, err, len(st.Mounts), statePath(dest)))
 		}
 		if err := drv.Unmount(ctx, mp); err != nil {
-			return stopped(fmt.Errorf("umount %s: %w (%d mount(s) still up; rerun `apko erofs umount %s` once they are no longer busy)",
-				mp, err, len(st.Mounts), dest))
+			// The driver's error already names mp.
+			return stopped(fmt.Errorf("%w (%d mount(s) still up; rerun `apko erofs umount %s` once they are no longer busy)",
+				err, len(st.Mounts), dest))
 		}
 		st.Mounts = st.Mounts[1:]
 		log.Infof("unmounted %s", mp)
@@ -317,7 +318,8 @@ func unmountBlob(ctx context.Context, newDrv driverFactory, dest string, log *cl
 		return err
 	}
 	if err := drv.Unmount(ctx, dest); err != nil {
-		return fmt.Errorf("umount %s: %w", dest, err)
+		// The driver's error already names dest.
+		return err
 	}
 	log.Infof("unmounted %s", dest)
 	return nil
