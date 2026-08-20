@@ -193,22 +193,16 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 		return fmt.Errorf("unsupported file mode for %s: %v", absPath, mode)
 	}
 
-	// Mkdir, Mknod and Create all take only the permission bits, so
-	// setuid/setgid/sticky have to be applied on top — losing them would
-	// silently break su/passwd/mount and unprotect /tmp. Symlinks are
-	// exempt: EROFS pins them at 0777 and chmod on one is meaningless.
+	// Writer.Create takes no mode at all -- every regular file starts life
+	// 0644 -- so a chmod is the only way to give a file the mode it had in
+	// the source tree. Mkdir and Mknod do take one, and since the go-erofs
+	// bump in #2412 they honour setuid/setgid/sticky (erofs/go-erofs#41), but
+	// this passes them mode.Perm() and lets the one chmod below cover all
+	// three rather than splitting the rule across the call sites. Losing
+	// those bits would silently break su/passwd/mount and unprotect /tmp.
 	//
-	// This is a workaround for a bug in the pinned go-erofs, not a permanent
-	// shape. erofs/go-erofs#41 fixed both halves of it -- Mkdir dropping the
-	// special bits on write, and FileInfo.Mode() misreporting them on read --
-	// but it merged 2026-08-02, after v0.3.1 was tagged 2026-07-21, so the
-	// pinned version has neither half.
-	//
-	// The read half matters even though this Chmod covers the write half:
-	// FileInfo.Mode() from the pinned reader cannot be trusted for
-	// setuid/setgid/sticky. Code that needs a mode must read *erofs.Stat.Mode
-	// off Sys() instead, which is what pkg/erofsmount/ls.go does. Revisit both
-	// once a release containing #41 is out.
+	// Symlinks are exempt: EROFS pins them at 0777 and chmod on one is
+	// meaningless.
 	if mode&fs.ModeSymlink == 0 {
 		if err := w.Chmod(absPath, mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", absPath, err)
