@@ -176,7 +176,7 @@ The merge approximates what the kernel would assemble, and diverges in two corne
 
 `apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `apko erofs umount DEST` tears it back down.
 
-The mount is **read-only** unless you pass `--rw`, which fits inspecting an image and means a single-layer image skips overlayfs entirely — the lone layer is mounted straight at `DEST/merged`. With `--rw` you get an overlayfs upperdir at `DEST/upper`, and `umount` leaves that directory in place rather than deleting whatever was written through the mount.
+The mount is **read-only** unless you pass `--rw`. Read-only is what inspecting an image wants, and it lets a single-layer image skip overlayfs entirely — the lone layer is mounted straight at `DEST/merged`. With `--rw` you get an overlayfs upperdir at `DEST/upper`; `umount` removes it only if nothing was written through the mount, and otherwise leaves it where it is and logs the path. A later `--rw` mount at the same `DEST` then refuses to start until you move or remove it, rather than quietly stacking two sessions' writes — possibly from different images — on top of each other.
 
 ```sh
 mkdir -p /mnt/apko-erofs

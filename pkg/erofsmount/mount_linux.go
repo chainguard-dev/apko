@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"time"
 
 	"github.com/chainguard-dev/clog"
@@ -149,6 +150,9 @@ func mountImage(ctx context.Context, drv driver, src Source, dest string, opts M
 	// lowerdir-only stack for the read-only case.
 	subs := []string{"layers", "merged"}
 	if opts.Writable {
+		if err := checkUpperUnused(filepath.Join(dest, "upper")); err != nil {
+			return err
+		}
 		subs = append(subs, "upper", "work")
 	}
 	for _, sub := range subs {
@@ -267,16 +271,23 @@ func unmountImage(ctx context.Context, newDrv driverFactory, dest string, st *mo
 		st.Mounts = st.Mounts[1:]
 		log.Infof("unmounted %s", mp)
 	}
-	// upper is not in this list. For a read-only mount it was never created;
-	// for a writable one it holds everything written through the mount, and
-	// deleting it here silently discarded that.
 	for _, sub := range []string{"merged", "work", "layers"} {
 		if err := os.RemoveAll(filepath.Join(dest, sub)); err != nil {
 			log.Warnf("remove %s: %v", filepath.Join(dest, sub), err)
 		}
 	}
-	if st.Writable {
-		log.Infof("writes made through the mount are left in %s", filepath.Join(dest, "upper"))
+	// upper is the exception, and os.Remove rather than os.RemoveAll is the
+	// whole point: it cannot delete a non-empty directory, so writes made
+	// through the mount survive by construction and only an upper that was
+	// never written to goes away. Leaving that empty directory behind would
+	// make the next --rw mount at this dest refuse to start.
+	upper := filepath.Join(dest, "upper")
+	switch err := os.Remove(upper); {
+	case err == nil, errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, syscall.ENOTEMPTY), errors.Is(err, syscall.EEXIST):
+		log.Infof("writes made through the mount are left in %s", upper)
+	default:
+		log.Warnf("remove %s: %v", upper, err)
 	}
 	if err := removeState(dest); err != nil {
 		return fmt.Errorf("remove state file: %w", err)
@@ -298,6 +309,25 @@ func unmountBlob(ctx context.Context, newDrv driverFactory, dest string, log *cl
 		return fmt.Errorf("umount %s: %w", dest, err)
 	}
 	log.Infof("unmounted %s", dest)
+	return nil
+}
+
+// checkUpperUnused refuses to start a writable mount on top of an upperdir an
+// earlier one left behind. Unmount keeps a written-through upper rather than
+// discarding it, so reusing it here would stack one session's writes -- and
+// the overlayfs metadata they carry, possibly for a different image -- over
+// unrelated lowers, and the next umount would hand both back as one.
+func checkUpperUnused(upper string) error {
+	ents, err := os.ReadDir(upper)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", upper, err)
+	}
+	if len(ents) > 0 {
+		return fmt.Errorf("%s is not empty (%d entries written through an earlier --rw mount); move or remove it first", upper, len(ents))
+	}
 	return nil
 }
 

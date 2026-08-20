@@ -258,10 +258,25 @@ assert_not_mounted "${rw}/merged"
 assert_absent "${rw}/merged"
 assert_absent "${rw}/layers"
 assert_absent "${rw}/${state}"
-# upper is the one directory umount must leave alone: removing it would
-# silently discard everything written through the mount.
+# upper is the one directory umount must leave alone once something has been
+# written through it: removing it would silently discard those writes.
 [ -f "${rw}/upper/sentinel" ] ||
     fail "umount discarded the writes made through a --rw mount"
+# And because it is still there, a second --rw mount at the same DEST has to
+# refuse rather than stack this session's writes under the next one.
+if "${sudo[@]}" "${apko}" erofs mount --rw "${out}" "${rw}"; then
+    fail "--rw mount reused an upper left behind by an earlier mount"
+fi
+assert_not_mounted "${rw}/merged"
+
+# An upper nothing was written through is not worth keeping, so that round trip
+# leaves DEST clean and immediately reusable.
+rw2="${workdir}/rw2"
+"${sudo[@]}" "${apko}" erofs mount --rw "${out}" "${rw2}"
+"${sudo[@]}" "${apko}" erofs umount "${rw2}"
+assert_absent "${rw2}/upper"
+"${sudo[@]}" "${apko}" erofs mount --rw "${out}" "${rw2}"
+"${sudo[@]}" "${apko}" erofs umount "${rw2}"
 echo "::endgroup::"
 
 echo "::group::apko erofs mount (raw blob)"

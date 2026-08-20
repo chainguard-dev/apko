@@ -456,6 +456,29 @@ func TestMountImage_WritableKeepsUpperOnUnmount(t *testing.T) {
 	}
 }
 
+// An upper that was never written to is not worth keeping, and leaving the
+// empty directory would make the next --rw mount at this dest refuse.
+func TestUnmountImage_RemovesAnUnwrittenUpper(t *testing.T) {
+	src := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	f := newFakeDriver()
+
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", Writable: true}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+	if err := unmountWith(context.Background(), f.factory(), dest); err != nil {
+		t.Fatalf("unmountWith: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dest, "upper")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("empty upper left behind: stat err = %v, want ErrNotExist", err)
+	}
+	// And so the dest is reusable.
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", Writable: true}); err != nil {
+		t.Errorf("second --rw mount at the same dest: %v", err)
+	}
+}
+
 // The mount-side half of the symlink problem: MkdirAll accepts a link to an
 // existing directory, so without a check the layer would be mounted over
 // whatever it points at -- and Unmount would then refuse to take it down.
@@ -474,5 +497,34 @@ func TestMountImage_RefusesASymlinkedMountpoint(t *testing.T) {
 	}
 	if len(f.mounted) != 0 {
 		t.Errorf("mounted %v, want nothing", f.mounted)
+	}
+}
+
+// The other half of keeping a written-through upper: it must not be silently
+// stacked under a second mount, whose lowers may be a different image
+// entirely.
+func TestMountImage_RefusesANonEmptyUpper(t *testing.T) {
+	src := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	upper := filepath.Join(dest, "upper")
+	if err := os.Mkdir(upper, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(upper, "from-an-earlier-mount"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f := newFakeDriver()
+	err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", Writable: true})
+	if err == nil {
+		t.Fatal("mountWith succeeded on top of a non-empty upper")
+	}
+	if len(f.mounted) != 0 {
+		t.Errorf("mounted %v, want nothing", f.mounted)
+	}
+
+	// Read-only never touches upper, so it is still allowed.
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"}); err != nil {
+		t.Errorf("read-only mount refused because of a leftover upper: %v", err)
 	}
 }
