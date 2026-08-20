@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
@@ -367,6 +368,94 @@ func TestWriteErofs_FsckErofs(t *testing.T) {
 	target, err := os.Readlink(filepath.Join(extractDir, "a", "link"))
 	require.NoError(t, err)
 	require.Equal(t, "b", target)
+}
+
+func TestSplitErofsLayers(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("usr/lib/apk/db", 0o755))
+	require.NoError(t, fsys.WriteFile("usr/lib/apk/db/installed", []byte("idb top\n"), 0o644))
+	require.NoError(t, fsys.MkdirAll("etc", 0o755))
+	require.NoError(t, fsys.WriteFile("etc/hello", []byte("hi\n"), 0o644))
+
+	pkg1 := newPkg("pkg1")
+	pkg2 := newPkg("pkg2")
+	groups := []*group{
+		{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"},
+		{pkgs: []*apk.Package{pkg2}, size: 2000, tiebreaker: "pkg2"},
+	}
+	pkgToDiff := map[*apk.Package][]byte{
+		pkg1: []byte("pkg1 info\n"),
+		pkg2: []byte("pkg2 info\n"),
+	}
+
+	layers, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, t.TempDir(), epoch)
+	require.NoError(t, err)
+	require.Len(t, layers, 3, "expected 2 group layers + 1 top layer")
+
+	// All three layers should be valid EROFS images.
+	fsckBin := optionalFsckErofs(t)
+	for i, l := range layers {
+		erl, ok := l.(*erofsLayer)
+		require.True(t, ok, "layer[%d] not *erofsLayer", i)
+
+		mt, err := l.MediaType()
+		require.NoError(t, err)
+		require.Equal(t, "application/vnd.erofs", string(mt))
+
+		// Layer roles: overlay-lower on the package layers, absent on the top.
+		anns := erl.LayerAnnotations()
+		if i < len(layers)-1 {
+			require.Equal(t, "overlay-lower", anns[types.ErofsRoleAnnotation], "layer[%d] missing overlay-lower role", i)
+		} else {
+			require.Empty(t, anns, "top layer must carry no role annotation")
+		}
+
+		// The image must parse via go-erofs.
+		f, err := os.Open(erl.path)
+		require.NoError(t, err)
+		_, err = erofs.Open(f)
+		_ = f.Close()
+		require.NoError(t, err, "layer[%d] is not a valid EROFS image", i)
+
+		if fsckBin != "" {
+			cmd := exec.Command(fsckBin, "-d3", erl.path)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "fsck.erofs rejected layer[%d]:\n%s", i, out)
+		}
+	}
+
+	// The package layers must each carry their own partial installed db; the
+	// top layer carries the source file via the normal path.
+	for i, l := range layers[:2] {
+		erl := l.(*erofsLayer)
+		f, err := os.Open(erl.path)
+		require.NoError(t, err)
+		img, err := erofs.Open(f)
+		require.NoError(t, err)
+		data, err := fs.ReadFile(img, "usr/lib/apk/db/installed")
+		require.NoError(t, err, "layer[%d] missing per-group installed db", i)
+		require.NotEmpty(t, data, "layer[%d] installed db must not be empty", i)
+		_ = f.Close()
+	}
+
+	// The top layer should hold etc/hello (unowned content) and the original
+	// installed db.
+	topL := layers[len(layers)-1].(*erofsLayer)
+	tf, err := os.Open(topL.path)
+	require.NoError(t, err)
+	defer tf.Close()
+	topImg, err := erofs.Open(tf)
+	require.NoError(t, err)
+	hello, err := fs.ReadFile(topImg, "etc/hello")
+	require.NoError(t, err)
+	require.Equal(t, "hi\n", string(hello))
+	topIdb, err := fs.ReadFile(topImg, "usr/lib/apk/db/installed")
+	require.NoError(t, err)
+	require.Equal(t, "idb top\n", string(topIdb))
+}
+
+func newPkg(name string) *apk.Package {
+	return &apk.Package{Name: name, Origin: name, Version: "1.0.0", InstalledSize: 1024}
 }
 
 // optionalFsckErofs returns the path to fsck.erofs, or "" when erofs-utils is
