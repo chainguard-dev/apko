@@ -106,11 +106,14 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 		// requires the feature in both the config and the index platform
 		// descriptor, and §8.2 item 1 has consumers refuse an image whose
 		// os.features they do not implement.
-		cfg, err := img.ConfigFile()
-		if err != nil {
-			return name.Digest{}, nil, fmt.Errorf("failed to get config file: %w", err)
-		}
-		if len(cfg.OSFeatures) > 0 {
+		//
+		// os.features is optional, so an image whose config is not reachable
+		// is not a failure: some callers pass a manifest-only v1.Image that
+		// deliberately serves no config or layer content. Index generation
+		// proceeds without the feature rather than aborting. Images apko
+		// itself builds always carry a readable config, so the §5.4 MUST
+		// still holds for every EROFS image apko produces.
+		if cfg, err := img.ConfigFile(); err == nil && cfg != nil && len(cfg.OSFeatures) > 0 {
 			platform.OSFeatures = slices.Clone(cfg.OSFeatures)
 		}
 

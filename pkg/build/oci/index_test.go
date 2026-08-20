@@ -16,6 +16,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -78,6 +79,53 @@ func TestGenerateIndex_PropagatesOSFeatures(t *testing.T) {
 	tarImg := buildImage(t, types.ImageConfiguration{}, ggcrtypes.OCILayer)
 	require.Nil(t, platformOf(t, tarImg).OSFeatures,
 		"tar-format builds must not declare os.features on the index descriptor")
+}
+
+// configlessImage serves a real manifest but refuses every content-reaching
+// method, mirroring a caller that stages only a leg's manifest blob and never
+// its config or layers.
+type configlessImage struct {
+	v1.Image
+}
+
+var errNoContent = errors.New("content not staged")
+
+func (configlessImage) ConfigFile() (*v1.ConfigFile, error) { return nil, errNoContent }
+func (configlessImage) RawConfigFile() ([]byte, error)      { return nil, errNoContent }
+func (configlessImage) Layers() ([]v1.Layer, error)         { return nil, errNoContent }
+
+// os.features is optional, so an unreadable config must not abort index
+// generation -- it only means there is no feature to carry. Reaching for
+// config content unconditionally broke descriptor-plane callers that pass a
+// manifest-only v1.Image; keep that from coming back.
+func TestGenerateIndex_ToleratesUnreadableConfig(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	arch := types.ParseArchitecture("amd64")
+
+	img, err := BuildImageFromLayer(ctx, empty.Image, static.NewLayer([]byte("hello"), ggcrtypes.OCILayer), types.ImageConfiguration{}, now, arch)
+	require.NoError(t, err)
+
+	imgs := map[types.Architecture]v1.Image{arch: configlessImage{Image: img}}
+
+	_, idx, err := GenerateIndex(ctx, types.ImageConfiguration{}, imgs, now)
+	require.NoError(t, err, "an unreadable config must not fail index generation")
+
+	mf, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.Len(t, mf.Manifests, 1)
+	require.NotNil(t, mf.Manifests[0].Platform, "index descriptor has no platform")
+	require.Nil(t, mf.Manifests[0].Platform.OSFeatures,
+		"an unreadable config must not invent os.features")
+	require.Equal(t, arch.ToOCIPlatform(), mf.Manifests[0].Platform,
+		"the descriptor platform must match the plain arch platform")
+
+	// The docker manifest list path shares the same loop.
+	_, didx, err := GenerateDockerIndex(ctx, types.ImageConfiguration{}, imgs, now)
+	require.NoError(t, err, "an unreadable config must not fail docker index generation")
+	dmf, err := didx.IndexManifest()
+	require.NoError(t, err)
+	require.Len(t, dmf.Manifests, 1)
 }
 
 // The propagation reads whatever os.features the finished config carries, and
