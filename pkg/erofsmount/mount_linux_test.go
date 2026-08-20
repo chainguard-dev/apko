@@ -43,6 +43,7 @@ type fakeDriver struct {
 	overlays  []overlayCall // AssembleOverlay calls, in order
 	unmounted []string      // Unmount calls, in order
 	closed    []string      // teardown closures invoked, in order
+	modes     []mode        // modes the factory was asked for, in order
 }
 
 type overlayCall struct {
@@ -92,9 +93,15 @@ func (f *fakeDriver) Unmount(_ context.Context, mp string) error {
 	return nil
 }
 
-// factory hands the same fake back for any mode.
+// factory hands the same fake back for any mode, recording which one was
+// asked for. Without that record nothing here could catch unmountBlob losing
+// its deliberate modeFuse choice, or unmountImage ignoring the mode the state
+// file names -- both would break only for real fuse users.
 func (f *fakeDriver) factory() driverFactory {
-	return func(mode) (driver, error) { return f, nil }
+	return func(m mode) (driver, error) {
+		f.modes = append(f.modes, m)
+		return f, nil
+	}
 }
 
 func newFakeDriver() *fakeDriver {
@@ -279,6 +286,56 @@ func TestUnmount_NoStateFileUnmountsDestItself(t *testing.T) {
 	}
 	if !slices.Equal(f.unmounted, []string{dest}) {
 		t.Errorf("unmounted %v, want the blob mountpoint %s", f.unmounted, dest)
+	}
+	// A blob records no mode, so the fall-back deliberately picks fuse: its
+	// Unmount is the kernel-then-fusermount chain that covers either.
+	if !slices.Equal(f.modes, []mode{modeFuse}) {
+		t.Errorf("driver modes %v, want the blob fall-back to ask for %q", f.modes, modeFuse)
+	}
+}
+
+// The mode is requested twice over a mount's life -- from the flag on the way
+// up, from the state file on the way down -- and neither was observed before.
+func TestMountUnmount_DriverModeFollowsFlagThenState(t *testing.T) {
+	src := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	f := newFakeDriver()
+
+	if err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64", Mode: "fuse"}); err != nil {
+		t.Fatalf("mountWith: %v", err)
+	}
+	if !slices.Equal(f.modes, []mode{modeFuse}) {
+		t.Errorf("driver modes after mount: got %v want [%q]", f.modes, modeFuse)
+	}
+
+	// The fake reports itself as kernel regardless, so that is what the state
+	// file records and what unmount must ask for.
+	if err := unmountWith(context.Background(), f.factory(), dest); err != nil {
+		t.Fatalf("unmountWith: %v", err)
+	}
+	if want := []mode{modeFuse, modeKernel}; !slices.Equal(f.modes, want) {
+		t.Errorf("driver modes overall: got %v want %v", f.modes, want)
+	}
+}
+
+// Preflight is what reports a missing mount(8) or a non-root kernel mount, so
+// nothing may happen before it has passed.
+func TestMountImage_PreflightFailureStopsBeforeAnything(t *testing.T) {
+	src := ociDirWithLayers(t, 2)
+	dest := t.TempDir()
+	f := newFakeDriver()
+	f.preflightErr = errors.New("mount(8) not found")
+
+	err := mountWith(context.Background(), f.factory(), src, dest, MountOptions{Arch: "amd64"})
+	if err == nil {
+		t.Fatal("mountWith succeeded despite a Preflight failure")
+	}
+	if len(f.mounted) != 0 || len(f.overlays) != 0 {
+		t.Errorf("mounted %v / overlays %d, want nothing", f.mounted, len(f.overlays))
+	}
+	// Including the dest claim: a failed mount must leave no state file.
+	if _, err := os.Stat(statePath(dest)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("state file after a Preflight failure: stat err = %v, want ErrNotExist", err)
 	}
 }
 
