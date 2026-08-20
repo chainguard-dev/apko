@@ -66,7 +66,8 @@ cleanup() {
     for i in $(printf '%s\n' "${!mounts[@]}" | sort -rn); do
         "${sudo[@]}" umount "${mounts[i]}" 2>/dev/null || true
     done
-    rm -rf "${workdir}"
+    # Part of the tree is unpacked as root, so the removal has to be too.
+    "${sudo[@]}" rm -rf "${workdir}"
 }
 trap cleanup EXIT
 
@@ -315,7 +316,10 @@ tmanifest="${tout}/blobs/sha256/${tmanifest}"
 while read -r digest; do
     [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
         { echo "bad tar layer digest: ${digest}" >&2; exit 1; }
-    "${sudo[@]}" tar -C "${tarroot}" -xpf "${tout}/blobs/sha256/${digest#sha256:}"
+    # --numeric-owner or GNU tar resolves the layer's uname/gname against the
+    # runner's /etc/passwd, which has its own ids for lp, mail, news and uucp.
+    "${sudo[@]}" tar -C "${tarroot}" --numeric-owner -xpf \
+        "${tout}/blobs/sha256/${digest#sha256:}"
 done < <(jq -r '.layers[].digest' "${tmanifest}")
 
 normalize_kernel_ls "${tarroot}" "${workdir}/from-tar"
