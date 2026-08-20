@@ -26,6 +26,7 @@ import (
 	"sort"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	erofs "github.com/erofs/go-erofs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -258,6 +259,38 @@ func TestSplitErofsLayers_LayersAreValidImages(t *testing.T) {
 			require.NoError(t, err, "fsck.erofs rejected layer[%d]:\n%s", i, out)
 		}
 	}
+}
+
+// TestSplitErofsLayers_ZeroBuildTimeIsEpoch is the layered counterpart of
+// TestWriteErofs_ZeroBuildTimeIsEpoch: a caller that leaves the build time
+// zero must still get the same layers twice, not a wall-clock stamp.
+func TestSplitErofsLayers_ZeroBuildTimeIsEpoch(t *testing.T) {
+	pkg1 := newPkg("pkg1")
+
+	split := func(buildTime time.Time) []v1.Hash {
+		fsys := tarfsFixture(t, []entry{
+			dirEntry("usr/lib/apk/db"),
+			{path: "usr/lib/apk/db/installed", data: "pkg1 info\n"},
+			{path: "usr/bin/one", data: "one\n", pkg: pkg1},
+			{path: "etc/hello", data: "hi\n"},
+		})
+		groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
+		pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
+
+		layers, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, t.TempDir(), buildTime)
+		require.NoError(t, err)
+
+		out := make([]v1.Hash, 0, len(layers))
+		for _, l := range layers {
+			d, err := l.Digest()
+			require.NoError(t, err)
+			out = append(out, d)
+		}
+		return out
+	}
+
+	require.Equal(t, split(time.Unix(0, 0)), split(time.Time{}),
+		"a zero buildTime must produce the same layers as an explicit epoch")
 }
 
 func TestSplitErofsLayers_UngroupedPackageIsAnError(t *testing.T) {

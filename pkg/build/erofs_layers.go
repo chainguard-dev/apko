@@ -288,14 +288,15 @@ func newErofsGroupWriter(tmpdir string, buildTime time.Time) (*erofsGroupWriter,
 	if err != nil {
 		return nil, err
 	}
-	var createOpts []erofs.CreateOpt
-	if !buildTime.IsZero() {
-		createOpts = append(createOpts, erofs.WithBuildTime(uint64(buildTime.Unix()), uint32(buildTime.Nanosecond())))
-	}
+	// Always pass the build time, exactly as writeErofs does: omitting it
+	// makes go-erofs stamp time.Now() into the superblock from Close, so a
+	// caller who left the timestamp zero would get different layer digests on
+	// every build. See erofsBuildTime for the clamp.
+	sec, nsec := erofsBuildTime(buildTime)
 	return &erofsGroupWriter{
 		path:    f.Name(),
 		file:    f,
-		w:       erofs.Create(f, createOpts...),
+		w:       erofs.Create(f, erofs.WithBuildTime(sec, nsec)),
 		emitted: map[string]bool{},
 	}, nil
 }
