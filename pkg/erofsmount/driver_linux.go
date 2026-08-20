@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/chainguard-dev/clog"
+	"golang.org/x/sys/unix"
 )
 
 // driver wraps the externally-invoked mount and umount commands used by Mount.
@@ -107,14 +108,12 @@ func (d *kernelDriver) MountLayer(ctx context.Context, blob, mp string) (func() 
 		return nil, err
 	}
 	return func() error {
-		uargs := buildKernelUmountArgs(mp)
-		return runCmd(context.Background(), uargs[0], uargs[1:]...)
+		return kernelUnmount(context.Background(), mp)
 	}, nil
 }
 
 func (d *kernelDriver) Unmount(ctx context.Context, mp string) error {
-	uargs := buildKernelUmountArgs(mp)
-	return runCmd(ctx, uargs[0], uargs[1:]...)
+	return kernelUnmount(ctx, mp)
 }
 
 func (d *kernelDriver) AssembleOverlay(ctx context.Context, lowers []string, upper, work, merged string, readOnly bool) (func() error, error) {
@@ -123,8 +122,7 @@ func (d *kernelDriver) AssembleOverlay(ctx context.Context, lowers []string, upp
 		return nil, err
 	}
 	return func() error {
-		uargs := buildKernelUmountArgs(merged)
-		return runCmd(context.Background(), uargs[0], uargs[1:]...)
+		return kernelUnmount(context.Background(), merged)
 	}, nil
 }
 
@@ -169,8 +167,7 @@ func (d *fuseDriver) MountLayer(ctx context.Context, blob, mp string) (func() er
 // interesting reason -- returning only the fusermount error turns "target is
 // busy" into "neither fusermount3 nor fusermount found in PATH".
 func (d *fuseDriver) Unmount(ctx context.Context, mp string) error {
-	uargs := buildKernelUmountArgs(mp)
-	kerr := runCmd(ctx, uargs[0], uargs[1:]...)
+	kerr := kernelUnmount(ctx, mp)
 	if kerr == nil {
 		return nil
 	}
@@ -192,8 +189,7 @@ func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper
 	kArgs := buildKernelOverlayArgs(lowers, upper, work, merged, readOnly)
 	if err := runCmd(ctx, kArgs[0], kArgs[1:]...); err == nil {
 		return func() error {
-			uargs := buildKernelUmountArgs(merged)
-			return runCmd(context.Background(), uargs[0], uargs[1:]...)
+			return kernelUnmount(context.Background(), merged)
 		}, nil
 	}
 
@@ -226,8 +222,31 @@ func buildKernelLayerArgs(blob, mp string) []string {
 	return []string{"mount", "-t", "erofs", "-o", "ro", blob, mp}
 }
 
-func buildKernelUmountArgs(mp string) []string {
-	return []string{"umount", mp}
+// kernelUnmount unmounts mp with umount(2) rather than umount(8).
+//
+// UMOUNT_NOFOLLOW is the reason: it makes the kernel refuse a symlink at the
+// final component atomically, which no check-then-exec can do. umount(8)
+// canonicalizes its argument, so a symlink swapped into <dest>/merged after
+// validation but before the exec would still be followed, and in kernel mode
+// that is a root umount of whatever it points at.
+//
+// This covers the final component only. A symlinked *parent* -- <dest>/layers
+// itself -- resolves during the syscall's own path walk, and checkResolved is
+// what rejects that, with the narrower race it documents.
+func kernelUnmount(ctx context.Context, mp string) error {
+	clog.FromContext(ctx).Debugf("umount2: %s (UMOUNT_NOFOLLOW)", mp)
+	err := unix.Unmount(mp, unix.UMOUNT_NOFOLLOW)
+	if err == nil {
+		return nil
+	}
+	// EINVAL covers both "not a mountpoint" and "target is a symlink", so
+	// name the second case rather than leaving the user with "invalid
+	// argument". This is for the message only -- the flag above is what
+	// provides the guarantee, so an lstat racing it cannot weaken anything.
+	if fi, lerr := os.Lstat(mp); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("umount %s: refusing to follow a symlink", mp)
+	}
+	return fmt.Errorf("umount %s: %w", mp, err)
 }
 
 func buildFuseLayerArgs(blob, mp string) []string {

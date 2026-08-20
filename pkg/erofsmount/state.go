@@ -176,18 +176,20 @@ func (s *mountState) validate(dest string) error {
 
 // checkResolved verifies that mp still resolves to the path its name claims.
 //
-// validate constrains the path *string* to one that Mount creates, but
-// umount(8) canonicalizes its argument before unmounting, so a symlink planted
-// at <dest>/merged would redirect a root umount at whatever it points to
-// without the name ever looking wrong. realDest is dest with its own symlinks
-// resolved, so a legitimately symlinked dest (say one under /var/run) still
-// works and only the components below it have to be real.
+// validate constrains the path *string* to one that Mount creates, which says
+// nothing about where that path actually leads: a symlink planted at
+// <dest>/merged would redirect a root umount without the name ever looking
+// wrong. realDest is dest with its own symlinks resolved, so a legitimately
+// symlinked dest (say one under /var/run) still works and only the components
+// below it have to be real.
 //
-// This narrows the window rather than closing it: the check and the umount that
-// follows are separate steps, so someone who can write inside dest can still
-// swap a directory for a symlink in between. Both halves need dest writable by
-// someone other than the caller, which is why the docs say to use a dest only
-// you can write to.
+// The final component is not this check's job -- kernelUnmount passes
+// UMOUNT_NOFOLLOW, which refuses it in the same syscall that unmounts, with no
+// window at all. What is left to this is a symlinked *parent*, <dest>/layers
+// itself, which the kernel resolves during its own path walk. There the check
+// and the umount are separate steps, so someone who can write inside dest can
+// still swap a directory for a symlink in between; that residual is why the
+// docs say to use a dest only you can write to.
 func checkResolved(dest, realDest, mp string) error {
 	rel, err := filepath.Rel(dest, mp)
 	if err != nil {

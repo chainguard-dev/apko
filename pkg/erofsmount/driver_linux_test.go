@@ -18,6 +18,8 @@ package erofsmount
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -27,18 +29,42 @@ import (
 // (EBUSY, say), and Unmount is also the blob fall-back, so losing it behind
 // whatever fusermount says next would misreport why the unmount failed.
 func TestFuseDriverUnmountReportsBothFailures(t *testing.T) {
-	// An empty PATH makes both halves fail: umount is not found, and neither
-	// is fusermount.
+	// An empty PATH makes the fusermount half fail; the kernel half fails on
+	// its own because the path is not a mountpoint.
 	t.Setenv("PATH", t.TempDir())
 
-	err := (&fuseDriver{}).Unmount(context.Background(), "/mnt/x")
-	if err == nil {
-		t.Fatal("Unmount succeeded with no umount or fusermount on PATH")
+	mp := filepath.Join(t.TempDir(), "not-a-mountpoint")
+	if err := os.Mkdir(mp, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"umount /mnt/x", "neither fusermount3 nor fusermount"} {
+	err := (&fuseDriver{}).Unmount(context.Background(), mp)
+	if err == nil {
+		t.Fatal("Unmount succeeded on a path that is not mounted")
+	}
+	for _, want := range []string{"umount " + mp, "neither fusermount3 nor fusermount"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// This pins the wording, not the flag: unmounting a symlink to a directory
+// that is not a mountpoint fails either way, so no unprivileged test can tell
+// UMOUNT_NOFOLLOW from its absence. hack/test-erofs.sh does, by pointing a
+// symlink at a live tmpfs. What is worth pinning here is that the refusal is
+// named, since the raw errno for it is a bare "invalid argument".
+func TestKernelUnmountRefusesASymlink(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "merged")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	err := kernelUnmount(context.Background(), link)
+	if err == nil {
+		t.Fatal("kernelUnmount followed a symlink")
+	}
+	if !strings.Contains(err.Error(), "refusing to follow a symlink") {
+		t.Errorf("error %q does not name the symlink refusal", err)
 	}
 }
 
@@ -135,14 +161,6 @@ func TestOverlayArgsEscapeSeparators(t *testing.T) {
 	}
 	if fuse[3] != merged {
 		t.Errorf("mountpoint: got %s want %s", fuse[3], merged)
-	}
-}
-
-func TestBuildKernelUmountArgs(t *testing.T) {
-	got := buildKernelUmountArgs("/mnt/x")
-	want := []string{"umount", "/mnt/x"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 

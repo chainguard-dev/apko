@@ -319,6 +319,16 @@ if "${sudo[@]}" "${apko}" erofs umount "${symlinked}"; then
 fi
 assert_mounted "${decoy}"
 
+# The two refusals above are both decided before umount(2) is reached, so
+# neither exercises UMOUNT_NOFOLLOW.  This does: a symlink pointing straight at
+# a live mountpoint, handed in as DEST so nothing validates it first.  Without
+# the flag the kernel would resolve it and take the tmpfs down.
+ln -s "${decoy}" "${workdir}/decoy-link"
+if "${sudo[@]}" "${apko}" erofs umount "${workdir}/decoy-link"; then
+    fail "umount followed a symlink to a live mountpoint"
+fi
+assert_mounted "${decoy}"
+
 "${sudo[@]}" umount "${decoy}"
 echo "::endgroup::"
 
