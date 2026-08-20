@@ -178,6 +178,34 @@ func TestSplitErofsLayers_RoutesFilesToTheirPackageLayer(t *testing.T) {
 	require.Equal(t, "pkg1 info\npkg2 info\n", string(readLayerFile(t, layers[2], "usr/lib/apk/db/installed")))
 }
 
+func TestSplitErofsLayers_EmitsDirOnlySubtrees(t *testing.T) {
+	pkg1 := newPkg("pkg1")
+	fsys := tarfsFixture(t, []entry{
+		dirEntry("usr/lib/apk/db"),
+		{path: "usr/lib/apk/db/installed", data: "pkg1 info\n"},
+		{path: "usr/bin/one", data: "one\n", pkg: pkg1},
+		// Directories with no file anywhere beneath them. apko creates these
+		// from `paths:` and from the base layout, and an image without them
+		// has no /tmp to write to and no mount points to mount over.
+		dirEntry("tmp"),
+		dirEntry("run"),
+		dirEntry("var/empty"),
+	})
+
+	groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
+	pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
+
+	layers, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, t.TempDir(), epoch)
+	require.NoError(t, err)
+	require.Len(t, layers, 2)
+
+	// They belong to no package, so they land in the top layer.
+	top := layerPaths(t, layers[len(layers)-1])
+	for _, want := range []string{"tmp", "run", "var", "var/empty"} {
+		require.Contains(t, top, want, "dir-only subtree missing from every layer")
+	}
+}
+
 func TestSplitErofsLayers_LayersAreValidImages(t *testing.T) {
 	pkg1, pkg2 := newPkg("pkg1"), newPkg("pkg2")
 	fsys := tarfsFixture(t, []entry{

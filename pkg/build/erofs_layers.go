@@ -189,9 +189,6 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		}
 
 		if d.IsDir() {
-			// Record metadata; don't emit yet. Each writer creates this
-			// directory lazily the first time it needs to write something
-			// beneath it.
 			if absPath == "/" {
 				// The root of every EROFS image exists implicitly; still set
 				// its metadata across all writers (so uid/gid/xattrs match
@@ -204,8 +201,31 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 				}
 				return nil
 			}
+			// Record the metadata so any other writer that needs this
+			// directory as an ancestor can recreate it faithfully.
 			dirInfo[absPath] = info
 			dirFsysPath[absPath] = fpath
+
+			// Then emit it into its own owner right away. Leaving it to
+			// emitAncestors, which only runs for non-directory entries, drops
+			// every directory whose subtree holds no file at all -- /tmp,
+			// /run, /var/empty, every mount point -- from all layers, and so
+			// from the merged view. writeErofs and splitLayers both write
+			// every directory they walk.
+			owner, err := ownerOf(info, fpath)
+			if err != nil {
+				return err
+			}
+			if err := emitAncestors(owner, absPath); err != nil {
+				return err
+			}
+			if owner.emitted[absPath] {
+				return nil
+			}
+			if err := emitErofsEntry(owner.w, absPath, fpath, info, fsys, buf); err != nil {
+				return err
+			}
+			owner.emitted[absPath] = true
 			return nil
 		}
 
