@@ -145,6 +145,35 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		return nil
 	}
 
+	// ownerOf picks the writer an entry belongs in: the group that owns its
+	// package, or top for anything unowned.
+	//
+	// The assertion is on the FileInfo itself, not on info.Sys(). pkg/tarfs --
+	// what a real build walks -- hangs Package() off its FileInfo and returns a
+	// fresh *tar.Header from Sys(), which has no Package method, so asserting
+	// on Sys() routes every file to top. splitLayers asserts on the same
+	// receiver this does.
+	ownerOf := func(info fs.FileInfo, fpath string) (*erofsGroupWriter, error) {
+		pkger, ok := info.(interface {
+			Package() *apk.Package
+		})
+		if !ok {
+			return top, nil
+		}
+		pkg := pkger.Package()
+		if pkg == nil {
+			return top, nil
+		}
+		gw, ok := packageToWriter[pkg.Name]
+		if !ok {
+			// splitLayers panics on this; either way it has to be loud.
+			// Falling back to top would hide a grouping bug behind an image
+			// that looks fine and is laid out wrong.
+			return nil, fmt.Errorf("no layer for package %q, which owns %s", pkg.Name, fpath)
+		}
+		return gw, nil
+	}
+
 	if err := fs.WalkDir(fsys, ".", func(fpath string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr
@@ -180,18 +209,9 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 			return nil
 		}
 
-		// Default to the top layer.
-		owner := top
-
-		// If the file info exposes its owning package, route to that group.
-		if pkger, ok := info.Sys().(interface {
-			Package() *apk.Package
-		}); ok {
-			if pkg := pkger.Package(); pkg != nil {
-				if gw, ok := packageToWriter[pkg.Name]; ok {
-					owner = gw
-				}
-			}
+		owner, err := ownerOf(info, fpath)
+		if err != nil {
+			return err
 		}
 
 		// Special-case the apk installed db: each group also gets a partial
