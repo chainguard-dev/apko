@@ -23,15 +23,17 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/chainguard-dev/clog"
 	"golang.org/x/sys/unix"
 )
 
-// driver wraps the externally-invoked mount and umount commands used by Mount.
-// Two implementations exist on Linux: kernelDriver shells out to mount(8) and
-// umount(8); fuseDriver shells out to erofsfuse and fusermount.
+// driver wraps the mount and umount operations used by Mount. Two
+// implementations exist on Linux: kernelDriver shells out to mount(8) and
+// unmounts with umount(2) directly; fuseDriver shells out to erofsfuse and
+// fusermount, trying the kernel unmount first.
 type driver interface {
 	// Name returns the resolved mode (kernel or fuse), never auto.
 	Name() mode
@@ -171,6 +173,12 @@ func (d *fuseDriver) Unmount(ctx context.Context, mp string) error {
 	if kerr == nil {
 		return nil
 	}
+	// A symlinked mountpoint is a refusal, not a sign that the wrong tool was
+	// tried. fusermount carries its own UMOUNT_NOFOLLOW and would only refuse
+	// it again, so running it adds nothing and buries the reason in a join.
+	if errors.Is(kerr, errSymlinkedMountpoint) {
+		return kerr
+	}
 	fm, err := lookupFusermount()
 	if err != nil {
 		return errors.Join(kerr, err)
@@ -195,6 +203,15 @@ func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper
 
 	if _, err := exec.LookPath("fuse-overlayfs"); err != nil {
 		return nil, fmt.Errorf("kernel overlay failed and fuse-overlayfs is not installed: %w", err)
+	}
+	// Only the fall-back needs this. The kernel overlay attempted just above
+	// unescapes the way escapeOverlayPath escapes; fuse-overlayfs does not.
+	paths := slices.Clone(lowers)
+	if !readOnly {
+		paths = append(paths, upper, work)
+	}
+	if err := checkFuseOverlayPaths(paths...); err != nil {
+		return nil, err
 	}
 	fArgs := buildFuseOverlayArgs(lowers, upper, work, merged, readOnly)
 	if err := runCmd(ctx, fArgs[0], fArgs[1:]...); err != nil {
@@ -233,6 +250,11 @@ func buildKernelLayerArgs(blob, mp string) []string {
 // This covers the final component only. A symlinked *parent* -- <dest>/layers
 // itself -- resolves during the syscall's own path walk, and checkResolved is
 // what rejects that, with the narrower race it documents.
+// errSymlinkedMountpoint reports a mountpoint whose final component is a
+// symlink. UMOUNT_NOFOLLOW refuses those, and callers use this to tell the
+// refusal apart from an ordinary unmount failure.
+var errSymlinkedMountpoint = errors.New("refusing to follow a symlink")
+
 func kernelUnmount(ctx context.Context, mp string) error {
 	clog.FromContext(ctx).Debugf("umount2: %s (UMOUNT_NOFOLLOW)", mp)
 	err := unix.Unmount(mp, unix.UMOUNT_NOFOLLOW)
@@ -244,7 +266,7 @@ func kernelUnmount(ctx context.Context, mp string) error {
 	// argument". This is for the message only -- the flag above is what
 	// provides the guarantee, so an lstat racing it cannot weaken anything.
 	if fi, lerr := os.Lstat(mp); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("umount %s: refusing to follow a symlink", mp)
+		return fmt.Errorf("umount %s: %w", mp, errSymlinkedMountpoint)
 	}
 	return fmt.Errorf("umount %s: %w", mp, err)
 }
@@ -297,6 +319,30 @@ func buildKernelOverlayArgs(lowers []string, upper, work, merged string, readOnl
 
 func buildFuseOverlayArgs(lowers []string, upper, work, merged string, readOnly bool) []string {
 	return []string{"fuse-overlayfs", "-o", overlayOpts(lowers, upper, work, readOnly), merged}
+}
+
+// fuseOverlayUnsupported are the characters fuse-overlayfs cannot round-trip
+// in a path, whatever escaping it is handed. Measured against 1.17 by mounting
+// a tree whose path contains each one, escaped and verbatim, with a clean-path
+// control:
+//
+//	,  escaped works; verbatim is split into separate options
+//	:  broken both ways -- \: is not honoured as the kernel honours it
+//	\  broken both ways -- eaten, so the path never resolves
+//
+// So escapeOverlayPath earns its keep for the comma and cannot help with the
+// other two. Refuse those rather than hand fuse-overlayfs an option string it
+// will misread and then fail on with a path the user never named.
+const fuseOverlayUnsupported = `:\`
+
+func checkFuseOverlayPaths(paths ...string) error {
+	for _, p := range paths {
+		if i := strings.IndexAny(p, fuseOverlayUnsupported); i >= 0 {
+			return fmt.Errorf("fuse-overlayfs cannot handle %q in a path (%s); use --mode=kernel, or a dest without it",
+				p[i:i+1], p)
+		}
+	}
+	return nil
 }
 
 // lookupFusermount returns the path to whichever of `fusermount3` or

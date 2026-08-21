@@ -18,6 +18,7 @@ package erofsmount
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,6 +162,60 @@ func TestOverlayArgsEscapeSeparators(t *testing.T) {
 	}
 	if fuse[3] != merged {
 		t.Errorf("mountpoint: got %s want %s", fuse[3], merged)
+	}
+}
+
+// fuse-overlayfs cannot round-trip these however they are escaped, so they are
+// refused with a reason rather than handed over to fail on a path the user
+// never named. See the table on fuseOverlayUnsupported.
+func TestCheckFuseOverlayPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"plain", "/mnt/x/layers/00", false},
+		// The comma survives escaping, so it must not be refused here.
+		{"comma", "/mnt/x,y/layers/00", false},
+		{"colon", "/mnt/x:y/layers/00", true},
+		{"backslash", `/mnt/x\y/layers/00`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkFuseOverlayPaths(tc.path)
+			if tc.wantErr && err == nil {
+				t.Fatalf("checkFuseOverlayPaths(%q) accepted it", tc.path)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("checkFuseOverlayPaths(%q): %v", tc.path, err)
+			}
+		})
+	}
+	// Every path is checked, not just the first.
+	if err := checkFuseOverlayPaths("/fine", "/also/fine", "/no:pe"); err == nil {
+		t.Error("a bad path after good ones was accepted")
+	}
+}
+
+// fusermount carries its own UMOUNT_NOFOLLOW, so running it after the kernel
+// refusal only restates it -- and the join would bury the reason behind
+// fusermount's own wording.
+func TestFuseDriverUnmountStopsAtASymlinkRefusal(t *testing.T) {
+	// An empty PATH means any fusermount attempt shows up in the error.
+	t.Setenv("PATH", t.TempDir())
+
+	link := filepath.Join(t.TempDir(), "merged")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	err := (&fuseDriver{}).Unmount(context.Background(), link)
+	if err == nil {
+		t.Fatal("Unmount followed a symlinked mountpoint")
+	}
+	if !errors.Is(err, errSymlinkedMountpoint) {
+		t.Errorf("error %q is not the symlink refusal", err)
+	}
+	if strings.Contains(err.Error(), "fusermount") {
+		t.Errorf("fusermount was still attempted: %q", err)
 	}
 }
 
