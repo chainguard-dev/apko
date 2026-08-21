@@ -94,10 +94,10 @@ func (kernelDriver) Preflight() error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("kernel mount mode requires root (euid 0); pass --mode=fuse to use erofsfuse instead")
 	}
-	for _, bin := range []string{"mount", "umount"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			return fmt.Errorf("%s not found in PATH: %w", bin, err)
-		}
+	// Only mount(8) is execed; unmounting goes through umount(2) directly,
+	// so umount(8) is no longer a requirement.
+	if _, err := exec.LookPath("mount"); err != nil {
+		return fmt.Errorf("mount not found in PATH: %w", err)
 	}
 	return nil
 }
