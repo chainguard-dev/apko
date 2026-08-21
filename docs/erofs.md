@@ -174,25 +174,41 @@ The merge approximates what the kernel would assemble, and diverges in two corne
 
 ## Mount the layer
 
-A layer blob is a complete filesystem image, so mounting it takes no apko-specific tooling — either the kernel `erofs` driver (needs root) or `erofsfuse` (unprivileged):
+`apko erofs mount SOURCE DEST` mounts a raw EROFS blob or an OCI image directory at `DEST`. It chooses between a kernel mount (root) and `erofsfuse` (unprivileged) based on the effective UID; use `--mode=kernel|fuse|auto` to force a choice. `apko erofs umount DEST` tears it back down.
+
+The mount is **read-only** unless you pass `--rw`. Read-only is what inspecting an image wants, and it lets a single-layer image skip overlayfs entirely — the lone layer is mounted straight at `DEST/merged`. With `--rw` you get an overlayfs upperdir at `DEST/upper`; `umount` removes it only if nothing was written through the mount, and otherwise leaves it where it is and logs the path. A later `--rw` mount at the same `DEST` then refuses to start until you move or remove it, rather than quietly stacking two sessions' writes — possibly from different images — on top of each other.
 
 ```sh
 mkdir -p /mnt/apko-erofs
-
-# Kernel (root):
-sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
+apko erofs mount out/blobs/sha256/$LAYER /mnt/apko-erofs
 ls /mnt/apko-erofs/
 file /mnt/apko-erofs/bin/sh
+apko erofs umount /mnt/apko-erofs
+```
+
+If the kernel mount mode complains "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or pass `--mode=fuse` to use `erofsfuse`, which does not require root and works inside CI containers that lack the kernel module.
+
+For an OCI source, `umount` works from `DEST/.apko-erofs-mount.json`, which `mount` wrote; a raw blob has no enclosing directory to hold one, so `umount` falls back to unmounting `DEST` itself. It only accepts mountpoints that a mount creates under `DEST` — `DEST/merged` and `DEST/layers/NN` — so a tampered file cannot name a path outside `DEST`. Because that is a check on the path *string*, a symlink at `DEST/merged` would otherwise redirect it anyway; kernel mode unmounts with `umount(2)` and `UMOUNT_NOFOLLOW`, which refuses that in the same syscall, with no window. A symlinked *parent* (`DEST/layers` itself) is caught by a separate check, and there the check and the unmount are two steps — so **use a `DEST` only you can write to**: anywhere else, another user can race them and choose what your `umount` takes down.
+
+If a mountpoint is busy, `umount` stops there and rewrites the state file to list only what is still mounted, so rerunning it once the mount is free finishes the teardown.
+
+### Doing it manually
+
+A layer blob is a complete filesystem image, so mounting it needs no apko-specific tooling. For reference, `apko erofs mount` is equivalent to one of:
+
+```sh
+# Kernel (root):
+sudo mount -t erofs -o ro out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
 sudo umount /mnt/apko-erofs
 
 # FUSE (unprivileged):
 erofsfuse out/blobs/sha256/$LAYER /mnt/apko-erofs
+# ...later:
 fusermount3 -u /mnt/apko-erofs       # or `fusermount -u`
 ```
 
-If `mount` reports "unknown filesystem type 'erofs'", the kernel module is missing on your system; install it (e.g. `linux-modules-extra-$(uname -r)` on Ubuntu) or use `erofsfuse`, which needs no root and works inside CI containers that lack the module.
-
-`hack/test-erofs.sh` runs everything above in one go — build, `fsck.erofs`, kernel mount, and a comparison of `apko erofs ls` against the mounted tree — and is what the `EROFS` CI workflow executes.
+`hack/test-erofs.sh` runs everything above in one go — build, `fsck.erofs`, kernel mount, a comparison of `apko erofs ls` against the mounted tree, and a round trip through `apko erofs mount` and `apko erofs umount` (read-only, `--rw`, a raw blob, and a tampered state file) — and is what the `EROFS` CI workflow executes.
 
 ## Pulling from a registry
 
@@ -248,7 +264,7 @@ _, layer, err := bc.ImageLayoutToLayer(ctx)
 
 If you have a plain `fs.FS` and want an EROFS image, **use [go-erofs](https://github.com/erofs/go-erofs) directly** — apko doesn't expose its EROFS writer as a standalone library (and wrapping go-erofs wouldn't add meaningful value over its existing `Writer.CopyFrom(fs.FS)` API).
 
-For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Ls` (the `apko erofs ls` helper). All of it is cross-platform: go-erofs is pure Go and nothing here mounts anything.
+For inspection, apko *does* expose a focused leaf library — see `chainguard.dev/apko/pkg/erofsmount` — which provides `Stack` (layered `fs.FS` with overlay/whiteout semantics), `OpenLayers` (open an OCI EROFS image's blobs), `ReadOCILayers` (parse an OCI manifest with EROFS layers), and `Mount`/`Unmount`/`Ls` (the CLI subcommand helpers, Linux-only for mount/umount; `Ls` is cross-platform).
 
 ## Current limitations
 

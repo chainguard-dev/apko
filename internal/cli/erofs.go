@@ -22,17 +22,85 @@ import (
 	"chainguard.dev/apko/pkg/erofsmount"
 )
 
-// erofsCmd returns the `apko erofs` parent command, which hosts the ls
-// subcommand.
+// erofsCmd returns the `apko erofs` parent command, which hosts mount, umount,
+// and ls subcommands.
 func erofsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "erofs",
-		Short: "Inspect EROFS images produced by apko",
+		Short: "Mount, unmount, and inspect EROFS images produced by apko",
 		Long: `The erofs subcommands operate on EROFS layer blobs and OCI image
 directories whose layers use the application/vnd.erofs mediaType (as produced
-by 'apko build --format=erofs').`,
+by 'apko build --format=erofs'). mount and umount are Linux-only; ls works
+anywhere.`,
 	}
-	cmd.AddCommand(erofsLs())
+	cmd.AddCommand(erofsMount(), erofsUmount(), erofsLs())
+	return cmd
+}
+
+func erofsMount() *cobra.Command {
+	var mode, arch string
+	var writable bool
+	cmd := &cobra.Command{
+		Use:   "mount [flags] SOURCE DEST",
+		Short: "Mount an EROFS blob or an EROFS OCI image at DEST",
+		Long: `Mount the given SOURCE at DEST.
+
+SOURCE may be:
+  - a raw EROFS blob file (mounted directly at DEST),
+  - an OCI image layout directory containing EROFS layers (mounted as a
+    multi-layer overlay rooted at DEST/merged),
+  - any of the above prefixed by erofs:, oci:, or oci-dir:,
+  - PATH:TAG to pick a manifest from a multi-tag OCI layout.
+
+For OCI sources, DEST gets this layout:
+  DEST/layers/00..NN  one per EROFS layer (00 is base)
+  DEST/upper          overlayfs upperdir (--rw only)
+  DEST/work           overlayfs workdir (--rw only)
+  DEST/merged         the combined view
+  DEST/.apko-erofs-mount.json  state for 'apko erofs umount'
+
+The mount is read-only unless --rw is given. A single-layer image
+mounted read-only skips overlayfs entirely: the sole layer is mounted
+directly at DEST/merged. With --rw, writes land in DEST/upper, and
+'apko erofs umount' leaves that directory behind rather than deleting
+what was written.`,
+		Example: `  apko erofs mount ./out:latest /mnt/x
+  apko erofs mount --mode=fuse ./image.erofs /mnt/y
+  apko erofs mount --rw oci-dir:./out:latest /mnt/z`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			src, err := erofsmount.ParseSource(args[0])
+			if err != nil {
+				return err
+			}
+			return erofsmount.Mount(cmd.Context(), src, args[1], erofsmount.MountOptions{
+				Mode:     mode,
+				Arch:     arch,
+				Writable: writable,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&mode, "mode", "auto", "mount mode: kernel, fuse, or auto (auto = kernel if root else fuse)")
+	cmd.Flags().StringVar(&arch, "arch", "host", "architecture to select from a multi-arch OCI index (host = process arch)")
+	cmd.Flags().BoolVar(&writable, "rw", false, "mount read-write, adding an overlayfs upperdir and workdir under DEST (default is read-only)")
+	return cmd
+}
+
+func erofsUmount() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "umount DEST",
+		Short: "Unmount an EROFS mount produced by 'apko erofs mount'",
+		Long: `Unmount the mount at DEST.
+
+If DEST contains a state file (DEST/.apko-erofs-mount.json) it is treated as
+an image mount and every layer plus the overlay is torn down in reverse
+order. If DEST has no state file, it is treated as a single blob mount and a
+plain umount is attempted (with a fall-back to fusermount).`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return erofsmount.Unmount(cmd.Context(), args[0])
+		},
+	}
 	return cmd
 }
 
