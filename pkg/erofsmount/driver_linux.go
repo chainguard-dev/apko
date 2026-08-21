@@ -29,9 +29,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// driver wraps the externally-invoked mount and umount commands used by Mount.
-// Two implementations exist on Linux: kernelDriver shells out to mount(8) and
-// umount(8); fuseDriver shells out to erofsfuse and fusermount.
+// driver wraps the mount and umount operations used by Mount. Two
+// implementations exist on Linux: kernelDriver shells out to mount(8) and
+// unmounts with umount(2) directly; fuseDriver shells out to erofsfuse and
+// fusermount, trying the kernel unmount first.
 type driver interface {
 	// Name returns the resolved mode (kernel or fuse), never auto.
 	Name() mode
