@@ -18,6 +18,7 @@ package erofsmount
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,6 +162,29 @@ func TestOverlayArgsEscapeSeparators(t *testing.T) {
 	}
 	if fuse[3] != merged {
 		t.Errorf("mountpoint: got %s want %s", fuse[3], merged)
+	}
+}
+
+// fusermount carries its own UMOUNT_NOFOLLOW, so running it after the kernel
+// refusal only restates it -- and the join would bury the reason behind
+// fusermount's own wording.
+func TestFuseDriverUnmountStopsAtASymlinkRefusal(t *testing.T) {
+	// An empty PATH means any fusermount attempt shows up in the error.
+	t.Setenv("PATH", t.TempDir())
+
+	link := filepath.Join(t.TempDir(), "merged")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	err := (&fuseDriver{}).Unmount(context.Background(), link)
+	if err == nil {
+		t.Fatal("Unmount followed a symlinked mountpoint")
+	}
+	if !errors.Is(err, errSymlinkedMountpoint) {
+		t.Errorf("error %q is not the symlink refusal", err)
+	}
+	if strings.Contains(err.Error(), "fusermount") {
+		t.Errorf("fusermount was still attempted: %q", err)
 	}
 }
 

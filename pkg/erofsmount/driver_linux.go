@@ -172,6 +172,12 @@ func (d *fuseDriver) Unmount(ctx context.Context, mp string) error {
 	if kerr == nil {
 		return nil
 	}
+	// A symlinked mountpoint is a refusal, not a sign that the wrong tool was
+	// tried. fusermount carries its own UMOUNT_NOFOLLOW and would only refuse
+	// it again, so running it adds nothing and buries the reason in a join.
+	if errors.Is(kerr, errSymlinkedMountpoint) {
+		return kerr
+	}
 	fm, err := lookupFusermount()
 	if err != nil {
 		return errors.Join(kerr, err)
@@ -234,6 +240,11 @@ func buildKernelLayerArgs(blob, mp string) []string {
 // This covers the final component only. A symlinked *parent* -- <dest>/layers
 // itself -- resolves during the syscall's own path walk, and checkResolved is
 // what rejects that, with the narrower race it documents.
+// errSymlinkedMountpoint reports a mountpoint whose final component is a
+// symlink. UMOUNT_NOFOLLOW refuses those, and callers use this to tell the
+// refusal apart from an ordinary unmount failure.
+var errSymlinkedMountpoint = errors.New("refusing to follow a symlink")
+
 func kernelUnmount(ctx context.Context, mp string) error {
 	clog.FromContext(ctx).Debugf("umount2: %s (UMOUNT_NOFOLLOW)", mp)
 	err := unix.Unmount(mp, unix.UMOUNT_NOFOLLOW)
@@ -245,7 +256,7 @@ func kernelUnmount(ctx context.Context, mp string) error {
 	// argument". This is for the message only -- the flag above is what
 	// provides the guarantee, so an lstat racing it cannot weaken anything.
 	if fi, lerr := os.Lstat(mp); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("umount %s: refusing to follow a symlink", mp)
+		return fmt.Errorf("umount %s: %w", mp, errSymlinkedMountpoint)
 	}
 	return fmt.Errorf("umount %s: %w", mp, err)
 }
