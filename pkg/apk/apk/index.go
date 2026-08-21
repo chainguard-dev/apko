@@ -412,6 +412,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 				continue
 			case "RSA":
 				// Current legacy compat
+				clog.FromContext(ctx).Errorf("%s is using RSA SHA1 signature. RSA SHA1 signature verification support will be removed on 2026-09-30. https://github.com/chainguard-dev/apko/issues/2399", u)
 				digestAlgorithm = crypto.SHA1
 			case "RSA256":
 				// Current best practice
