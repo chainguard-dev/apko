@@ -165,6 +165,37 @@ func TestOverlayArgsEscapeSeparators(t *testing.T) {
 	}
 }
 
+// fuse-overlayfs cannot round-trip these however they are escaped, so they are
+// refused with a reason rather than handed over to fail on a path the user
+// never named. See the table on fuseOverlayUnsupported.
+func TestCheckFuseOverlayPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"plain", "/mnt/x/layers/00", false},
+		// The comma survives escaping, so it must not be refused here.
+		{"comma", "/mnt/x,y/layers/00", false},
+		{"colon", "/mnt/x:y/layers/00", true},
+		{"backslash", `/mnt/x\y/layers/00`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkFuseOverlayPaths(tc.path)
+			if tc.wantErr && err == nil {
+				t.Fatalf("checkFuseOverlayPaths(%q) accepted it", tc.path)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("checkFuseOverlayPaths(%q): %v", tc.path, err)
+			}
+		})
+	}
+	// Every path is checked, not just the first.
+	if err := checkFuseOverlayPaths("/fine", "/also/fine", "/no:pe"); err == nil {
+		t.Error("a bad path after good ones was accepted")
+	}
+}
+
 // fusermount carries its own UMOUNT_NOFOLLOW, so running it after the kernel
 // refusal only restates it -- and the join would bury the reason behind
 // fusermount's own wording.

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/chainguard-dev/clog"
@@ -203,6 +204,15 @@ func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper
 	if _, err := exec.LookPath("fuse-overlayfs"); err != nil {
 		return nil, fmt.Errorf("kernel overlay failed and fuse-overlayfs is not installed: %w", err)
 	}
+	// Only the fall-back needs this. The kernel overlay attempted just above
+	// unescapes the way escapeOverlayPath escapes; fuse-overlayfs does not.
+	paths := slices.Clone(lowers)
+	if !readOnly {
+		paths = append(paths, upper, work)
+	}
+	if err := checkFuseOverlayPaths(paths...); err != nil {
+		return nil, err
+	}
 	fArgs := buildFuseOverlayArgs(lowers, upper, work, merged, readOnly)
 	if err := runCmd(ctx, fArgs[0], fArgs[1:]...); err != nil {
 		return nil, err
@@ -309,6 +319,30 @@ func buildKernelOverlayArgs(lowers []string, upper, work, merged string, readOnl
 
 func buildFuseOverlayArgs(lowers []string, upper, work, merged string, readOnly bool) []string {
 	return []string{"fuse-overlayfs", "-o", overlayOpts(lowers, upper, work, readOnly), merged}
+}
+
+// fuseOverlayUnsupported are the characters fuse-overlayfs cannot round-trip
+// in a path, whatever escaping it is handed. Measured against 1.17 by mounting
+// a tree whose path contains each one, escaped and verbatim, with a clean-path
+// control:
+//
+//	,  escaped works; verbatim is split into separate options
+//	:  broken both ways -- \: is not honoured as the kernel honours it
+//	\  broken both ways -- eaten, so the path never resolves
+//
+// So escapeOverlayPath earns its keep for the comma and cannot help with the
+// other two. Refuse those rather than hand fuse-overlayfs an option string it
+// will misread and then fail on with a path the user never named.
+const fuseOverlayUnsupported = `:\`
+
+func checkFuseOverlayPaths(paths ...string) error {
+	for _, p := range paths {
+		if i := strings.IndexAny(p, fuseOverlayUnsupported); i >= 0 {
+			return fmt.Errorf("fuse-overlayfs cannot handle %q in a path (%s); use --mode=kernel, or a dest without it",
+				p[i:i+1], p)
+		}
+	}
+	return nil
 }
 
 // lookupFusermount returns the path to whichever of `fusermount3` or
