@@ -273,7 +273,7 @@ For inspection, apko *does* expose a focused leaf library — see `chainguard.de
 - **No dm-verity.** The spec's verified-mount path (§3.5) is not produced.
 - **No chunk index.** Lazy-loading runtimes (per spec §3.4) won't get an index; reads are sequential.
 - **No `overlay-data` or `device` roles.** apko emits one unannotated EROFS layer; `org.erofs.role` is never set.
-- **Hardlinks become independent copies.** go-erofs has no API to point two names at one inode, so each link costs another full copy of the file's data (rounded up to the block size) and `st_nlink`/`st_ino` identity is lost. Spec §3.7's materialize-or-fail rule covers *cross-layer* hardlinks; within a single layer the spec is silent, so this is conformant but not blessed by that section. Either way, a hardlink-heavy image will be larger as EROFS than as tar, where extra links are zero-byte entries.
+- **Hardlinks are shared only within a layer.** Names pointing at one inode in the source rootfs point at one inode in the image, so the data is stored once and `st_nlink`/`st_ino` identity survives. A link whose target ends up in a *different* layer cannot share that inode and is written as an independent copy instead, which is the materialize-or-fail choice spec §3.7 leaves to the producer. apko can only recognize a hardlink when the rootfs was assembled from unpacked apks; one read back off disk reports the two names as unrelated files, and each gets a copy.
 - **Spec is draft.** Media-type strings and annotation keys may change before the spec stabilizes. Treat any image built today as experimental.
 
 If you need any of the above, please open an issue.
