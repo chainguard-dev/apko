@@ -47,18 +47,16 @@ func testOpts(fsys apkfs.FullFS) *options.Options {
 		FileName: "sbom",
 		Packages: []*apk.InstalledPackage{
 			{
-				Package: apk.Package{
-					Name:        "musl",
-					Version:     "1.2.2-r7",
-					Arch:        "x86_64",
-					Description: "the musl c library (libc) implementation",
-					License:     "MIT",
-					Origin:      "musl",
-					Maintainer:  "Pkg Author <user@domain.com>",
-					Checksum: []byte{
-						0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
-						0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
-					},
+				Name:        "musl",
+				Version:     "1.2.2-r7",
+				Arch:        "x86_64",
+				Description: "the musl c library (libc) implementation",
+				License:     "MIT",
+				Origin:      "musl",
+				Maintainer:  "Pkg Author <user@domain.com>",
+				Checksum: []byte{
+					0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
+					0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
 				},
 			},
 		},
@@ -95,10 +93,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "font-ubuntu",
-							Version: "0.869-r1",
-						},
+						Name:    "font-ubuntu",
+						Version: "0.869-r1",
 					},
 				},
 			},
@@ -117,10 +113,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "libattr1",
-							Version: "2.5.1-r2",
-						},
+						Name:    "libattr1",
+						Version: "2.5.1-r2",
 					},
 				},
 			},
@@ -139,16 +133,12 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "logstash-8",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8",
+						Version: "8.15.3-r4",
 					},
 					{
-						Package: apk.Package{
-							Name:    "logstash-8-compat",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8-compat",
+						Version: "8.15.3-r4",
 					},
 				},
 			},
@@ -167,22 +157,16 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "unbound-libs",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-libs",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound-config",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-config",
+						Version: "1.23.0-r0",
 					},
 				},
 			},
@@ -201,10 +185,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "test-pkg-describes",
-							Version: "1.0.0-r0",
-						},
+						Name:    "test-pkg-describes",
+						Version: "1.0.0-r0",
 					},
 				},
 			},
@@ -223,10 +205,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "test-pkg-both",
-							Version: "1.0.0-r0",
-						},
+						Name:    "test-pkg-both",
+						Version: "1.0.0-r0",
 					},
 				},
 			},

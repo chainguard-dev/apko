@@ -65,12 +65,10 @@ func isRetryableError(err error) bool {
 	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) {
 		return true
 	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return true
 	}
-	var httpErr *httpStatusError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*httpStatusError](err); ok {
 		return httpErr.statusCode >= 500 || httpErr.statusCode == http.StatusTooManyRequests
 	}
 	msg := err.Error()
