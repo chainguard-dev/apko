@@ -118,13 +118,11 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 		}
 
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
-			Add: img,
-			Descriptor: v1.Descriptor{
-				MediaType: mt,
-				Digest:    h,
-				Size:      size,
-				Platform:  platform,
-			},
+			Add:       img,
+			MediaType: mt,
+			Digest:    h,
+			Size:      size,
+			Platform:  platform,
 		})
 	}
 	h, err := idx.Digest()

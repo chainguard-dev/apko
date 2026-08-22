@@ -514,9 +514,9 @@ func TestStack_OpaqueDir_StatErrorIsNotSilentlyPermissive(t *testing.T) {
 		"etc/secret": {Data: []byte("hidden"), Mode: 0o644},
 	}
 	middle := brokenStatFS{
-		overlayFS: overlayFS{MapFS: fstest.MapFS{
+		MapFS: fstest.MapFS{
 			"etc": {Mode: fs.ModeDir | 0o755},
-		}},
+		},
 		statErr: map[string]error{"etc": errCorruptXattr},
 	}
 	top := overlayFS{MapFS: fstest.MapFS{
