@@ -28,14 +28,14 @@ import (
 func TestFlightCache(t *testing.T) {
 	s := newFlightCache[string, int]()
 	var called int
-	r1, err := s.Do("test", func() (int, error) {
+	r1, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 42, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 42, r1)
 
-	r2, err := s.Do("test", func() (int, error) {
+	r2, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
@@ -45,7 +45,7 @@ func TestFlightCache(t *testing.T) {
 
 	s.Forget("test")
 
-	r3, err := s.Do("test", func() (int, error) {
+	r3, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
@@ -53,7 +53,7 @@ func TestFlightCache(t *testing.T) {
 	require.Equal(t, 1337, r3)
 	require.Equal(t, 2, called, "Function should be called twice, once before and once after Forget")
 
-	differentKey, err := s.Do("test2", func() (int, error) {
+	differentKey, _, err := s.Do("test2", func() (int, error) {
 		return 7, nil
 	})
 	require.NoError(t, err)
@@ -63,19 +63,37 @@ func TestFlightCache(t *testing.T) {
 func TestFlightCacheCachesNoErrors(t *testing.T) {
 	s := newFlightCache[string, int]()
 	var called int
-	_, err := s.Do("test", func() (int, error) {
+	_, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 42, assert.AnError
 	})
 	require.ErrorIs(t, assert.AnError, err)
 
-	r2, err := s.Do("test", func() (int, error) {
+	r2, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1337, r2)
 	require.Equal(t, 2, called, "Function should be called twice, once for the error and once for the success")
+}
+
+func TestFlightCacheReportsHits(t *testing.T) {
+	s := newFlightCache[string, int]()
+
+	value, hit, err := s.Do("test", func() (int, error) {
+		return 42, nil
+	})
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Equal(t, 42, value)
+
+	value, hit, err = s.Do("test", func() (int, error) {
+		return 1337, nil
+	})
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Equal(t, 42, value)
 }
 
 func TestFlightCacheCoalescesCalls(t *testing.T) {
@@ -88,7 +106,7 @@ func TestFlightCacheCoalescesCalls(t *testing.T) {
 	var eg errgroup.Group
 	for range 10 {
 		eg.Go(func() error {
-			_, err := s.Do("test", func() (int, error) {
+			_, _, err := s.Do("test", func() (int, error) {
 				mux.Lock() // Hangs until the unlock below.
 				called.Add(1)
 				return 42, nil
@@ -106,7 +124,7 @@ func TestFlightCacheForgetFunc(t *testing.T) {
 	s := newFlightCache[string, int]()
 
 	for k, v := range map[string]int{"a-1": 1, "a-2": 2, "b-1": 3} {
-		_, err := s.Do(k, func() (int, error) { return v, nil })
+		_, _, err := s.Do(k, func() (int, error) { return v, nil })
 		require.NoError(t, err)
 	}
 
@@ -116,16 +134,16 @@ func TestFlightCacheForgetFunc(t *testing.T) {
 	})
 
 	// "a-*" keys should be evicted, so new values are computed.
-	r, err := s.Do("a-1", func() (int, error) { return 100, nil })
+	r, _, err := s.Do("a-1", func() (int, error) { return 100, nil })
 	require.NoError(t, err)
 	require.Equal(t, 100, r)
 
-	r, err = s.Do("a-2", func() (int, error) { return 200, nil })
+	r, _, err = s.Do("a-2", func() (int, error) { return 200, nil })
 	require.NoError(t, err)
 	require.Equal(t, 200, r)
 
 	// "b-1" should still be cached.
-	r, err = s.Do("b-1", func() (int, error) { return 999, nil })
+	r, _, err = s.Do("b-1", func() (int, error) { return 999, nil })
 	require.NoError(t, err)
 	require.Equal(t, 3, r, "b-1 should still return the cached value")
 }

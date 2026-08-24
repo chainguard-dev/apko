@@ -1155,9 +1155,10 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 			client = rc.StandardClient()
 		}
 
-		return a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
+		keys, _, err := a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
 			return DiscoverKeys(ctx, client, a.auth, repository)
 		})
+		return keys, err
 	}
 
 	return DiscoverKeys(ctx, client, a.auth, repository)

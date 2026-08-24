@@ -159,9 +159,7 @@ func (d *defaultPackageGetter) GetPackage(ctx context.Context, pkg InstallablePa
 		return d.getPackageImpl(ctx, pkg)
 	}
 
-	cached := true
-	val, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
-		cached = false
+	val, cached, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
 		return d.getPackageImpl(ctx, pkg)
 	})
 	if !cached {
