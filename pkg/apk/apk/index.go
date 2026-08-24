@@ -129,10 +129,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		if err != nil {
 			return nil, err
 		}
-		if opts.auth == nil {
-			opts.auth = auth.DefaultAuthenticators
-		}
-		if err := opts.auth.AddAuth(ctx, head); err != nil {
+		if err := opts.authenticator().AddAuth(ctx, head); err != nil {
 			return nil, fmt.Errorf("unable to add auth to request: %w", err)
 		}
 
@@ -320,10 +317,7 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 		req.Header.Set("I-Cant-Believe-Its-Not-If-None-Match", etag)
 	}
 
-	if opts.auth == nil {
-		opts.auth = auth.DefaultAuthenticators
-	}
-	if err := opts.auth.AddAuth(ctx, req); err != nil {
+	if err := opts.authenticator().AddAuth(ctx, req); err != nil {
 		return nil, fmt.Errorf("unable to add auth to request: %w", err)
 	}
 
@@ -490,6 +484,18 @@ type indexOpts struct {
 	auth                     auth.Authenticator
 	indexDecompressedMaxSize int64
 }
+
+// authenticator returns the configured authenticator, defaulting to the
+// ambient set when none was supplied. It deliberately does not memoize into o:
+// GetRepositoryIndexes shares one indexOpts across a goroutine per repository,
+// so writing the default back would be a data race.
+func (o *indexOpts) authenticator() auth.Authenticator {
+	if o.auth == nil {
+		return auth.DefaultAuthenticators
+	}
+	return o.auth
+}
+
 type IndexOption func(*indexOpts)
 
 func WithIgnoreSignatures(ignoreSignatures bool) IndexOption {
