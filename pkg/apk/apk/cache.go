@@ -43,14 +43,16 @@ func newFlightCache[K comparable, V any]() *flightCache[K, V] {
 	}
 }
 
-// Do returns coalesces multiple calls, like singleflight, but also caches
+// Do coalesces multiple calls, like singleflight, but also caches
 // the result if the call is successful. Failures are not cached to avoid
-// permanently failing for transient errors.
-func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
+// permanently failing for transient errors. The boolean result reports
+// whether the key was already present, including an in-flight call.
+func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, bool, error) {
 	f.mux.RLock()
 	if v, ok := f.cache[key]; ok {
 		f.mux.RUnlock()
-		return v()
+		value, err := v()
+		return value, true, err
 	}
 	f.mux.RUnlock()
 
@@ -59,7 +61,8 @@ func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
 	// Doubly-checked-locking in case of race conditions.
 	if v, ok := f.cache[key]; ok {
 		f.mux.Unlock()
-		return v()
+		value, err := v()
+		return value, true, err
 	}
 
 	v := sync.OnceValues(fn)
@@ -72,7 +75,7 @@ func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, error) {
 	if err != nil {
 		f.Forget(key)
 	}
-	return val, err
+	return val, false, err
 }
 
 // Forget removes the given key from the cache.

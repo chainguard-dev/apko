@@ -20,6 +20,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
 // It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
@@ -73,6 +75,7 @@ func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResol
 	// in-flight resolutions holding it finish, and no future replacement
 	// will purge it, so it must not (re-)enter the cache.
 	if !currentAll(indexes) {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultBypass)
 		return newPkgResolver(ctx, indexes)
 	}
 
@@ -80,8 +83,10 @@ func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResol
 	defer r.Unlock()
 
 	if pr := r.find(indexes); pr != nil {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultHit)
 		return pr.Clone()
 	}
+	apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultMiss)
 
 	pr := newPkgResolver(ctx, indexes)
 	r.fill(indexes, pr)

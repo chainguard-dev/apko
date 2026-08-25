@@ -40,6 +40,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
 var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
@@ -158,13 +159,15 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		etag, ok := etagFromResponse(resp)
 		if !ok {
 			// If there's no etag, we can't cache it, so just return the result.
+			apkometrics.RecordIndexCacheAccess(apkometrics.CacheResultBypass)
 			return fetchAndParse(etag)
 		}
 
 		key := cacheKey{url: u, etag: etag}
-		idx, err := i.indexes.Do(key, func() (NamedIndex, error) {
+		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			return fetchAndParse(etag)
 		})
+		apkometrics.RecordIndexCacheAccess(cacheResult(hit))
 
 		// Remove any stale entries with the same URL but a different etag.
 		// This races with concurrent callers that may have a different etag: a
@@ -200,7 +203,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		}
 		i.modtimes[u] = mod
 
-		idx, err := i.indexes.Do(key, func() (NamedIndex, error) {
+		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			b, err := os.ReadFile(u)
 			if err != nil {
 				return nil, fmt.Errorf("reading file: %w", err)
@@ -211,11 +214,19 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			}
 			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
 		})
+		apkometrics.RecordIndexCacheAccess(cacheResult(hit))
 		if err == nil {
 			i.setCurrent(u, idx)
 		}
 		return idx, err
 	}
+}
+
+func cacheResult(hit bool) apkometrics.CacheResult {
+	if hit {
+		return apkometrics.CacheResultHit
+	}
+	return apkometrics.CacheResultMiss
 }
 
 // IndexURL returns the full URL to the index file for the given repo and arch.
