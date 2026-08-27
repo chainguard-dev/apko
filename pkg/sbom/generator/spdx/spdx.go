@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -254,9 +255,15 @@ func (sx *SPDX) ProcessInternalApkSBOM(ctx context.Context, opts *options.Option
 		}
 	}
 
-	// Copy the targetElementIDs
-	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
+	sortedTargetElementIDs := make([]string, 0, len(targetElementIDs))
 	for id := range targetElementIDs {
+		sortedTargetElementIDs = append(sortedTargetElementIDs, id)
+	}
+	// Sort the element IDs so repeated builds produce the same relationship order.
+	sort.Strings(sortedTargetElementIDs)
+
+	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
+	for _, id := range sortedTargetElementIDs {
 		todo[id] = struct{}{}
 	}
 
@@ -270,7 +277,7 @@ func (sx *SPDX) ProcessInternalApkSBOM(ctx context.Context, opts *options.Option
 	// This ensures they are reachable from the document root for tools that traverse the SBOM graph.
 	if len(doc.DocumentDescribes) > 0 {
 		rootPkgID := doc.DocumentDescribes[0]
-		for elementID := range targetElementIDs {
+		for _, elementID := range sortedTargetElementIDs {
 			doc.Relationships = append(doc.Relationships, Relationship{
 				Element: rootPkgID,
 				Type:    "CONTAINS",

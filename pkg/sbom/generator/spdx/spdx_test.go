@@ -271,23 +271,63 @@ func TestSPDX_Generate(t *testing.T) {
 }
 
 func TestReproducible(t *testing.T) {
-	// Create two sboms based on the same input and ensure
-	// they are identical
+	// Create SBOMs based on the same input and ensure they are identical.
+	const (
+		packageID        = "SPDXRef-Package-glibc-2.40-r0"
+		documentRootID   = "SPDXRef-DocumentRoot-Directory-glibc"
+		internalSBOMPath = "/var/lib/db/sbom/glibc-2.40-r0.spdx.json"
+	)
+
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
 	opts := testOpts(fsys)
+	opts.Packages = []*apk.InstalledPackage{{Name: "glibc", Version: "2.40-r0"}}
+
+	internalSBOM := Document{
+		DocumentDescribes: []string{
+			packageID,
+			documentRootID,
+		},
+		Packages: []Package{
+			{ID: packageID, Name: "glibc"},
+			{ID: documentRootID, Name: "/"},
+		},
+	}
+	data, err := json.Marshal(internalSBOM)
+	require.NoError(t, err)
+	require.NoError(t, fsys.MkdirAll("/var/lib/db/sbom", 0750))
+	require.NoError(t, fsys.WriteFile(internalSBOMPath, data, 0644))
+
 	sx := New()
-	d := make([][]byte, 0, 2)
-	for i := range 2 {
+	generate := func(i int) []byte {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
 		require.NoError(t, sx.Generate(t.Context(), opts, path))
 		require.FileExists(t, path)
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
-		d = append(d, data)
+		return data
 	}
-	diff := cmp.Diff(d[0], d[1])
-	require.Empty(t, diff, fmt.Sprintf("difference in expected output %s", diff))
+
+	expected := generate(0)
+	var doc Document
+	require.NoError(t, json.Unmarshal(expected, &doc))
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: packageID,
+	})
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: documentRootID,
+	})
+
+	// Exercise enough new maps to detect unstable iteration order if the relationships are not sorted.
+	for i := 1; i < 100; i++ {
+		if diff := cmp.Diff(expected, generate(i)); diff != "" {
+			t.Fatalf("SBOM differs from first generation (-want +got):\n%s", diff)
+		}
+	}
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools
