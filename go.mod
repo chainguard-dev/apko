@@ -9,7 +9,7 @@ require (
 	github.com/erofs/go-erofs v0.3.2-0.20260804074615-52cc42c5291c
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.21.9
+	github.com/google/go-containerregistry v0.22.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-retryablehttp v0.7.8
@@ -67,7 +67,7 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/cli v29.6.2+incompatible // indirect
+	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
