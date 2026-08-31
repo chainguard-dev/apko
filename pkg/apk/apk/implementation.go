@@ -824,7 +824,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
 				infos[i] = asPackage
 
-				installedFiles, err := a.installPackage(ctx, asPackage, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, asPackage, ExpandedContents(exp), sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
@@ -1253,11 +1253,11 @@ type WriteHeaderer interface {
 }
 
 // installPackage installs a single package and updates installed db.
-func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expandapk.APKExpanded, sourceDateEpoch *time.Time) ([]tar.Header, error) {
+func (a *APK) installPackage(ctx context.Context, pkg *Package, contents PackageContents, sourceDateEpoch *time.Time) ([]tar.Header, error) {
 	log := clog.FromContext(ctx)
 	log.Infof("installing %s (%s)", pkg.Name, pkg.Version)
 
-	// We don't want to call `defer expanded.Close()` to to remove tempDir because our
+	// For expanded APKs we don't remove the backing tempDir because our
 	// cached files are advertised by symlinks pointing into them.
 	//
 	// This is not a big deal because the temp files if not referred by
@@ -1272,14 +1272,24 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	)
 
 	if wh, ok := a.fs.(WriteHeaderer); ok {
-		installedFiles, err = a.lazilyInstallAPKFiles(ctx, wh, expanded.TarFS, pkg)
+		entries, err := contents.Entries()
+		if err != nil {
+			return nil, fmt.Errorf("reading install records for pkg %s: %w", pkg.Name, err)
+		}
+		installedFiles, err = a.lazilyInstallAPKFiles(ctx, wh, entries, contents.FS(), pkg)
 		if err != nil {
 			return nil, fmt.Errorf("unable to install files for pkg %s: %w", pkg.Name, err)
 		}
 	} else {
-		packageData, err := expanded.PackageData()
+		// The non-WriteHeaderer path streams the whole data section as a
+		// tar, which not every contents carrier can produce.
+		pd, ok := contents.(interface{ PackageData() (*os.File, error) })
+		if !ok {
+			return nil, fmt.Errorf("installing %s: filesystem does not implement WriteHeaderer and the package contents carry no data stream", pkg.Name)
+		}
+		packageData, err := pd.PackageData()
 		if err != nil {
-			return nil, fmt.Errorf("opening package file %q: %w", expanded.PackageFile, err)
+			return nil, fmt.Errorf("opening package data for %s: %w", pkg.Name, err)
 		}
 		defer packageData.Close()
 
@@ -1290,18 +1300,17 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the scripts.tar
-	controlData, err := expanded.ControlData()
+	controlData, err := contents.ControlData()
 	if err != nil {
-		return nil, fmt.Errorf("opening control file %q: %w", expanded.ControlFile, err)
+		return nil, fmt.Errorf("opening control data for %s: %w", pkg.Name, err)
 	}
-
 	controlTar := bytes.NewReader(controlData)
 	if err := a.updateScriptsTar(pkg, controlTar, sourceDateEpoch); err != nil {
 		return nil, fmt.Errorf("unable to update scripts.tar for pkg %s: %w", pkg.Name, err)
 	}
 
 	// update the triggers
-	pkgInfo, err := expanded.PkgInfo()
+	pkgInfo, err := contents.PkgInfo()
 	if err != nil {
 		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
 	}
