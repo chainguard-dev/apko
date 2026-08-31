@@ -263,6 +263,18 @@ func WithLockFile(lockFile string) Option {
 	}
 }
 
+// WithPreResolvedPackages provides the exact package set to install, in
+// order, with the contents each member installs from. The build installs
+// precisely these: no index is consulted and no dependency resolution
+// happens. The image configuration's package list still names the requested
+// world (written to /etc/apk/world); this option settles how it is satisfied.
+func WithPreResolvedPackages(contents []apk.PackageContents) Option {
+	return func(bc *Context) error {
+		bc.o.PreResolvedPackages = contents
+		return nil
+	}
+}
+
 func WithTempDir(tmp string) Option {
 	return func(bc *Context) error {
 		bc.o.TempDirPath = tmp

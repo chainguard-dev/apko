@@ -80,6 +80,7 @@ type Options struct {
 	Offline                 bool                  `json:"offline,omitempty"`
 	SharedCache             *apk.Cache            `json:"-"`
 	Lockfile                string                `json:"lockfile,omitempty"`
+	PreResolvedPackages     []apk.PackageContents `json:"-"`
 	Auth                    auth.Authenticator    `json:"-"`
 	IncludePaths            []string              `json:"includePaths,omitempty"`
 	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`

@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -856,6 +857,58 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		return nil, fmt.Errorf("installing packages: %w", withCause(ctx, err))
 	}
 
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// InstallPackageContents installs exactly the given packages, in the given
+// order, from their supplied contents: no index is consulted, no dependency
+// resolution happens, and nothing is fetched — the caller has already settled
+// the set and supplies each member's contents.
+func (a *APK) InstallPackageContents(ctx context.Context, sourceDateEpoch *time.Time, all []PackageContents) ([]InstalledDiff, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "InstallPackageContents")
+	defer span.End()
+
+	allFiles := make([][]tar.Header, len(all))
+	infos := make([]*Package, len(all))
+
+	for i, contents := range all {
+		pkgInfo, err := contents.PkgInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read .PKGINFO for package %d: %w", i, err)
+		}
+
+		isInstalled, err := a.isInstalledPackage(pkgInfo.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkgInfo.Name, err)
+		}
+		if isInstalled {
+			continue
+		}
+
+		// The package checksum is, by definition, the SHA1 of the compressed
+		// control section.
+		section, err := contents.ControlSection()
+		if err != nil {
+			return nil, fmt.Errorf("opening control section for %s: %w", pkgInfo.Name, err)
+		}
+		checksum := sha1.Sum(section) //nolint:gosec // this is what apk tools is using
+		asPackage := pkgInfo.AsPackage(checksum[:], uint64(contents.Size()))
+		infos[i] = asPackage
+
+		installedFiles, err := a.installPackage(ctx, asPackage, contents, sourceDateEpoch)
+		if err != nil {
+			return nil, fmt.Errorf("installing %s: %w", pkgInfo.Name, err)
+		}
+
+		allFiles[i] = installedFiles
+	}
+
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// recordInstalled writes the installed-database entries for the given
+// packages and their files, dropping files a later package overwrote.
+func (a *APK) recordInstalled(ctx context.Context, infos []*Package, allFiles [][]tar.Header) ([]InstalledDiff, error) {
 	diffs := make([]InstalledDiff, 0, len(allFiles))
 
 	// update the installed file
