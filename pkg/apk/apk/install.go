@@ -24,13 +24,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
 
 	"go.opentelemetry.io/otel"
-
-	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
@@ -307,40 +306,39 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 	return checksum, nil
 }
 
-// lazilyInstallAPKFiles avoids actually writing anything to disk, instead relying on a tarfs.FS
-// to provide much cheaper access to the file data when we read it later.
+// lazilyInstallAPKFiles avoids actually writing anything to disk, instead relying on the
+// contents' filesystem to provide much cheaper access to the file data when we read it later.
 //
 // This is an optimizing fastpath for when a.fs is a specific implementation that supports it.
-func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, tf *tarfs.FS, pkg *Package) ([]tar.Header, error) {
+func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, entries []tar.Header, src fs.FS, pkg *Package) ([]tar.Header, error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "lazilyInstallAPKFiles")
 	defer span.End()
 
-	entries := tf.Entries()
 	files := make([]tar.Header, 0, len(entries))
 
 	var startedDataSection bool
-	for _, file := range entries {
+	for _, hdr := range entries {
 		// per https://git.alpinelinux.org/apk-tools/tree/src/extract_v2.c?id=337734941831dae9a6aa441e38611c43a5fd72c0#n120
 		//  * APKv1.0 compatibility - first non-hidden file is
 		//  * considered to start the data section of the file.
 		//  * This does not make any sense if the file has v2.0
 		//  * style .PKGINFO
-		if !startedDataSection && file.Header.Name[0] == '.' && !strings.Contains(file.Header.Name, "/") {
+		if !startedDataSection && hdr.Name[0] == '.' && !strings.Contains(hdr.Name, "/") {
 			continue
 		}
 		// whatever it is now, it is in the data section
 		startedDataSection = true
 
-		installed, err := wh.WriteHeader(file.Header, tf, pkg)
+		installed, err := wh.WriteHeader(hdr, src, pkg)
 		if err != nil {
 			return nil, err
 		}
 
-		if installed && file.Header.Typeflag == tar.TypeReg {
-			a.installedFiles[file.Header.Name] = pkg
+		if installed && hdr.Typeflag == tar.TypeReg {
+			a.installedFiles[hdr.Name] = pkg
 		}
 
-		files = append(files, file.Header)
+		files = append(files, hdr)
 	}
 
 	return files, nil
