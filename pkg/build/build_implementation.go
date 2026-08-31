@@ -152,7 +152,13 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		pkgs []apk.InstalledDiff
 		err  error
 	)
-	if bc.o.Lockfile != "" {
+	switch {
+	case len(bc.o.PreResolvedPackages) > 0:
+		pkgs, err = bc.apk.InstallPackageContents(ctx, &bc.o.SourceDateEpoch, bc.o.PreResolvedPackages)
+		if err != nil {
+			return nil, fmt.Errorf("failed installation from pre-resolved packages: %w", err)
+		}
+	case bc.o.Lockfile != "":
 		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
@@ -170,7 +176,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		if err != nil {
 			return nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-	} else {
+	default:
 		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("installing apk packages: %w", err)
