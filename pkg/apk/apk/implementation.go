@@ -877,6 +877,13 @@ func (a *APK) InstallPackageContents(ctx context.Context, sourceDateEpoch *time.
 			return nil, fmt.Errorf("failed to read .PKGINFO for package %d: %w", i, err)
 		}
 
+		// A multi-arch build reuses one option set for every architecture
+		// context, so contents for the wrong architecture arrive here
+		// silently; refuse them rather than installing foreign binaries.
+		if pkgInfo.Arch != "" && pkgInfo.Arch != "noarch" && pkgInfo.Arch != a.arch {
+			return nil, fmt.Errorf("package %s targets architecture %q, not this context's %q", pkgInfo.Name, pkgInfo.Arch, a.arch)
+		}
+
 		isInstalled, err := a.isInstalledPackage(pkgInfo.Name)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkgInfo.Name, err)

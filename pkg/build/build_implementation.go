@@ -153,7 +153,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		err  error
 	)
 	switch {
-	case len(bc.o.PreResolvedPackages) > 0:
+	case bc.o.PreResolvedPackages != nil:
 		pkgs, err = bc.apk.InstallPackageContents(ctx, &bc.o.SourceDateEpoch, bc.o.PreResolvedPackages)
 		if err != nil {
 			return nil, fmt.Errorf("failed installation from pre-resolved packages: %w", err)

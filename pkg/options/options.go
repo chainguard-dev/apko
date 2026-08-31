@@ -80,13 +80,16 @@ type Options struct {
 	Offline                 bool                  `json:"offline,omitempty"`
 	SharedCache             *apk.Cache            `json:"-"`
 	Lockfile                string                `json:"lockfile,omitempty"`
-	PreResolvedPackages     []apk.PackageContents `json:"-"`
-	Auth                    auth.Authenticator    `json:"-"`
-	IncludePaths            []string              `json:"includePaths,omitempty"`
-	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`
-	Transport               http.RoundTripper     `json:"-"`
-	PackageGetter           apk.PackageGetter     `json:"-"`
-	SizeLimits              SizeLimits            `json:"sizeLimits,omitempty"`
+	// PreResolvedPackages, when non-nil, is the exact package set to
+	// install — possibly empty, which installs nothing; nil means the
+	// option is unset and the package set is settled another way.
+	PreResolvedPackages []apk.PackageContents `json:"-"`
+	Auth                auth.Authenticator    `json:"-"`
+	IncludePaths        []string              `json:"includePaths,omitempty"`
+	IgnoreSignatures    bool                  `json:"ignoreSignatures,omitempty"`
+	Transport           http.RoundTripper     `json:"-"`
+	PackageGetter       apk.PackageGetter     `json:"-"`
+	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`
 }
 
 type Auth struct{ User, Pass string }
