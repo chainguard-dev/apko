@@ -40,10 +40,12 @@ import (
 
 // entry describes one node in a tarfs fixture. A nil pkg means the entry is
 // not owned by any package, which is what apko's own post-install steps
-// produce. A zero mtime means epoch.
+// produce. A non-empty link makes it a symlink to that target; a zero mtime
+// means epoch.
 type entry struct {
 	path  string
 	data  string
+	link  string
 	pkg   *apk.Package
 	dir   bool
 	mtime time.Time
@@ -73,7 +75,7 @@ func tarfsFixture(t *testing.T, entries []entry) apkfs.FullFS {
 	// reads it back lazily, so the fixture needs one to point at.
 	content := fstest.MapFS{}
 	for _, e := range entries {
-		if !e.dir {
+		if !e.dir && e.link == "" {
 			content[e.path] = &fstest.MapFile{Data: []byte(e.data), Mode: 0o644}
 		}
 	}
@@ -87,17 +89,29 @@ func tarfsFixture(t *testing.T, entries []entry) apkfs.FullFS {
 		}
 		require.NoError(t, m.MkdirAll(path.Dir(e.path), 0o755))
 
-		sum := sha1.Sum([]byte(e.data)) //nolint:gosec // see the import comment
 		hdr := tar.Header{
 			Typeflag: tar.TypeReg,
 			Name:     e.path,
 			Size:     int64(len(e.data)),
 			Mode:     0o644,
 			ModTime:  e.modTime(),
-			PAXRecords: map[string]string{
-				"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
-			},
 		}
+		payload := e.data
+		if e.link != "" {
+			// tarfs routes symlinks through the same WriteHeader path as
+			// regular files, checksum and owning package included, which is
+			// how a package-owned symlink reaches splitErofsLayers.
+			hdr.Typeflag = tar.TypeSymlink
+			hdr.Linkname = e.link
+			hdr.Size = 0
+			hdr.Mode = 0o777
+			payload = e.link
+		}
+		sum := sha1.Sum([]byte(payload)) //nolint:gosec // see the import comment
+		hdr.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
+		}
+
 		_, err := m.WriteHeader(hdr, content, e.pkg)
 		require.NoError(t, err, "writing %s", e.path)
 	}
@@ -140,6 +154,7 @@ func TestSplitErofsLayers_RoutesFilesToTheirPackageLayer(t *testing.T) {
 		{path: "usr/lib/apk/db/installed", data: "pkg1 info\npkg2 info\n"},
 		{path: "usr/bin/one", data: "one\n", pkg: pkg1},
 		{path: "usr/share/one/data", data: "data\n", pkg: pkg1},
+		{path: "usr/bin/one-compat", link: "one", pkg: pkg1},
 		{path: "usr/bin/two", data: "two\n", pkg: pkg2},
 		{path: "etc/hello", data: "hi\n"},
 	})
@@ -169,6 +184,12 @@ func TestSplitErofsLayers_RoutesFilesToTheirPackageLayer(t *testing.T) {
 
 	require.Contains(t, two, "usr/bin/two")
 	require.NotContains(t, two, "usr/bin/one")
+
+	// Symlinks route on the same Package() the walk reads off a regular
+	// file's FileInfo, so a package's compat links must not drift to top.
+	require.Contains(t, one, "usr/bin/one-compat")
+	require.NotContains(t, two, "usr/bin/one-compat")
+	require.NotContains(t, top, "usr/bin/one-compat")
 
 	require.NotContains(t, top, "usr/bin/one")
 	require.NotContains(t, top, "usr/bin/two")
