@@ -29,13 +29,20 @@ import (
 	erofs "github.com/erofs/go-erofs"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/tarfs"
 )
 
 // linkedFile is the one real file every fixture below builds its extra names
-// on top of.
-const linkedFile = "usr/bin/coreutils"
+// on top of, along with the metadata a link name has to inherit from it.
+const (
+	linkedFile = "usr/bin/coreutils"
+	linkedUID  = 1234
+	linkedGID  = 5678
+	linkedAttr = "user.apko.test"
+	linkedVal  = "from the target inode"
+)
 
 // hardlinkFS builds a pkg/tarfs holding linkedFile plus `links` extra names for
 // it, the way apk installs a package whose tar carries TypeLink entries.
@@ -59,11 +66,16 @@ func hardlinkFS(t *testing.T, data string, links ...string) apkfs.FullFS {
 		Size:     int64(len(data)),
 		Mode:     0o755,
 		ModTime:  epoch,
+		Uid:      linkedUID,
+		Gid:      linkedGID,
 		PAXRecords: map[string]string{
-			"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
+			"APK-TOOLS.checksum.SHA1":    hex.EncodeToString(sum[:]),
+			"SCHILY.xattr." + linkedAttr: linkedVal,
 		},
 	}, fstest.MapFS{target: &fstest.MapFile{Data: []byte(data), Mode: 0o755}}, nil)
 	require.NoError(t, err)
+	// WriteHeader does not carry Uid/Gid onto the node; apk chowns separately.
+	require.NoError(t, m.Chown(target, linkedUID, linkedGID))
 
 	for _, l := range links {
 		require.NoError(t, m.MkdirAll(filepath.Dir(l), 0o755))
@@ -131,9 +143,16 @@ func TestWriteErofs_HardlinksShareOneInode(t *testing.T) {
 		require.Equal(t, want.Ino, statOf(t, img, name).Ino, "%s does not share the inode", name)
 	}
 
-	// Mode and ownership come with the shared inode, so the link names must
-	// report what the target had rather than a default.
-	require.Equal(t, fs.FileMode(0o755), statOf(t, img, "usr/bin/[").Mode.Perm())
+	// Everything hanging off the inode -- mode, ownership, xattrs -- comes
+	// with it, so every link name must report what the target had rather
+	// than a writer default (0644, uid 0, no xattrs).
+	for _, name := range names {
+		st := statOf(t, img, name)
+		require.Equal(t, fs.FileMode(0o755), st.Mode.Perm(), "mode of %s", name)
+		require.EqualValues(t, linkedUID, st.UID, "uid of %s", name)
+		require.EqualValues(t, linkedGID, st.GID, "gid of %s", name)
+		require.Equal(t, linkedVal, st.Xattrs[linkedAttr], "xattr of %s", name)
+	}
 
 	if fsckBin := optionalFsckErofs(t); fsckBin != "" {
 		output, err := exec.Command(fsckBin, "-d3", out).CombinedOutput()
@@ -169,11 +188,11 @@ func TestWriteErofs_HardlinksCostOneCopy(t *testing.T) {
 		"three hardlinks grew the image by %d bytes, which looks like copied data", withLinks-alone)
 }
 
-// TestEmitErofsHardlinks_MaterializesWhenTargetIsAbsent covers the cross-layer
-// case from spec §3.7: a link whose target is not in this image cannot share
-// an inode with it, so it gets a copy of its own instead of failing the build.
-// Splitting a rootfs across layers is what puts a link and its target in
-// different images.
+// TestEmitErofsHardlinks_MaterializesWhenTargetIsAbsent covers the fallback
+// spec §3.7 leaves to the producer: a link whose target is not in this image
+// cannot share an inode with it, so it gets a copy of its own rather than
+// failing the build. A `paths` directive removing the target, and a chain of
+// links whose middle name is still deferred, both reach it.
 func TestEmitErofsHardlinks_MaterializesWhenTargetIsAbsent(t *testing.T) {
 	const data = "payload\n"
 	m := hardlinkFS(t, data, "usr/bin/[")
@@ -226,16 +245,147 @@ func TestHardlinkTarget(t *testing.T) {
 	_, ok = hardlinkTarget(memInfo)
 	require.False(t, ok, "apkfs.MemFS reports linkness after all; the writer could use it")
 
-	// A Linkname is package metadata, so it is cleaned before use.
-	for _, tc := range []struct{ linkname, want string }{
-		{"usr/bin/coreutils", "usr/bin/coreutils"},
-		{"/usr/bin/coreutils", "usr/bin/coreutils"},
-		{"./usr/bin/../bin/coreutils", "usr/bin/coreutils"},
+	// A Linkname is package metadata, so it is cleaned before use, and one
+	// that still points outside the image after that is not treated as a
+	// link at all -- the writer would silently re-root it onto a real path.
+	for _, tc := range []struct {
+		linkname string
+		want     string
+		wantOK   bool
+	}{
+		{"usr/bin/coreutils", "usr/bin/coreutils", true},
+		{"/usr/bin/coreutils", "usr/bin/coreutils", true},
+		{"./usr/bin/../bin/coreutils", "usr/bin/coreutils", true},
+		// Rooted, so the Clean absorbs the ".." the way the kernel would.
+		{"/../etc/passwd", "etc/passwd", true},
+		{"../etc/passwd", "", false},
+		{"usr/bin/../../../etc/passwd", "", false},
+		{"..", "", false},
 	} {
 		got, ok := hardlinkTarget(&fakeInfo{sys: &tar.Header{Typeflag: tar.TypeLink, Linkname: tc.linkname}})
-		require.True(t, ok, "%q", tc.linkname)
+		require.Equal(t, tc.wantOK, ok, "%q", tc.linkname)
 		require.Equal(t, tc.want, got, "%q", tc.linkname)
 	}
+}
+
+// tarfsWriter is the slice of pkg/tarfs the fixtures below drive: the apk
+// unpack path, which is the only thing that records a hardlink as one.
+type tarfsWriter interface {
+	apkfs.FullFS
+	WriteHeader(tar.Header, fs.FS, *apk.Package) (bool, error)
+}
+
+// writeTarfsFile adds one regular file to m the way apk installs it.
+func writeTarfsFile(t *testing.T, m tarfsWriter, name, data string) {
+	t.Helper()
+
+	require.NoError(t, m.MkdirAll(filepath.Dir(name), 0o755))
+	sum := sha1.Sum([]byte(data)) //nolint:gosec // see the import comment
+	_, err := m.WriteHeader(tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     name,
+		Size:     int64(len(data)),
+		Mode:     0o755,
+		ModTime:  epoch,
+		PAXRecords: map[string]string{
+			"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
+		},
+	}, fstest.MapFS{name: &fstest.MapFile{Data: []byte(data), Mode: 0o755}}, nil)
+	require.NoError(t, err, "writing %s", name)
+}
+
+// writeTarfsLink adds a TypeLink dirent named name pointing at linkname.
+func writeTarfsLink(t *testing.T, m tarfsWriter, name, linkname string) {
+	t.Helper()
+
+	require.NoError(t, m.MkdirAll(filepath.Dir(name), 0o755))
+	_, err := m.WriteHeader(tar.Header{
+		Typeflag: tar.TypeLink,
+		Name:     name,
+		Linkname: linkname,
+		Mode:     0o755,
+		ModTime:  epoch,
+	}, nil, nil)
+	require.NoError(t, err, "linking %s -> %s", name, linkname)
+}
+
+func writeImage(t *testing.T, m apkfs.FullFS) string {
+	t.Helper()
+
+	out := filepath.Join(t.TempDir(), "image.erofs")
+	f, err := os.Create(out)
+	require.NoError(t, err)
+	require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
+	require.NoError(t, f.Close())
+	return out
+}
+
+// TestWriteErofs_HardlinkThroughSymlinkedDirIsCopied covers a Linkname that
+// reaches its target through a symlinked directory component -- /lib is a
+// symlink to /usr/lib in every wolfi image. tarfs follows it at unpack and
+// the tar layer path follows it at runtime, but the writer's lookup is a flat
+// path map, so it reports ErrNotDirectory rather than ErrNotExist. That has
+// to degrade to a copy like any other absent target; before it was counted,
+// it aborted the whole build.
+func TestWriteErofs_HardlinkThroughSymlinkedDirIsCopied(t *testing.T) {
+	const data = "not really a shared object\n"
+
+	m := tarfs.New()
+	writeTarfsFile(t, m, "usr/lib/libfoo.so", data)
+	require.NoError(t, m.Symlink("usr/lib", "lib"))
+	writeTarfsLink(t, m, "usr/bin/libfoo.so", "lib/libfoo.so")
+
+	img := openImage(t, writeImage(t, m))
+
+	content, err := fs.ReadFile(img, "usr/bin/libfoo.so")
+	require.NoError(t, err, "the link was neither shared nor materialized")
+	require.Equal(t, data, string(content))
+
+	// A copy, not a shared inode: the writer had nothing at "/lib/libfoo.so".
+	require.NotEqual(t, statOf(t, img, "usr/lib/libfoo.so").Ino, statOf(t, img, "usr/bin/libfoo.so").Ino)
+}
+
+// TestWriteErofs_HardlinkOntoSymlinkSharesTheSymlink pins a deliberate
+// divergence from fsys. Writer.Link binds the new name to the entry sitting
+// at the target path, so a Linkname landing on a symlink yields a second
+// symlink -- dangling here, because the target is relative and the new name
+// lives in another directory. tarfs resolves that final component at unpack
+// and reports a regular file with content, but link(2) on the tar layer path
+// does exactly what the writer does, and matching the tar path is the point.
+func TestWriteErofs_HardlinkOntoSymlinkSharesTheSymlink(t *testing.T) {
+	m := tarfs.New()
+	writeTarfsFile(t, m, "usr/bin/busybox", "busybox\n")
+	require.NoError(t, m.Symlink("busybox", "usr/bin/sh"))
+	writeTarfsLink(t, m, "opt/mysh", "usr/bin/sh")
+
+	// What the rootfs reports: a second name for a regular file.
+	content, err := fs.ReadFile(m, "opt/mysh")
+	require.NoError(t, err)
+	require.Equal(t, "busybox\n", string(content))
+
+	img := openImage(t, writeImage(t, m))
+
+	lstat, ok := img.(interface {
+		Lstat(string) (fs.FileInfo, error)
+	})
+	require.True(t, ok, "erofs image should expose Lstat")
+
+	info, err := lstat.Lstat("opt/mysh")
+	require.NoError(t, err)
+	st, ok := info.Sys().(*erofs.Stat)
+	require.True(t, ok)
+	require.NotZero(t, st.Mode&fs.ModeSymlink, "opt/mysh should be a symlink, not a copy")
+
+	shInfo, err := lstat.Lstat("usr/bin/sh")
+	require.NoError(t, err)
+	shSt, ok := shInfo.Sys().(*erofs.Stat)
+	require.True(t, ok)
+	require.Equal(t, shSt.Ino, st.Ino, "the two names should share the symlink inode")
+	require.EqualValues(t, 2, st.Nlink)
+
+	// Relative target, resolved from the link name's own directory.
+	_, err = fs.ReadFile(img, "opt/mysh")
+	require.Error(t, err, "the shared symlink dangles, exactly as link(2) would leave it")
 }
 
 // fakeInfo is the smallest fs.FileInfo that can carry a chosen Sys().

@@ -113,14 +113,22 @@ type erofsHardlink struct {
 //
 // A Linkname in an apk names a path from the archive root, the same namespace
 // fs.WalkDir reports, but it is metadata from a downloaded package, so it is
-// cleaned rather than trusted verbatim. Anything that still escapes the image
-// root is caught by the writer's own path check when the link is created.
+// cleaned rather than trusted verbatim. A target that still escapes the image
+// root after the Clean is rejected here and nowhere else: go-erofs's own
+// cleanPath re-roots "/../etc/passwd" to "/etc/passwd" without complaint, and
+// its duplicate-path check does not look at this at all. Reporting such an
+// entry as not-a-hardlink leaves the walk to write it from fsys, which is
+// where its data would have come from either way.
 func hardlinkTarget(info fs.FileInfo) (string, bool) {
 	h, ok := info.Sys().(*tar.Header)
 	if !ok || h.Typeflag != tar.TypeLink || h.Linkname == "" {
 		return "", false
 	}
-	return strings.TrimPrefix(path.Clean(h.Linkname), "/"), true
+	target := strings.TrimPrefix(path.Clean(h.Linkname), "/")
+	if target == ".." || strings.HasPrefix(target, "../") {
+		return "", false
+	}
+	return target, true
 }
 
 // emitErofsHardlinks gives each link a second name pointing at the inode the
@@ -128,11 +136,21 @@ func hardlinkTarget(info fs.FileInfo) (string, bool) {
 // otherwise costs a full copy of the file rounded up to the block size, and
 // loses st_nlink/st_ino identity.
 //
+// The new name binds to whatever the target path holds in the image being
+// written, not to the node fsys resolved it to. That is what link(2) does
+// when the same rootfs is replayed from a tar layer -- a Linkname landing on
+// a symlink shares the symlink, and a target a later package replaced binds
+// to the replacement -- so the two layer formats agree. The independent
+// copies apko wrote before were the outlier.
+//
 // A link whose target is not in w is materialized as an independent copy
-// instead. That is the cross-layer case: spec §3.7 requires a hardlink
-// spanning layers to be materialized or the build to fail, and apko
-// materializes. Within a single image it cannot happen, because the walk
-// emits every target.
+// instead: spec §3.7 leaves materialize-or-fail to the producer and apko
+// materializes. That happens when the Linkname names something that never
+// made it into the image (a `paths` directive removed it), when it routes
+// through a symlinked directory component, which the writer's flat path
+// lookup does not follow, and for a chain of links, whose middle name is
+// deferred rather than emitted and so may not exist yet when the last one is
+// linked.
 func emitErofsHardlinks(ctx context.Context, w *erofs.Writer, links []erofsHardlink, fsys apkfs.FullFS, buf []byte) error {
 	for _, l := range links {
 		if cerr := ctx.Err(); cerr != nil {
@@ -145,7 +163,12 @@ func emitErofsHardlinks(ctx context.Context, w *erofs.Writer, links []erofsHardl
 			// the same values to the same place.
 			continue
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
+		// ErrNotDirectory rather than ErrNotExist is what the writer
+		// reports when the target routes through a symlinked directory:
+		// its lookup is a flat path map that follows nothing, while tarfs
+		// resolved the same name at unpack. Both mean there is no inode
+		// here to share, so both fall back to a copy.
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, erofs.ErrNotDirectory) {
 			return fmt.Errorf("link %s -> %s: %w", l.path, l.target, err)
 		}
 		if err := emitErofsEntry(w, erofsAbsPath(l.path), l.path, l.info, fsys, buf); err != nil {
