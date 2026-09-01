@@ -427,6 +427,11 @@ while read -r digest; do
     # group's files -- not just the ancestor directories and the partial
     # installed db it needs to describe them.  This is the shape the routing
     # bug produced.
+    #
+    # This assumes every group contributes at least one regular file besides
+    # that db, which holds for the default config.  A group of packages that
+    # ship only symlinks would false-fail here; relax it to "-type f -o -type
+    # l" if you point the script at a yaml where that happens.
     if [ "${i}" -lt "$((nlayers - 1))" ]; then
         found=$("${sudo[@]}" find "${lmnt}" -type f \
             ! -path "${lmnt}/usr/lib/apk/db/installed" -print -quit)
