@@ -202,17 +202,19 @@ func (d *fuseDriver) AssembleOverlay(ctx context.Context, lowers []string, upper
 		}, nil
 	}
 
-	if _, err := exec.LookPath("fuse-overlayfs"); err != nil {
-		return nil, fmt.Errorf("kernel overlay failed and fuse-overlayfs is not installed: %w", err)
-	}
 	// Only the fall-back needs this. The kernel overlay attempted just above
 	// unescapes the way escapeOverlayPath escapes; fuse-overlayfs does not.
+	// Ahead of the LookPath below because a path fuse-overlayfs cannot
+	// round-trip is terminal, while "not installed" is fixable.
 	paths := slices.Clone(lowers)
 	if !readOnly {
 		paths = append(paths, upper, work)
 	}
 	if err := checkFuseOverlayPaths(paths...); err != nil {
 		return nil, err
+	}
+	if _, err := exec.LookPath("fuse-overlayfs"); err != nil {
+		return nil, fmt.Errorf("kernel overlay failed and fuse-overlayfs is not installed: %w", err)
 	}
 	fArgs := buildFuseOverlayArgs(lowers, upper, work, merged, readOnly)
 	if err := runCmd(ctx, fArgs[0], fArgs[1:]...); err != nil {

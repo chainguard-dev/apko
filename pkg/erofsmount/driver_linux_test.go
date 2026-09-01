@@ -196,6 +196,65 @@ func TestCheckFuseOverlayPaths(t *testing.T) {
 	}
 }
 
+// The refusal is terminal and "not installed" is fixable, so AssembleOverlay
+// has to reach the path check first. An empty PATH fails both the kernel
+// overlay above it and the fuse-overlayfs LookPath after it, which makes the
+// order -- and which paths are checked, in what form -- observable.
+func TestAssembleOverlayChecksPathsBeforeLookPath(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lowers   []string
+		upper    string
+		work     string
+		readOnly bool
+		want     string
+	}{
+		{
+			name:   "colon in a lowerdir is refused, not deferred to LookPath",
+			lowers: []string{"/mnt/x:y/layers/00"},
+			want:   "fuse-overlayfs cannot handle",
+		},
+		{
+			// The check sees raw paths: escapeOverlayPath would turn this
+			// into "\," and a check on the escaped form would refuse it.
+			name:   "comma survives escaping and is not refused",
+			lowers: []string{"/mnt/x,y/layers/00"},
+			want:   "not installed",
+		},
+		{
+			name:     "read-only does not check upper or work",
+			lowers:   []string{"/mnt/x/layers/00"},
+			upper:    "/mnt/x:y/upper",
+			work:     "/mnt/x:y/work",
+			readOnly: true,
+			want:     "not installed",
+		},
+		{
+			name:   "writable checks upper",
+			lowers: []string{"/mnt/x/layers/00"},
+			upper:  "/mnt/x:y/upper",
+			work:   "/mnt/x/work",
+			want:   "fuse-overlayfs cannot handle",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+
+			merged := filepath.Join(t.TempDir(), "merged")
+			cleanup, err := (&fuseDriver{}).AssembleOverlay(context.Background(), tc.lowers, tc.upper, tc.work, merged, tc.readOnly)
+			if err == nil {
+				t.Fatal("AssembleOverlay succeeded with an empty PATH")
+			}
+			if cleanup != nil {
+				t.Error("a failed AssembleOverlay returned a cleanup func")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
 // fusermount carries its own UMOUNT_NOFOLLOW, so running it after the kernel
 // refusal only restates it -- and the join would bury the reason behind
 // fusermount's own wording.
