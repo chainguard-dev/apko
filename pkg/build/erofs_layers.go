@@ -250,6 +250,15 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 			// path below.
 		}
 
+		// Emit once per writer, the same guard directories get above.
+		// go-erofs errors on a duplicate path where tar tolerates one
+		// (last-wins). Unreachable today -- the installed db is unowned, so
+		// its owner is top and the loop above skips it -- but if it ever
+		// routed to a group, that group already holds the partial db.
+		if owner.emitted[absPath] {
+			return nil
+		}
+
 		if err := emitAncestors(owner, absPath, info.ModTime()); err != nil {
 			return err
 		}
