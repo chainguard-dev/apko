@@ -164,7 +164,8 @@ func (d *fuseDriver) MountLayer(ctx context.Context, blob, mp string) (func() er
 // fuse-overlayfs mount, and per-layer mounts are erofsfuse; umount handles the
 // first, fusermount -u the other two.
 //
-// Both failures are reported. Unmount is also the fall-back for a blob mount,
+// Both failures are reported, unless the kernel refused a symlinked
+// mountpoint -- see below. Unmount is also the fall-back for a blob mount,
 // whose mode is unknown, so the kernel attempt is the one that failed for the
 // interesting reason -- returning only the fusermount error turns "target is
 // busy" into "neither fusermount3 nor fusermount found in PATH".
@@ -239,6 +240,11 @@ func buildKernelLayerArgs(blob, mp string) []string {
 	return []string{"mount", "-t", "erofs", "-o", "ro", blob, mp}
 }
 
+// errSymlinkedMountpoint reports a mountpoint whose final component is a
+// symlink. UMOUNT_NOFOLLOW refuses those, and callers use this to tell the
+// refusal apart from an ordinary unmount failure.
+var errSymlinkedMountpoint = errors.New("refusing to follow a symlink")
+
 // kernelUnmount unmounts mp with umount(2) rather than umount(8).
 //
 // UMOUNT_NOFOLLOW is the reason: it makes the kernel refuse a symlink at the
@@ -250,21 +256,22 @@ func buildKernelLayerArgs(blob, mp string) []string {
 // This covers the final component only. A symlinked *parent* -- <dest>/layers
 // itself -- resolves during the syscall's own path walk, and checkResolved is
 // what rejects that, with the narrower race it documents.
-// errSymlinkedMountpoint reports a mountpoint whose final component is a
-// symlink. UMOUNT_NOFOLLOW refuses those, and callers use this to tell the
-// refusal apart from an ordinary unmount failure.
-var errSymlinkedMountpoint = errors.New("refusing to follow a symlink")
-
 func kernelUnmount(ctx context.Context, mp string) error {
 	clog.FromContext(ctx).Debugf("umount2: %s (UMOUNT_NOFOLLOW)", mp)
 	err := unix.Unmount(mp, unix.UMOUNT_NOFOLLOW)
 	if err == nil {
 		return nil
 	}
-	// EINVAL covers both "not a mountpoint" and "target is a symlink", so
-	// name the second case rather than leaving the user with "invalid
-	// argument". This is for the message only -- the flag above is what
-	// provides the guarantee, so an lstat racing it cannot weaken anything.
+	// Name the symlink case rather than leaving the user with a bare errno.
+	// fuseDriver.Unmount branches on the result too, so this classifies as
+	// well as describes -- but the flag above is what provides the guarantee,
+	// so an lstat racing it cannot weaken anything.
+	//
+	// Deliberately errno-blind. As root the errno is EINVAL, which covers both
+	// "not a mountpoint" and "target is a symlink"; a non-root caller gets
+	// EPERM instead, because the kernel checks may_mount() before
+	// path_mounted(). Keying this on EINVAL would stop classifying on exactly
+	// the leg the branch is for.
 	if fi, lerr := os.Lstat(mp); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("umount %s: %w", mp, errSymlinkedMountpoint)
 	}
