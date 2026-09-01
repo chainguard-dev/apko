@@ -347,7 +347,7 @@ const fuseOverlayUnsupported = `:\`
 func checkFuseOverlayPaths(paths ...string) error {
 	for _, p := range paths {
 		if i := strings.IndexAny(p, fuseOverlayUnsupported); i >= 0 {
-			return fmt.Errorf("fuse-overlayfs cannot handle %q in a path (%s); use --mode=kernel, or a dest without it",
+			return fmt.Errorf("fuse-overlayfs cannot handle %q in a path (%s); use --mode=kernel (as root), or a dest without it",
 				p[i:i+1], p)
 		}
 	}
