@@ -40,12 +40,20 @@ import (
 
 // entry describes one node in a tarfs fixture. A nil pkg means the entry is
 // not owned by any package, which is what apko's own post-install steps
-// produce.
+// produce. A zero mtime means epoch.
 type entry struct {
-	path string
-	data string
-	pkg  *apk.Package
-	dir  bool
+	path  string
+	data  string
+	pkg   *apk.Package
+	dir   bool
+	mtime time.Time
+}
+
+func (e entry) modTime() time.Time {
+	if e.mtime.IsZero() {
+		return epoch
+	}
+	return e.mtime
 }
 
 func dirEntry(p string) entry { return entry{path: p, dir: true} }
@@ -74,7 +82,7 @@ func tarfsFixture(t *testing.T, entries []entry) apkfs.FullFS {
 	for _, e := range entries {
 		if e.dir {
 			require.NoError(t, m.MkdirAll(e.path, 0o755))
-			require.NoError(t, m.Chtimes(e.path, epoch, epoch))
+			require.NoError(t, m.Chtimes(e.path, e.modTime(), e.modTime()))
 			continue
 		}
 		require.NoError(t, m.MkdirAll(path.Dir(e.path), 0o755))
@@ -85,7 +93,7 @@ func tarfsFixture(t *testing.T, entries []entry) apkfs.FullFS {
 			Name:     e.path,
 			Size:     int64(len(e.data)),
 			Mode:     0o644,
-			ModTime:  epoch,
+			ModTime:  e.modTime(),
 			PAXRecords: map[string]string{
 				"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
 			},
@@ -205,6 +213,38 @@ func TestSplitErofsLayers_EmitsDirOnlySubtrees(t *testing.T) {
 	for _, want := range []string{"tmp", "run", "var", "var/empty"} {
 		require.Contains(t, top, want, "dir-only subtree missing from every layer")
 	}
+}
+
+// TestSplitErofsLayers_AncestorModTimeIsNormalized pins the deduplication
+// property splitLayers already has: a group layer's bytes must not depend on
+// packages outside the group. Directories are shared, only one package's
+// mtime survives into the merged view, so replicating that winner faithfully
+// into a group layer would make the group's digest move whenever an unrelated
+// package installed the shared directory with a different timestamp.
+func TestSplitErofsLayers_AncestorModTimeIsNormalized(t *testing.T) {
+	// Only the shared ancestor's mtime differs between the two builds.
+	split := func(sharedDirModTime time.Time) v1.Hash {
+		pkg1 := newPkg("pkg1")
+		fsys := tarfsFixture(t, []entry{
+			dirEntry("usr/lib/apk/db"),
+			{path: "usr/lib/apk/db/installed", data: "pkg1 info\n"},
+			{path: "usr/bin", dir: true, mtime: sharedDirModTime},
+			{path: "usr/bin/one", data: "one\n", pkg: pkg1},
+		})
+		groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
+		pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
+
+		layers, err := splitErofsLayers(context.Background(), fsys, groups, pkgToDiff, t.TempDir(), epoch)
+		require.NoError(t, err)
+		require.Len(t, layers, 2)
+
+		d, err := layers[0].Digest()
+		require.NoError(t, err)
+		return d
+	}
+
+	require.Equal(t, split(epoch), split(epoch.Add(72*time.Hour)),
+		"a group layer's digest must not depend on a shared directory's mtime")
 }
 
 func TestSplitErofsLayers_LayersAreValidImages(t *testing.T) {

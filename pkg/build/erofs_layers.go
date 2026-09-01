@@ -93,7 +93,18 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 
 	// emitAncestors makes sure every ancestor of absPath (excluding "/" and
 	// absPath itself) has been created in gw with the correct metadata.
-	emitAncestors := func(gw *erofsGroupWriter, absPath string) error {
+	//
+	// modTime is the mtime of the entry the ancestors are being created for,
+	// and it overrides each ancestor's own. splitLayers does the same for the
+	// directories alignStacks replicates, and for the same reason: several
+	// packages usually share a directory, only one of their mtimes survives
+	// into the merged view, and copying that winner into a group layer makes
+	// the layer's bytes -- and so its digest -- depend on packages outside the
+	// group. The owning layer still carries the faithful mtime, and it is the
+	// one that wins on merge, so nothing observable changes. SOURCE_DATE_EPOCH
+	// does not cover this: it seeds the superblock, scripts.tar, the installed
+	// db and the config, not per-entry mtimes.
+	emitAncestors := func(gw *erofsGroupWriter, absPath string, modTime time.Time) error {
 		if absPath == "/" {
 			return nil
 		}
@@ -117,7 +128,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 				gw.emitted[anc] = true
 				continue
 			}
-			if err := emitErofsEntry(gw.w, anc, dirFsysPath[anc], info, fsys, buf); err != nil {
+			if err := emitErofsEntry(gw.w, anc, dirFsysPath[anc], normalizedModTime{info, modTime}, fsys, buf); err != nil {
 				return fmt.Errorf("emit ancestor %s: %w", anc, err)
 			}
 			gw.emitted[anc] = true
@@ -196,7 +207,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 			if err != nil {
 				return err
 			}
-			if err := emitAncestors(owner, absPath); err != nil {
+			if err := emitAncestors(owner, absPath, info.ModTime()); err != nil {
 				return err
 			}
 			if owner.emitted[absPath] {
@@ -221,7 +232,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		if strings.TrimPrefix(absPath, "/") == "usr/lib/apk/db/installed" {
 			for _, g := range groups {
 				gw := groupToWriter[g]
-				if err := emitAncestors(gw, absPath); err != nil {
+				if err := emitAncestors(gw, absPath, info.ModTime()); err != nil {
 					return err
 				}
 				var idb bytes.Buffer
@@ -239,7 +250,7 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 			// path below.
 		}
 
-		if err := emitAncestors(owner, absPath); err != nil {
+		if err := emitAncestors(owner, absPath, info.ModTime()); err != nil {
 			return err
 		}
 		if err := emitErofsEntry(owner.w, absPath, fpath, info, fsys, buf); err != nil {
@@ -272,6 +283,15 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 	done = true
 	return layers, nil
 }
+
+// normalizedModTime is a FileInfo with its ModTime replaced. Sys() is
+// forwarded, so uid/gid still come from the source *tar.Header.
+type normalizedModTime struct {
+	fs.FileInfo
+	mtime time.Time
+}
+
+func (n normalizedModTime) ModTime() time.Time { return n.mtime }
 
 // erofsGroupWriter is one output layer under construction: a go-erofs Writer
 // over a temp file, plus the set of paths already written into it.
