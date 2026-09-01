@@ -321,11 +321,16 @@ func newErofsGroupWriter(tmpdir string, buildTime time.Time) (*erofsGroupWriter,
 	// makes go-erofs stamp time.Now() into the superblock from Close, so a
 	// caller who left the timestamp zero would get different layer digests on
 	// every build. See erofsBuildTime for the clamp.
+	//
+	// tmpdir is also where go-erofs spools file data. A split holds
+	// len(groups)+1 writers open at once, each with an unlinked spool fd, so
+	// letting them default to the system temp dir puts roughly a rootfs of
+	// scratch on a volume the caller did not pick.
 	sec, nsec := erofsBuildTime(buildTime)
 	return &erofsGroupWriter{
 		path:    f.Name(),
 		file:    f,
-		w:       erofs.Create(f, erofs.WithBuildTime(sec, nsec)),
+		w:       erofs.Create(f, erofs.WithBuildTime(sec, nsec), erofs.WithTempDir(tmpdir)),
 		emitted: map[string]bool{},
 	}, nil
 }
