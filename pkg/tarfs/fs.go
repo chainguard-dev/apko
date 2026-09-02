@@ -474,6 +474,8 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 		anode := &node{
 			name:       base,
 			mode:       te.header.FileInfo().Mode(),
+			uid:        te.header.Uid,
+			gid:        te.header.Gid,
 			dir:        false,
 			modTime:    te.header.ModTime,
 			linkTarget: te.header.Linkname,
@@ -536,6 +538,8 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 	anode := &node{
 		name:       base,
 		mode:       te.header.FileInfo().Mode(),
+		uid:        te.header.Uid,
+		gid:        te.header.Gid,
 		dir:        false,
 		modTime:    te.header.ModTime,
 		linkTarget: te.header.Linkname,

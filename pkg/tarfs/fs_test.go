@@ -208,6 +208,23 @@ func outHeader(t *testing.T, tfs dirReader, name string) *tar.Header {
 	return nil
 }
 
+// regHeader builds a TypeReg header for body, including the checksum PAX
+// record that WriteHeader requires.
+func regHeader(name string, mode int64, uid, gid int, body []byte) tar.Header {
+	sum := sha1.Sum(body) //nolint:gosec // this is what apk tools is using
+	return tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     name,
+		Mode:     mode,
+		Uid:      uid,
+		Gid:      gid,
+		Size:     int64(len(body)),
+		PAXRecords: map[string]string{
+			"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:]),
+		},
+	}
+}
+
 // TestWriteHeaderDirMetadata covers a directory header's setuid/setgid/sticky
 // bits and ownership, which MkdirAll alone does not carry.
 func TestWriteHeaderDirMetadata(t *testing.T) {
@@ -273,4 +290,66 @@ func TestWriteHeaderDirExisting(t *testing.T) {
 	require.Equal(t, int64(0o1777), hdr.Mode)
 	require.Zero(t, hdr.Uid)
 	require.Zero(t, hdr.Gid)
+}
+
+// TestWriteHeaderFileOwnership covers ownership of regular files and symlinks.
+// A setgid binary is the case that matters most: dropping its gid makes it
+// setgid to root rather than to an unprivileged group.
+func TestWriteHeaderFileOwnership(t *testing.T) {
+	tfs := tarfs.New()
+	pkg := &apk.Package{Name: "postfix", Origin: "postfix"}
+
+	require.NoError(t, tfs.MkdirAll("usr/bin", 0o755))
+
+	// setgid to gid 101 (postfix's "postdrop" group), not to root.
+	reg := regHeader("usr/bin/postdrop", 0o2755, 0, 101, []byte("ELF"))
+	if _, err := tfs.WriteHeader(reg, tfs, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	hdr := outHeader(t, tfs, reg.Name)
+	require.Equal(t, int64(0o2755), hdr.Mode)
+	require.Zero(t, hdr.Uid)
+	require.Equal(t, 101, hdr.Gid)
+
+	link := tar.Header{
+		Typeflag: tar.TypeSymlink,
+		Name:     "usr/bin/sendmail",
+		Linkname: "postdrop",
+		Mode:     0o777,
+		Uid:      100,
+		Gid:      101,
+	}
+	linkDigest := sha1.Sum([]byte(link.Linkname)) //nolint:gosec
+	link.PAXRecords = map[string]string{
+		"APK-TOOLS.checksum.SHA1": hex.EncodeToString(linkDigest[:]),
+	}
+	if _, err := tfs.WriteHeader(link, tfs, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	hdr = outHeader(t, tfs, link.Name)
+	require.Equal(t, 100, hdr.Uid)
+	require.Equal(t, 101, hdr.Gid)
+}
+
+// TestWriteHeaderFileOwnershipReplaced checks that a file installed over
+// another package's copy also gets its own ownership.
+func TestWriteHeaderFileOwnershipReplaced(t *testing.T) {
+	tfs := tarfs.New()
+	first := &apk.Package{Name: "first", Origin: "shared"}
+	second := &apk.Package{Name: "second", Origin: "shared"}
+
+	require.NoError(t, tfs.MkdirAll("etc", 0o755))
+
+	if _, err := tfs.WriteHeader(regHeader("etc/conf", 0o644, 1, 1, []byte("a")), tfs, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tfs.WriteHeader(regHeader("etc/conf", 0o644, 100, 101, []byte("b")), tfs, second); err != nil {
+		t.Fatal(err)
+	}
+
+	hdr := outHeader(t, tfs, "etc/conf")
+	require.Equal(t, 100, hdr.Uid)
+	require.Equal(t, 101, hdr.Gid)
 }
