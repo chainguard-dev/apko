@@ -18,6 +18,7 @@ package erofsmount
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,6 +162,119 @@ func TestOverlayArgsEscapeSeparators(t *testing.T) {
 	}
 	if fuse[3] != merged {
 		t.Errorf("mountpoint: got %s want %s", fuse[3], merged)
+	}
+}
+
+// fuse-overlayfs cannot round-trip these however they are escaped, so they are
+// refused with a reason rather than handed over to fail on a path the user
+// never named. See the table on fuseOverlayUnsupported.
+func TestCheckFuseOverlayPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"plain", "/mnt/x/layers/00", false},
+		// The comma survives escaping, so it must not be refused here.
+		{"comma", "/mnt/x,y/layers/00", false},
+		{"colon", "/mnt/x:y/layers/00", true},
+		{"backslash", `/mnt/x\y/layers/00`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkFuseOverlayPaths(tc.path)
+			if tc.wantErr && err == nil {
+				t.Fatalf("checkFuseOverlayPaths(%q) accepted it", tc.path)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("checkFuseOverlayPaths(%q): %v", tc.path, err)
+			}
+		})
+	}
+	// Every path is checked, not just the first.
+	if err := checkFuseOverlayPaths("/fine", "/also/fine", "/no:pe"); err == nil {
+		t.Error("a bad path after good ones was accepted")
+	}
+}
+
+// The refusal is terminal and "not installed" is fixable, so AssembleOverlay
+// has to reach the path check first. An empty PATH fails both the kernel
+// overlay above it and the fuse-overlayfs LookPath after it, which makes the
+// order -- and which paths are checked, in what form -- observable.
+func TestAssembleOverlayChecksPathsBeforeLookPath(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lowers   []string
+		upper    string
+		work     string
+		readOnly bool
+		want     string
+	}{
+		{
+			name:   "colon in a lowerdir is refused, not deferred to LookPath",
+			lowers: []string{"/mnt/x:y/layers/00"},
+			want:   "fuse-overlayfs cannot handle",
+		},
+		{
+			// The check sees raw paths: escapeOverlayPath would turn this
+			// into "\," and a check on the escaped form would refuse it.
+			name:   "comma survives escaping and is not refused",
+			lowers: []string{"/mnt/x,y/layers/00"},
+			want:   "not installed",
+		},
+		{
+			name:     "read-only does not check upper or work",
+			lowers:   []string{"/mnt/x/layers/00"},
+			upper:    "/mnt/x:y/upper",
+			work:     "/mnt/x:y/work",
+			readOnly: true,
+			want:     "not installed",
+		},
+		{
+			name:   "writable checks upper",
+			lowers: []string{"/mnt/x/layers/00"},
+			upper:  "/mnt/x:y/upper",
+			work:   "/mnt/x/work",
+			want:   "fuse-overlayfs cannot handle",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+
+			merged := filepath.Join(t.TempDir(), "merged")
+			cleanup, err := (&fuseDriver{}).AssembleOverlay(context.Background(), tc.lowers, tc.upper, tc.work, merged, tc.readOnly)
+			if err == nil {
+				t.Fatal("AssembleOverlay succeeded with an empty PATH")
+			}
+			if cleanup != nil {
+				t.Error("a failed AssembleOverlay returned a cleanup func")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// fusermount carries its own UMOUNT_NOFOLLOW, so running it after the kernel
+// refusal only restates it -- and the join would bury the reason behind
+// fusermount's own wording.
+func TestFuseDriverUnmountStopsAtASymlinkRefusal(t *testing.T) {
+	// An empty PATH means any fusermount attempt shows up in the error.
+	t.Setenv("PATH", t.TempDir())
+
+	link := filepath.Join(t.TempDir(), "merged")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	err := (&fuseDriver{}).Unmount(context.Background(), link)
+	if err == nil {
+		t.Fatal("Unmount followed a symlinked mountpoint")
+	}
+	if !errors.Is(err, errSymlinkedMountpoint) {
+		t.Errorf("error %q is not the symlink refusal", err)
+	}
+	if strings.Contains(err.Error(), "fusermount") {
+		t.Errorf("fusermount was still attempted: %q", err)
 	}
 }
 
