@@ -116,8 +116,26 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 				}
 			}
 		}
-		if err := m.MkdirAll(hdr.Name, hdr.FileInfo().Mode().Perm()); err != nil {
+		// Whether the directory is already here decides if we get to set its
+		// metadata below, so check before MkdirAll makes it exist.
+		_, statErr := m.getNode(hdr.Name)
+		created := statErr != nil
+
+		mode := hdr.FileInfo().Mode()
+		if err := m.MkdirAll(hdr.Name, mode.Perm()); err != nil {
 			return false, fmt.Errorf("error creating directory %s: %w", hdr.Name, err)
+		}
+		if created {
+			// MkdirAll carries only permission bits, so setuid/setgid/sticky
+			// need a separate Chmod. Restrict both of these to directories we
+			// just created: InitDB creates /tmp as 1777 before any package
+			// installs, and packages ship a tmp header without the sticky bit.
+			if err := m.Chmod(hdr.Name, mode&^os.ModeType); err != nil {
+				return false, fmt.Errorf("error setting mode on directory %s: %w", hdr.Name, err)
+			}
+			if err := m.Chown(hdr.Name, hdr.Uid, hdr.Gid); err != nil {
+				return false, fmt.Errorf("error setting owner on directory %s: %w", hdr.Name, err)
+			}
 		}
 		if err := m.Chtimes(hdr.Name, hdr.AccessTime, hdr.ModTime); err != nil {
 			return false, fmt.Errorf("error chtime on directory %s: %w", hdr.Name, err)

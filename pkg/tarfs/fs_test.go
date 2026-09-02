@@ -20,6 +20,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -171,4 +172,105 @@ func TestTarFSCreate(t *testing.T) {
 	fileInfo, err := fd.Stat()
 	require.NoError(t, err)
 	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
+}
+
+// dirReader is implemented by the (unexported) tarfs type returned by New().
+type dirReader interface {
+	ReadDir(string) ([]fs.DirEntry, error)
+	Readlink(string) (string, error)
+}
+
+// outHeader returns the tar.Header that pkg/build/tarball.go would write for
+// name. It reaches the entry the way that writer does -- a directory walk,
+// then tar.FileInfoHeader -- because that is how a node's metadata reaches
+// both the tar and the erofs writer.
+func outHeader(t *testing.T, tfs dirReader, name string) *tar.Header {
+	t.Helper()
+	entries, err := tfs.ReadDir(path.Dir(name))
+	require.NoError(t, err)
+	for _, d := range entries {
+		if d.Name() != path.Base(name) {
+			continue
+		}
+		info, err := d.Info()
+		require.NoError(t, err)
+		var link string
+		if info.Mode()&fs.ModeSymlink != 0 {
+			// tarball.go passes the link target for symlinks.
+			link, err = tfs.Readlink(name)
+			require.NoError(t, err)
+		}
+		hdr, err := tar.FileInfoHeader(info, link)
+		require.NoError(t, err)
+		return hdr
+	}
+	t.Fatalf("no entry for %q", name)
+	return nil
+}
+
+// TestWriteHeaderDirMetadata covers a directory header's setuid/setgid/sticky
+// bits and ownership, which MkdirAll alone does not carry.
+func TestWriteHeaderDirMetadata(t *testing.T) {
+	tfs := tarfs.New()
+	pkg := &apk.Package{Name: "postfix", Origin: "postfix"}
+
+	// Mode as apk-tools would record 2755 with the sticky bit also set.
+	dir := tar.Header{
+		Typeflag: tar.TypeDir,
+		Name:     "var/spool/postfix/maildrop",
+		Mode:     0o2755 | 0o1000,
+		Uid:      100,
+		Gid:      101,
+	}
+	if _, err := tfs.WriteHeader(dir, tfs, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	fi, err := tfs.Lstat(dir.Name)
+	require.NoError(t, err)
+	require.Equal(t, fs.ModeDir|fs.ModeSetgid|fs.ModeSticky|0o755, fi.Mode())
+
+	hdr := outHeader(t, tfs, dir.Name)
+	require.Equal(t, dir.Mode, hdr.Mode)
+	require.Equal(t, 100, hdr.Uid)
+	require.Equal(t, 101, hdr.Gid)
+
+	// Ancestors MkdirAll had to invent are not owned by the header, so they
+	// must not pick up its ownership.
+	for _, ancestor := range []string{"var", "var/spool", "var/spool/postfix"} {
+		hdr := outHeader(t, tfs, ancestor)
+		require.Zerof(t, hdr.Uid, "uid of implicit ancestor %q", ancestor)
+		require.Zerof(t, hdr.Gid, "gid of implicit ancestor %q", ancestor)
+	}
+}
+
+// TestWriteHeaderDirExisting guards the /tmp case: apk's InitDB creates /tmp
+// as 1777 before any package installs, and packages ship a tmp header with no
+// sticky bit, so a header for a directory that is already there must not
+// downgrade it.
+func TestWriteHeaderDirExisting(t *testing.T) {
+	tfs := tarfs.New()
+	pkg := &apk.Package{Name: "wolfi-baselayout", Origin: "wolfi-baselayout"}
+
+	require.NoError(t, tfs.Mkdir("tmp", fs.ModeSticky|0o777))
+
+	dir := tar.Header{
+		Typeflag: tar.TypeDir,
+		Name:     "tmp",
+		Mode:     0o777,
+		Uid:      100,
+		Gid:      100,
+	}
+	if _, err := tfs.WriteHeader(dir, tfs, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	fi, err := tfs.Lstat("tmp")
+	require.NoError(t, err)
+	require.Equal(t, fs.ModeDir|fs.ModeSticky|0o777, fi.Mode())
+
+	hdr := outHeader(t, tfs, "tmp")
+	require.Equal(t, int64(0o1777), hdr.Mode)
+	require.Zero(t, hdr.Uid)
+	require.Zero(t, hdr.Gid)
 }
