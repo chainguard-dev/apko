@@ -168,6 +168,11 @@ func emitErofsHardlinks(ctx context.Context, w *erofs.Writer, links []erofsHardl
 		// its lookup is a flat path map that follows nothing, while tarfs
 		// resolved the same name at unpack. Both mean there is no inode
 		// here to share, so both fall back to a copy.
+		//
+		// Any other error aborts the build, deliberately. A Linkname that
+		// resolves to a directory reaches here as ErrIsDirectory -- tarfs
+		// does not reject one at unpack -- and link(2) refuses a directory
+		// hardlink too, so there is nothing better to fall back to.
 		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, erofs.ErrNotDirectory) {
 			return fmt.Errorf("link %s -> %s: %w", l.path, l.target, err)
 		}

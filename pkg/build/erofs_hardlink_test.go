@@ -227,6 +227,31 @@ func TestEmitErofsHardlinks_MaterializesWhenTargetIsAbsent(t *testing.T) {
 	require.Error(t, err, "the target should not be in this image")
 }
 
+// TestEmitErofsHardlinks_DirectoryTargetAborts pins the other side of the
+// fallback: only a target the writer cannot find degrades to a copy. A
+// Linkname resolving to a directory is a real error and stops the build,
+// which is what link(2) does with one.
+func TestEmitErofsHardlinks_DirectoryTargetAborts(t *testing.T) {
+	m := hardlinkFS(t, "payload\n", "usr/bin/[")
+	info, err := fs.Stat(m, "usr/bin/[")
+	require.NoError(t, err)
+
+	f, err := os.Create(filepath.Join(t.TempDir(), "image.erofs"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = f.Close() })
+	w := erofs.Create(f, erofs.WithBuildTime(0, 0))
+	require.NoError(t, w.Mkdir("/usr", 0o755))
+	require.NoError(t, w.Mkdir("/usr/bin", 0o755))
+	// The target path holds a directory rather than the file the link wants.
+	// tarfs does not reject such a Linkname at unpack, so it gets this far.
+	require.NoError(t, w.Mkdir("/usr/bin/coreutils", 0o755))
+
+	links := []erofsHardlink{{path: "usr/bin/[", target: linkedFile, info: info}}
+	err = emitErofsHardlinks(context.Background(), w, links, m, make([]byte, 1<<20))
+	require.Error(t, err, "a directory target must not be copied over silently")
+	require.ErrorIs(t, err, erofs.ErrIsDirectory)
+}
+
 func TestHardlinkTarget(t *testing.T) {
 	regular := hardlinkFS(t, "x")
 	info, err := fs.Stat(regular, "usr/bin/coreutils")
