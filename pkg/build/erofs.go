@@ -19,10 +19,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
+	"strings"
 	"time"
 
 	erofs "github.com/erofs/go-erofs"
@@ -55,7 +58,12 @@ func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, tmpd
 
 	buf := make([]byte, 1<<20)
 
-	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+	// Second and later names for a file are emitted after the walk: Link
+	// needs the target to exist already, and fs.WalkDir visits in
+	// lexicographic order, which puts /usr/bin/[ well before /usr/bin/coreutils.
+	var links []erofsHardlink
+
+	if err := fs.WalkDir(fsys, ".", func(fpath string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr
 		}
@@ -64,15 +72,113 @@ func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, tmpd
 		}
 		info, err := d.Info()
 		if err != nil {
-			return fmt.Errorf("stat %s: %w", path, err)
+			return fmt.Errorf("stat %s: %w", fpath, err)
 		}
-		return emitErofsEntry(w, erofsAbsPath(path), path, info, fsys, buf)
+		if target, ok := hardlinkTarget(info); ok {
+			links = append(links, erofsHardlink{path: fpath, target: target, info: info})
+			return nil
+		}
+		return emitErofsEntry(w, erofsAbsPath(fpath), fpath, info, fsys, buf)
 	}); err != nil {
+		return err
+	}
+
+	if err := emitErofsHardlinks(ctx, w, links, fsys, buf); err != nil {
 		return err
 	}
 
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("finalizing erofs image: %w", err)
+	}
+	return nil
+}
+
+// erofsHardlink is a second name for a file emitted elsewhere in the walk.
+// Both fields are fs.WalkDir paths, rooted the same way ("usr/bin/sh").
+type erofsHardlink struct {
+	path   string
+	target string
+	info   fs.FileInfo
+}
+
+// hardlinkTarget reports the path a hardlink points at, and whether info
+// describes a hardlink at all.
+//
+// apko's FullFS surfaces a hardlink as an ordinary second dirent -- both names
+// resolve to one node, and Open on either returns the data. Its linkness shows
+// up only in the *tar.Header from Sys(), which pkg/tarfs fills in from the apk
+// it unpacked and the tar layer path reads via tar.FileInfoHeader.
+// apkfs.MemFS does not record it at all, so a hardlink there is two files as
+// far as anything downstream can tell.
+//
+// A Linkname in an apk names a path from the archive root, the same namespace
+// fs.WalkDir reports, but it is metadata from a downloaded package, so it is
+// cleaned rather than trusted verbatim. A target that still escapes the image
+// root after the Clean is rejected here and nowhere else: go-erofs's own
+// cleanPath re-roots "/../etc/passwd" to "/etc/passwd" without complaint, and
+// its duplicate-path check does not look at this at all. Reporting such an
+// entry as not-a-hardlink leaves the walk to write it from fsys, which is
+// where its data would have come from either way.
+func hardlinkTarget(info fs.FileInfo) (string, bool) {
+	h, ok := info.Sys().(*tar.Header)
+	if !ok || h.Typeflag != tar.TypeLink || h.Linkname == "" {
+		return "", false
+	}
+	target := strings.TrimPrefix(path.Clean(h.Linkname), "/")
+	if target == ".." || strings.HasPrefix(target, "../") {
+		return "", false
+	}
+	return target, true
+}
+
+// emitErofsHardlinks gives each link a second name pointing at the inode the
+// walk already wrote, rather than another copy of the data. Every link
+// otherwise costs a full copy of the file rounded up to the block size, and
+// loses st_nlink/st_ino identity.
+//
+// The new name binds to whatever the target path holds in the image being
+// written, not to the node fsys resolved it to. That is what link(2) does
+// when the same rootfs is replayed from a tar layer -- a Linkname landing on
+// a symlink shares the symlink, and a target a later package replaced binds
+// to the replacement -- so the two layer formats agree. The independent
+// copies apko wrote before were the outlier.
+//
+// A link whose target is not in w is materialized as an independent copy
+// instead: spec §3.7 leaves materialize-or-fail to the producer and apko
+// materializes. That happens when the Linkname names something that never
+// made it into the image (a `paths` directive removed it), when it routes
+// through a symlinked directory component, which the writer's flat path
+// lookup does not follow, and for a chain of links, whose middle name is
+// deferred rather than emitted and so may not exist yet when the last one is
+// linked.
+func emitErofsHardlinks(ctx context.Context, w *erofs.Writer, links []erofsHardlink, fsys apkfs.FullFS, buf []byte) error {
+	for _, l := range links {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		err := w.Link(erofsAbsPath(l.target), erofsAbsPath(l.path))
+		if err == nil {
+			// The two names share an inode, so mode, ownership, timestamps
+			// and xattrs arrived with it. Reapplying them here would write
+			// the same values to the same place.
+			continue
+		}
+		// ErrNotDirectory rather than ErrNotExist is what the writer
+		// reports when the target routes through a symlinked directory:
+		// its lookup is a flat path map that follows nothing, while tarfs
+		// resolved the same name at unpack. Both mean there is no inode
+		// here to share, so both fall back to a copy.
+		//
+		// Any other error aborts the build, deliberately. A Linkname that
+		// resolves to a directory reaches here as ErrIsDirectory -- tarfs
+		// does not reject one at unpack -- and link(2) refuses a directory
+		// hardlink too, so there is nothing better to fall back to.
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, erofs.ErrNotDirectory) {
+			return fmt.Errorf("link %s -> %s: %w", l.path, l.target, err)
+		}
+		if err := emitErofsEntry(w, erofsAbsPath(l.path), l.path, l.info, fsys, buf); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -154,17 +260,10 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 			return fmt.Errorf("mknod %s: %w", absPath, err)
 		}
 	case mode.IsRegular():
-		// Hardlinks are materialized as independent copies. apko's FullFS
-		// surfaces a hardlink as an ordinary second dirent -- its linkness
-		// shows up only in the *tar.Header from Sys() (TypeLink/Linkname),
-		// which the tar layer path uses via tar.FileInfoHeader -- and go-erofs
-		// v0.3.1 has no API to point two names at one NID. (SetNlink sets the
-		// reported link count but does not share the inode, so it would only
-		// make the metadata lie.) Every link therefore costs another full copy
-		// of the data, rounded up to the block size, and st_nlink/st_ino
-		// identity is lost. Spec §3.7's materialize-or-fail rule governs
-		// cross-layer links; for links within one layer the spec says nothing,
-		// so materializing is conformant but not something §3.7 blesses.
+		// A second name for a file already in the image goes through
+		// emitErofsHardlinks instead, which shares the inode. Reaching here
+		// with one means the target was not in this image, so it gets a copy
+		// of its own.
 		fout, err := w.Create(absPath)
 		if err != nil {
 			return fmt.Errorf("create %s: %w", absPath, err)
@@ -193,22 +292,16 @@ func emitErofsEntry(w *erofs.Writer, absPath, fsysPath string, info fs.FileInfo,
 		return fmt.Errorf("unsupported file mode for %s: %v", absPath, mode)
 	}
 
-	// Mkdir, Mknod and Create all take only the permission bits, so
-	// setuid/setgid/sticky have to be applied on top — losing them would
-	// silently break su/passwd/mount and unprotect /tmp. Symlinks are
-	// exempt: EROFS pins them at 0777 and chmod on one is meaningless.
+	// Writer.Create takes no mode at all -- every regular file starts life
+	// 0644 -- so a chmod is the only way to give a file the mode it had in
+	// the source tree. Mkdir and Mknod do take one, and since the go-erofs
+	// bump in #2412 they honour setuid/setgid/sticky (erofs/go-erofs#41), but
+	// this passes them mode.Perm() and lets the one chmod below cover all
+	// three rather than splitting the rule across the call sites. Losing
+	// those bits would silently break su/passwd/mount and unprotect /tmp.
 	//
-	// This is a workaround for a bug in the pinned go-erofs, not a permanent
-	// shape. erofs/go-erofs#41 fixed both halves of it -- Mkdir dropping the
-	// special bits on write, and FileInfo.Mode() misreporting them on read --
-	// but it merged 2026-08-02, after v0.3.1 was tagged 2026-07-21, so the
-	// pinned version has neither half.
-	//
-	// The read half matters even though this Chmod covers the write half:
-	// FileInfo.Mode() from the pinned reader cannot be trusted for
-	// setuid/setgid/sticky. Code that needs a mode must read *erofs.Stat.Mode
-	// off Sys() instead, which is what pkg/erofsmount/ls.go does. Revisit both
-	// once a release containing #41 is out.
+	// Symlinks are exempt: EROFS pins them at 0777 and chmod on one is
+	// meaningless.
 	if mode&fs.ModeSymlink == 0 {
 		if err := w.Chmod(absPath, mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", absPath, err)

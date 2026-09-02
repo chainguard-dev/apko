@@ -144,9 +144,7 @@ func TestWriteErofs_SpecialModeBits(t *testing.T) {
 	img, err := erofs.Open(r)
 	require.NoError(t, err)
 
-	// Lstat so the symlink case reports the link itself. fs.FileInfo.Mode()
-	// from the reader carries raw EROFS bits; Stat.Mode is the translated
-	// fs.FileMode, so assert against that.
+	// Lstat so the symlink case reports the link itself.
 	lstat, ok := img.(interface {
 		Lstat(string) (fs.FileInfo, error)
 	})
@@ -157,6 +155,12 @@ func TestWriteErofs_SpecialModeBits(t *testing.T) {
 		require.NoError(t, err)
 		st, ok := info.Sys().(*erofs.Stat)
 		require.True(t, ok, "expected *erofs.Stat on %s Sys()", path)
+
+		// Since the go-erofs bump in #2412, FileInfo.Mode() reports
+		// setuid/setgid/sticky too (erofs/go-erofs#41), so the two views must
+		// agree. Callers still need Stat for uid/gid/rdev, which fs.FileInfo
+		// has nowhere to put; this pins the half that changed.
+		require.Equal(t, st.Mode, info.Mode(), "FileInfo.Mode() disagrees with Stat.Mode for %s", path)
 		return st
 	}
 

@@ -84,11 +84,13 @@ func walkAndPrint(ctx context.Context, fsys fs.FS, w io.Writer) error {
 }
 
 // formatEntry renders one entry. Mode, ownership and device numbers come from
-// the *erofs.Stat on info.Sys() when present: fs.FileInfo.Mode() alone reports
-// raw on-disk bits and no setuid/setgid/sticky, and fs.FileInfo has nowhere to
-// put a uid. Entries without one (synthesized parent directories) fall back to
-// the plain FileInfo and show 0/0. Symlink targets come from fs.ReadLinkFS
-// when fsys implements it.
+// the *erofs.Stat on info.Sys() when present, because fs.FileInfo has nowhere
+// to put a uid or a device number. Its Mode agrees with fs.FileInfo.Mode(),
+// which since the go-erofs bump in #2412 does carry setuid/setgid/sticky
+// (erofs/go-erofs#41); taking all four from one place keeps them consistent.
+// Entries without a Stat (synthesized parent directories) fall back to the
+// plain FileInfo and show 0/0. Symlink targets come from fs.ReadLinkFS when
+// fsys implements it.
 func formatEntry(fsys fs.FS, info fs.FileInfo, name string) string {
 	mode := info.Mode()
 	var uid, gid, rdev uint32
