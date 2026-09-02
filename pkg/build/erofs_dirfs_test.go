@@ -47,7 +47,7 @@ func TestWriteErofs_DirFS(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(out)
 	require.NoError(t, err)
-	require.NoError(t, writeErofs(ctx, f, fsys, epoch))
+	require.NoError(t, writeErofs(ctx, f, fsys, t.TempDir(), epoch))
 	require.NoError(t, f.Close())
 
 	rf, err := os.Open(out)

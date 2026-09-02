@@ -244,13 +244,6 @@ func (ic *ImageConfiguration) Validate() error {
 		return fmt.Errorf("invalid layer format %q (must be %q or %q)", ic.Format, LayerFormatTar, LayerFormatErofs)
 	}
 
-	// Splitting a rootfs across several EROFS layers is not implemented yet.
-	// Fail here rather than silently emitting a single layer, which would not
-	// be the image the config asked for.
-	if ic.Format.Resolved() == LayerFormatErofs && ic.Layering != nil {
-		return fmt.Errorf("layering is not supported with format %q yet (use one or the other)", LayerFormatErofs)
-	}
-
 	if ic.Certificates != nil {
 		for _, additional := range ic.Certificates.Additional {
 			if additional.Name == "" {

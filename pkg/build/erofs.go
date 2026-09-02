@@ -42,12 +42,16 @@ import (
 // buildTime sets the EROFS image build time, which seeds per-entry mtime
 // defaulting and is recorded in the superblock. It is always passed through, so
 // the image is reproducible for any caller; see erofsBuildTime.
-func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, buildTime time.Time) error {
+//
+// tmpdir is where go-erofs spools regular file data: an unlinked file it holds
+// open until Close, roughly the size of the rootfs. Left unset it lands in the
+// system temp dir, which is not the volume the caller sized for this build.
+func writeErofs(ctx context.Context, out io.WriteSeeker, fsys apkfs.FullFS, tmpdir string, buildTime time.Time) error {
 	ctx, span := otel.Tracer("apko").Start(ctx, "writeErofs")
 	defer span.End()
 
 	sec, nsec := erofsBuildTime(buildTime)
-	w := erofs.Create(out, erofs.WithBuildTime(sec, nsec))
+	w := erofs.Create(out, erofs.WithBuildTime(sec, nsec), erofs.WithTempDir(tmpdir))
 
 	buf := make([]byte, 1<<20)
 
@@ -248,6 +252,25 @@ func uidGidFromInfo(info fs.FileInfo) (int, int) {
 		return h.Uid, h.Gid
 	}
 	return 0, 0
+}
+
+// newErofsLayerFile creates a temp file backing a single EROFS layer. The
+// caller is responsible for closing and removing it. Permissions are 0600 to
+// keep intermediate build artifacts off other users' eyes.
+func newErofsLayerFile(tmpdir, pattern string) (*os.File, error) {
+	if pattern == "" {
+		pattern = "apko-erofs-*.bin"
+	}
+	f, err := os.CreateTemp(tmpdir, pattern)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return nil, err
+	}
+	return f, nil
 }
 
 // buildErofsLayerFromFile takes a finalized EROFS image already serialized to

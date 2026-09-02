@@ -64,7 +64,7 @@ func TestWriteErofs_Roundtrip(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 
-	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
 	require.NoError(t, f.Close())
 
 	r, err := os.Open(out)
@@ -135,7 +135,7 @@ func TestWriteErofs_SpecialModeBits(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(out)
 	require.NoError(t, err)
-	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
 	require.NoError(t, f.Close())
 
 	r, err := os.Open(out)
@@ -223,7 +223,7 @@ func TestWriteErofs_Xattrs(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(out)
 	require.NoError(t, err)
-	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
 	require.NoError(t, f.Close())
 
 	r, err := os.Open(out)
@@ -337,7 +337,7 @@ func TestWriteErofs_FsckErofs(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "image.erofs")
 	f, err := os.Create(out)
 	require.NoError(t, err)
-	require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+	require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
 	require.NoError(t, f.Close())
 
 	// Plain integrity check: superblock CRC, layout, all reachable inodes.
@@ -393,7 +393,7 @@ func TestWriteErofs_Reproducible(t *testing.T) {
 		m := seedFS(t)
 		f, err := os.Create(path)
 		require.NoError(t, err)
-		require.NoError(t, writeErofs(context.Background(), f, m, epoch))
+		require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), epoch))
 		require.NoError(t, f.Close())
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -422,7 +422,7 @@ func TestWriteErofs_ZeroBuildTimeIsEpoch(t *testing.T) {
 		m := seedFS(t)
 		f, err := os.Create(path)
 		require.NoError(t, err)
-		require.NoError(t, writeErofs(context.Background(), f, m, bt))
+		require.NoError(t, writeErofs(context.Background(), f, m, t.TempDir(), bt))
 		require.NoError(t, f.Close())
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)

@@ -201,7 +201,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		// *os.File does no userspace buffering, so once Close returns, a fresh
 		// Open sees every byte.
 		outName := outfile.Name()
-		if err := writeErofs(ctx, outfile, bc.fs, bc.o.SourceDateEpoch); err != nil {
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.TempDir(), bc.o.SourceDateEpoch); err != nil {
 			_ = outfile.Close()
 			return "", nil, fmt.Errorf("generating erofs image: %w", err)
 		}

@@ -8,6 +8,9 @@
 # `apko erofs ls` reports the same tree the kernel does, and
 # `apko erofs mount` / `apko erofs umount` drive that mount themselves.
 #
+# The same yaml is then built again with `layering`, and the check repeats
+# against the overlayfs stack the kernel assembles from those layers.
+#
 # Usage: hack/test-erofs.sh <yaml>
 #
 # Example:
@@ -115,6 +118,14 @@ plant_state() {
     }' >"$1/${state}"
 }
 
+# Both listings are whitespace-delimited, so a path containing a space would
+# silently misalign them.  Fail instead.
+check_ls_whitespace() {
+    if grep -qE '[[:space:]]$|  +->' "$1"; then
+        fail "unexpected whitespace in listing; comparison would be unreliable"
+    fi
+}
+
 # Both listings below collapse to "mode uid/gid path [-> target]" so they can
 # be diffed.  `apko erofs ls` columns: mode uid/gid size date time path
 # [-> target].
@@ -151,8 +162,7 @@ manifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${out}/index.json")
 [[ "${manifest}" =~ ^[0-9a-f]{64}$ ]] ||
     { echo "bad manifest digest: ${manifest}" >&2; exit 1; }
 
-# A single layer is what apko produces today; `layering` with `format: erofs`
-# is rejected during validation.  Loosen this when splitting returns.
+# Without `layering` in the config, apko emits exactly one layer.
 [ "$(jq -r '.layers | length' "${out}/blobs/sha256/${manifest}")" = 1 ] ||
     { echo "expected a single layer" >&2; exit 1; }
 layer=$(jq -r '.layers[0].digest | split(":")[1]' "${out}/blobs/sha256/${manifest}")
@@ -191,13 +201,7 @@ echo "::endgroup::"
 # bug that motivated the v0.3.1 bump.
 echo "::group::compare 'apko erofs ls' against the mounted tree"
 "${apko}" erofs ls "${out}/" >"${workdir}/ls.raw"
-
-# Both listings are whitespace-delimited, so a path containing a space would
-# silently misalign them.  Fail instead.
-if grep -qE '[[:space:]]$|  +->' "${workdir}/ls.raw"; then
-    echo "unexpected whitespace in listing; comparison would be unreliable" >&2
-    exit 1
-fi
+check_ls_whitespace "${workdir}/ls.raw"
 
 normalize_ls <"${workdir}/ls.raw" >"${workdir}/from-apko"
 tree_listing "${mnt}" >"${workdir}/from-kernel"
@@ -341,5 +345,154 @@ assert_mounted "${decoy}"
 "${sudo[@]}" umount "${decoy}"
 echo "::endgroup::"
 
-echo "PASS: ${name} erofs layer mounts, matches 'apko erofs ls', and round-trips"
-echo "      through 'apko erofs mount' / 'apko erofs umount'"
+########################################################################
+# Multi-layer: the same rootfs split across one EROFS layer per package
+# group.  Nothing else executes the split against a real kernel, and the
+# overlay stack is the only thing that shows whether the layers actually
+# compose back into the rootfs they came from.
+########################################################################
+
+layered_yaml="${workdir}/layered.yaml"
+cp "${yaml}" "${layered_yaml}"
+if ! grep -qE '^layering:' "${layered_yaml}"; then
+    cat >>"${layered_yaml}" <<'EOF'
+
+layering:
+  strategy: origin
+  budget: 4
+EOF
+fi
+
+lout="${workdir}/out-layered"
+tout="${workdir}/out-tar"
+mkdir -p "${lout}" "${tout}"
+
+# The tar build of the same config is the reference for what the split must
+# preserve.  Both builds resolve from one lockfile, so a package published
+# between them cannot make them differ.
+lock="${workdir}/apko.lock.json"
+
+echo "::group::build ${name} as layered erofs, and as layered tar to compare"
+"${apko}" lock "${layered_yaml}" --output "${lock}" --arch=host
+"${apko}" build "${layered_yaml}" "${name}:layered" "${lout}/" \
+    --format=erofs --arch=host --lockfile "${lock}"
+"${apko}" build "${layered_yaml}" "${name}:layered-tar" "${tout}/" \
+    --arch=host --lockfile "${lock}"
+echo "::endgroup::"
+
+lmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${lout}/index.json")
+[[ "${lmanifest}" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "bad layered manifest digest: ${lmanifest}"
+lmanifest="${lout}/blobs/sha256/${lmanifest}"
+
+nlayers=$(jq -r '.layers | length' "${lmanifest}")
+[ "${nlayers}" -gt 1 ] ||
+    fail "expected more than one layer with layering, got ${nlayers}"
+
+# Spec §3.8 rule 1 as apko produces it: every layer but the last is an
+# overlay-lower, the last carries no role at all.
+roles=$(jq -r '.layers[] | .annotations["org.erofs.role"] // "null"' "${lmanifest}")
+expected=$(
+    for ((i = 1; i < nlayers; i++)); do echo overlay-lower; done
+    echo null
+)
+[ "${roles}" = "${expected}" ] || {
+    echo "unexpected layer roles:" >&2
+    printf '%s\n' "${roles}" >&2
+    exit 1
+}
+
+echo "::group::mount ${nlayers} layers and stack them"
+# overlayfs lists lowerdirs top-down (highest priority first) while OCI orders
+# layers bottom-up, so each new layer is prepended.
+lowers=""
+i=0
+while read -r digest; do
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        fail "bad layer digest: ${digest}"
+    lblob="${lout}/blobs/sha256/${digest#sha256:}"
+
+    mediatype=$(jq -r ".layers[${i}].mediaType" "${lmanifest}")
+    [ "${mediatype}" = "application/vnd.erofs" ] ||
+        fail "unexpected mediaType on layer ${i}: ${mediatype}"
+    echo "${digest#sha256:}  ${lblob}" | sha256sum -c -
+    fsck.erofs -d3 "${lblob}" >/dev/null
+
+    lmnt=$(printf '%s/layer%02d' "${workdir}" "${i}")
+    mkdir -p "${lmnt}"
+    "${sudo[@]}" mount -t erofs -o ro "${lblob}" "${lmnt}"
+    assert_mounted "${lmnt}"
+
+    # Every layer but the top one holds a package group, so it must carry that
+    # group's files -- not just the ancestor directories and the partial
+    # installed db it needs to describe them.  This is the shape the routing
+    # bug produced.
+    #
+    # This assumes every group contributes at least one regular file besides
+    # that db, which holds for the default config.  A group of packages that
+    # ship only symlinks would false-fail here; relax it to "-type f -o -type
+    # l" if you point the script at a yaml where that happens.
+    if [ "${i}" -lt "$((nlayers - 1))" ]; then
+        found=$("${sudo[@]}" find "${lmnt}" -type f \
+            ! -path "${lmnt}/usr/lib/apk/db/installed" -print -quit)
+        [ -n "${found}" ] || fail "layer ${i} holds no package files"
+    fi
+
+    lowers="${lmnt}${lowers:+:${lowers}}"
+    i=$((i + 1))
+done < <(jq -r '.layers[].digest' "${lmanifest}")
+
+merged="${workdir}/merged"
+mkdir -p "${merged}"
+# No upperdir, so the overlay is read-only, which is all this needs and keeps
+# a stray write from ending up in the comparison.
+"${sudo[@]}" mount -t overlay overlay -o "ro,lowerdir=${lowers}" "${merged}"
+assert_mounted "${merged}"
+echo "::endgroup::"
+
+echo "::group::compare 'apko erofs ls' against the overlay stack"
+"${apko}" erofs ls "${lout}/" >"${workdir}/ls-layered.raw"
+check_ls_whitespace "${workdir}/ls-layered.raw"
+normalize_ls <"${workdir}/ls-layered.raw" >"${workdir}/from-apko-layered"
+tree_listing "${merged}" >"${workdir}/from-kernel-layered"
+
+if ! diff -u "${workdir}/from-kernel-layered" "${workdir}/from-apko-layered"; then
+    fail "'apko erofs ls' disagrees with overlayfs about the merged tree"
+fi
+echo "$(wc -l <"${workdir}/from-apko-layered") entries agree across ${nlayers} layers"
+echo "::endgroup::"
+
+# The tar split of the same config is the reference: unpacking its layers in
+# order reproduces the rootfs both formats started from.  A directory that
+# reaches no EROFS layer, or a file routed into a layer something else
+# shadows, shows up here and nowhere else in this script.
+echo "::group::compare the merged tree against the tar build of the same config"
+tarroot="${workdir}/tarroot"
+mkdir -p "${tarroot}"
+tmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${tout}/index.json")
+tmanifest="${tout}/blobs/sha256/${tmanifest}"
+while read -r digest; do
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        fail "bad tar layer digest: ${digest}"
+    # --numeric-owner or GNU tar resolves the layer's uname/gname against the
+    # runner's /etc/passwd, which has its own ids for lp, mail, news and uucp.
+    "${sudo[@]}" tar -C "${tarroot}" --numeric-owner -xpf \
+        "${tout}/blobs/sha256/${digest#sha256:}"
+done < <(jq -r '.layers[].digest' "${tmanifest}")
+
+tree_listing "${tarroot}" >"${workdir}/from-tar"
+if ! diff -u "${workdir}/from-tar" "${workdir}/from-apko-layered"; then
+    fail "the merged EROFS tree differs from the tar build of the same config"
+fi
+echo "::endgroup::"
+
+"${sudo[@]}" umount "${merged}"
+assert_not_mounted "${merged}"
+for ((i = nlayers - 1; i >= 0; i--)); do
+    lmnt=$(printf '%s/layer%02d' "${workdir}" "${i}")
+    "${sudo[@]}" umount "${lmnt}"
+    assert_not_mounted "${lmnt}"
+done
+
+echo "PASS: ${name} erofs layers mount, match 'apko erofs ls' single and layered,"
+echo "      and round-trip through 'apko erofs mount' / 'apko erofs umount'"
