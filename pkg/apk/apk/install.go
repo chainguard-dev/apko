@@ -236,11 +236,16 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 				// need a separate Chmod. Restrict both of these to directories we
 				// just created: InitDB creates /tmp as 1777 before any package
 				// installs, and packages ship a tmp header without the sticky bit.
-				if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
-					return nil, fmt.Errorf("error setting mode on directory %s: %w", header.Name, err)
-				}
+				//
+				// Chown comes first, as it must for a regular file (see below).
+				// Directories are exempt from that clearing, but the two paths
+				// disagreeing on the order would invite a cleanup that breaks
+				// the one where it matters.
 				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
 					return nil, fmt.Errorf("error setting owner on directory %s: %w", header.Name, err)
+				}
+				if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
+					return nil, fmt.Errorf("error setting mode on directory %s: %w", header.Name, err)
 				}
 			}
 			// xattrs
@@ -263,6 +268,21 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 			if installed {
 				a.installedFiles[header.Name] = pkg
 
+				// Nothing on this path applies the header's ownership, so
+				// without this every installed file comes out 0:0 — which for a
+				// setgid binary means setgid to root rather than to the group
+				// the package asked for.
+				//
+				// Chown MUST come before Chmod, and the order is load-bearing:
+				// chown(2) on a regular file clears setuid/setgid, for root as
+				// well, so chowning after restoring those bits would drop them
+				// again on any filesystem that writes through to disk. The
+				// in-memory overrides would still say otherwise, which is what
+				// makes the loss silent. TestInstallAPKFilesMetadataOrder pins
+				// this.
+				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
+					return nil, fmt.Errorf("error setting owner on %s: %w", header.Name, err)
+				}
 				// The mode passed to OpenFile only reaches the in-memory
 				// metadata; an on-disk write drops setuid/setgid/sticky, both
 				// because *os.Root refuses them in OpenFile and because Linux
@@ -274,13 +294,6 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 					if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
 						return nil, fmt.Errorf("error setting mode on %s: %w", header.Name, err)
 					}
-				}
-				// Nothing on this path applies the header's ownership, so
-				// without this every installed file comes out 0:0 — which for a
-				// setgid binary means setgid to root rather than to the group
-				// the package asked for.
-				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
-					return nil, fmt.Errorf("error setting owner on %s: %w", header.Name, err)
 				}
 
 				if err := a.fs.Chtimes(header.Name, header.AccessTime, header.ModTime); err != nil {

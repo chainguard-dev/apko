@@ -28,6 +28,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 	"text/template"
 
@@ -588,6 +590,16 @@ func TestInstallAPKFilesModesOnDisk(t *testing.T) {
 	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Size: 8}))
 	_, err = tw.Write([]byte("postdrop"))
 	require.NoError(t, err)
+	// A header owned by whoever runs the test is the one case where the disk
+	// chown actually succeeds unprivileged, so this is the entry that reaches
+	// the kernel's clearing of setgid on chown(2) rather than an EPERM the
+	// filesystem swallows. It fails if Chmod is applied before Chown.
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "selfowned", Typeflag: tar.TypeReg, Mode: 0o2755,
+		Uid: os.Getuid(), Gid: os.Getgid(), Size: 4,
+	}))
+	_, err = tw.Write([]byte("self"))
+	require.NoError(t, err)
 	require.NoError(t, tw.Close())
 
 	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
@@ -596,9 +608,77 @@ func TestInstallAPKFilesModesOnDisk(t *testing.T) {
 	for name, want := range map[string]fs.FileMode{
 		"var/spool": fs.ModeDir | fs.ModeSticky | 0o777,
 		"postdrop":  fs.ModeSetgid | 0o755,
+		"selfowned": fs.ModeSetgid | 0o755,
 	} {
 		fi, err := os.Stat(filepath.Join(dir, name))
 		require.NoError(t, err, "error statting %s", name)
 		assert.Equal(t, want, fi.Mode(), "mismatched on-disk mode for %s", name)
+	}
+}
+
+// orderRecordingFS records the order in which Chmod and Chown reach each path.
+// It only records — every call still runs against the wrapped filesystem, so
+// there is no emulated behavior here to drift out of sync with the real thing.
+type orderRecordingFS struct {
+	apkfs.FullFS
+
+	mu    sync.Mutex
+	calls map[string][]string
+}
+
+func newOrderRecordingFS(inner apkfs.FullFS) *orderRecordingFS {
+	return &orderRecordingFS{FullFS: inner, calls: map[string][]string{}}
+}
+
+func (o *orderRecordingFS) record(path, op string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls[path] = append(o.calls[path], op)
+}
+
+func (o *orderRecordingFS) ops(path string) []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.calls[path])
+}
+
+func (o *orderRecordingFS) Chmod(path string, perm fs.FileMode) error {
+	o.record(path, "chmod")
+	return o.FullFS.Chmod(path, perm)
+}
+
+func (o *orderRecordingFS) Chown(path string, uid, gid int) error {
+	o.record(path, "chown")
+	return o.FullFS.Chown(path, uid, gid)
+}
+
+// TestInstallAPKFilesMetadataOrder pins Chown before Chmod. chown(2) on a
+// regular file clears setuid/setgid — for root too — so chowning after the
+// Chmod that restores those bits drops them again on any filesystem that
+// writes through to disk. No unprivileged test can observe that: dirFS
+// tolerates the EPERM from the disk chown and never reaches the kernel
+// behavior, so the call order is pinned here instead.
+func TestInstallAPKFilesMetadataOrder(t *testing.T) {
+	rec := newOrderRecordingFS(apkfs.NewMemFS())
+	apk, err := New(t.Context(), WithFS(rec), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Gid: 101, Size: 8}))
+	_, err = tw.Write([]byte("postdrop"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	// The setgid file is the case the kernel would bite; the sticky directory
+	// is here so the two paths cannot drift apart unnoticed.
+	for _, name := range []string{"postdrop", "var/spool"} {
+		assert.Equal(t, []string{"chown", "chmod"}, rec.ops(name),
+			"metadata calls for %s must be chown then chmod", name)
 	}
 }
