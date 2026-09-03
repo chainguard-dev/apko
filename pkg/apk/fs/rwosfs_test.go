@@ -15,6 +15,7 @@
 package fs
 
 import (
+	"archive/tar"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -966,5 +967,44 @@ func TestSeedOverride_SpecialModeBits(t *testing.T) {
 		fi, err := fsys.Stat(e.name)
 		require.NoError(t, err, "error statting %s", e.name)
 		assert.Equal(t, want, fi.Mode(), "mismatched seeded mode for %s", e.name)
+
+		// The owner has to come over with the mode: a node seeded setuid but
+		// left at uid 0 would serialize as setuid root.
+		diskFI, err := os.Stat(filepath.Join(dir, e.name))
+		require.NoError(t, err)
+		diskSt, ok := diskFI.Sys().(*syscall.Stat_t)
+		require.True(t, ok, "no *syscall.Stat_t for %s", e.name)
+		hdr, ok := fi.Sys().(*tar.Header)
+		require.True(t, ok, "no *tar.Header from Sys() for %s", e.name)
+		assert.Equal(t, int(diskSt.Uid), hdr.Uid, "mismatched seeded uid for %s", e.name)
+		assert.Equal(t, int(diskSt.Gid), hdr.Gid, "mismatched seeded gid for %s", e.name)
 	}
+}
+
+// ownerlessFileInfo is a FileInfo whose Sys() carries no owner, which is what
+// a non-unix platform or a memFS-synthesized FileInfo looks like.
+type ownerlessFileInfo struct {
+	fs.FileInfo
+	mode fs.FileMode
+}
+
+func (o ownerlessFileInfo) Mode() fs.FileMode { return o.mode }
+func (o ownerlessFileInfo) Sys() any          { return nil }
+
+// TestSeedOverride_NoOwnerDropsSetidBits pins the safe direction of the
+// mode/ownership pairing: with no owner to attach them to, setuid and setgid
+// are dropped rather than seeded against the default uid 0.
+func TestSeedOverride_NoOwnerDropsSetidBits(t *testing.T) {
+	fsys := DirFS(t.Context(), t.TempDir())
+	require.NotNil(t, fsys)
+	d, ok := fsys.(*dirFS)
+	require.True(t, ok)
+
+	mode := fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky | 0o755
+	require.NoError(t, d.seedOverride("binary", ownerlessFileInfo{mode: mode}, nil))
+
+	fi, err := d.overrides.Stat("binary")
+	require.NoError(t, err)
+	require.Equal(t, fs.ModeSticky|0o755, fi.Mode(),
+		"setuid/setgid must not be seeded without an owner")
 }
