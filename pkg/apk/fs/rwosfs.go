@@ -166,12 +166,16 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 // resolves against (Lstat reads them directly, Stat takes Mode() from them),
 // so an entry seeded as the wrong type is reported as the wrong type from then
 // on. readlink resolves a symlink's target through the sandboxed root.
+//
+// The same goes for the mode: seeding only Perm() would report a sticky
+// directory or a setgid binary already on disk without those bits, so
+// directories and regular files carry every non-type bit over.
 func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) (string, error)) error {
 	mode := fi.Mode()
 	perm := mode.Perm()
 	switch {
 	case mode.IsDir():
-		return f.overrides.Mkdir(path, os.ModeDir|perm)
+		return f.overrides.Mkdir(path, os.ModeDir|mode&^fs.ModeType)
 	case mode&fs.ModeSymlink != 0:
 		target, err := readlink(path)
 		if err != nil {
@@ -192,7 +196,7 @@ func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) 
 		// Everything else — regular files, and the block devices, FIFOs and
 		// sockets the memFS overrides cannot represent — becomes an empty
 		// regular file whose content is served from disk.
-		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, perm)
+		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, mode&^fs.ModeType)
 		if memFile != nil {
 			_ = memFile.Close()
 		}

@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -925,4 +926,45 @@ func TestSeedOverride_TypesFromWalk(t *testing.T) {
 	target, err := fsys.Readlink("etc/link")
 	require.NoError(t, err)
 	require.Equal(t, "hostname", target)
+}
+
+// TestSeedOverride_SpecialModeBits pins that setuid/setgid/sticky already on
+// disk survive being seeded into the overrides, which are what every mode
+// lookup on a dirFS resolves against.
+func TestSeedOverride_SpecialModeBits(t *testing.T) {
+	entries := []struct {
+		name string
+		mode fs.FileMode
+		dir  bool
+	}{
+		{"tmp", fs.ModeSticky | 0o777, true},
+		{"spool", fs.ModeSetgid | 0o755, true},
+		{"postdrop", fs.ModeSetgid | 0o755, false},
+		{"su", fs.ModeSetuid | 0o755, false},
+	}
+
+	dir := t.TempDir()
+	for _, e := range entries {
+		path := filepath.Join(dir, e.name)
+		if e.dir {
+			require.NoError(t, os.Mkdir(path, 0o755))
+		} else {
+			require.NoError(t, os.WriteFile(path, []byte("x"), 0o755))
+		}
+		// mkdir and create both mask these bits off, so chmod after the fact.
+		require.NoError(t, os.Chmod(path, e.mode))
+	}
+
+	fsys := DirFS(t.Context(), dir)
+	require.NotNil(t, fsys)
+
+	for _, e := range entries {
+		want := e.mode
+		if e.dir {
+			want |= fs.ModeDir
+		}
+		fi, err := fsys.Stat(e.name)
+		require.NoError(t, err, "error statting %s", e.name)
+		assert.Equal(t, want, fi.Mode(), "mismatched seeded mode for %s", e.name)
+	}
 }
