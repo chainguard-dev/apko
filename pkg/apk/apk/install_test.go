@@ -27,10 +27,14 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 	"text/template"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 type testDirEntry struct {
@@ -479,3 +483,122 @@ provider_priority = {{ .Dependencies.ProviderPriority }}
 {{- end }}
 datahash = {{.DataHash}}
 `
+
+// TestInstallAPKFilesModesAndOwnership covers the metadata the streaming
+// install path has to carry over from the tar headers: the mode bits outside
+// of Perm(), and the ownership.
+func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
+	type entry struct {
+		name    string
+		mode    int64 // POSIX mode bits, as they appear in a tar header
+		dir     bool
+		uid     int
+		gid     int
+		content []byte
+	}
+	entries := []entry{
+		// dirs first, so they exist before the files under them
+		{name: "opt", mode: 0o755, dir: true},
+		{name: "opt/bin", mode: 0o755, dir: true},
+		{name: "var", mode: 0o755, dir: true},
+		{name: "var/spool", mode: 0o1777, dir: true},
+		{name: "var/spool/postfix", mode: 0o2755, dir: true, gid: 101},
+		// modelled on wolfi's postfix, which ships these setgid to gid 101
+		{name: "opt/bin/postdrop", mode: 0o2755, gid: 101, content: []byte("postdrop")},
+		{name: "opt/bin/plain", mode: 0o644, content: []byte("plain")},
+		// a package that ships a header for a directory the base layout
+		// already created must not overwrite what is there
+		{name: "tmp", mode: 0o755, dir: true, uid: 7, gid: 7},
+	}
+
+	apk, src, err := testGetTestAPK()
+	require.NoErrorf(t, err, "failed to get test APK")
+
+	// stand in for InitDB, which creates /tmp as 1777 before any package installs
+	require.NoError(t, src.MkdirAll("tmp", fs.ModeDir|fs.ModeSticky|0o777))
+	require.NoError(t, src.Chmod("tmp", fs.ModeSticky|0o777))
+	require.NoError(t, src.Chown("tmp", 5, 5))
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, e := range entries {
+		hdr := &tar.Header{
+			Name:     e.name,
+			Typeflag: tar.TypeReg,
+			Mode:     e.mode,
+			Uid:      e.uid,
+			Gid:      e.gid,
+			Size:     int64(len(e.content)),
+		}
+		if e.dir {
+			hdr.Typeflag = tar.TypeDir
+			hdr.Size = 0
+		}
+		require.NoError(t, tw.WriteHeader(hdr))
+		if e.content != nil {
+			_, err := tw.Write(e.content)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(context.Background(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		fi, err := src.Stat(e.name)
+		require.NoError(t, err, "error statting %s", e.name)
+
+		wantMode := (&tar.Header{Mode: e.mode}).FileInfo().Mode() &^ fs.ModeType
+		wantUID, wantGID := e.uid, e.gid
+		if e.name == "tmp" {
+			// pre-existing: keeps the mode and owner it already had
+			wantMode = fs.ModeSticky | 0o777
+			wantUID, wantGID = 5, 5
+		}
+		if e.dir {
+			wantMode |= fs.ModeDir
+		}
+		assert.Equal(t, wantMode, fi.Mode(), "mismatched mode for %s", e.name)
+
+		hdr, ok := fi.Sys().(*tar.Header)
+		require.True(t, ok, "no tar.Header from Sys() for %s", e.name)
+		assert.Equal(t, wantUID, hdr.Uid, "mismatched uid for %s", e.name)
+		assert.Equal(t, wantGID, hdr.Gid, "mismatched gid for %s", e.name)
+	}
+}
+
+// TestInstallAPKFilesModesOnDisk is the same concern as
+// TestInstallAPKFilesModesAndOwnership, against a disk-backed filesystem.
+// Those strip setuid/setgid/sticky from the mode passed to MkdirAll and
+// OpenFile, so the bits only reach the disk if we Chmod afterwards. Ownership
+// is not asserted: Chown needs privileges the test does not have, and the
+// filesystem tolerates the EPERM.
+func TestInstallAPKFilesModesOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	src := apkfs.DirFS(t.Context(), dir)
+	require.NotNil(t, src)
+	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Size: 8}))
+	_, err = tw.Write([]byte("postdrop"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	for name, want := range map[string]fs.FileMode{
+		"var/spool": fs.ModeDir | fs.ModeSticky | 0o777,
+		"postdrop":  fs.ModeSetgid | 0o755,
+	} {
+		fi, err := os.Stat(filepath.Join(dir, name))
+		require.NoError(t, err, "error statting %s", name)
+		assert.Equal(t, want, fi.Mode(), "mismatched on-disk mode for %s", name)
+	}
+}
