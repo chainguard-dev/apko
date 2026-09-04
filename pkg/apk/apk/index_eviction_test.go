@@ -121,6 +121,28 @@ func TestSupersededIndexStillServedFromCache(t *testing.T) {
 	}
 }
 
+// TestDisqualifyCacheKeyIsOrderIndependent checks that the same multi-arch
+// request always maps to a single disqualify entry. The key used to be sorted
+// by repository name, which is empty for unpinned repositories, so the order
+// fell back to map iteration order and one request could occupy several slots.
+func TestDisqualifyCacheKeyIsOrderIndependent(t *testing.T) {
+	srv, rotate := rotatingIndexServer(t, 50)
+	ctx := t.Context()
+
+	rotate(1)
+	a := fetchIndexes(t, ctx, srv)
+	rotate(2)
+	b := fetchIndexes(t, ctx, srv)
+
+	before := globalDisqualifyCache.len()
+	for range 50 {
+		globalDisqualifyCache.Get(ctx, map[string][]NamedIndex{"x86_64": a, "aarch64": b})
+	}
+	if added := globalDisqualifyCache.len() - before; added != 1 {
+		t.Errorf("repeated identical disqualify requests added %d entries, want 1", added)
+	}
+}
+
 // TestSupersededGenerationsAreBounded rotates the index many more times than
 // the caches can hold and checks that both derived caches stay at their cap
 // and that heap use stops growing once the cap is reached, so superseded

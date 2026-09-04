@@ -18,17 +18,18 @@ import (
 	"context"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 
 	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
 // maxResolverCacheEntries bounds the number of distinct index combinations
-// each derived cache retains. The live set is tiny (a handful of repos times a
-// couple of arches), so the bound only matters for superseded generations
-// that in-flight resolutions keep requesting: those age out once nothing asks
-// for them anymore.
+// each derived cache retains. A multi-arch resolution inserts one resolver
+// entry per arch and one disqualify entry, so the live set is that times the
+// number of distinct repo combinations resolved concurrently. Superseded
+// generations that in-flight resolutions still request stay cached and age
+// out once enough newer combinations have been inserted. Every entry pins a
+// whole index generation, so raising this trades memory for hit rate.
 const maxResolverCacheEntries = 16
 
 // lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
@@ -110,10 +111,12 @@ type disqualifyCache struct {
 }
 
 func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
-	indexes := slices.Concat(slices.Collect(maps.Values(byArch))...)
-	slices.SortFunc(indexes, func(a, b NamedIndex) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
+	// Key by the arches in a fixed order so the same request always maps to
+	// the same entry regardless of map iteration order.
+	var indexes []NamedIndex
+	for _, arch := range slices.Sorted(maps.Keys(byArch)) {
+		indexes = append(indexes, byArch[arch]...)
+	}
 
 	dq, _ := r.getOrFill(indexes, func() map[*RepositoryPackage]string {
 		return disqualifyDifference(ctx, byArch)
