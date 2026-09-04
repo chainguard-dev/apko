@@ -16,205 +16,121 @@ package apk
 
 import (
 	"context"
+	"fmt"
 	"maps"
+	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 
 	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
+// maxResolverCacheEntries bounds the number of distinct index combinations
+// each derived cache retains. The live set is tiny (a handful of repos times a
+// couple of arches), so the bound only matters for superseded generations
+// that in-flight resolutions keep requesting: those age out once nothing asks
+// for them anymore.
+const maxResolverCacheEntries = 16
+
+// indexIdentity returns a key that is unique to the index object itself. A
+// NamedIndex is immutable, so anything derived from a specific set of index
+// objects stays valid for as long as those objects are around. Remote indexes
+// are deduplicated by (url, etag) in globalIndexCache, so the same generation
+// always yields the same object.
+func indexIdentity(idx NamedIndex) string {
+	if v := reflect.ValueOf(idx); v.Kind() == reflect.Pointer {
+		return strconv.FormatUint(uint64(v.Pointer()), 16)
+	}
+	return fmt.Sprintf("%T:%s:%s", idx, idx.Name(), idx.Source())
+}
+
+func indexesKey(indexes []NamedIndex) string {
+	ids := make([]string, len(indexes))
+	for i, idx := range indexes {
+		ids[i] = indexIdentity(idx)
+	}
+	return strings.Join(ids, "\x00")
+}
+
+// lruCache is a mutex-guarded LRU keyed by a joined index identity. The lock
+// is held across lookup and fill so concurrent requests for the same
+// combination build it once.
+type lruCache[V any] struct {
+	sync.Mutex
+	lru *lru.Cache[string, V]
+}
+
+func newLRUCache[V any](size int) *lruCache[V] {
+	c, err := lru.New[string, V](size)
+	if err != nil {
+		panic(err) // only fails for a non-positive size
+	}
+	return &lruCache[V]{lru: c}
+}
+
+// getOrFill returns the cached value for indexes, computing and inserting it
+// on a miss. The boolean reports whether the value was already cached.
+func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
+	key := indexesKey(indexes)
+
+	c.Lock()
+	defer c.Unlock()
+
+	if val, ok := c.lru.Get(key); ok {
+		return val, true
+	}
+
+	val := fill()
+	c.lru.Add(key, val)
+	return val, false
+}
+
+func (c *lruCache[V]) len() int {
+	c.Lock()
+	defer c.Unlock()
+	return c.lru.Len()
+}
+
 // It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
 // This caches a PkgResolver based on the input []NamedIndex.
-var globalResolverCache = &resolverCache{}
+var globalResolverCache = &resolverCache{newLRUCache[*PkgResolver](maxResolverCacheEntries)}
 
 type resolverCache struct {
-	sync.Mutex
-	children map[NamedIndex]*resolverCache
-	pr       *PkgResolver
-}
-
-func (r *resolverCache) find(indexes []NamedIndex) *PkgResolver {
-	if len(indexes) == 0 {
-		return r.pr
-	}
-
-	if r.children == nil {
-		return nil
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		return nil
-	}
-
-	return child.find(indexes[1:])
-}
-
-func (r *resolverCache) fill(indexes []NamedIndex, pr *PkgResolver) {
-	if len(indexes) == 0 {
-		r.pr = pr
-		return
-	}
-
-	if r.children == nil {
-		r.children = make(map[NamedIndex]*resolverCache)
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		child = &resolverCache{}
-		r.children[indexes[0]] = child
-	}
-
-	child.fill(indexes[1:], pr)
+	*lruCache[*PkgResolver]
 }
 
 func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
-	// A superseded index generation will never be requested again once the
-	// in-flight resolutions holding it finish, and no future replacement
-	// will purge it, so it must not (re-)enter the cache.
-	if !currentAll(indexes) {
-		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultBypass)
+	pr, hit := r.getOrFill(indexes, func() *PkgResolver {
 		return newPkgResolver(ctx, indexes)
-	}
-
-	r.Lock()
-	defer r.Unlock()
-
-	if pr := r.find(indexes); pr != nil {
+	})
+	if hit {
 		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultHit)
-		return pr.Clone()
+	} else {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultMiss)
 	}
-	apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultMiss)
-
-	pr := newPkgResolver(ctx, indexes)
-	r.fill(indexes, pr)
-
-	// A generation replacement that raced the fill has already run its
-	// purge, so purge its index ourselves.
-	for _, idx := range indexes {
-		if !globalIndexCache.isCurrent(idx) {
-			r.forgetIndex(idx)
-		}
-	}
-
 	return pr.Clone()
-}
-
-func currentAll(indexes []NamedIndex) bool {
-	for _, idx := range indexes {
-		if !globalIndexCache.isCurrent(idx) {
-			return false
-		}
-	}
-	return true
-}
-
-// ForgetIndex removes every cached entry whose index combination includes
-// idx: a resolver over a superseded generation is superseded itself.
-func (r *resolverCache) ForgetIndex(idx NamedIndex) {
-	r.Lock()
-	defer r.Unlock()
-
-	r.forgetIndex(idx)
-}
-
-func (r *resolverCache) forgetIndex(idx NamedIndex) {
-	delete(r.children, idx)
-	for _, child := range r.children {
-		child.forgetIndex(idx)
-	}
-}
-
-// It is expensive to compute the complement
-// This a PkgResolver based on the input []NamedIndex.
-var globalDisqualifyCache = &disqualifyCache{}
-
-type disqualifyCache struct {
-	sync.Mutex
-	children map[NamedIndex]*disqualifyCache
-	dq       map[*RepositoryPackage]string
-}
-
-func (r *disqualifyCache) find(indexes []NamedIndex) map[*RepositoryPackage]string {
-	if len(indexes) == 0 {
-		return r.dq
-	}
-
-	if r.children == nil {
-		return nil
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		return nil
-	}
-
-	return child.find(indexes[1:])
-}
-
-func (r *disqualifyCache) fill(indexes []NamedIndex, dq map[*RepositoryPackage]string) {
-	if len(indexes) == 0 {
-		r.dq = dq
-		return
-	}
-
-	if r.children == nil {
-		r.children = make(map[NamedIndex]*disqualifyCache)
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		child = &disqualifyCache{}
-		r.children[indexes[0]] = child
-	}
-
-	child.fill(indexes[1:], dq)
 }
 
 // It is expensive to compute the difference between every architecture.
 // This caches that difference based on the input []NamedIndex for every architecture.
+var globalDisqualifyCache = &disqualifyCache{newLRUCache[map[*RepositoryPackage]string](maxResolverCacheEntries)}
+
+type disqualifyCache struct {
+	*lruCache[map[*RepositoryPackage]string]
+}
+
 func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
-	r.Lock()
-	defer r.Unlock()
-
 	indexes := slices.Concat(slices.Collect(maps.Values(byArch))...)
-	if !currentAll(indexes) {
-		return disqualifyDifference(ctx, byArch)
-	}
-
 	slices.SortFunc(indexes, func(a, b NamedIndex) int {
 		return strings.Compare(a.Name(), b.Name())
 	})
-	if dq := r.find(indexes); dq != nil {
-		return maps.Clone(dq)
-	}
 
-	dq := disqualifyDifference(ctx, byArch)
-	r.fill(indexes, dq)
-
-	for _, idx := range indexes {
-		if !globalIndexCache.isCurrent(idx) {
-			r.forgetIndex(idx)
-		}
-	}
-
+	dq, _ := r.getOrFill(indexes, func() map[*RepositoryPackage]string {
+		return disqualifyDifference(ctx, byArch)
+	})
 	return maps.Clone(dq)
-}
-
-// ForgetIndex removes every cached entry whose index combination includes
-// idx: a difference over a superseded generation is superseded itself.
-func (r *disqualifyCache) ForgetIndex(idx NamedIndex) {
-	r.Lock()
-	defer r.Unlock()
-
-	r.forgetIndex(idx)
-}
-
-func (r *disqualifyCache) forgetIndex(idx NamedIndex) {
-	delete(r.children, idx)
-	for _, child := range r.children {
-		child.forgetIndex(idx)
-	}
 }

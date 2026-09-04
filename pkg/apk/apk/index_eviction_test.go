@@ -1,3 +1,17 @@
+// Copyright 2023 Chainguard, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package apk
 
 import (
@@ -6,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -13,25 +28,20 @@ import (
 	"time"
 )
 
-// TestSupersededGenerationsAreCollectable guards against derived resolution
-// data (resolvers, disqualify sets) pinning superseded index generations.
-// Every etag rotation used to leak the entire previous generation via the
-// global resolver and disqualify caches; replacing a generation now purges
-// its derived entries, and resolutions still holding a superseded generation
-// (as concurrent builds do when an index rotates mid-flight) must not
-// re-insert it.
-func TestSupersededGenerationsAreCollectable(t *testing.T) {
-	const nPkgs = 10000
+// rotatingIndexServer serves a synthetic APKINDEX whose etag is controlled
+// by the returned setter. Every distinct etag is a new generation of the
+// same URL.
+func rotatingIndexServer(t *testing.T, nPkgs int) (*httptest.Server, func(gen int)) {
+	t.Helper()
 
-	idx := &APKIndex{Description: "leak-test"}
+	idx := &APKIndex{Description: "rotation-test"}
 	for i := range nPkgs {
 		idx.Packages = append(idx.Packages, &Package{
-			Name:        fmt.Sprintf("pkg-%d", i),
-			Version:     "1.0.0-r0",
-			Arch:        "x86_64",
-			Description: fmt.Sprintf("synthetic package %d", i),
-			Checksum:    []byte("01234567890123456789"),
-			// A short chain keeps the resolve cheap; the index stays large.
+			Name:         fmt.Sprintf("pkg-%d", i),
+			Version:      "1.0.0-r0",
+			Arch:         "x86_64",
+			Description:  fmt.Sprintf("synthetic package %d", i),
+			Checksum:     []byte("01234567890123456789"),
 			Dependencies: []string{fmt.Sprintf("pkg-%d", min(i+1, 20))},
 			Provides:     []string{fmt.Sprintf("cmd:tool-%d=1.0.0-r0", i)},
 			BuildTime:    time.Unix(1700000000, 0).UTC(),
@@ -55,9 +65,70 @@ func TestSupersededGenerationsAreCollectable(t *testing.T) {
 		}
 		_, _ = w.Write(body.Bytes())
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
+	return srv, func(gen int) { etag.Store(fmt.Sprintf("gen-%d", gen)) }
+}
+
+func fetchIndexes(t *testing.T, ctx context.Context, srv *httptest.Server) []NamedIndex {
+	t.Helper()
+	indexes, err := GetRepositoryIndexes(ctx, []string{srv.URL}, nil, "x86_64",
+		WithIgnoreSignatures(true), WithHTTPClient(srv.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return indexes
+}
+
+func resolveWith(t *testing.T, ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	t.Helper()
+	p := NewPkgResolver(ctx, indexes)
+	// Two arches so the disqualify cache is exercised too.
+	if _, _, err := p.GetPackagesWithDependencies(ctx, []string{"pkg-0"},
+		map[string][]NamedIndex{"x86_64": indexes, "aarch64": indexes}); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// TestSupersededIndexStillServedFromCache guards against the cache refusing
+// to serve resolvers for an index set that is no longer the freshest
+// generation. Concurrent builds routinely hold an index generation that a
+// sibling has since superseded, and a resolver built over a specific set of
+// index objects is correct for that set regardless of what has been fetched
+// since. Bypassing the cache there rebuilt the resolver on nearly every call.
+func TestSupersededIndexStillServedFromCache(t *testing.T) {
+	srv, rotate := rotatingIndexServer(t, 300)
+	ctx := t.Context()
+
+	rotate(1)
+	stale := fetchIndexes(t, ctx, srv)
+	rotate(2)
+	fresh := fetchIndexes(t, ctx, srv)
+	if stale[0] == fresh[0] {
+		t.Fatal("expected the rotation to produce a new index object")
+	}
+
+	first := resolveWith(t, ctx, stale)
+	n := globalResolverCache.len()
+	second := resolveWith(t, ctx, stale)
+
+	if globalResolverCache.len() != n {
+		t.Errorf("resolver cache grew from %d to %d entries on a repeated resolve over the same indexes", n, globalResolverCache.len())
+	}
+	if reflect.ValueOf(first.nameMap).Pointer() != reflect.ValueOf(second.nameMap).Pointer() {
+		t.Error("repeated resolve over a superseded index set rebuilt the resolver instead of reusing the cached one")
+	}
+}
+
+// TestSupersededGenerationsAreBounded rotates the index many more times than
+// the caches can hold and checks that both derived caches stay at their cap
+// and that heap use stops growing once the cap is reached, so superseded
+// generations are not pinned indefinitely.
+func TestSupersededGenerationsAreBounded(t *testing.T) {
+	srv, rotate := rotatingIndexServer(t, 10000)
 	ctx := context.Background()
+
 	heapMB := func() float64 {
 		runtime.GC()
 		runtime.GC()
@@ -66,95 +137,48 @@ func TestSupersededGenerationsAreCollectable(t *testing.T) {
 		return float64(m.HeapAlloc) / (1 << 20)
 	}
 
-	resolve := func(indexes []NamedIndex) {
-		p := NewPkgResolver(ctx, indexes)
-		// Two arches so the disqualify cache is exercised too.
-		if _, _, err := p.GetPackagesWithDependencies(ctx, []string{"pkg-0"},
-			map[string][]NamedIndex{"x86_64": indexes, "aarch64": indexes}); err != nil {
-			t.Fatal(err)
-		}
+	gen := 0
+	next := func() {
+		gen++
+		rotate(gen)
+		resolveWith(t, ctx, fetchIndexes(t, ctx, srv))
 	}
 
-	fetch := func(g int) []NamedIndex {
-		etag.Store(fmt.Sprintf("gen-%d", g))
-		indexes, err := GetRepositoryIndexes(ctx, []string{srv.URL}, nil, "x86_64",
-			WithIgnoreSignatures(true), WithHTTPClient(srv.Client()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return indexes
+	// Fill both caches to their cap, then measure growth beyond it.
+	for range maxResolverCacheEntries {
+		next()
 	}
-
-	// Warm up allocator and caches, then measure growth across generations.
-	resolve(fetch(0))
 	base := heapMB()
-	const generations = 8
-	prev := fetch(1)
-	for g := 2; g <= generations+1; g++ {
-		// Fetching generation g evicts generation g-1, which an unfinished
-		// resolution still holds — like a build racing an index rotation.
-		// Resolving with it afterwards must not re-pin it.
-		indexes := fetch(g)
-		resolve(prev)
-		resolve(indexes)
-		prev = indexes
+	const extra = 2 * maxResolverCacheEntries
+	for range extra {
+		next()
 	}
-	prev = nil
-	_ = prev
 	grown := heapMB() - base
 
+	if got := globalResolverCache.len(); got > maxResolverCacheEntries {
+		t.Errorf("resolver cache holds %d entries, want at most %d", got, maxResolverCacheEntries)
+	}
+	if got := globalDisqualifyCache.len(); got > maxResolverCacheEntries {
+		t.Errorf("disqualify cache holds %d entries, want at most %d", got, maxResolverCacheEntries)
+	}
 	// Each pinned generation retains several MB (index, resolver maps,
-	// disqualify sets). With correct purging, growth stays near zero; the
-	// unpurged caches grew by roughly generations * per-generation size
-	// (tens of MB here).
+	// disqualify sets). Once the LRU is full, further rotations must not add
+	// to the heap beyond allocator noise.
 	if grown > 20 {
-		t.Errorf("heap grew by %.1f MB across %d index generations, derived data is likely pinned", grown, generations)
+		t.Errorf("heap grew by %.1f MB across %d rotations past the cache cap, superseded generations are likely pinned", grown, extra)
 	}
 }
 
 // TestSupersededGenerationsConcurrentlyBounded drives index rotations and
-// resolutions concurrently, so a purge genuinely races an in-flight Get that
-// still holds a superseded generation - the case the insert gate exists for
-// and the sequential test above does not reach. It asserts the resolver cache
-// retains only a bounded number of generations for the URL rather than one
-// per rotation. Run under -race to also catch data races and deadlocks.
+// resolutions concurrently so that resolutions holding superseded
+// generations race fresh fetches. The resolver cache must stay bounded rather
+// than accumulating one entry per rotation. Run under -race to also catch
+// data races and deadlocks.
 func TestSupersededGenerationsConcurrentlyBounded(t *testing.T) {
-	const nPkgs = 300
-
-	idx := &APKIndex{Description: "concurrent-leak-test"}
-	for i := range nPkgs {
-		idx.Packages = append(idx.Packages, &Package{
-			Name:         fmt.Sprintf("pkg-%d", i),
-			Version:      "1.0.0-r0",
-			Arch:         "x86_64",
-			Checksum:     []byte("01234567890123456789"),
-			Dependencies: []string{fmt.Sprintf("pkg-%d", min(i+1, 20))},
-			BuildTime:    time.Unix(1700000000, 0).UTC(),
-		})
-	}
-	archive, err := ArchiveFromIndex(idx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body bytes.Buffer
-	if _, err := body.ReadFrom(archive); err != nil {
-		t.Fatal(err)
-	}
-
-	// ETag tracks a counter the workers bump; each distinct value the HEAD
-	// observes is a new generation of the same URL.
-	var gen atomic.Int64
-	gen.Store(1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", fmt.Sprintf("%q", fmt.Sprintf("gen-%d", gen.Load())))
-		if r.Method == http.MethodHead {
-			return
-		}
-		_, _ = w.Write(body.Bytes())
-	}))
-	defer srv.Close()
-
+	srv, rotate := rotatingIndexServer(t, 300)
 	ctx := t.Context()
+
+	var gen atomic.Int64
 	const (
 		workers = 4
 		rounds  = 60
@@ -163,43 +187,20 @@ func TestSupersededGenerationsConcurrentlyBounded(t *testing.T) {
 	for range workers {
 		wg.Go(func() {
 			for range rounds {
-				gen.Add(1) // rotate: a new generation supersedes the current one
+				rotate(int(gen.Add(1)))
 				indexes, err := GetRepositoryIndexes(ctx, []string{srv.URL}, nil, "x86_64",
 					WithIgnoreSignatures(true), WithHTTPClient(srv.Client()))
 				if err != nil {
 					t.Errorf("fetch: %v", err)
 					return
 				}
-				// Populates globalResolverCache for the current generation, or
-				// takes the gate's uncached path if this index was superseded
-				// by a concurrent rotation in the meantime.
 				_ = NewPkgResolver(ctx, indexes)
 			}
 		})
 	}
 	wg.Wait()
 
-	// The workers drove workers*rounds rotations. Without eviction the resolver
-	// cache would hold ~that many generations for the URL; with it, only the
-	// current generation and a few racing stragglers survive.
-	url := IndexURL(srv.URL, "x86_64")
-	if got := countResolverGenerations(url); got > 20 {
-		t.Errorf("resolver cache retains %d generations for %s; superseded generations are not being evicted (expected a small bound)", got, url)
+	if got := globalResolverCache.len(); got > maxResolverCacheEntries {
+		t.Errorf("resolver cache holds %d entries after %d rotations, want at most %d", got, workers*rounds, maxResolverCacheEntries)
 	}
-}
-
-// countResolverGenerations counts the distinct index generations the global
-// resolver cache still holds for a single index URL (one top-level trie child
-// per generation, since these resolvers are built from a single index).
-func countResolverGenerations(url string) int {
-	globalResolverCache.Lock()
-	defer globalResolverCache.Unlock()
-
-	n := 0
-	for k := range globalResolverCache.children {
-		if k.Source() == url {
-			n++
-		}
-	}
-	return n
 }
