@@ -101,11 +101,11 @@ type PackageGetter interface {
 	GetPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error)
 }
 
+const packageCacheMaxEntries = 64
+
 // globalApkCache is the shared in-memory singleflight cache used by DefaultPackageGetter.
 // This ensures deduplication of concurrent requests across all APK instances in a process.
-// NOTE: This is used only to retain backwards compatibility with existing behavior, which
-// also uses a global cache.
-var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
+var globalApkCache = newFlightCache[string, *expandapk.APKExpanded](packageCacheMaxEntries)
 
 // defaultPackageGetter implements the standard disk-caching behavior
 // with in-memory singleflight deduplication using a global cache.

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/singleflight"
 
@@ -33,14 +34,28 @@ import (
 )
 
 type flightCache[K comparable, V any] struct {
-	mux   sync.RWMutex
-	cache map[K]func() (V, error)
+	mux     sync.Mutex
+	flights map[K]*flightCacheEntry[V]
+	lru     *simplelru.LRU[K, V]
 }
 
-func newFlightCache[K comparable, V any]() *flightCache[K, V] {
+type flightCacheEntry[V any] struct {
+	load func() (V, error)
+}
+
+func newFlightCache[K comparable, V any](maxEntries int) *flightCache[K, V] {
 	return &flightCache[K, V]{
-		cache: make(map[K]func() (V, error)),
+		flights: make(map[K]*flightCacheEntry[V]),
+		lru:     newLRU[K, V](maxEntries, nil),
 	}
+}
+
+func newLRU[K comparable, V any](maxEntries int, onEvict simplelru.EvictCallback[K, V]) *simplelru.LRU[K, V] {
+	cache, err := simplelru.NewLRU(maxEntries, onEvict)
+	if err != nil {
+		panic(err)
+	}
+	return cache
 }
 
 // Do coalesces multiple calls, like singleflight, but also caches
@@ -48,50 +63,53 @@ func newFlightCache[K comparable, V any]() *flightCache[K, V] {
 // permanently failing for transient errors. The boolean result reports
 // whether the key was already present, including an in-flight call.
 func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, bool, error) {
-	f.mux.RLock()
-	if v, ok := f.cache[key]; ok {
-		f.mux.RUnlock()
-		value, err := v()
-		return value, true, err
-	}
-	f.mux.RUnlock()
-
 	f.mux.Lock()
-
-	// Doubly-checked-locking in case of race conditions.
-	if v, ok := f.cache[key]; ok {
+	if value, ok := f.lru.Get(key); ok {
 		f.mux.Unlock()
-		value, err := v()
-		return value, true, err
+		return value, true, nil
 	}
 
-	v := sync.OnceValues(fn)
-	f.cache[key] = v
-
-	// Unlock before calling the function to avoid holding the lock for a potentially long time.
+	entry, hit := f.flights[key]
+	if !hit {
+		entry = &flightCacheEntry[V]{load: sync.OnceValues(fn)}
+		f.flights[key] = entry
+	}
 	f.mux.Unlock()
 
-	val, err := v()
-	if err != nil {
-		f.Forget(key)
+	value, err := entry.load()
+
+	f.mux.Lock()
+	if current := f.flights[key]; current == entry {
+		delete(f.flights, key)
+		if err == nil {
+			f.lru.Add(key, value)
+		}
 	}
-	return val, false, err
+	f.mux.Unlock()
+
+	return value, hit, err
 }
 
 // Forget removes the given key from the cache.
 func (f *flightCache[K, V]) Forget(key K) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
-	delete(f.cache, key)
+	f.lru.Remove(key)
+	delete(f.flights, key)
 }
 
 // ForgetFunc removes all keys for which fn returns true.
 func (f *flightCache[K, V]) ForgetFunc(fn func(K) bool) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
-	for k := range f.cache {
+	for _, k := range f.lru.Keys() {
 		if fn(k) {
-			delete(f.cache, k)
+			f.lru.Remove(k)
+		}
+	}
+	for k := range f.flights {
+		if fn(k) {
+			delete(f.flights, k)
 		}
 	}
 }
@@ -103,6 +121,8 @@ type Cache struct {
 
 	discoverKeys *flightCache[string, []Key]
 }
+
+const discoverKeysCacheMaxEntries = 64
 
 // NewCache returns a new Cache, which allows us to persist the results of HEAD requests
 // for a given URL across multiple builds. This is generally desirable when building many images
@@ -119,7 +139,7 @@ func NewCache(etag bool) *Cache {
 	c := &Cache{
 		headFlight:   &singleflight.Group{},
 		getFlight:    &singleflight.Group{},
-		discoverKeys: newFlightCache[string, []Key](),
+		discoverKeys: newFlightCache[string, []Key](discoverKeysCacheMaxEntries),
 	}
 
 	if etag {
