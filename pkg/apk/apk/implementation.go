@@ -305,8 +305,11 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 			return fmt.Errorf("error opening base directory %s: %w", e.path, err)
 		case !stat.IsDir():
 			return fmt.Errorf("base directory %s is not a directory", e.path)
-		case stat.Mode().Perm() != e.perms:
-			return fmt.Errorf("base directory %s has incorrect permissions: %o", e.path, stat.Mode().Perm())
+		// Compare every non-type bit, not just Perm(): /tmp is expected to be
+		// sticky, and Perm() masks fs.ModeSticky off, so the two could never
+		// be equal.
+		case stat.Mode()&^fs.ModeType != e.perms:
+			return fmt.Errorf("base directory %s has incorrect permissions: %s, expected %s", e.path, stat.Mode()&^fs.ModeType, e.perms)
 		}
 	}
 	for _, e := range initDirectories {

@@ -216,16 +216,37 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 		case tar.TypeDir:
 			// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
 			// otherwise, we need to create the directory.
-			if fi, err := a.fs.Stat(header.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			// Whether it already exists also decides if we get to set its
+			// metadata below, so keep the error from this one Stat.
+			existing, statErr := a.fs.Stat(header.Name)
+			if statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
 				if target, err := a.fs.Readlink(header.Name); err == nil {
-					if fi, err = a.fs.Stat(target); err == nil && fi.IsDir() {
+					if fi, err := a.fs.Stat(target); err == nil && fi.IsDir() {
 						// "break" rather than "continue", so that any handling outside of this switch statement is processed
 						break
 					}
 				}
 			}
-			if err := a.fs.MkdirAll(header.Name, header.FileInfo().Mode().Perm()); err != nil {
+			mode := header.FileInfo().Mode()
+			if err := a.fs.MkdirAll(header.Name, mode.Perm()); err != nil {
 				return nil, fmt.Errorf("error creating directory %s: %w", header.Name, err)
+			}
+			if statErr != nil {
+				// MkdirAll carries only permission bits, so setuid/setgid/sticky
+				// need a separate Chmod. Restrict both of these to directories we
+				// just created: InitDB creates /tmp as 1777 before any package
+				// installs, and packages ship a tmp header without the sticky bit.
+				//
+				// Chown comes first, as it must for a regular file (see below).
+				// Directories are exempt from that clearing, but the two paths
+				// disagreeing on the order would invite a cleanup that breaks
+				// the one where it matters.
+				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
+					return nil, fmt.Errorf("error setting owner on directory %s: %w", header.Name, err)
+				}
+				if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
+					return nil, fmt.Errorf("error setting mode on directory %s: %w", header.Name, err)
+				}
 			}
 			// xattrs
 			for k, v := range header.PAXRecords {
@@ -246,6 +267,34 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 
 			if installed {
 				a.installedFiles[header.Name] = pkg
+
+				// Nothing on this path applies the header's ownership, so
+				// without this every installed file comes out 0:0 — which for a
+				// setgid binary means setgid to root rather than to the group
+				// the package asked for.
+				//
+				// Chown MUST come before Chmod, and the order is load-bearing:
+				// chown(2) on a regular file clears setuid/setgid, for root as
+				// well, so chowning after restoring those bits would drop them
+				// again on any filesystem that writes through to disk. The
+				// in-memory overrides would still say otherwise, which is what
+				// makes the loss silent. TestInstallAPKFilesMetadataOrder pins
+				// this.
+				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
+					return nil, fmt.Errorf("error setting owner on %s: %w", header.Name, err)
+				}
+				// The mode passed to OpenFile only reaches the in-memory
+				// metadata; an on-disk write drops setuid/setgid/sticky, both
+				// because *os.Root refuses them in OpenFile and because Linux
+				// clears them on write for unprivileged processes. Chmod after
+				// the content is written, and only when there is something
+				// beyond the permission bits to restore.
+				mode := header.FileInfo().Mode()
+				if mode&^fs.ModePerm != 0 {
+					if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
+						return nil, fmt.Errorf("error setting mode on %s: %w", header.Name, err)
+					}
+				}
 
 				if err := a.fs.Chtimes(header.Name, header.AccessTime, header.ModTime); err != nil {
 					return nil, fmt.Errorf("chtimes for %s: %w", header.Name, err)

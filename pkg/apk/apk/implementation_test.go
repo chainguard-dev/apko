@@ -1033,3 +1033,25 @@ func TestDiscoverKeysRSA(t *testing.T) {
 	require.Len(t, keys, 1)
 	require.Equal(t, "rsa-test.rsa.pub", keys[0].ID)
 }
+
+// TestInitDBBaseDirectoryPerms covers the base-directory permission check
+// against a filesystem where the directories already exist, which is the only
+// case that reaches the comparison.
+func TestInitDBBaseDirectoryPerms(t *testing.T) {
+	t.Run("sticky tmp accepted", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		require.NoError(t, src.Mkdir("/tmp", fs.ModeSticky|0o777))
+		apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		require.NoError(t, apk.InitDB(t.Context()))
+	})
+
+	t.Run("non-sticky tmp rejected", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		require.NoError(t, src.Mkdir("/tmp", 0o777))
+		apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(t.Context())
+		require.ErrorContains(t, err, "base directory /tmp has incorrect permissions")
+	})
+}

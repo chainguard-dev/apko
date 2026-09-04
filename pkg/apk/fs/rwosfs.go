@@ -166,18 +166,37 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 // resolves against (Lstat reads them directly, Stat takes Mode() from them),
 // so an entry seeded as the wrong type is reported as the wrong type from then
 // on. readlink resolves a symlink's target through the sandboxed root.
+//
+// The same goes for the mode: seeding only Perm() would report a sticky
+// directory or a setgid binary already on disk without those bits, so
+// directories and regular files carry every non-type bit over.
+//
+// Mode and ownership have to be seeded together. A node seeded setuid but
+// left at the default uid 0 is worse than one with no setuid at all: a tree
+// holding a setuid file owned by an unprivileged user would serialize into an
+// image as setuid *root*. So the owner comes from the same Sys() as the mode,
+// and when it cannot be determined setuid/setgid are dropped instead.
 func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) (string, error)) error {
 	mode := fi.Mode()
-	perm := mode.Perm()
+	uid, gid, haveOwner := ownerFromInfo(fi)
+	seedMode := mode &^ fs.ModeType
+	if !haveOwner {
+		seedMode &^= fs.ModeSetuid | fs.ModeSetgid
+	}
+
 	switch {
-	case mode.IsDir():
-		return f.overrides.Mkdir(path, os.ModeDir|perm)
 	case mode&fs.ModeSymlink != 0:
+		// Handled without ownership: memFS.getNode resolves the final path
+		// component, so a Chown here would retarget the link's target.
 		target, err := readlink(path)
 		if err != nil {
 			return err
 		}
 		return f.overrides.Symlink(target, path)
+	case mode.IsDir():
+		if err := f.overrides.Mkdir(path, os.ModeDir|seedMode); err != nil {
+			return err
+		}
 	case mode&fs.ModeCharDevice != 0:
 		// Must be a bit test: Go reports a character device as
 		// ModeDevice|ModeCharDevice (os.Lstat sets both), so comparing
@@ -187,16 +206,42 @@ func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) 
 		if err != nil {
 			return err
 		}
-		return f.overrides.Mknod(path, unix.S_IFCHR|uint32(perm), dev)
+		// Mknod takes the unix encoding, where the special bits are numbered
+		// differently and mean nothing on a device node anyway.
+		if err := f.overrides.Mknod(path, unix.S_IFCHR|uint32(mode.Perm()), dev); err != nil {
+			return err
+		}
 	default:
 		// Everything else — regular files, and the block devices, FIFOs and
 		// sockets the memFS overrides cannot represent — becomes an empty
 		// regular file whose content is served from disk.
-		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, perm)
+		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, seedMode)
 		if memFile != nil {
 			_ = memFile.Close()
 		}
-		return err
+		if err != nil {
+			return err
+		}
+	}
+
+	if !haveOwner {
+		return nil
+	}
+	return f.overrides.Chown(path, uid, gid)
+}
+
+// ownerFromInfo extracts the owning uid and gid from a FileInfo's Sys(). The
+// walk that seeds a dirFS yields *syscall.Stat_t; callers holding a value from
+// x/sys/unix yield *unix.Stat_t. Anything else — a FileInfo synthesized by a
+// memFS, say — has no owner to report.
+func ownerFromInfo(fi fs.FileInfo) (uid, gid int, ok bool) {
+	switch st := fi.Sys().(type) {
+	case *syscall.Stat_t:
+		return int(st.Uid), int(st.Gid), true
+	case *unix.Stat_t:
+		return int(st.Uid), int(st.Gid), true
+	default:
+		return 0, 0, false
 	}
 }
 
