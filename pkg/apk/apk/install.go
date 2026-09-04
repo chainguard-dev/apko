@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"slices"
 	"strings"
@@ -175,6 +176,29 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 	return true, nil
 }
 
+// checkOwner rejects a header whose uid or gid does not fit a uint32.
+// archive/tar decodes PAX and GNU base-256 numbers into an int, so a crafted
+// APK can carry -1 or 2^32 in these fields. Everything downstream that stores
+// an owner, EROFS inodes included, holds a uint32, where those become
+// 4294967295 and 0 -- a root-owned file the package never declared, and with
+// setuid set, a root shell.
+//
+// The int64 casts are what let this compile where int is 32 bits (goreleaser
+// builds linux/386): math.MaxUint32 is an untyped constant that overflows such
+// an int. On those platforms the upper bound is unreachable anyway, since
+// tar.Header.Uid cannot hold more than MaxInt32 and archive/tar's own Atoi
+// rejects the larger value first; the cast is not an enforced guarantee that
+// every uint32 owner round-trips there.
+func checkOwner(h *tar.Header) error {
+	if h.Uid < 0 || int64(h.Uid) > math.MaxUint32 {
+		return fmt.Errorf("invalid uid %d for %s: must be between 0 and %d", h.Uid, h.Name, uint32(math.MaxUint32))
+	}
+	if h.Gid < 0 || int64(h.Gid) > math.MaxUint32 {
+		return fmt.Errorf("invalid gid %d for %s: must be between 0 and %d", h.Gid, h.Name, uint32(math.MaxUint32))
+	}
+	return nil
+}
+
 // installAPKFiles install the files from the APK and return the list of installed files
 // and their permissions. Returns a tar.Header because it is a convenient existing
 // struct that has all of the fields we need.
@@ -230,6 +254,10 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 		}
 		// whatever it is now, it is in the data section
 		startedDataSection = true
+
+		if err := checkOwner(header); err != nil {
+			return nil, err
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -435,6 +463,15 @@ func (a *APK) doLazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, ent
 		}
 		// whatever it is now, it is in the data section
 		startedDataSection = true
+
+		// Same check as the streaming path. memFS.WriteHeader happens not to
+		// copy the header's owner onto the node today, but the headers returned
+		// here go straight to AddInstalledPackage, which writes them into the
+		// installed database, and anything that wires ownership through -- the
+		// natural completion of the mode/ownership work -- lands on a uint32.
+		if err := checkOwner(&hdr); err != nil {
+			return nil, err
+		}
 
 		installed, err := wh.WriteHeader(hdr, src, pkg)
 		if err != nil {

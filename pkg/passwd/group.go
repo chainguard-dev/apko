@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"strconv"
 	"strings"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -129,11 +128,11 @@ func (ge *GroupEntry) Parse(line string) error {
 	ge.GroupName = parts[0]
 	ge.Password = parts[1]
 
-	gid, err := strconv.Atoi(parts[2])
+	gid, err := parseID("GID", parts[2])
 	if err != nil {
-		return fmt.Errorf("failed to parse UID %s", parts[2])
+		return err
 	}
-	ge.GID = uint32(gid)
+	ge.GID = gid
 
 	ge.Members = strings.Split(parts[3], ",")
 

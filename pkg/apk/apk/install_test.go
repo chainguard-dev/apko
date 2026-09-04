@@ -31,6 +31,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"text/template"
 
 	"github.com/stretchr/testify/assert"
@@ -570,6 +571,89 @@ func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
 	}
 }
 
+// idsAsIntOrSkip narrows a row's uid/gid to int, skipping the test where the
+// value does not fit: on a 32-bit platform archive/tar rejects it before this
+// code sees it.
+func idsAsIntOrSkip(t *testing.T, uid, gid int64) (int, int) {
+	t.Helper()
+	u, g := int(uid), int(gid)
+	if int64(u) != uid || int64(g) != gid {
+		t.Skipf("uid %d/gid %d are not representable in an int on this platform", uid, gid)
+	}
+	return u, g
+}
+
+// TestInstallAPKFilesRejectsOutOfRangeOwner: archive/tar reads PAX uid/gid
+// records into an int, so a crafted APK can declare an owner outside the
+// uint32 range. The EROFS writer truncates to uint32, turning 2^32 into 0, so a
+// 04755 file with uid 2^32 would come out setuid root. Such a header must fail
+// the install rather than reach any Chown.
+func TestInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
+	// uid/gid are int64 here, not int: 1<<32 is an untyped constant that does
+	// not fit an int where int is 32 bits, and goreleaser builds linux/386. The
+	// rows that overflow are skipped there rather than made to compile, because
+	// the scenario is unrepresentable in a tar.Header.Uid on that platform --
+	// archive/tar rejects the value before any of this code sees it.
+	cases := []struct {
+		name     string
+		uid, gid int64
+		errMatch string
+	}{
+		{"uid 2^32", 1 << 32, 0, "invalid uid 4294967296"},
+		{"negative uid", -1, 0, "invalid uid -1"},
+		{"gid 2^32", 0, 1 << 32, "invalid gid 4294967296"},
+		{"negative gid", 0, -1, "invalid gid -1"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip the test when the ids don't fit an int. On a 32-bit platform
+			// archive/tar rejects it before this code sees it.
+			uid, gid := idsAsIntOrSkip(t, tt.uid, tt.gid)
+
+			apk, src, err := testGetTestAPK()
+			require.NoError(t, err)
+
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			require.NoError(t, tw.WriteHeader(&tar.Header{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755}))
+			require.NoError(t, tw.WriteHeader(&tar.Header{Name: "usr/bin", Typeflag: tar.TypeDir, Mode: 0o755}))
+			content := []byte("#!/bin/sh\n")
+			require.NoError(t, tw.WriteHeader(&tar.Header{
+				Name:     "usr/bin/backdoor",
+				Typeflag: tar.TypeReg,
+				Mode:     0o4755,
+				Uid:      uid,
+				Gid:      gid,
+				Size:     int64(len(content)),
+			}))
+			_, err = tw.Write(content)
+			require.NoError(t, err)
+			require.NoError(t, tw.Close())
+
+			// Make sure the header really carries the out-of-range value and
+			// archive/tar did not clamp or reject it on the way in; otherwise
+			// this test would pass for the wrong reason.
+			tr := tar.NewReader(bytes.NewReader(buf.Bytes()))
+			for {
+				hdr, err := tr.Next()
+				require.NoError(t, err)
+				if hdr.Name == "usr/bin/backdoor" {
+					require.Equal(t, uid, hdr.Uid)
+					require.Equal(t, gid, hdr.Gid)
+					break
+				}
+			}
+
+			_, err = apk.installAPKFiles(context.Background(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMatch)
+
+			_, err = src.Stat("usr/bin/backdoor")
+			assert.ErrorIs(t, err, fs.ErrNotExist, "file with out-of-range owner must not be installed")
+		})
+	}
+}
+
 // TestInstallAPKFilesModesOnDisk is the same concern as
 // TestInstallAPKFilesModesAndOwnership, against a disk-backed filesystem.
 // Those strip setuid/setgid/sticky from the mode passed to MkdirAll and
@@ -680,5 +764,48 @@ func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 	for _, name := range []string{"postdrop", "var/spool"} {
 		assert.Equal(t, []string{"chown", "chmod"}, rec.ops(name),
 			"metadata calls for %s must be chown then chmod", name)
+	}
+}
+
+// TestLazilyInstallAPKFilesRejectsOutOfRangeOwner is the companion to
+// TestInstallAPKFilesRejectsOutOfRangeOwner on the path apko build actually
+// takes: installPackage dispatches to lazilyInstallAPKFiles whenever the
+// filesystem is a WriteHeaderer, which pkg/tarfs is, and which is what
+// apko build, apko publish and apko build-minirootfs all construct. The
+// headers this returns go on to AddInstalledPackage, so an out-of-range owner
+// has to be refused before the entry is written rather than recorded and
+// rejected later by the read side.
+func TestLazilyInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
+	cases := []struct {
+		name     string
+		uid, gid int64
+		errMatch string
+	}{
+		{"uid 2^32", 1 << 32, 0, "invalid uid 4294967296"},
+		{"negative uid", -1, 0, "invalid uid -1"},
+		{"gid 2^32", 0, 1 << 32, "invalid gid 4294967296"},
+		{"negative gid", 0, -1, "invalid gid -1"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip the test when the ids don't fit an int. On a 32-bit platform
+			// archive/tar rejects it before this code sees it.
+			uid, gid := idsAsIntOrSkip(t, tt.uid, tt.gid)
+
+			apk, _, err := testGetTestAPK()
+			require.NoError(t, err)
+
+			entries := []tar.Header{
+				{Name: "usr", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/bin", Typeflag: tar.TypeDir, Mode: 0o755},
+				{Name: "usr/bin/backdoor", Typeflag: tar.TypeReg, Mode: 0o4755, Uid: uid, Gid: gid, Size: 10},
+			}
+
+			wh := &recordingWriteHeaderer{}
+			_, err = apk.lazilyInstallAPKFiles(t.Context(), wh, entries, fstest.MapFS{}, &Package{Name: "backdoor"})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMatch)
+			assert.NotContains(t, wh.written, "usr/bin/backdoor", "entry with out-of-range owner must not be written")
+		})
 	}
 }

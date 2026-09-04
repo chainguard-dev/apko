@@ -58,6 +58,43 @@ func TestParser(t *testing.T) {
 	assert.True(t, found_nobody, "passwd file should contain the nobody user")
 }
 
+// TestParseIDRange pins the uid/gid range check. Before it, 2^32 parsed and
+// truncated to 0 and -1 wrapped to 4294967295, so a passwd line from a
+// package could turn into a root entry in the generated /etc/passwd.
+func TestParseIDRange(t *testing.T) {
+	cases := []struct {
+		name     string
+		line     string
+		uid, gid uint32
+		errMatch string
+	}{
+		{"control", "nginx:x:100:101:nginx:/var/lib/nginx:/sbin/nologin", 100, 101, ""},
+		{"max uid and gid", "big:x:4294967295:4294967295::/:/sbin/nologin", 4294967295, 4294967295, ""},
+		{"uid 2^32", "backdoor:x:4294967296:100:svc:/var/lib/svc:/sbin/nologin", 0, 0, `UID "4294967296"`},
+		{"negative uid", "backdoor:x:-1:100:svc:/var/lib/svc:/sbin/nologin", 0, 0, `UID "-1"`},
+		{"gid 2^32", "backdoor:x:100:4294967296:svc:/var/lib/svc:/sbin/nologin", 0, 0, `GID "4294967296"`},
+		{"negative gid", "backdoor:x:100:-1:svc:/var/lib/svc:/sbin/nologin", 0, 0, `GID "-1"`},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			ue := UserEntry{}
+			err := ue.Parse(tt.line)
+			if tt.errMatch != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMatch)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.uid, ue.UID)
+			assert.Equal(t, tt.gid, ue.GID)
+
+			w := &bytes.Buffer{}
+			require.NoError(t, ue.Write(w))
+			assert.Equal(t, tt.line+"\n", w.String(), "entry should round-trip unchanged")
+		})
+	}
+}
+
 func TestWriter(t *testing.T) {
 	fsys := apkfs.NewMemFS()
 	passwd, err := os.ReadFile("testdata/passwd")
