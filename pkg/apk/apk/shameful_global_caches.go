@@ -16,15 +16,10 @@ package apk
 
 import (
 	"context"
-	"fmt"
 	"maps"
-	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-
-	lru "github.com/hashicorp/golang-lru/v2"
 
 	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
@@ -36,63 +31,51 @@ import (
 // for them anymore.
 const maxResolverCacheEntries = 16
 
-// indexIdentity returns a key that is unique to the index object itself. A
-// NamedIndex is immutable, so anything derived from a specific set of index
-// objects stays valid for as long as those objects are around. Remote indexes
-// are deduplicated by (url, etag) in globalIndexCache, so the same generation
-// always yields the same object.
-func indexIdentity(idx NamedIndex) string {
-	if v := reflect.ValueOf(idx); v.Kind() == reflect.Pointer {
-		return strconv.FormatUint(uint64(v.Pointer()), 16)
-	}
-	return fmt.Sprintf("%T:%s:%s", idx, idx.Name(), idx.Source())
-}
-
-func indexesKey(indexes []NamedIndex) string {
-	ids := make([]string, len(indexes))
-	for i, idx := range indexes {
-		ids[i] = indexIdentity(idx)
-	}
-	return strings.Join(ids, "\x00")
-}
-
-// lruCache is a mutex-guarded LRU keyed by a joined index identity. The lock
-// is held across lookup and fill so concurrent requests for the same
-// combination build it once.
+// lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
+// objects are immutable and remote generations are deduplicated by (url, etag)
+// in globalIndexCache, so comparing the index objects themselves is a complete
+// key. The lock is held across lookup and fill so concurrent requests for the
+// same combination build it once.
 type lruCache[V any] struct {
 	sync.Mutex
-	lru *lru.Cache[string, V]
+	max     int
+	entries []lruEntry[V] // most recently used first
+}
+
+type lruEntry[V any] struct {
+	indexes []NamedIndex
+	val     V
 }
 
 func newLRUCache[V any](size int) *lruCache[V] {
-	c, err := lru.New[string, V](size)
-	if err != nil {
-		panic(err) // only fails for a non-positive size
-	}
-	return &lruCache[V]{lru: c}
+	return &lruCache[V]{max: size}
 }
 
 // getOrFill returns the cached value for indexes, computing and inserting it
 // on a miss. The boolean reports whether the value was already cached.
 func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
-	key := indexesKey(indexes)
-
 	c.Lock()
 	defer c.Unlock()
 
-	if val, ok := c.lru.Get(key); ok {
-		return val, true
+	for i, e := range c.entries {
+		if slices.Equal(e.indexes, indexes) {
+			c.entries = slices.Insert(slices.Delete(c.entries, i, i+1), 0, e)
+			return e.val, true
+		}
 	}
 
 	val := fill()
-	c.lru.Add(key, val)
+	c.entries = slices.Insert(c.entries, 0, lruEntry[V]{indexes: slices.Clone(indexes), val: val})
+	if len(c.entries) > c.max {
+		c.entries = c.entries[:c.max:c.max]
+	}
 	return val, false
 }
 
 func (c *lruCache[V]) len() int {
 	c.Lock()
 	defer c.Unlock()
-	return c.lru.Len()
+	return len(c.entries)
 }
 
 // It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
