@@ -39,7 +39,7 @@ const maxResolverCacheEntries = 16
 type lruCache[V any] struct {
 	sync.Mutex
 	max     int
-	entries []lruEntry[V] // most recently used first
+	entries []lruEntry[V] // least recently used first
 }
 
 type lruEntry[V any] struct {
@@ -59,15 +59,18 @@ func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
 
 	for i, e := range c.entries {
 		if slices.Equal(e.indexes, indexes) {
-			c.entries = slices.Insert(slices.Delete(c.entries, i, i+1), 0, e)
+			// Move the hit to the most recently used end.
+			c.entries = slices.Delete(c.entries, i, i+1)
+			c.entries = append(c.entries, e)
 			return e.val, true
 		}
 	}
 
 	val := fill()
-	c.entries = slices.Insert(c.entries, 0, lruEntry[V]{indexes: slices.Clone(indexes), val: val})
+	c.entries = append(c.entries, lruEntry[V]{indexes: slices.Clone(indexes), val: val})
 	if len(c.entries) > c.max {
-		c.entries = c.entries[:c.max:c.max]
+		// Drop the least recently used entry.
+		c.entries = slices.Delete(c.entries, 0, 1)
 	}
 	return val, false
 }
