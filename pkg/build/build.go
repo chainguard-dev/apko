@@ -279,6 +279,10 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 	}
 	bc.resolveImageConfiguration()
 
+	if err := bc.ic.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
 	return &bc.o, &bc.ic, nil
 }
 
