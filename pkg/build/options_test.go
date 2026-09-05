@@ -129,3 +129,12 @@ func TestWithFormatInvalid(t *testing.T) {
 		t.Error("NewOptions(WithFormat(\"squashfs\")) = nil error, want an error")
 	}
 }
+
+func TestNewOptionsValidatesImageConfiguration(t *testing.T) {
+	if _, _, err := NewOptions(WithImageConfiguration(types.ImageConfiguration{
+		Format: types.LayerFormat("squashfs"),
+	})); err == nil {
+		t.Error("NewOptions(WithImageConfiguration(invalid)) = nil error, want an error")
+	}
+}
+
