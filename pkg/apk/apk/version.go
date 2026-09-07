@@ -36,13 +36,11 @@ import (
 //   2. allows pulling in dependencies for the tagged package from the tagged repository (though it prefers to use untagged repositories to satisfy dependencies if possible)
 
 var (
-	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
-	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
+	versionRegex = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
 )
 
 func init() {
 	versionRegex.Longest()
-	packageNameRegex.Longest()
 }
 
 type packageVersionPreModifier int
@@ -367,8 +365,13 @@ func (p ParsedConstraint) SatisfiedBy(v Version) (bool, error) {
 	return p.dep.satisfies(v, pv), nil
 }
 
-var endsWithReleaseStr = regexp.MustCompile(`-r\d+$`)
-
+// ResolvePackageNameVersionPin splits a dependency or provides string such as
+// "name>=1.2.3-r0@pin" into its name, comparison operator, version and pin.
+//
+// The accepted shape is a name made of any characters except "@=><~", then
+// optionally an operator run followed by a version that may not contain "@",
+// then optionally "@" and an alphanumeric pin. Anything that does not fit is
+// returned whole as the name with no version constraint.
 func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 	// Due to https://github.com/chainguard-dev/melange/pull/1871,
 	// we have to treat shared library depends/provides
@@ -384,49 +387,113 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 	// versioned depends/provides containing the package version.
 	if strings.HasPrefix(pkgName, "so:") {
 		onlyPkgName, pkgVersion, found := strings.Cut(pkgName, "=")
-		if found && !endsWithReleaseStr.MatchString(pkgVersion) {
+		if found && !hasReleaseSuffix(pkgVersion) {
 			pkgName = onlyPkgName + "=0." + pkgVersion
 		}
 	}
 
-	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
-	if len(parts) == 0 || len(parts[0]) < 2 {
-		return ParsedConstraint{
-			Name: pkgName,
-			dep:  versionAny,
-		}
-	}
-	// layout: [full match, name, =version, =|>|<, version, @pin, pin]
-	p := ParsedConstraint{
-		Name:    parts[0][1],
-		Version: parts[0][4],
-		pin:     parts[0][6],
-		dep:     versionAny,
-	}
-
-	matcher := parts[0][3]
-	if matcher != "" {
-		// we have an equal
-		switch matcher {
-		case "=":
-			p.dep = versionEqual
-		case ">":
-			p.dep = versionGreater
-		case "<":
-			p.dep = versionLess
-		case ">=":
-			p.dep = versionGreaterEqual
-		case "<=":
-			p.dep = versionLessEqual
-		case "~":
-			p.dep = versionTilde
-		case "=~":
-			p.dep = versionTilde
-		default:
-			p.dep = versionAny
-		}
+	p, ok := ParseConstraint(pkgName)
+	if !ok {
+		return ParsedConstraint{Name: pkgName, dep: versionAny}
 	}
 	return p
+}
+
+// constraintName returns ResolvePackageNameVersionPin(pkgName).Name without
+// allocating for the common shapes. The shared library tweak above only
+// rewrites the version, so the name is unaffected unless parsing fails, in
+// which case the full function decides.
+func constraintName(pkgName string) string {
+	if p, ok := ParseConstraint(pkgName); ok {
+		return p.Name
+	}
+	return ResolvePackageNameVersionPin(pkgName).Name
+}
+
+// ParseConstraint parses pkgName like ResolvePackageNameVersionPin but without
+// the shared library tweak, and reports false instead of falling back to the
+// whole string when pkgName does not fit the accepted shape.
+func ParseConstraint(pkgName string) (ParsedConstraint, bool) {
+	// A version never contains "@", so everything after the first one is the pin.
+	head, pin, hasPin := strings.Cut(pkgName, "@")
+	if hasPin && !isAlphanumeric(pin) {
+		return ParsedConstraint{}, false
+	}
+
+	// The name is everything before the first operator character.
+	nameEnd := strings.IndexAny(head, "=><~")
+	if nameEnd < 0 {
+		nameEnd = len(head)
+	}
+	if nameEnd == 0 {
+		return ParsedConstraint{}, false
+	}
+	p := ParsedConstraint{Name: head[:nameEnd], dep: versionAny, pin: pin}
+
+	// What remains is an operator run followed by a non-empty version. If the
+	// run reaches the end, its last character is the version.
+	constraint := head[nameEnd:]
+	if constraint == "" {
+		return p, true
+	}
+	opEnd := 1
+	for opEnd < len(constraint)-1 && isOperator(constraint[opEnd]) {
+		opEnd++
+	}
+	if opEnd == len(constraint) {
+		return ParsedConstraint{}, false
+	}
+	p.dep = parseOperator(constraint[:opEnd])
+	p.Version = constraint[opEnd:]
+	return p, true
+}
+
+func parseOperator(op string) versionDependency {
+	switch op {
+	case "=":
+		return versionEqual
+	case ">":
+		return versionGreater
+	case "<":
+		return versionLess
+	case ">=":
+		return versionGreaterEqual
+	case "<=":
+		return versionLessEqual
+	case "~", "=~":
+		return versionTilde
+	default:
+		return versionAny
+	}
+}
+
+func isOperator(c byte) bool {
+	return c == '=' || c == '>' || c == '<' || c == '~'
+}
+
+// isAlphanumeric reports whether s is non-empty and made of ASCII letters and digits.
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isLetter := ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+		isDigit := '0' <= c && c <= '9'
+		if !isLetter && !isDigit {
+			return false
+		}
+	}
+	return true
+}
+
+// hasReleaseSuffix reports whether s ends in "-r" followed by one or more digits.
+func hasReleaseSuffix(s string) bool {
+	end := len(s)
+	for end > 0 && '0' <= s[end-1] && s[end-1] <= '9' {
+		end--
+	}
+	return end < len(s) && strings.HasSuffix(s[:end], "-r")
 }
 
 type filterOptions struct {
@@ -513,7 +580,7 @@ func filterPackages(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string,
 		}
 
 		for _, prov := range pkg.Provides {
-			version := cachedResolvePackageNameVersionPin(prov).Version
+			version := ResolvePackageNameVersionPin(prov).Version
 			if version == "" {
 				continue
 			}

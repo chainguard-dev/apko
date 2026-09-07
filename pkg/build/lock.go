@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -132,15 +131,15 @@ func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, map[typ
 			r.versions[pkg.Name] = pkg.Version
 
 			for _, prov := range pkg.Provides {
-				parts := packageNameRegex.FindAllStringSubmatch(prov, -1)
-				if len(parts) == 0 || len(parts[0]) < 2 {
+				constraint, ok := apk.ParseConstraint(prov)
+				if !ok {
 					continue
 				}
 				ps, ok := r.provided[pkg.Name]
 				if !ok {
 					ps = sets.New[string]()
 				}
-				ps.Insert(parts[0][1])
+				ps.Insert(constraint.Name)
 				r.provided[pkg.Name] = ps
 			}
 		}
@@ -346,6 +345,3 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 
 	return byArch, nil, nil
 }
-
-// Copied from go-apk's version.go
-var packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
