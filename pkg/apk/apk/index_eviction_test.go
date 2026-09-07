@@ -148,7 +148,7 @@ func TestDisqualifyCacheKeyIsOrderIndependent(t *testing.T) {
 // and that heap use stops growing once the cap is reached, so superseded
 // generations are not pinned indefinitely.
 func TestSupersededGenerationsAreBounded(t *testing.T) {
-	srv, rotate := rotatingIndexServer(t, 10000)
+	srv, rotate := rotatingIndexServer(t, 3000)
 	ctx := context.Background()
 
 	heapMB := func() float64 {

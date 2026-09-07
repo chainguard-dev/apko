@@ -30,13 +30,13 @@ import (
 // generations that in-flight resolutions still request stay cached and age
 // out once enough newer combinations have been inserted. Every entry pins a
 // whole index generation, so raising this trades memory for hit rate.
-const maxResolverCacheEntries = 16
+const maxResolverCacheEntries = 64
 
 // lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
 // objects are immutable and remote generations are deduplicated by (url, etag)
 // in globalIndexCache, so comparing the index objects themselves is a complete
-// key. The lock is held across lookup and fill so concurrent requests for the
-// same combination build it once.
+// key. Entries hold a once-initialized value so the lock covers only the lookup
+// and concurrent requests for the same combination still build it once.
 type lruCache[V any] struct {
 	sync.Mutex
 	max     int
@@ -45,7 +45,7 @@ type lruCache[V any] struct {
 
 type lruEntry[V any] struct {
 	indexes []NamedIndex
-	val     V
+	val     func() V
 }
 
 func newLRUCache[V any](size int) *lruCache[V] {
@@ -55,6 +55,13 @@ func newLRUCache[V any](size int) *lruCache[V] {
 // getOrFill returns the cached value for indexes, computing and inserting it
 // on a miss. The boolean reports whether the value was already cached.
 func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
+	e, hit := c.entry(indexes, fill)
+	return e.val(), hit
+}
+
+// entry returns the cache entry for indexes, creating it on a miss. Building
+// the value happens outside the lock when the caller invokes e.val.
+func (c *lruCache[V]) entry(indexes []NamedIndex, fill func() V) (lruEntry[V], bool) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -63,17 +70,17 @@ func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
 			// Move the hit to the most recently used end.
 			c.entries = slices.Delete(c.entries, i, i+1)
 			c.entries = append(c.entries, e)
-			return e.val, true
+			return e, true
 		}
 	}
 
-	val := fill()
-	c.entries = append(c.entries, lruEntry[V]{indexes: slices.Clone(indexes), val: val})
+	e := lruEntry[V]{indexes: slices.Clone(indexes), val: sync.OnceValue(fill)}
+	c.entries = append(c.entries, e)
 	if len(c.entries) > c.max {
 		// Drop the least recently used entry.
 		c.entries = slices.Delete(c.entries, 0, 1)
 	}
-	return val, false
+	return e, false
 }
 
 func (c *lruCache[V]) len() int {
