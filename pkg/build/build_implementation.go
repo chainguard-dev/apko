@@ -64,6 +64,12 @@ var pgzipPool = sync.Pool{
 func pooledGzipWriter(w io.Writer) *gzip.Writer {
 	zw := pgzipPool.Get().(*gzip.Writer)
 	zw.Reset(w)
+	// Reset reverts the writer to pgzip's default concurrency of
+	// GOMAXPROCS(0) blocks, so the cap has to be reapplied on every reuse.
+	if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+		// This should never happen.
+		panic(fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err))
+	}
 	return zw
 }
 
