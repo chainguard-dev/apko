@@ -415,7 +415,7 @@ type layer struct {
 	desc         *v1.Descriptor
 }
 
-func (l *layer) compress() error {
+func (l *layer) compress() (rerr error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -433,6 +433,11 @@ func (l *layer) compress() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := out.Close(); err != nil && rerr == nil {
+			rerr = err
+		}
+	}()
 
 	buf := pooledBufioWriter(out)
 	defer bufioPool.Put(buf)
@@ -472,7 +477,7 @@ func (l *layer) compress() error {
 
 	l.compressed = l.uncompressed + ".gz"
 
-	return out.Close()
+	return nil
 }
 
 func (l *layer) DiffID() (v1.Hash, error) {
