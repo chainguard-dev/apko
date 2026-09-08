@@ -34,9 +34,8 @@ import (
 )
 
 type flightCache[K comparable, V any] struct {
-	mux     sync.Mutex
-	flights map[K]*flightCacheEntry[V]
-	lru     *simplelru.LRU[K, V]
+	mux sync.Mutex
+	lru *simplelru.LRU[K, *flightCacheEntry[V]]
 }
 
 type flightCacheEntry[V any] struct {
@@ -45,8 +44,7 @@ type flightCacheEntry[V any] struct {
 
 func newFlightCache[K comparable, V any](maxEntries int) *flightCache[K, V] {
 	return &flightCache[K, V]{
-		flights: make(map[K]*flightCacheEntry[V]),
-		lru:     newLRU[K, V](maxEntries, nil),
+		lru: newLRU[K, *flightCacheEntry[V]](maxEntries, nil),
 	}
 }
 
@@ -64,28 +62,21 @@ func newLRU[K comparable, V any](maxEntries int, onEvict simplelru.EvictCallback
 // whether the key was already present, including an in-flight call.
 func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, bool, error) {
 	f.mux.Lock()
-	if value, ok := f.lru.Get(key); ok {
-		f.mux.Unlock()
-		return value, true, nil
-	}
-
-	entry, hit := f.flights[key]
+	entry, hit := f.lru.Get(key)
 	if !hit {
 		entry = &flightCacheEntry[V]{load: sync.OnceValues(fn)}
-		f.flights[key] = entry
+		f.lru.Add(key, entry)
 	}
 	f.mux.Unlock()
 
 	value, err := entry.load()
-
-	f.mux.Lock()
-	if current := f.flights[key]; current == entry {
-		delete(f.flights, key)
-		if err == nil {
-			f.lru.Add(key, value)
+	if err != nil {
+		f.mux.Lock()
+		if current, ok := f.lru.Peek(key); ok && current == entry {
+			f.lru.Remove(key)
 		}
+		f.mux.Unlock()
 	}
-	f.mux.Unlock()
 
 	return value, hit, err
 }
@@ -95,7 +86,6 @@ func (f *flightCache[K, V]) Forget(key K) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	f.lru.Remove(key)
-	delete(f.flights, key)
 }
 
 // ForgetFunc removes all keys for which fn returns true.
@@ -105,11 +95,6 @@ func (f *flightCache[K, V]) ForgetFunc(fn func(K) bool) {
 	for _, k := range f.lru.Keys() {
 		if fn(k) {
 			f.lru.Remove(k)
-		}
-	}
-	for k := range f.flights {
-		if fn(k) {
-			delete(f.flights, k)
 		}
 	}
 }
