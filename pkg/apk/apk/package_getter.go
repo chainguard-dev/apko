@@ -101,7 +101,7 @@ type PackageGetter interface {
 	GetPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error)
 }
 
-const packageCacheMaxEntries = 256
+const packageCacheMaxEntries = 4096
 
 // globalApkCache is the shared in-memory singleflight cache used by DefaultPackageGetter.
 // This ensures deduplication of concurrent requests across all APK instances in a process.
