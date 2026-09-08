@@ -30,7 +30,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chainguard-dev/clog"
@@ -45,31 +44,32 @@ import (
 
 var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
 
+const indexCacheMaxEntries = 64
+
 type Signature struct {
 	KeyID           string
 	Signature       []byte
 	DigestAlgorithm crypto.Hash
 }
 
-// This is terrible but simpler than plumbing around a cache for now.
-// We just hold the parsed index in memory rather than re-parsing it every time,
-// which requires gunzipping, which is (somewhat) expensive.
-var globalIndexCache = &indexCache{
-	indexes:  newFlightCache[cacheKey, NamedIndex](),
-	modtimes: map[string]time.Time{},
-}
+// Parsing an index requires gunzipping and rebuilding its package structures,
+// so keep recently used indexes in memory.
+var globalIndexCache = newIndexCache(indexCacheMaxEntries)
 
 type cacheKey struct {
-	url  string
-	etag string // Only used for remote indexes.
+	url     string
+	etag    string    // Only used for remote indexes.
+	modtime time.Time // Only used for local indexes.
 }
 
 type indexCache struct {
 	indexes *flightCache[cacheKey, NamedIndex]
+}
 
-	// For local indexes.
-	sync.Mutex
-	modtimes map[string]time.Time
+func newIndexCache(maxEntries int) *indexCache {
+	return &indexCache{
+		indexes: newFlightCache[cacheKey, NamedIndex](maxEntries),
+	}
 }
 
 func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
@@ -146,25 +146,13 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 
 		return idx, err
 	} else {
-		i.Lock()
-		defer i.Unlock()
-
 		// We do expect local indexes to change, so we check modtimes.
 		stat, err := os.Stat(u)
 		if err != nil {
 			return nil, fmt.Errorf("stat: %w", err)
 		}
 
-		key := cacheKey{url: u}
-
-		// Evict the cached entry if the file has changed since we last saw it.
-		// On first access, ok is false and Do below handles the cache miss.
-		mod := stat.ModTime()
-		before, ok := i.modtimes[u]
-		if ok && mod.After(before) {
-			i.indexes.Forget(key)
-		}
-		i.modtimes[u] = mod
+		key := cacheKey{url: u, modtime: stat.ModTime()}
 
 		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			b, err := os.ReadFile(u)
@@ -178,6 +166,12 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
 		})
 		apkometrics.RecordIndexCacheAccess(cacheResult(hit))
+
+		// Remove cached generations of the same local index.
+		i.indexes.ForgetFunc(func(k cacheKey) bool {
+			return k.url == u && k.modtime != key.modtime
+		})
+
 		return idx, err
 	}
 }
