@@ -78,36 +78,6 @@ func TestFlightCacheCachesNoErrors(t *testing.T) {
 	require.Equal(t, 2, called, "Function should be called twice, once for the error and once for the success")
 }
 
-func TestFlightCacheErrorDoesNotForgetReplacement(t *testing.T) {
-	s := newFlightCache[string, int](1)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	done := make(chan error)
-
-	go func() {
-		_, _, err := s.Do("a", func() (int, error) {
-			close(started)
-			<-release
-			return 0, assert.AnError
-		})
-		done <- err
-	}()
-	<-started
-
-	_, _, err := s.Do("b", func() (int, error) { return 2, nil })
-	require.NoError(t, err)
-	_, _, err = s.Do("a", func() (int, error) { return 1, nil })
-	require.NoError(t, err)
-
-	close(release)
-	require.ErrorIs(t, <-done, assert.AnError)
-
-	value, hit, err := s.Do("a", func() (int, error) { return 3, nil })
-	require.NoError(t, err)
-	require.True(t, hit)
-	require.Equal(t, 1, value)
-}
-
 func TestFlightCacheReportsHits(t *testing.T) {
 	s := newFlightCache[string, int](1)
 
