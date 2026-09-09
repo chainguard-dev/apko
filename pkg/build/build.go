@@ -42,6 +42,7 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
@@ -413,6 +414,20 @@ type layer struct {
 	compressed   string
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
+	cacheCounted bool // first compression-cache lookup already recorded
+}
+
+// recordCacheAccess reports this layer's first compression-cache outcome.
+// Only the first lookup counts: once a layer has been compressed, compress()
+// short-circuits, so a later lookup saves nothing whether it hits or not.
+func (l *layer) recordCacheAccess(result apkometrics.CacheResult) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cacheCounted {
+		return
+	}
+	l.cacheCounted = true
+	apkometrics.RecordCompressionCacheAccess(result)
 }
 
 func (l *layer) compress() (rerr error) {
@@ -487,11 +502,13 @@ func (l *layer) DiffID() (v1.Hash, error) {
 func (l *layer) Digest() (v1.Hash, error) {
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
 		l.desc.Size = cachedDesc.Size
 		return l.desc.Digest, nil
 	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
 	if err := l.compress(); err != nil {
 		return v1.Hash{}, err
@@ -520,11 +537,13 @@ func (l *layer) Uncompressed() (io.ReadCloser, error) {
 func (l *layer) Size() (int64, error) {
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
 		l.desc.Size = cachedDesc.Size
 		return l.desc.Size, nil
 	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
 	if err := l.compress(); err != nil {
 		return 0, err

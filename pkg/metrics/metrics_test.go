@@ -30,6 +30,9 @@ func TestCacheAccesses(t *testing.T) {
 	RecordIndexCacheAccess(CacheResultHit)
 	RecordIndexCacheAccess(CacheResultMiss)
 	RecordResolverCacheAccess(CacheResultBypass)
+	RecordCompressionCacheAccess(CacheResultHit)
+	RecordCompressionCacheAccess(CacheResultMiss)
+	RecordCompressionCacheAccess(CacheResultMiss)
 
 	after := cacheValues(t, registry)
 	for key, value := range before {
@@ -37,12 +40,14 @@ func TestCacheAccesses(t *testing.T) {
 	}
 
 	require.Equal(t, map[string]float64{
-		"index/bypass":    0,
-		"index/hit":       2,
-		"index/miss":      1,
-		"resolver/bypass": 1,
-		"resolver/hit":    0,
-		"resolver/miss":   0,
+		"index/bypass":     0,
+		"index/hit":        2,
+		"index/miss":       1,
+		"resolver/bypass":  1,
+		"resolver/hit":     0,
+		"resolver/miss":    0,
+		"compression/hit":  1,
+		"compression/miss": 2,
 	}, after)
 }
 

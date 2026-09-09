@@ -18,8 +18,9 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 const (
-	cacheIndex    = "index"
-	cacheResolver = "resolver"
+	cacheIndex       = "index"
+	cacheResolver    = "resolver"
+	cacheCompression = "compression"
 )
 
 // CacheResult describes the outcome of a cache access.
@@ -45,6 +46,10 @@ func init() {
 			cacheAccesses.WithLabelValues(cache, string(result))
 		}
 	}
+	// The compression cache is always consulted, so it has no bypass result.
+	for _, result := range []CacheResult{CacheResultHit, CacheResultMiss} {
+		cacheAccesses.WithLabelValues(cacheCompression, string(result))
+	}
 }
 
 // Register registers APK metrics with registerer.
@@ -60,4 +65,11 @@ func RecordIndexCacheAccess(result CacheResult) {
 // RecordResolverCacheAccess records a package resolver cache access.
 func RecordResolverCacheAccess(result CacheResult) {
 	cacheAccesses.WithLabelValues(cacheResolver, string(result)).Inc()
+}
+
+// RecordCompressionCacheAccess records a diffID to descriptor cache access.
+// A hit means a layer avoided being compressed; only the first lookup per
+// layer is recorded, because later lookups are free either way.
+func RecordCompressionCacheAccess(result CacheResult) {
+	cacheAccesses.WithLabelValues(cacheCompression, string(result)).Inc()
 }
