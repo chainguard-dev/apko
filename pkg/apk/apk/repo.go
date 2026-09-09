@@ -33,8 +33,7 @@ import (
 )
 
 var (
-	parsedVersions    sync.Map // map[string]Version
-	parsedConstraints sync.Map // map[string]ParsedConstraint
+	parsedVersions sync.Map // map[string]Version
 )
 
 // NamedIndex an index that contains all of its packages,
@@ -272,7 +271,7 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	for _, pkgVersions := range allPkgs {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
-				name := cachedResolvePackageNameVersionPin(provide).Name
+				name := constraintName(provide)
 				pkgNameMap[name] = append(pkgNameMap[name], pkg)
 			}
 		}
@@ -314,7 +313,7 @@ func (p *PkgResolver) nextPackage(packages []string, dq map[*RepositoryPackage]s
 
 // Disqualify anything that provides "constraint". This is used for !foo style constraints.
 func (p *PkgResolver) disqualifyProviders(constraint string, dq map[*RepositoryPackage]string) {
-	parsed := cachedResolvePackageNameVersionPin(constraint)
+	parsed := ResolvePackageNameVersionPin(constraint)
 	providers, ok := p.nameMap[parsed.Name]
 	if !ok {
 		return
@@ -346,7 +345,7 @@ func (p *PkgResolver) conflictingVersion(constraint ParsedConstraint, conflict *
 	}
 
 	for _, confProv := range conflict.Provides {
-		confConstraint := cachedResolvePackageNameVersionPin(confProv)
+		confConstraint := ResolvePackageNameVersionPin(confProv)
 		if confConstraint.Name != constraint.Name {
 			// Not the constraint we're looking for.
 			continue
@@ -366,7 +365,7 @@ func (p *PkgResolver) conflictingVersion(constraint ParsedConstraint, conflict *
 // Disqualify anything that conflicts with the given pkg.
 func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*RepositoryPackage]string) {
 	for _, prov := range pkg.Provides {
-		constraint := cachedResolvePackageNameVersionPin(prov)
+		constraint := ResolvePackageNameVersionPin(prov)
 		providers, ok := p.nameMap[constraint.Name]
 		if !ok {
 			continue
@@ -405,7 +404,7 @@ func (p *PkgResolver) pick(pkg *RepositoryPackage) error {
 	p.selected[pkg.Name] = pkg
 
 	for _, prov := range pkg.Provides {
-		constraint := cachedResolvePackageNameVersionPin(prov)
+		constraint := ResolvePackageNameVersionPin(prov)
 		if conflict, ok := p.selected[constraint.Name]; ok {
 			return fmt.Errorf("selecting package %s conflicts with %s on %q", pkg.Filename(), conflict.Filename(), constraint.Name)
 		}
@@ -436,7 +435,7 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 			continue
 		}
 
-		parsed := cachedResolvePackageNameVersionPin(constraint)
+		parsed := ResolvePackageNameVersionPin(constraint)
 		if parsed.dep == versionAny {
 			continue
 		}
@@ -466,7 +465,7 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 				}
 			} else {
 				for _, provides := range provider.Provides {
-					pp := cachedResolvePackageNameVersionPin(provides)
+					pp := ResolvePackageNameVersionPin(provides)
 					if pp.Name != parsed.Name {
 						continue
 					}
@@ -587,7 +586,7 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 		return nil, nil, nil, &ConstraintError{pkgName, err}
 	}
 
-	pin := cachedResolvePackageNameVersionPin(pkgName).pin
+	pin := ResolvePackageNameVersionPin(pkgName).pin
 	deps, conflicts, err := p.getPackageDependencies(ctx, pkg, pin, parents, localExisting, existingOrigins, dq)
 	if err != nil {
 		return nil, nil, nil, &DepError{pkg, err}
@@ -616,7 +615,7 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 			var matchCount int
 			for _, subDep := range installIfPkg.InstallIf {
 				// two possibilities: package name, or name=version
-				constraint := cachedResolvePackageNameVersionPin(subDep)
+				constraint := ResolvePackageNameVersionPin(subDep)
 				name, version := constraint.Name, constraint.Version
 				// precise match of whatever it is, take it and continue
 				if _, ok := added[subDep]; ok {
@@ -646,7 +645,7 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 // and decreasing from there. In general, the first one in the list is the best match. This function
 // returns multiple in case you need to see all potential matches.
 func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]string) ([]*RepositoryPackage, error) {
-	constraint := cachedResolvePackageNameVersionPin(pkgName)
+	constraint := ResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 	pkgsWithVersions, ok := p.nameMap[name]
 	if !ok {
@@ -672,7 +671,7 @@ func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]s
 
 // This is like ResolvePackage but we only care about the best match and not all matches.
 func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]string) (*RepositoryPackage, error) {
-	constraint := cachedResolvePackageNameVersionPin(pkgName)
+	constraint := ResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 
 	pkgsWithVersions, ok := p.nameMap[name]
@@ -728,7 +727,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 	myProvides := make(map[string]bool, 2*len(pkg.Provides))
 	// see if we provide this
 	for _, provide := range pkg.Provides {
-		name := cachedResolvePackageNameVersionPin(provide).Name
+		name := constraintName(provide)
 		myProvides[provide] = true
 		myProvides[name] = true
 	}
@@ -755,7 +754,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 			}
 
 			// this package might be pinned to a version
-			constraint := cachedResolvePackageNameVersionPin(dep)
+			constraint := ResolvePackageNameVersionPin(dep)
 			name, version, compare := constraint.Name, constraint.Version, constraint.dep
 			// see if we provide this
 			if myProvides[name] || myProvides[dep] {
@@ -800,7 +799,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				// selected satisfy this constraint.
 				satisfiedByProvide := false
 				for _, provide := range picked.Provides {
-					prostraint := cachedResolvePackageNameVersionPin(provide)
+					prostraint := ResolvePackageNameVersionPin(provide)
 					pname, pversion, pcompare := prostraint.Name, prostraint.Version, prostraint.dep
 					if pname != name {
 						continue
@@ -869,7 +868,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 		}
 
 		pkgs := options[lowest]
-		name := cachedResolvePackageNameVersionPin(lowest).Name
+		name := ResolvePackageNameVersionPin(lowest).Name
 
 		// Remove this from our constraints.
 		constraints = slices.DeleteFunc(constraints, func(s string) bool {
@@ -928,18 +927,6 @@ func cachedParseVersion(version string) (Version, error) {
 
 	parsedVersions.Store(version, parsed)
 	return parsed, nil
-}
-
-func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
-	cached, ok := parsedConstraints.Load(pkgName)
-	if ok {
-		return cached.(ParsedConstraint)
-	}
-
-	pin := ResolvePackageNameVersionPin(pkgName)
-
-	parsedConstraints.Store(pkgName, pin)
-	return pin
 }
 
 // sortPackages sorts a slice of packages in descending order of preference, based on
@@ -1118,7 +1105,7 @@ func (p *PkgResolver) getDepVersionForName(pkg *repositoryPackage, name string) 
 		return pkg.Version
 	}
 	for _, prov := range pkg.Provides {
-		constraint := cachedResolvePackageNameVersionPin(prov)
+		constraint := ResolvePackageNameVersionPin(prov)
 		if constraint.Name == name {
 			return constraint.Version
 		}
