@@ -69,9 +69,20 @@ func fixtureTar(t testing.TB) []byte {
 		{hdr: tar.Header{Typeflag: tar.TypeReg, Name: "usr/bin/gnu", Mode: 0o644, Uid: 500, Gid: 501, ModTime: epoch, Format: tar.FormatGNU}, body: "gnu\n"},
 		{hdr: tar.Header{Typeflag: tar.TypeSymlink, Name: "usr/bin/hi", Linkname: "hello", Mode: 0o777, Uname: "root", Gname: "root", ModTime: epoch}},
 		{hdr: tar.Header{Typeflag: tar.TypeLink, Name: "usr/bin/hello-hard", Linkname: "usr/bin/hello", Mode: 0o755, Uname: "root", Gname: "root", ModTime: epoch}},
-		{hdr: tar.Header{Typeflag: tar.TypeReg, Name: longName, Mode: 0o644, Uname: "nobody", Gname: "nogroup", ModTime: epoch, Format: tar.FormatPAX}, body: "long\n"},
+		// The checksum spelling apk-tools actually writes: 40 lowercase hex chars.
 		{
-			hdr:  tar.Header{Typeflag: tar.TypeReg, Name: "usr/bin/timed", Mode: 0o644, ModTime: epoch, AccessTime: epoch.Add(time.Hour), ChangeTime: epoch.Add(2 * time.Hour), Format: tar.FormatPAX},
+			hdr: tar.Header{
+				Typeflag: tar.TypeReg, Name: longName, Mode: 0o644, Uname: "nobody", Gname: "nogroup", ModTime: epoch, Format: tar.FormatPAX,
+				PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": "bacc34a9e2bd145fa47ba40381ced6ee1e8901ba"},
+			},
+			body: "long\n",
+		},
+		// Uppercase hex decodes to the same bytes but must round-trip verbatim.
+		{
+			hdr: tar.Header{
+				Typeflag: tar.TypeReg, Name: "usr/bin/timed", Mode: 0o644, ModTime: epoch, AccessTime: epoch.Add(time.Hour), ChangeTime: epoch.Add(2 * time.Hour), Format: tar.FormatPAX,
+				PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": "BACC34A9E2BD145FA47BA40381CED6EE1E8901BA"},
+			},
 			body: "timed\n",
 		},
 	}
@@ -149,6 +160,43 @@ func TestEntriesRoundTripHeaders(t *testing.T) {
 		info, err := e.Info()
 		if err != nil || info.Name() != ref.Name() {
 			t.Errorf("entry %d (%s): Info() = %v, %v", i, want[i].Name, info, err)
+		}
+	}
+}
+
+// TestChecksumIsDecoded pins that the fast path engages: the round-trip tests
+// pass whether or not the checksum is decoded, so without this a regression
+// to the verbatim path would keep every test green while giving the memory back.
+func TestChecksumIsDecoded(t *testing.T) {
+	data := fixtureTar(t)
+	fsys, err := New(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(name string) *entry {
+		t.Helper()
+		i, ok := fsys.index[name]
+		if !ok {
+			t.Fatalf("fixture has no %q", name)
+		}
+		return fsys.files[i]
+	}
+	hasRecord := func(e *entry) bool {
+		for _, r := range e.pax {
+			if r.key.Value() == paxChecksumKey {
+				return true
+			}
+		}
+		return false
+	}
+
+	longName := "usr/share/" + strings.Repeat("verylongdirectoryname/", 6) + "file.txt"
+	if e := find(longName); !e.hasChecksum || hasRecord(e) {
+		t.Errorf("lowercase hex checksum: hasChecksum=%v, kept as record=%v; want decoded and dropped from pax", e.hasChecksum, hasRecord(e))
+	}
+	for _, name := range []string{"usr/bin/timed", "usr/bin/hello"} {
+		if e := find(name); e.hasChecksum || !hasRecord(e) {
+			t.Errorf("%s: hasChecksum=%v, kept as record=%v; want verbatim record only", name, e.hasChecksum, hasRecord(e))
 		}
 	}
 }
@@ -328,6 +376,18 @@ func randomHeader(r *rand.Rand, i int) (tar.Header, string) {
 	}
 	if n := r.IntN(4); n > 0 {
 		hdr.PAXRecords = map[string]string{}
+		// Every spelling of the checksum record the index might meet: the
+		// decoded fast path, and the forms that must stay verbatim.
+		if r.IntN(2) == 0 {
+			hdr.PAXRecords["APK-TOOLS.checksum.SHA1"] = []string{
+				"bacc34a9e2bd145fa47ba40381ced6ee1e8901ba",
+				"BACC34A9E2BD145FA47BA40381CED6EE1E8901BA",
+				"Q1abcdefghijklmnopqrstuvwxyz0123456789=",
+				"bacc34a9",
+				"zzcc34a9e2bd145fa47ba40381ced6ee1e8901ba",
+				"",
+			}[r.IntN(6)]
+		}
 		for j := range n {
 			// Include empty values: archive/tar keeps them in PAXRecords but
 			// skips them when mirroring into Xattrs.

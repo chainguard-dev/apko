@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"cmp"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -75,7 +76,12 @@ func (e Entry) IsDir() bool {
 	return e.fi.IsDir()
 }
 
-const paxSchilyXattr = "SCHILY.xattr."
+const (
+	paxSchilyXattr = "SCHILY.xattr."
+	// paxChecksumKey is the per-file checksum apk-tools records on nearly every
+	// regular file. It is stored decoded rather than as a PAX record.
+	paxChecksumKey = "APK-TOOLS.checksum.SHA1"
+)
 
 type paxRecord struct {
 	key   unique.Handle[string]
@@ -110,10 +116,33 @@ type entry struct {
 	format   int8 // archive/tar's formatMax is 32
 	typeflag byte
 	hasPAX   bool
-	pax      []paxRecord
+	// checksum holds the paxChecksumKey record decoded from its 40-character
+	// lowercase hex form, which is what apk-tools writes. Any other spelling
+	// stays in pax verbatim so the header round-trips byte for byte.
+	hasChecksum bool
+	checksum    [sha1Size]byte
+	pax         []paxRecord
 	// times is set only when the header carries access or change times,
 	// which apk packages almost never do.
 	times *fileTimes
+}
+
+const sha1Size = 20
+
+// decodeChecksum reports the checksum bytes when v is exactly the lowercase
+// hex encoding of a SHA-1, so that re-encoding reproduces v unchanged.
+func decodeChecksum(v string) ([sha1Size]byte, bool) {
+	var sum [sha1Size]byte
+	if len(v) != hex.EncodedLen(sha1Size) {
+		return sum, false
+	}
+	if _, err := hex.Decode(sum[:], []byte(v)); err != nil {
+		return sum, false
+	}
+	if hex.EncodeToString(sum[:]) != v {
+		return sum, false
+	}
+	return sum, true
 }
 
 type fileTimes struct{ access, change time.Time }
@@ -144,8 +173,13 @@ func newEntry(hdr *tar.Header, offset int64) *entry {
 	// for a member preceded by a zero-record extended header.
 	if hdr.PAXRecords != nil {
 		e.hasPAX = true
-		e.pax = make([]paxRecord, 0, len(hdr.PAXRecords))
 		for k, v := range hdr.PAXRecords {
+			if k == paxChecksumKey {
+				if sum, ok := decodeChecksum(v); ok {
+					e.hasChecksum, e.checksum = true, sum
+					continue
+				}
+			}
 			e.pax = append(e.pax, paxRecord{key: unique.Make(k), value: v})
 		}
 	}
@@ -177,7 +211,10 @@ func (e *entry) header() tar.Header {
 		hdr.AccessTime, hdr.ChangeTime = e.times.access, e.times.change
 	}
 	if e.hasPAX {
-		hdr.PAXRecords = make(map[string]string, len(e.pax))
+		hdr.PAXRecords = make(map[string]string, len(e.pax)+1)
+		if e.hasChecksum {
+			hdr.PAXRecords[paxChecksumKey] = hex.EncodeToString(e.checksum[:])
+		}
 		for _, r := range e.pax {
 			k := r.key.Value()
 			hdr.PAXRecords[k] = r.value
