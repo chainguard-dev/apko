@@ -957,6 +957,37 @@ func TestResolverPackageNameVersionPin(t *testing.T) {
 			require.Equal(t, tt.version, constraint.Version)
 			require.Equal(t, tt.dep, constraint.dep)
 			require.Equal(t, tt.pin, constraint.pin)
+			require.Nil(t, constraint.Err)
 		})
 	}
+
+	invalids := []struct {
+		input     string
+		dep       versionDependency
+		shouldErr bool
+	}{
+		{"name>~1.2.3", versionInvalid, true},
+		{"name>>~1.2.3", versionInvalid, true},
+		{"name~<>~1.2.3", versionInvalid, true},
+		{"foo!1.2.3", versionAny, false}, // '!' at start is negation, not an operator
+	}
+	for _, tc := range invalids {
+		t.Run("invalid_operator_"+tc.input, func(t *testing.T) {
+			constraint := ResolvePackageNameVersionPin(tc.input)
+			require.Equal(t, tc.dep, constraint.dep)
+			if tc.shouldErr {
+				require.NotNil(t, constraint.Err)
+			} else {
+				require.Nil(t, constraint.Err)
+			}
+		})
+	}
+}
+
+func TestInvalidOperatorRaisesErrorInResolver(t *testing.T) {
+	pr := NewPkgResolver(context.Background(), []NamedIndex{})
+	_, err := pr.ResolvePackage("foo>~1.2.3", map[*RepositoryPackage]string{})
+	require.Error(t, err)
+	_, err = pr.resolvePackage("foo>>~1.2.3", map[*RepositoryPackage]string{})
+	require.Error(t, err)
 }
