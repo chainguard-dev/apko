@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -287,5 +288,117 @@ func TestOpenStatReadDirReadlink(t *testing.T) {
 	}
 	if root, err := fsys.Stat("."); err != nil || !root.IsDir() {
 		t.Errorf("Stat(.) = %v, %v, want synthesized root dir", root, err)
+	}
+}
+
+// randomHeader builds a member whose fields are drawn from the whole space the
+// compact record has to represent, so a narrowed or dropped field shows up
+// without anyone having predicted which one it would be.
+func randomHeader(r *rand.Rand, i int) (tar.Header, string) {
+	typeflags := []byte{tar.TypeReg, tar.TypeDir, tar.TypeSymlink, tar.TypeChar, tar.TypeBlock, tar.TypeFifo}
+	tf := typeflags[r.IntN(len(typeflags))]
+
+	name := fmt.Sprintf("d%d/f%d", r.IntN(4), i)
+	if r.IntN(8) == 0 {
+		name = "d0/" + strings.Repeat("long", 40) + fmt.Sprint(i) // forces a PAX path record
+	}
+
+	hdr := tar.Header{
+		Typeflag: tf,
+		Name:     name,
+		Mode:     int64(r.IntN(0o7777)),
+		// Full width on purpose: archive/tar carries these as 64-bit.
+		Uid:     int(r.Uint64() % (1 << 40)),
+		Gid:     int(r.Uint64() % (1 << 40)),
+		Uname:   []string{"root", "nobody", "", "verylongusername"}[r.IntN(4)],
+		Gname:   []string{"root", "nogroup", ""}[r.IntN(3)],
+		ModTime: time.Unix(int64(r.IntN(1<<31)), 0),
+		Format:  tar.FormatPAX,
+	}
+	switch tf {
+	case tar.TypeChar, tar.TypeBlock:
+		hdr.Devmajor = int64(r.IntN(1 << 20))
+		hdr.Devminor = int64(r.IntN(1 << 20))
+	case tar.TypeSymlink:
+		hdr.Linkname = fmt.Sprintf("f%d", r.IntN(100))
+	}
+	if r.IntN(2) == 0 {
+		hdr.AccessTime = time.Unix(int64(r.IntN(1<<31)), 0)
+		hdr.ChangeTime = time.Unix(int64(r.IntN(1<<31)), 0)
+	}
+	if n := r.IntN(4); n > 0 {
+		hdr.PAXRecords = map[string]string{}
+		for j := range n {
+			// Include empty values: archive/tar keeps them in PAXRecords but
+			// skips them when mirroring into Xattrs.
+			v := ""
+			if r.IntN(3) != 0 {
+				v = fmt.Sprintf("v%d", r.IntN(1000))
+			}
+			if r.IntN(2) == 0 {
+				hdr.PAXRecords[fmt.Sprintf("SCHILY.xattr.user.a%d", j)] = v
+			} else {
+				hdr.PAXRecords[fmt.Sprintf("VENDOR.k%d", j)] = v
+			}
+		}
+	}
+
+	body := ""
+	if tf == tar.TypeReg {
+		body = strings.Repeat("x", r.IntN(200))
+	}
+	return hdr, body
+}
+
+// TestRoundTripProperty asserts the invariant the whole design rests on: for
+// any archive archive/tar can read, every materialized header equals the one
+// archive/tar produced. The fixture tests pin the shapes apks actually have;
+// this covers the field space nobody thought to enumerate.
+func TestRoundTripProperty(t *testing.T) {
+	for seed := range 200 {
+		r := rand.New(rand.NewPCG(uint64(seed), 0x2493))
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		n := 1 + r.IntN(12)
+		for i := range n {
+			hdr, body := randomHeader(r, i)
+			hdr.Size = int64(len(body))
+			if err := tw.WriteHeader(&hdr); err != nil {
+				t.Fatalf("seed %d: WriteHeader(%+v): %v", seed, hdr, err)
+			}
+			if _, err := io.WriteString(tw, body); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tw.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		data := buf.Bytes()
+		want := readHeaders(t, data)
+		fsys, err := New(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatalf("seed %d: New: %v", seed, err)
+		}
+		got := fsys.Entries()
+		if len(got) != len(want) {
+			t.Fatalf("seed %d: Entries: got %d, want %d", seed, len(got), len(want))
+		}
+		for i := range want {
+			if !reflect.DeepEqual(got[i].Header, want[i]) {
+				t.Fatalf("seed %d entry %d (%s): header differs\n got: %+v\nwant: %+v",
+					seed, i, want[i].Name, got[i].Header, want[i])
+			}
+			ref := want[i].FileInfo()
+			fi, err := fsys.Stat(want[i].Name)
+			if err != nil {
+				t.Fatalf("seed %d: Stat(%q): %v", seed, want[i].Name, err)
+			}
+			if fi.Name() != ref.Name() || fi.Size() != ref.Size() || fi.Mode() != ref.Mode() ||
+				!fi.ModTime().Equal(ref.ModTime()) || fi.IsDir() != ref.IsDir() || fmt.Sprint(fi) != fmt.Sprint(ref) {
+				t.Fatalf("seed %d: Stat(%q) disagrees with archive/tar: got %v, want %v",
+					seed, want[i].Name, fi, ref)
+			}
+		}
 	}
 }
