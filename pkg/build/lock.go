@@ -20,6 +20,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,7 +47,9 @@ func LockImageConfiguration(ctx context.Context, ic types.ImageConfiguration, op
 // When a lockfile is used, the resolved packages map will be nil as the full package metadata
 // is not available from lockfiles.
 func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[string]*types.ImageConfiguration, map[string][]string, map[types.Architecture][]*apk.RepositoryPackage, error) {
-	o, input, err := NewOptions(append(opts, WithImageConfiguration(ic))...)
+	// Clone: opts is the caller's slice, often shared across concurrent
+	// resolves; appending into its spare capacity races on a shared slot.
+	o, input, err := NewOptions(append(slices.Clone(opts), WithImageConfiguration(ic))...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -55,7 +58,7 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
 	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
 
-	mc, err := NewMultiArch(ctx, input.Archs, append(opts, WithImageConfiguration(*input))...)
+	mc, err := NewMultiArch(ctx, input.Archs, append(slices.Clone(opts), WithImageConfiguration(*input))...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
