@@ -43,14 +43,16 @@ func pooledBufioReader(r io.Reader) *bufio.Reader {
 }
 
 // Entry is a tar member with its full header. Entries are materialized from
-// the resident index on request (see Entries and File.Entry), so callers pay
-// for the header only while they hold one.
+// the resident index on request, so callers pay for the header only while
+// they hold one. Entries and Open each build a fresh Entry per call, and
+// each materialization owns its maps, so a caller's mutation is private to
+// it. Consumers that only need file metadata should prefer Stat or ReadDir,
+// which serve the index directly and never build a header.
 type Entry struct {
 	Header tar.Header
 	Offset int64
 
-	dir string
-	fi  fs.FileInfo
+	fi fs.FileInfo
 }
 
 func (e Entry) Name() string {
@@ -82,7 +84,14 @@ type paxRecord struct {
 
 // entry is the resident index record for one tar member. It holds what a
 // tar.Header holds, laid out to avoid the per-member map and the duplicated
-// strings that make a retained tar.Header expensive across many packages.
+// strings that make a retained tar.Header expensive across many packages. It
+// also implements fs.FileInfo and fs.DirEntry with the same results as
+// archive/tar's Header.FileInfo, so Stat, ReadDir, and fs.WalkDir never
+// materialize a header.
+//
+// Interning uname, gname, and PAX keys assumes the apk shape, where those
+// repeat across every member (root, the checksum key). An archive of
+// entirely distinct values gets no dedup, only the hashing cost.
 type entry struct {
 	name     string
 	linkname string
@@ -92,19 +101,22 @@ type entry struct {
 	size     int64
 	offset   int64
 	mode     int64
+	uid      int64
+	gid      int64
 	modTime  time.Time
 	devmajor int64
 	devminor int64
-	uid      int32
-	gid      int32
 	fileMode fs.FileMode
-	format   int8
+	format   int8 // archive/tar's formatMax is 32
 	typeflag byte
+	hasPAX   bool
 	pax      []paxRecord
 	// times is set only when the header carries access or change times,
 	// which apk packages almost never do.
-	times *struct{ access, change time.Time }
+	times *fileTimes
 }
+
+type fileTimes struct{ access, change time.Time }
 
 func newEntry(hdr *tar.Header, offset int64) *entry {
 	e := &entry{
@@ -119,16 +131,19 @@ func newEntry(hdr *tar.Header, offset int64) *entry {
 		modTime:  hdr.ModTime,
 		devmajor: hdr.Devmajor,
 		devminor: hdr.Devminor,
-		uid:      int32(hdr.Uid),
-		gid:      int32(hdr.Gid),
+		uid:      int64(hdr.Uid),
+		gid:      int64(hdr.Gid),
 		fileMode: hdr.FileInfo().Mode(),
 		format:   int8(hdr.Format),
 		typeflag: hdr.Typeflag,
 	}
 	if !hdr.AccessTime.IsZero() || !hdr.ChangeTime.IsZero() {
-		e.times = &struct{ access, change time.Time }{hdr.AccessTime, hdr.ChangeTime}
+		e.times = &fileTimes{hdr.AccessTime, hdr.ChangeTime}
 	}
-	if len(hdr.PAXRecords) > 0 {
+	// Keyed on nil, not length: archive/tar hands back a non-nil empty map
+	// for a member preceded by a zero-record extended header.
+	if hdr.PAXRecords != nil {
+		e.hasPAX = true
 		e.pax = make([]paxRecord, 0, len(hdr.PAXRecords))
 		for k, v := range hdr.PAXRecords {
 			e.pax = append(e.pax, paxRecord{key: unique.Make(k), value: v})
@@ -138,7 +153,10 @@ func newEntry(hdr *tar.Header, offset int64) *entry {
 }
 
 // header rebuilds the tar.Header this entry was indexed from, including its
-// PAX records and the Xattrs view archive/tar derives from them.
+// PAX records and the Xattrs view archive/tar derives from them. Every
+// tar.Header field archive/tar populates has to be represented on entry and
+// restored here, so a field added to tar.Header in a future Go release needs
+// adding in both places.
 func (e *entry) header() tar.Header {
 	hdr := tar.Header{
 		Typeflag: e.typeflag,
@@ -158,7 +176,7 @@ func (e *entry) header() tar.Header {
 	if e.times != nil {
 		hdr.AccessTime, hdr.ChangeTime = e.times.access, e.times.change
 	}
-	if len(e.pax) > 0 {
+	if e.hasPAX {
 		hdr.PAXRecords = make(map[string]string, len(e.pax))
 		for _, r := range e.pax {
 			k := r.key.Value()
@@ -178,12 +196,8 @@ func (e *entry) header() tar.Header {
 
 // view materializes the exported Entry for this record.
 func (e *entry) view() *Entry {
-	return &Entry{Header: e.header(), Offset: e.offset, dir: e.dir, fi: e}
+	return &Entry{Header: e.header(), Offset: e.offset, fi: e}
 }
-
-// entry implements fs.FileInfo and fs.DirEntry with the same results as
-// archive/tar's Header.FileInfo, so directory listings and Stat never need a
-// materialized header.
 
 func (e *entry) Name() string {
 	if e.fileMode.IsDir() {
@@ -197,8 +211,11 @@ func (e *entry) Type() fs.FileMode          { return e.fileMode }
 func (e *entry) ModTime() time.Time         { return e.modTime }
 func (e *entry) IsDir() bool                { return e.fileMode.IsDir() }
 func (e *entry) Info() (fs.FileInfo, error) { return e, nil }
+func (e *entry) String() string             { return fs.FormatFileInfo(e) }
 
 // Sys matches archive/tar, which returns the *tar.Header behind a FileInfo.
+// Each call builds a new header, so a caller needing it more than once should
+// hold the result rather than calling Sys again.
 func (e *entry) Sys() any {
 	hdr := e.header()
 	return &hdr
