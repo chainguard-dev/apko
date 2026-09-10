@@ -91,7 +91,30 @@ func pooledBufioWriter(w io.Writer) *bufio.Writer {
 type layerWriter struct {
 	w        *tar.Writer
 	stack    []*file // only used by multi-layer builds
-	finalize func() (*layer, error)
+	finalize func() (v1.Layer, error)
+	abort    func()
+}
+
+// Abort shuts down the writer pipeline without producing a layer. Safe to
+// call after finalize.
+func (lw *layerWriter) Abort() {
+	if lw.abort != nil {
+		lw.abort()
+	}
+}
+
+// countingWriter counts bytes on their way to w, so the compressed layer size
+// is known without a Stat. pgzip writes block bodies from its own goroutine,
+// so n is only readable once the gzip writer has been closed.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // newLayerWriter wraps a file with a gzipping tar writer that computes
@@ -109,7 +132,7 @@ func newLayerWriter(out *os.File) *layerWriter {
 	// adding a bunch of fields to layerWriter.
 	return &layerWriter{
 		w: w,
-		finalize: func() (*layer, error) {
+		finalize: func() (v1.Layer, error) {
 			defer bufioPool.Put(buf)
 
 			if err := w.Close(); err != nil {
@@ -134,6 +157,65 @@ func newLayerWriter(out *os.File) *layerWriter {
 			return l, nil
 		},
 	}
+}
+
+// newCompressedLayerWriter wraps a file with a tar writer that gzips in the
+// same pass, computing the diffID, compressed digest, and size as the bytes
+// stream, so the plain tar never exists on disk.
+func newCompressedLayerWriter(out *os.File, workers int) (*layerWriter, error) {
+	diffid := sha256.New()
+	digest := sha256.New()
+	cw := &countingWriter{w: io.MultiWriter(digest, out)}
+
+	gzw := gzip.NewWriter(cw)
+	if err := gzw.SetConcurrency(1<<20, workers); err != nil {
+		return nil, fmt.Errorf("setting pgzip concurrency to %d: %w", workers, err)
+	}
+
+	w := tar.NewWriter(io.MultiWriter(diffid, gzw))
+
+	done := false
+	return &layerWriter{
+		w: w,
+		abort: func() {
+			if done {
+				return
+			}
+			done = true
+			_ = w.Close()
+			_ = gzw.Close()
+		},
+		finalize: func() (v1.Layer, error) {
+			if done {
+				return nil, fmt.Errorf("layer writer for %s already finalized or aborted", out.Name())
+			}
+			// done is set below the closes so a failure here still leaves
+			// Abort able to run the teardown.
+			if err := w.Close(); err != nil {
+				return nil, fmt.Errorf("closing tar writer: %w", err)
+			}
+			if err := gzw.Close(); err != nil {
+				return nil, fmt.Errorf("closing gzip writer: %w", err)
+			}
+			done = true
+
+			return &compressedLayer{
+				path: out.Name(),
+				desc: v1.Descriptor{
+					MediaType: v1types.OCILayer,
+					Digest: v1.Hash{
+						Algorithm: "sha256",
+						Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+					},
+					Size: cw.n,
+				},
+				diffid: v1.Hash{
+					Algorithm: "sha256",
+					Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
+				},
+			}, nil
+		},
+	}, nil
 }
 
 func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) {

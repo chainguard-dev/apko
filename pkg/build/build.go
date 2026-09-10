@@ -15,6 +15,7 @@
 package build
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -216,16 +217,34 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return outName, l, nil
 	}
 
-	defer outfile.Close()
-	lw := newLayerWriter(outfile)
+	var lw *layerWriter
+	if bc.o.CompressedLayerFile {
+		lw, err = newCompressedLayerWriter(outfile, pgzipThreads)
+		if err != nil {
+			_ = outfile.Close()
+			return "", nil, fmt.Errorf("creating compressed layer writer: %w", err)
+		}
+	} else {
+		lw = newLayerWriter(outfile)
+	}
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
+		lw.Abort()
+		_ = outfile.Close()
 		return "", nil, fmt.Errorf("generating tarball: %w", err)
 	}
 
 	l, err := lw.finalize()
 	if err != nil {
+		lw.Abort()
+		_ = outfile.Close()
 		return "", nil, fmt.Errorf("finalizing layer: %w", err)
+	}
+
+	// The descriptor is already committed, so nothing re-reads the file
+	// afterwards to notice a write that only failed at close.
+	if err := outfile.Close(); err != nil {
+		return "", nil, fmt.Errorf("closing %s: %w", outfile.Name(), err)
 	}
 
 	return outfile.Name(), l, nil
@@ -532,6 +551,65 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
 	return os.Open(l.uncompressed)
+}
+
+// compressedLayer is backed by a single gzip file whose descriptor was
+// computed while the bytes were written, so every field is set at
+// construction and there is nothing to compute lazily or guard with a lock.
+type compressedLayer struct {
+	path   string
+	diffid v1.Hash
+	desc   v1.Descriptor
+}
+
+func (l *compressedLayer) DiffID() (v1.Hash, error) { return l.diffid, nil }
+func (l *compressedLayer) Digest() (v1.Hash, error) { return l.desc.Digest, nil }
+func (l *compressedLayer) Size() (int64, error)     { return l.desc.Size, nil }
+
+func (l *compressedLayer) MediaType() (v1types.MediaType, error) {
+	return l.desc.MediaType, nil
+}
+
+func (l *compressedLayer) Compressed() (io.ReadCloser, error) {
+	f, err := os.Open(l.path)
+	if err != nil {
+		return nil, err
+	}
+
+	// There is a bug in how go uses sendfile on macos, so we need to make this not a file.
+	// See https://github.com/golang/go/issues/70000
+	return &notAFile{f}, nil
+}
+
+func (l *compressedLayer) Uncompressed() (io.ReadCloser, error) {
+	f, err := os.Open(l.path)
+	if err != nil {
+		return nil, err
+	}
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return &gunzipReadCloser{zr: zr, f: f}, nil
+}
+
+// gunzipReadCloser decompresses a compressed-backed layer on demand. Close
+// has to release both the gzip reader and the underlying file, because
+// gzip.Reader.Close does not close its source.
+type gunzipReadCloser struct {
+	zr *gzip.Reader
+	f  *os.File
+}
+
+func (g *gunzipReadCloser) Read(p []byte) (int, error) { return g.zr.Read(p) }
+
+func (g *gunzipReadCloser) Close() error {
+	zerr := g.zr.Close()
+	if ferr := g.f.Close(); zerr == nil {
+		return ferr
+	}
+	return zerr
 }
 
 func (l *layer) Size() (int64, error) {

@@ -60,6 +60,7 @@ type Options struct {
 	// ImageConfigChecksum (when set) allows to detect mismatch between configuration and the lockfile.
 	ImageConfigChecksum     string                `json:"configChecksum,omitempty"`
 	TarballPath             string                `json:"tarballPath,omitempty"`
+	CompressedLayerFile     bool                  `json:"compressedLayerFile,omitempty"`
 	Tags                    []string              `json:"tags,omitempty"`
 	SourceDateEpoch         time.Time             `json:"sourceDateEpoch,omitempty"`
 	SBOMPath                string                `json:"sbomPath,omitempty"`
