@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -41,13 +42,9 @@ func buildTestLayer(t *testing.T, compressed bool) (v1.Layer, string, string) {
 	}
 	defer f.Close()
 
-	var lw *layerWriter
-	if compressed {
-		if lw, err = newCompressedLayerWriter(f, 4); err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		lw = newLayerWriter(f)
+	lw, err := newLayerWriter(f, compressed, 4)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	content := make([]byte, 3<<20)
@@ -171,25 +168,65 @@ func countFiles(t *testing.T, dir string) int {
 	return len(entries)
 }
 
-func TestCompressedLayerWriterAbort(t *testing.T) {
-	f, err := os.CreateTemp(t.TempDir(), "layer-*.tar.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	lw, err := newCompressedLayerWriter(f, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := lw.w.WriteHeader(&tar.Header{Name: "usr/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
-		t.Fatal(err)
+// TestSinglePassLayerBypassesCompressionCache pins that a single-pass layer
+// neither consults nor populates the compression cache. Both modes share one
+// struct, so the cache lookup sits one branch away from a layer that has
+// nothing to look up, and a regression there would report a cache miss for
+// every single-pass layer while still returning the right digest.
+func TestSinglePassLayerBypassesCompressionCache(t *testing.T) {
+	l, _, _ := buildTestLayer(t, true)
+	sl, ok := l.(*layer)
+	if !ok {
+		t.Fatalf("single-pass layer: got %T, want *layer", l)
 	}
 
-	lw.Abort()
+	// The legacy half of the equivalence test writes the same fixture, so the
+	// cache may already hold this diffID from another test in this process.
+	compressionCache.Delete(sl.diffid.String())
+	t.Cleanup(func() { compressionCache.Delete(sl.diffid.String()) })
 
-	if _, err := lw.finalize(); err == nil {
-		t.Error("finalize after Abort: got = nil, want error")
+	if _, err := l.Digest(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Size(); err != nil {
+		t.Fatal(err)
+	}
+
+	if sl.cacheCounted {
+		t.Error("cacheCounted = true, want false: a single-pass layer records no cache access")
+	}
+	if _, ok := compressionCache.Load(sl.diffid.String()); ok {
+		t.Error("compressionCache holds an entry for a single-pass layer's diffID")
+	}
+}
+
+// TestLayerWriterFinalizeTwice pins finalize's second-call behavior, which is
+// what lets splitLayers use it as an unconditional teardown: the cleanup path
+// runs over every open writer, including ones it already finalized.
+func TestLayerWriterFinalizeTwice(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compressed=%v", compressed), func(t *testing.T) {
+			f, err := os.CreateTemp(t.TempDir(), "layer-*.tar.gz")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+
+			lw, err := newLayerWriter(f, compressed, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := lw.w.WriteHeader(&tar.Header{Name: "usr/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := lw.finalize(); err != nil {
+				t.Fatalf("finalize: %v", err)
+			}
+			if _, err := lw.finalize(); err == nil {
+				t.Error("second finalize: got = nil, want error")
+			}
+		})
 	}
 }
 

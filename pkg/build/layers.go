@@ -274,7 +274,9 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 			return
 		}
 		for _, o := range open {
-			o.w.Abort()
+			// finalize is the teardown; an already-finalized writer reports an
+			// error here and there is nothing to do with it.
+			_, _ = o.w.finalize()
 		}
 		for _, o := range open {
 			_ = o.f.Close()
@@ -290,15 +292,11 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		if err != nil {
 			return nil, err
 		}
-		var w *layerWriter
-		if compressed {
-			if w, err = newCompressedLayerWriter(f, 1); err != nil {
-				_ = f.Close()
-				_ = os.Remove(f.Name())
-				return nil, err
-			}
-		} else {
-			w = newLayerWriter(f)
+		w, err := newLayerWriter(f, compressed, 1)
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+			return nil, err
 		}
 		open = append(open, openLayer{w: w, f: f})
 		return w, nil

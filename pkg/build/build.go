@@ -217,26 +217,24 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return outName, l, nil
 	}
 
-	var lw *layerWriter
-	if bc.o.CompressedLayerFile {
-		lw, err = newCompressedLayerWriter(outfile, pgzipThreads)
-		if err != nil {
-			_ = outfile.Close()
-			return "", nil, fmt.Errorf("creating compressed layer writer: %w", err)
-		}
-	} else {
-		lw = newLayerWriter(outfile)
+	// A single layer writer has the machine to itself, so it gets the full
+	// worker fan-out.
+	lw, err := newLayerWriter(outfile, bc.o.CompressedLayerFile, pgzipThreads)
+	if err != nil {
+		_ = outfile.Close()
+		return "", nil, fmt.Errorf("creating layer writer: %w", err)
 	}
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
-		lw.Abort()
+		// finalize tears the writer chain down; the layer it reports is not
+		// usable once the tar is incomplete.
+		_, _ = lw.finalize()
 		_ = outfile.Close()
 		return "", nil, fmt.Errorf("generating tarball: %w", err)
 	}
 
 	l, err := lw.finalize()
 	if err != nil {
-		lw.Abort()
 		_ = outfile.Close()
 		return "", nil, fmt.Errorf("finalizing layer: %w", err)
 	}
@@ -427,6 +425,11 @@ func (f *notAFile) Close() error {
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
+//
+// A layer is written in one of two modes. Two-pass layers have uncompressed
+// set and are gzipped on demand by compress(). Single-pass layers were gzipped
+// as they were written, so only compressed is set and desc is already
+// complete; see singlePass.
 type layer struct {
 	mu           sync.Mutex
 	uncompressed string
@@ -434,6 +437,12 @@ type layer struct {
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
 	cacheCounted bool // first compression-cache lookup already recorded
+}
+
+// singlePass reports whether this layer was gzipped as it was written, in
+// which case there is no plain tar on disk and nothing left to compute.
+func (l *layer) singlePass() bool {
+	return l.uncompressed == ""
 }
 
 // recordCacheAccess reports this layer's first compression-cache outcome.
@@ -519,6 +528,10 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	if l.singlePass() {
+		return l.desc.Digest, nil
+	}
+
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
@@ -550,39 +563,12 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
-	return os.Open(l.uncompressed)
-}
-
-// compressedLayer is backed by a single gzip file whose descriptor was
-// computed while the bytes were written, so every field is set at
-// construction and there is nothing to compute lazily or guard with a lock.
-type compressedLayer struct {
-	path   string
-	diffid v1.Hash
-	desc   v1.Descriptor
-}
-
-func (l *compressedLayer) DiffID() (v1.Hash, error) { return l.diffid, nil }
-func (l *compressedLayer) Digest() (v1.Hash, error) { return l.desc.Digest, nil }
-func (l *compressedLayer) Size() (int64, error)     { return l.desc.Size, nil }
-
-func (l *compressedLayer) MediaType() (v1types.MediaType, error) {
-	return l.desc.MediaType, nil
-}
-
-func (l *compressedLayer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.path)
-	if err != nil {
-		return nil, err
+	if !l.singlePass() {
+		return os.Open(l.uncompressed)
 	}
 
-	// There is a bug in how go uses sendfile on macos, so we need to make this not a file.
-	// See https://github.com/golang/go/issues/70000
-	return &notAFile{f}, nil
-}
-
-func (l *compressedLayer) Uncompressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.path)
+	// Only the gzip file exists, so give the caller tar bytes back out of it.
+	f, err := os.Open(l.compressed)
 	if err != nil {
 		return nil, err
 	}
@@ -613,6 +599,10 @@ func (g *gunzipReadCloser) Close() error {
 }
 
 func (l *layer) Size() (int64, error) {
+	if l.singlePass() {
+		return l.desc.Size, nil
+	}
+
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
