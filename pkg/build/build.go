@@ -353,6 +353,12 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 	}
 	apkOpts = append(apkOpts, apk.WithOffline(bc.o.Offline))
 
+	// If the caller captured an index snapshot for this arch, hand it to the
+	// APK so its resolve skips fetching and revalidation entirely.
+	if idxs, ok := bc.o.PrefetchedIndexes[bc.o.Arch]; ok {
+		apkOpts = append(apkOpts, apk.WithPrefetchedIndexes(idxs))
+	}
+
 	if bc.ic.Contents.BaseImage != nil {
 		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)
 		if err != nil {

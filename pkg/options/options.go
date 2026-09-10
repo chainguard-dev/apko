@@ -90,6 +90,10 @@ type Options struct {
 	Transport           http.RoundTripper     `json:"-"`
 	PackageGetter       apk.PackageGetter     `json:"-"`
 	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`
+	// PrefetchedIndexes supplies an index snapshot per architecture. When set
+	// for an arch, that arch's resolve uses the snapshot verbatim instead of
+	// fetching, so all resolves see one generation.
+	PrefetchedIndexes map[types.Architecture][]apk.NamedIndex `json:"-"`
 }
 
 type Auth struct{ User, Pass string }

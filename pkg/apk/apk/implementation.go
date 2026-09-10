@@ -74,6 +74,13 @@ type APK struct {
 	packageGetter      PackageGetter
 	sizeLimits         *SizeLimits
 
+	// prefetchedIndexes, when non-nil, is returned directly by
+	// GetRepositoryIndexes instead of fetching and revalidating. It lets a
+	// caller resolve every image and arch against one index snapshot captured
+	// once up front (see build.WithPrefetchedIndexes), avoiding the per-resolve
+	// HEAD round-trips and the cross-arch generation skew they can introduce.
+	prefetchedIndexes []NamedIndex
+
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
 
@@ -153,6 +160,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		auth:               opt.auth,
 		packageGetter:      packageGetter,
 		sizeLimits:         opt.sizeLimits,
+		prefetchedIndexes:  opt.prefetchedIndexes,
 	}, nil
 }
 
