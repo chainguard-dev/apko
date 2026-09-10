@@ -24,8 +24,10 @@ import (
 	"io/fs"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unique"
 )
 
 var readerPool = sync.Pool{
@@ -40,6 +42,9 @@ func pooledBufioReader(r io.Reader) *bufio.Reader {
 	return br
 }
 
+// Entry is a tar member with its full header. Entries are materialized from
+// the resident index on request (see Entries and File.Entry), so callers pay
+// for the header only while they hold one.
 type Entry struct {
 	Header tar.Header
 	Offset int64
@@ -66,6 +71,137 @@ func (e Entry) Info() (fs.FileInfo, error) {
 
 func (e Entry) IsDir() bool {
 	return e.fi.IsDir()
+}
+
+const paxSchilyXattr = "SCHILY.xattr."
+
+type paxRecord struct {
+	key   unique.Handle[string]
+	value string
+}
+
+// entry is the resident index record for one tar member. It holds what a
+// tar.Header holds, laid out to avoid the per-member map and the duplicated
+// strings that make a retained tar.Header expensive across many packages.
+type entry struct {
+	name     string
+	linkname string
+	dir      string
+	uname    unique.Handle[string]
+	gname    unique.Handle[string]
+	size     int64
+	offset   int64
+	mode     int64
+	modTime  time.Time
+	devmajor int64
+	devminor int64
+	uid      int32
+	gid      int32
+	fileMode fs.FileMode
+	format   int8
+	typeflag byte
+	pax      []paxRecord
+	// times is set only when the header carries access or change times,
+	// which apk packages almost never do.
+	times *struct{ access, change time.Time }
+}
+
+func newEntry(hdr *tar.Header, offset int64) *entry {
+	e := &entry{
+		name:     hdr.Name,
+		linkname: hdr.Linkname,
+		dir:      path.Dir(hdr.Name),
+		uname:    unique.Make(hdr.Uname),
+		gname:    unique.Make(hdr.Gname),
+		size:     hdr.Size,
+		offset:   offset,
+		mode:     hdr.Mode,
+		modTime:  hdr.ModTime,
+		devmajor: hdr.Devmajor,
+		devminor: hdr.Devminor,
+		uid:      int32(hdr.Uid),
+		gid:      int32(hdr.Gid),
+		fileMode: hdr.FileInfo().Mode(),
+		format:   int8(hdr.Format),
+		typeflag: hdr.Typeflag,
+	}
+	if !hdr.AccessTime.IsZero() || !hdr.ChangeTime.IsZero() {
+		e.times = &struct{ access, change time.Time }{hdr.AccessTime, hdr.ChangeTime}
+	}
+	if len(hdr.PAXRecords) > 0 {
+		e.pax = make([]paxRecord, 0, len(hdr.PAXRecords))
+		for k, v := range hdr.PAXRecords {
+			e.pax = append(e.pax, paxRecord{key: unique.Make(k), value: v})
+		}
+	}
+	return e
+}
+
+// header rebuilds the tar.Header this entry was indexed from, including its
+// PAX records and the Xattrs view archive/tar derives from them.
+func (e *entry) header() tar.Header {
+	hdr := tar.Header{
+		Typeflag: e.typeflag,
+		Name:     e.name,
+		Linkname: e.linkname,
+		Size:     e.size,
+		Mode:     e.mode,
+		Uid:      int(e.uid),
+		Gid:      int(e.gid),
+		Uname:    e.uname.Value(),
+		Gname:    e.gname.Value(),
+		ModTime:  e.modTime,
+		Devmajor: e.devmajor,
+		Devminor: e.devminor,
+		Format:   tar.Format(e.format),
+	}
+	if e.times != nil {
+		hdr.AccessTime, hdr.ChangeTime = e.times.access, e.times.change
+	}
+	if len(e.pax) > 0 {
+		hdr.PAXRecords = make(map[string]string, len(e.pax))
+		for _, r := range e.pax {
+			k := r.key.Value()
+			hdr.PAXRecords[k] = r.value
+			// archive/tar still fills the deprecated Xattrs view alongside
+			// PAXRecords; readers of either must see the same header.
+			if r.value != "" && strings.HasPrefix(k, paxSchilyXattr) {
+				if hdr.Xattrs == nil { //nolint:staticcheck // mirrors archive/tar
+					hdr.Xattrs = make(map[string]string) //nolint:staticcheck // mirrors archive/tar
+				}
+				hdr.Xattrs[k[len(paxSchilyXattr):]] = r.value //nolint:staticcheck // mirrors archive/tar
+			}
+		}
+	}
+	return hdr
+}
+
+// view materializes the exported Entry for this record.
+func (e *entry) view() *Entry {
+	return &Entry{Header: e.header(), Offset: e.offset, dir: e.dir, fi: e}
+}
+
+// entry implements fs.FileInfo and fs.DirEntry with the same results as
+// archive/tar's Header.FileInfo, so directory listings and Stat never need a
+// materialized header.
+
+func (e *entry) Name() string {
+	if e.fileMode.IsDir() {
+		return path.Base(path.Clean(e.name))
+	}
+	return path.Base(e.name)
+}
+func (e *entry) Size() int64                { return e.size }
+func (e *entry) Mode() fs.FileMode          { return e.fileMode }
+func (e *entry) Type() fs.FileMode          { return e.fileMode }
+func (e *entry) ModTime() time.Time         { return e.modTime }
+func (e *entry) IsDir() bool                { return e.fileMode.IsDir() }
+func (e *entry) Info() (fs.FileInfo, error) { return e, nil }
+
+// Sys matches archive/tar, which returns the *tar.Header behind a FileInfo.
+func (e *entry) Sys() any {
+	hdr := e.header()
+	return &hdr
 }
 
 type File struct {
@@ -96,7 +232,7 @@ func (f *File) Close() error {
 
 type FS struct {
 	ra    io.ReaderAt
-	files []*Entry
+	files []*entry
 	index map[string]int
 	dirs  map[string][]fs.DirEntry
 }
@@ -109,9 +245,9 @@ func (fsys *FS) Readlink(name string) (string, error) {
 
 	e := fsys.files[i]
 
-	switch e.Header.Typeflag {
+	switch e.typeflag {
 	case tar.TypeSymlink, tar.TypeLink:
-		return e.Header.Linkname, nil
+		return e.linkname, nil
 	}
 
 	return "", fmt.Errorf("Readlink(%q): file is not a link", name)
@@ -132,9 +268,9 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 
 	e := fsys.files[i]
 
-	switch e.Header.Typeflag {
+	switch e.typeflag {
 	case tar.TypeSymlink, tar.TypeLink:
-		link := e.Header.Linkname
+		link := e.linkname
 		if path.IsAbs(link) {
 			return fsys.open(link, hops+1)
 		}
@@ -144,10 +280,10 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 
 	f := &File{
 		fsys:  fsys,
-		Entry: e,
+		Entry: e.view(),
 	}
 
-	f.sr = io.NewSectionReader(fsys.ra, e.Offset, e.Header.Size)
+	f.sr = io.NewSectionReader(fsys.ra, e.offset, e.size)
 
 	return f, nil
 }
@@ -157,8 +293,14 @@ func (fsys *FS) Open(name string) (fs.File, error) {
 	return fsys.open(name, 0)
 }
 
+// Entries returns every member in archive order, each with its full header.
+// The slice is built on each call; hold it only as long as it is needed.
 func (fsys *FS) Entries() []*Entry {
-	return fsys.files
+	entries := make([]*Entry, len(fsys.files))
+	for i, e := range fsys.files {
+		entries[i] = e.view()
+	}
+	return entries
 }
 
 type root struct{}
@@ -172,7 +314,7 @@ func (r root) Sys() any           { return nil }
 
 func (fsys *FS) Stat(name string) (fs.FileInfo, error) {
 	if i, ok := fsys.index[name]; ok {
-		return fsys.files[i].fi, nil
+		return fsys.files[i], nil
 	}
 
 	// fs.WalkDir expects "." to return a root entry to bootstrap the walk.
@@ -207,7 +349,7 @@ func (cr *countReader) Read(p []byte) (int, error) {
 func New(ra io.ReaderAt, size int64) (*FS, error) {
 	fsys := &FS{
 		ra:    ra,
-		files: []*Entry{},
+		files: []*entry{},
 		index: map[string]int{},
 		dirs:  map[string][]fs.DirEntry{},
 	}
@@ -231,16 +373,11 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		if err != nil {
 			return nil, err
 		}
-		dir := path.Dir(hdr.Name)
-		fsys.index[hdr.Name] = len(fsys.files)
-		fsys.files = append(fsys.files, &Entry{
-			Header: *hdr,
-			Offset: cr.n,
-			dir:    dir,
-			fi:     hdr.FileInfo(),
-		})
+		e := newEntry(hdr, cr.n)
+		fsys.index[e.name] = len(fsys.files)
+		fsys.files = append(fsys.files, e)
 
-		dirCount[dir]++
+		dirCount[e.dir]++
 	}
 
 	// Pre-generate the results of ReadDir so we don't allocate a ton if fs.WalkDir calls us.
