@@ -182,7 +182,10 @@ func TestChecksumIsDecoded(t *testing.T) {
 		return fsys.files[i]
 	}
 	hasRecord := func(e *entry) bool {
-		for _, r := range e.pax {
+		if e.rare == nil {
+			return false
+		}
+		for _, r := range e.rare.pax {
 			if r.key.Value() == paxChecksumKey {
 				return true
 			}
@@ -362,6 +365,11 @@ func randomHeader(r *rand.Rand, i int) (tar.Header, string) {
 		Gname:   []string{"root", "nogroup", ""}[r.IntN(3)],
 		ModTime: time.Unix(int64(r.IntN(1<<31)), 0),
 		Format:  tar.FormatPAX,
+	}
+	// Past the int64-nanosecond horizon (year 2262): the resident record
+	// cannot hold this as nanoseconds and has to keep the time.Time whole.
+	if r.IntN(8) == 0 {
+		hdr.ModTime = time.Unix(int64(1<<40)+int64(r.IntN(1<<20)), 0)
 	}
 	switch tf {
 	case tar.TypeChar, tar.TypeBlock:

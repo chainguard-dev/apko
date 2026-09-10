@@ -101,7 +101,6 @@ type paxRecord struct {
 type entry struct {
 	name     string
 	linkname string
-	dir      string
 	uname    unique.Handle[string]
 	gname    unique.Handle[string]
 	size     int64
@@ -109,65 +108,110 @@ type entry struct {
 	mode     int64
 	uid      int64
 	gid      int64
-	modTime  time.Time
-	devmajor int64
-	devminor int64
+	// mtime is the modification time as Unix nanoseconds. archive/tar builds
+	// every ModTime with time.Unix, so time.Unix(0, mtime) reproduces it
+	// exactly; a value that cannot, such as a zero time or one outside the
+	// int64 nanosecond range, is kept whole in rare.mtime instead.
+	mtime    int64
 	fileMode fs.FileMode
 	format   int8 // archive/tar's formatMax is 32
 	typeflag byte
 	hasPAX   bool
 	// checksum holds the paxChecksumKey record decoded from its 40-character
 	// lowercase hex form, which is what apk-tools writes. Any other spelling
-	// stays in pax verbatim so the header round-trips byte for byte.
+	// stays in rare.pax verbatim so the header round-trips byte for byte.
 	hasChecksum bool
 	checksum    [sha1Size]byte
-	pax         []paxRecord
-	// times is set only when the header carries access or change times,
-	// which apk packages almost never do.
-	times *fileTimes
+	// rare is nil for the typical apk member: a regular file or directory
+	// with a checksum and nothing else unusual. It is allocated only for
+	// the fields below, so the common record does not carry their width.
+	rare *rareFields
+}
+
+// rareFields holds header state that most apk members do not have.
+type rareFields struct {
+	access, change     time.Time
+	mtime              time.Time // set when entry.mtime cannot represent it
+	hasMtime           bool
+	devmajor, devminor int64
+	pax                []paxRecord // PAX records other than the decoded checksum
 }
 
 const sha1Size = 20
 
 // decodeChecksum reports the checksum bytes when v is exactly the lowercase
-// hex encoding of a SHA-1, so that re-encoding reproduces v unchanged.
+// hex encoding of a SHA-1, so that hex.EncodeToString reproduces v unchanged.
+// It decodes by hand rather than through encoding/hex to avoid the two
+// allocations (the []byte copy and the re-encoded string) on the hot path
+// that runs for every member of every package.
 func decodeChecksum(v string) ([sha1Size]byte, bool) {
 	var sum [sha1Size]byte
-	if len(v) != hex.EncodedLen(sha1Size) {
+	if len(v) != 2*sha1Size {
 		return sum, false
 	}
-	if _, err := hex.Decode(sum[:], []byte(v)); err != nil {
-		return sum, false
-	}
-	if hex.EncodeToString(sum[:]) != v {
-		return sum, false
+	for i := range sum {
+		hi, ok1 := lowerHexNibble(v[2*i])
+		lo, ok2 := lowerHexNibble(v[2*i+1])
+		if !ok1 || !ok2 {
+			return sum, false
+		}
+		sum[i] = hi<<4 | lo
 	}
 	return sum, true
 }
 
-type fileTimes struct{ access, change time.Time }
+func lowerHexNibble(c byte) (byte, bool) {
+	switch {
+	case '0' <= c && c <= '9':
+		return c - '0', true
+	case 'a' <= c && c <= 'f':
+		return c - 'a' + 10, true
+	}
+	return 0, false
+}
 
-func newEntry(hdr *tar.Header, offset int64) *entry {
+// newEntry indexes hdr at offset. uname and gname are the interned handles
+// for hdr.Uname and hdr.Gname; the caller supplies them so it can skip the
+// intern lookup when consecutive members share an owner, which in an apk is
+// nearly always.
+func newEntry(hdr *tar.Header, offset int64, uname, gname unique.Handle[string]) *entry {
 	e := &entry{
 		name:     hdr.Name,
 		linkname: hdr.Linkname,
-		dir:      path.Dir(hdr.Name),
-		uname:    unique.Make(hdr.Uname),
-		gname:    unique.Make(hdr.Gname),
+		uname:    uname,
+		gname:    gname,
 		size:     hdr.Size,
 		offset:   offset,
 		mode:     hdr.Mode,
-		modTime:  hdr.ModTime,
-		devmajor: hdr.Devmajor,
-		devminor: hdr.Devminor,
 		uid:      int64(hdr.Uid),
 		gid:      int64(hdr.Gid),
 		fileMode: hdr.FileInfo().Mode(),
 		format:   int8(hdr.Format),
 		typeflag: hdr.Typeflag,
 	}
+	// rare is allocated lazily so the check for each field costs nothing on
+	// the members that have none of them.
+	rare := func() *rareFields {
+		if e.rare == nil {
+			e.rare = &rareFields{}
+		}
+		return e.rare
+	}
+	// Checked by reconstruction, not by range: this is exactly what header()
+	// will do, so it cannot disagree with it.
+	if n := hdr.ModTime.UnixNano(); time.Unix(0, n) == hdr.ModTime {
+		e.mtime = n
+	} else {
+		r := rare()
+		r.mtime, r.hasMtime = hdr.ModTime, true
+	}
 	if !hdr.AccessTime.IsZero() || !hdr.ChangeTime.IsZero() {
-		e.times = &fileTimes{hdr.AccessTime, hdr.ChangeTime}
+		r := rare()
+		r.access, r.change = hdr.AccessTime, hdr.ChangeTime
+	}
+	if hdr.Devmajor != 0 || hdr.Devminor != 0 {
+		r := rare()
+		r.devmajor, r.devminor = hdr.Devmajor, hdr.Devminor
 	}
 	// Keyed on nil, not length: archive/tar hands back a non-nil empty map
 	// for a member preceded by a zero-record extended header.
@@ -180,10 +224,25 @@ func newEntry(hdr *tar.Header, offset int64) *entry {
 					continue
 				}
 			}
-			e.pax = append(e.pax, paxRecord{key: unique.Make(k), value: v})
+			r := rare()
+			r.pax = append(r.pax, paxRecord{key: unique.Make(k), value: v})
 		}
 	}
 	return e
+}
+
+// dir is the directory the member lives in. path.Dir returns a prefix of
+// the name for the paths archive/tar produces, so this does not allocate.
+func (e *entry) dir() string {
+	return path.Dir(e.name)
+}
+
+// modTime rebuilds the header's ModTime from whichever form holds it.
+func (e *entry) modTime() time.Time {
+	if r := e.rare; r != nil && r.hasMtime {
+		return r.mtime
+	}
+	return time.Unix(0, e.mtime)
 }
 
 // header rebuilds the tar.Header this entry was indexed from, including its
@@ -202,20 +261,21 @@ func (e *entry) header() tar.Header {
 		Gid:      int(e.gid),
 		Uname:    e.uname.Value(),
 		Gname:    e.gname.Value(),
-		ModTime:  e.modTime,
-		Devmajor: e.devmajor,
-		Devminor: e.devminor,
+		ModTime:  e.modTime(),
 		Format:   tar.Format(e.format),
 	}
-	if e.times != nil {
-		hdr.AccessTime, hdr.ChangeTime = e.times.access, e.times.change
+	var pax []paxRecord
+	if r := e.rare; r != nil {
+		hdr.AccessTime, hdr.ChangeTime = r.access, r.change
+		hdr.Devmajor, hdr.Devminor = r.devmajor, r.devminor
+		pax = r.pax
 	}
 	if e.hasPAX {
-		hdr.PAXRecords = make(map[string]string, len(e.pax)+1)
+		hdr.PAXRecords = make(map[string]string, len(pax)+1)
 		if e.hasChecksum {
 			hdr.PAXRecords[paxChecksumKey] = hex.EncodeToString(e.checksum[:])
 		}
-		for _, r := range e.pax {
+		for _, r := range pax {
 			k := r.key.Value()
 			hdr.PAXRecords[k] = r.value
 			// archive/tar still fills the deprecated Xattrs view alongside
@@ -231,9 +291,9 @@ func (e *entry) header() tar.Header {
 	return hdr
 }
 
-// view materializes the exported Entry for this record.
-func (e *entry) view() *Entry {
-	return &Entry{Header: e.header(), Offset: e.offset, fi: e}
+// fill materializes the exported Entry for this record into dst.
+func (e *entry) fill(dst *Entry) {
+	*dst = Entry{Header: e.header(), Offset: e.offset, fi: e}
 }
 
 func (e *entry) Name() string {
@@ -245,7 +305,7 @@ func (e *entry) Name() string {
 func (e *entry) Size() int64                { return e.size }
 func (e *entry) Mode() fs.FileMode          { return e.fileMode }
 func (e *entry) Type() fs.FileMode          { return e.fileMode }
-func (e *entry) ModTime() time.Time         { return e.modTime }
+func (e *entry) ModTime() time.Time         { return e.modTime() }
 func (e *entry) IsDir() bool                { return e.fileMode.IsDir() }
 func (e *entry) Info() (fs.FileInfo, error) { return e, nil }
 func (e *entry) String() string             { return fs.FormatFileInfo(e) }
@@ -329,17 +389,22 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 			return fsys.open(link, hops+1)
 		}
 
-		return fsys.open(path.Join(e.dir, link), hops+1)
+		return fsys.open(path.Join(e.dir(), link), hops+1)
 	}
 
-	f := &File{
+	// The File and its Entry share one allocation; the Entry is the exported
+	// view a caller may read through File.Entry, so it has to exist at Open.
+	fe := &struct {
+		f File
+		e Entry
+	}{}
+	e.fill(&fe.e)
+	fe.f = File{
 		fsys:  fsys,
-		Entry: e.view(),
+		sr:    io.NewSectionReader(fsys.ra, e.offset, e.size),
+		Entry: &fe.e,
 	}
-
-	f.sr = io.NewSectionReader(fsys.ra, e.offset, e.size)
-
-	return f, nil
+	return &fe.f, nil
 }
 
 // Open implements fs.FS.
@@ -350,9 +415,13 @@ func (fsys *FS) Open(name string) (fs.File, error) {
 // Entries returns every member in archive order, each with its full header.
 // The slice is built on each call; hold it only as long as it is needed.
 func (fsys *FS) Entries() []*Entry {
+	// One backing array for every Entry rather than an allocation each; the
+	// caller holds the whole slice anyway.
+	backing := make([]Entry, len(fsys.files))
 	entries := make([]*Entry, len(fsys.files))
 	for i, e := range fsys.files {
-		entries[i] = e.view()
+		e.fill(&backing[i])
+		entries[i] = &backing[i]
 	}
 	return entries
 }
@@ -419,6 +488,10 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 
 	cr := &countReader{br, 0}
 	tr := tar.NewReader(cr)
+	// Consecutive members almost always share an owner, so intern once per
+	// run of equal names instead of hashing every header's uname and gname.
+	lastUname, lastGname := "", ""
+	uname, gname := unique.Make(""), unique.Make("")
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -427,11 +500,17 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		if err != nil {
 			return nil, err
 		}
-		e := newEntry(hdr, cr.n)
+		if hdr.Uname != lastUname {
+			lastUname, uname = hdr.Uname, unique.Make(hdr.Uname)
+		}
+		if hdr.Gname != lastGname {
+			lastGname, gname = hdr.Gname, unique.Make(hdr.Gname)
+		}
+		e := newEntry(hdr, cr.n, uname, gname)
 		fsys.index[e.name] = len(fsys.files)
 		fsys.files = append(fsys.files, e)
 
-		dirCount[e.dir]++
+		dirCount[e.dir()]++
 	}
 
 	// Pre-generate the results of ReadDir so we don't allocate a ton if fs.WalkDir calls us.
@@ -441,7 +520,8 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 	}
 
 	for _, f := range fsys.files {
-		fsys.dirs[f.dir] = append(fsys.dirs[f.dir], f)
+		d := f.dir()
+		fsys.dirs[d] = append(fsys.dirs[d], f)
 	}
 
 	for _, files := range fsys.dirs {
