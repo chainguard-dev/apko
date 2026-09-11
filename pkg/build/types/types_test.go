@@ -60,6 +60,12 @@ func TestYamlMarshallingRepositories(t *testing.T) {
 		},
 		want: fmt.Sprintf("repositories:\n    - '@myorg %s'\n", "https://user:xxxxx@dl-cdn.my.org/alpine/v3.22/main"),
 	}, {
+		desc: "runtime repository with creds",
+		in: ImageContents{
+			RuntimeOnlyRepositories: []string{alpineWithCreds},
+		},
+		want: fmt.Sprintf("runtime_repositories:\n    - %s\n", "https://user:xxxxx@dl-cdn.my.org/alpine/v3.22/main"),
+	}, {
 		desc: "invalid tag format - missing @",
 		in: ImageContents{
 			Repositories: []string{"testing https://dl-cdn.alpinelinux.org/alpine/edge/testing"},
