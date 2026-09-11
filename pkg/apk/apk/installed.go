@@ -300,6 +300,12 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 			pkg.Provides = strings.Split(val, " ")
 		case "r":
 			pkg.Replaces = strings.Split(val, " ")
+		case "q":
+			priority, err := strconv.ParseUint(val, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse replaces priority field %s: %w", val, err)
+			}
+			pkg.ReplacesPriority = priority
 		case "c":
 			pkg.RepoCommit = val
 		case "t":
