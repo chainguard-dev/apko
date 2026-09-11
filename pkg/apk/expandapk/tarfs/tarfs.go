@@ -198,8 +198,10 @@ func newEntry(hdr *tar.Header, offset int64, uname, gname unique.Handle[string])
 		return e.rare
 	}
 	// Checked by reconstruction, not by range: this is exactly what header()
-	// will do, so it cannot disagree with it.
-	if n := hdr.ModTime.UnixNano(); time.Unix(0, n) == hdr.ModTime {
+	// will do, so it cannot disagree with it. Struct equality on purpose, not
+	// Equal: the rebuilt header has to be the identical time.Time value,
+	// including location, or DeepEqual against archive/tar's output fails.
+	if n := hdr.ModTime.UnixNano(); time.Unix(0, n) == hdr.ModTime { //nolint:staticcheck // see above
 		e.mtime = n
 	} else {
 		r := rare()
