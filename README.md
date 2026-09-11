@@ -86,7 +86,7 @@ or, with Docker:
 docker run -v "$PWD":/work cgr.dev/chainguard/apko build examples/alpine-base.yaml apko-alpine:test apko-alpine.tar
 ```
 
-You can then load the generated tar image into a Docker environment:
+You can then load the generated tar image, based on your architecture, into a Docker environment:
 
 ```shell
 docker load < apko-alpine.tar
@@ -97,7 +97,7 @@ Loaded image: apko-alpine:test
 ```
 
 ```shell
-docker run -it apko-alpine:test
+docker run -it apko-alpine:test-(processor architecture)
 ```
 
 ```
