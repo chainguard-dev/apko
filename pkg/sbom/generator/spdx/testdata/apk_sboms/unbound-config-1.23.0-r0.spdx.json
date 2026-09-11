@@ -1,0 +1,87 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "apk-unbound-config-1.23.0-r0",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2025-04-24T08:25:21Z",
+    "creators": [
+      "Tool: melange (v0.23.9+dirty)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.22"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/chainguard/melange/6107945343eac5611a87a2eb5a482b79",
+  "documentDescribes": [
+    "SPDXRef-Package-unbound-config-1.23.0-r0"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-unbound-config-1.23.0-r0",
+      "name": "unbound-config",
+      "versionInfo": "1.23.0-r0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Wolfi",
+      "supplier": "Organization: Wolfi",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/unbound-config@1.23.0-r0?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-unbound.yaml-23e8ff8479b39f3f2e97fdca28d814f0c434c39b",
+      "name": "unbound.yaml",
+      "versionInfo": "23e8ff8479b39f3f2e97fdca28d814f0c434c39b",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Wolfi",
+      "supplier": "Organization: Wolfi",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:github/wolfi-dev/os@23e8ff8479b39f3f2e97fdca28d814f0c434c39b#unbound.yaml",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-github.com-NLnetLabs-unbound-release-1.23.0-30c13d0351abd2edc3d6dc76365f576c87b9736e-0",
+      "name": "unbound",
+      "versionInfo": "release-1.23.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Nlnetlabs",
+      "supplier": "Organization: Nlnetlabs",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:github/nlnetlabs/unbound@release-1.23.0",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-unbound-config-1.23.0-r0",
+      "relationshipType": "DESCRIBED_BY",
+      "relatedSpdxElement": "SPDXRef-Package-unbound.yaml-23e8ff8479b39f3f2e97fdca28d814f0c434c39b"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-unbound-config-1.23.0-r0",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-Package-github.com-NLnetLabs-unbound-release-1.23.0-30c13d0351abd2edc3d6dc76365f576c87b9736e-0"
+    }
+  ]
+}

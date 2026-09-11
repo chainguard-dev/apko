@@ -20,3 +20,8 @@ bin/
 .idea
 tmp/
 _output
+
+# SBOM outputs from apko
+sbom-*
+
+.DS_Store

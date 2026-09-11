@@ -3,3 +3,6 @@ contents:
     - https://dl-cdn.alpinelinux.org/alpine/edge/main
   packages:
     - openssh-client
+
+archs:
+- x86_64

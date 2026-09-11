@@ -12,25 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tarfs
+package tarfs_test
 
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"io/fs"
 	"path/filepath"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
+	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func TestTarFS(t *testing.T) {
-	tfs := New()
+	tfs := tarfs.New()
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "apko.yaml")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
 	}
 
 	bc, err := build.New(ctx, tfs, opts...)
@@ -73,12 +79,13 @@ func TestTarFS(t *testing.T) {
 	var file *tar.Header
 	for _, hdr := range pkg.Files {
 		if hdr.Name == want {
-			file = hdr
+			file = &hdr
 			break
 		}
 	}
 	if file == nil {
 		t.Fatalf("did not find %q", want)
+		return
 	}
 	file.Typeflag = tar.TypeReg
 
@@ -109,4 +116,59 @@ func TestTarFS(t *testing.T) {
 	if _, err := tfs.WriteHeader(*file, tfs, otherPkg); err != nil {
 		t.Errorf("pkg replaces file, got %v", err)
 	}
+
+	// Ensure that symlinks work with replaces.
+	{
+		original := tar.Header{
+			Name:     "etc/os-release-symlink",
+			Typeflag: tar.TypeSymlink,
+			Linkname: "etc/os-release-symlink",
+		}
+		originalDigest := sha1.Sum([]byte(original.Linkname)) //nolint:gosec
+		originalChecksum := hex.EncodeToString(originalDigest[:])
+		original.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": originalChecksum,
+		}
+
+		if _, err := tfs.WriteHeader(original, tfs, &pkg.Package); err != nil {
+			t.Fatalf("symlinking: %v", err)
+		}
+
+		link := tar.Header{
+			Name:     "etc/os-release-symlink",
+			Typeflag: tar.TypeSymlink,
+			Linkname: "etc/somewhere-else",
+		}
+		linkDigest := sha1.Sum([]byte(link.Linkname)) //nolint:gosec
+		linkChecksum := hex.EncodeToString(linkDigest[:])
+		link.PAXRecords = map[string]string{
+			"APK-TOOLS.checksum.SHA1": linkChecksum,
+		}
+
+		if _, err := tfs.WriteHeader(link, tfs, otherPkg); err != nil {
+			t.Errorf("pkg replaces symlink, got %v", err)
+		}
+
+		target, err := tfs.Readlink(link.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if want, got := "etc/somewhere-else", target; want != got {
+			t.Errorf("readlink: want %q, got %q", want, got)
+		}
+	}
+}
+
+func TestTarFSCreate(t *testing.T) {
+	var (
+		tfs = tarfs.New()
+		err error
+	)
+	fd, err := tfs.Create("testfile")
+	require.NoError(t, err)
+
+	fileInfo, err := fd.Stat()
+	require.NoError(t, err)
+	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
 }

@@ -1,4 +1,4 @@
-// Copyright 2022, 2023 Chainguard, Inc.
+// Copyright 2022-2024 Chainguard, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,22 +15,33 @@
 package spdx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
+	"github.com/chainguard-dev/clog"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	purl "github.com/package-url/packageurl-go"
 	"sigs.k8s.io/release-utils/version"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
+
+func init() {
+	generator.RegisterGenerator("spdx", func() generator.Generator {
+		return New()
+	})
+}
 
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
@@ -42,12 +53,10 @@ const (
 	apkSBOMdir           = "/var/lib/db/sbom"
 )
 
-type SPDX struct {
-	fs apkfs.FullFS
-}
+type SPDX struct{}
 
-func New(fs apkfs.FullFS) SPDX {
-	return SPDX{fs}
+func New() *SPDX {
+	return &SPDX{}
 }
 
 func (sx *SPDX) Key() string {
@@ -56,6 +65,10 @@ func (sx *SPDX) Key() string {
 
 func (sx *SPDX) Ext() string {
 	return "spdx.json"
+}
+
+func (sx *SPDX) PredicateType() string {
+	return "https://spdx.dev/Document"
 }
 
 func stringToIdentifier(in string) (out string) {
@@ -70,13 +83,21 @@ func stringToIdentifier(in string) (out string) {
 	})
 }
 
+// Returns ":" otherwise :(
+func hashToString(h v1.Hash) string {
+	if h == (v1.Hash{}) {
+		return ""
+	}
+	return h.String()
+}
+
 // Generate writes an SPDX SBOM in path
-func (sx *SPDX) Generate(opts *options.Options, path string) error {
+func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string) error {
 	// The default document name makes no attempt to avoid
 	// clashes. Ensuring a unique name requires a digest
 	documentName := "sbom"
-	if opts.ImageInfo.LayerDigest != "" {
-		documentName += "-" + opts.ImageInfo.LayerDigest
+	if hash := hashToString(opts.ImageInfo.Layers[0].Digest); hash != "" {
+		documentName += "-" + hash
 	}
 	doc := &Document{
 		ID:      "SPDXRef-DOCUMENT",
@@ -88,30 +109,44 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
-		DataLicense:   "CC0-1.0",
-		Namespace:     "https://spdx.org/spdxdocs/apko/",
-		Packages:      []Package{},
-		Files:         []File{},
-		Relationships: []Relationship{},
+		DataLicense:    "CC0-1.0",
+		Namespace:      "https://spdx.org/spdxdocs/apko/",
+		Packages:       []Package{},
+		Relationships:  []Relationship{},
+		LicensingInfos: []LicensingInfo{},
 	}
+
 	var imagePackage *Package
-	layerPackage := sx.layerPackage(opts)
-
-	doc.DocumentDescribes = []string{layerPackage.ID}
-
 	if opts.ImageInfo.ImageDigest != "" {
 		imagePackage = sx.imagePackage(opts)
-		doc.DocumentDescribes = []string{imagePackage.ID}
 		doc.Packages = append(doc.Packages, *imagePackage)
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: imagePackage.ID,
-			Type:    "CONTAINS",
-			Related: layerPackage.ID,
-		})
 	}
+
+	for _, layer := range opts.ImageInfo.Layers {
+		layerPackage := sx.layerPackage(opts, layer)
+
+		// Add to the relationships list
+		if imagePackage != nil {
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: imagePackage.ID,
+				Type:    "CONTAINS",
+				Related: layerPackage.ID,
+			})
+		} else {
+			doc.DocumentDescribes = []string{layerPackage.ID}
+		}
+
+		doc.Packages = append(doc.Packages, *layerPackage)
+	}
+
+	if imagePackage != nil {
+		doc.DocumentDescribes = []string{imagePackage.ID}
+	}
+
+	// Add the operating system package
+	addOperatingSystem(doc, opts)
 
 	if opts.ImageInfo.VCSUrl != "" {
 		if opts.ImageInfo.ImageDigest != "" {
@@ -119,30 +154,24 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 		}
 	}
 
-	doc.Packages = append(doc.Packages, *layerPackage)
-
 	for _, pkg := range opts.Packages {
-		// add the package
-		p := sx.apkPackage(opts, pkg)
-		// Add the layer to the ID to avoid clashes
-		p.ID = stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s-%s", layerPackage.ID, pkg.Name, pkg.Version,
-		))
-
-		doc.Packages = append(doc.Packages, p)
-
-		// Add to the relationships list
-		doc.Relationships = append(doc.Relationships, Relationship{
-			Element: layerPackage.ID,
-			Type:    "CONTAINS",
-			Related: p.ID,
-		})
-
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, &p, pkg); err != nil {
+		if err := sx.ProcessInternalApkSBOM(ctx, opts, doc, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
+
+	dedupedPackages := make([]Package, 0, len(doc.Packages))
+	seenIDs := make(map[string]struct{})
+	for i := range doc.Packages {
+		if _, ok := seenIDs[doc.Packages[i].ID]; !ok {
+			seenIDs[doc.Packages[i].ID] = struct{}{}
+			dedupedPackages = append(dedupedPackages, doc.Packages[i])
+		} else {
+			clog.FromContext(ctx).Debug("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
+		}
+	}
+	doc.Packages = dedupedPackages
 
 	if err := renderDoc(doc, path); err != nil {
 		return fmt.Errorf("rendering document: %w", err)
@@ -151,47 +180,15 @@ func (sx *SPDX) Generate(opts *options.Options, path string) error {
 	return nil
 }
 
-// replacePackage replaces a package with ID originalID with newID
-func replacePackage(doc *Document, originalID, newID string) {
-	// First check if package is described at the top of the SBOM
-	for i := range doc.DocumentDescribes {
-		if doc.DocumentDescribes[i] == originalID {
-			doc.DocumentDescribes[i] = newID
-			break
-		}
-	}
-
-	// Now, look at all relationships and replace
-	for i := range doc.Relationships {
-		if doc.Relationships[i].Element == originalID {
-			doc.Relationships[i].Element = newID
-		}
-		if doc.Relationships[i].Related == originalID {
-			doc.Relationships[i].Related = newID
-		}
-	}
-
-	// Remove the old ID from the package list
-	newPackages := []Package{}
-	replaced := false
-	for _, r := range doc.Packages {
-		if r.ID != originalID {
-			newPackages = append(newPackages, r)
-			replaced = true
-		}
-	}
-	if replaced {
-		doc.Packages = newPackages
-	}
-}
-
-// locateApkSBOM returns the SBOM
-func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
+// locateApkSBOM returns the path to the SBOM in the given filesystem, using the
+// given Package's name and version. It returns an empty string if the SBOM is
+// not found.
+func locateApkSBOM(fsys apkfs.ReaderFS, ipkg *apk.InstalledPackage) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, p.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, p.Name, re.ReplaceAllString(p.Version, "")),
-		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, p.Name),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, re.ReplaceAllString(ipkg.Version, "")),
+		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, ipkg.Name),
 	} {
 		info, err := fsys.Stat(s)
 		if err != nil {
@@ -209,100 +206,101 @@ func locateApkSBOM(fsys apkfs.FullFS, p *Package) (string, error) {
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, p *Package, ipkg *apk.InstalledPackage) error {
+func (sx *SPDX) ProcessInternalApkSBOM(ctx context.Context, opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, p)
+	path, err := locateApkSBOM(opts.FS, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
 	if path == "" {
+		// The SBOM does not exist.
+		// (So just ignore that the package was specified to the SPDX Generate method?)
 		return nil
 	}
 
-	internalDoc, err := sx.ParseInternalSBOM(opts, path)
+	apkSBOMDoc, err := sx.ParseInternalSBOM(opts, path)
 	if err != nil {
 		// TODO: Log error parsing apk SBOM
 		return nil
 	}
 
 	// Cycle the top level elements...
-	elementIDs := map[string]struct{}{}
-	for _, elementID := range internalDoc.DocumentDescribes {
-		elementIDs[elementID] = struct{}{}
+	// Find elements described by the document - check both documentDescribes array
+	// and DESCRIBES relationships (from SPDXRef-DOCUMENT)
+	idsDescribedByAPKSBOM := map[string]struct{}{}
+
+	// First check documentDescribes array
+	for _, elementID := range apkSBOMDoc.DocumentDescribes {
+		idsDescribedByAPKSBOM[elementID] = struct{}{}
+	}
+
+	// Also check for DESCRIBES relationships from SPDXRef-DOCUMENT
+	for _, rel := range apkSBOMDoc.Relationships {
+		if rel.Element == "SPDXRef-DOCUMENT" && rel.Type == "DESCRIBES" {
+			idsDescribedByAPKSBOM[rel.Related] = struct{}{}
+		}
 	}
 
 	// ... searching for a 1st level package
 	targetElementIDs := map[string]struct{}{}
-	for _, pkg := range internalDoc.Packages {
-		// that matches the name
-		if p.Name != pkg.Name {
-			continue
-		}
-
-		if _, ok := elementIDs[pkg.ID]; !ok {
+	for _, pkg := range apkSBOMDoc.Packages {
+		if _, ok := idsDescribedByAPKSBOM[pkg.ID]; !ok {
 			continue
 		}
 
 		targetElementIDs[pkg.ID] = struct{}{}
-		if len(targetElementIDs) == len(elementIDs) {
+		if len(targetElementIDs) == len(idsDescribedByAPKSBOM) {
 			// Exit early if we found them all.
 			break
 		}
 	}
 
-	// Copy the targetElementIDs
-	todo := make(map[string]struct{}, len(internalDoc.Relationships))
+	sortedTargetElementIDs := make([]string, 0, len(targetElementIDs))
 	for id := range targetElementIDs {
+		sortedTargetElementIDs = append(sortedTargetElementIDs, id)
+	}
+	// Sort the element IDs so repeated builds produce the same relationship order.
+	sort.Strings(sortedTargetElementIDs)
+
+	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
+	for _, id := range sortedTargetElementIDs {
 		todo[id] = struct{}{}
 	}
 
-	if err := copySBOMElements(internalDoc, doc, todo, ipkg); err != nil {
+	if err := copySBOMElements(apkSBOMDoc, doc, todo); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
-	// TODO: This loop seems very wrong.
-	for id := range targetElementIDs {
-		// Search for a package in the new SBOM describing the same thing
-		for _, pkg := range doc.Packages {
-			// TODO: Think if we need to match version too
-			if pkg.Name == p.Name {
-				replacePackage(doc, pkg.ID, id)
-				break
-			}
+	mergeLicensingInfos(ctx, apkSBOMDoc, doc)
+
+	// Add CONTAINS relationships from the document root package to all top-level elements from the internal SBOM.
+	// This ensures they are reachable from the document root for tools that traverse the SBOM graph.
+	if len(doc.DocumentDescribes) > 0 {
+		rootPkgID := doc.DocumentDescribes[0]
+		for _, elementID := range sortedTargetElementIDs {
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: rootPkgID,
+				Type:    "CONTAINS",
+				Related: elementID,
+			})
 		}
 	}
 
 	return nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, ipkg *apk.InstalledPackage) error {
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
 	// Walk the graph looking for things to copy.
 	// Loop until we don't find any new todos.
 	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
 		for _, r := range sourceDoc.Relationships {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
+				continue
+			}
 			if _, ok := todo[r.Element]; ok {
 				todo[r.Related] = struct{}{}
 			}
 		}
-	}
-
-	// The APK SBOMs we are copying Files from may have duplicate file entries.
-	//
-	// A file can be overwritten if:
-	//  1. one package replaces another package
-	//  2. the packages are in the same origin
-	//
-	// Files with the same checksum are also skipped on install since they don't conflict.
-	//
-	// We need to reconcile these files that were overwritten or omitted to avoid having
-	// conflicting entries (different checksums) for the same file in our image SBOM.
-	// To do this, we consult /lib/apk/db/installed to know which package's file "won".
-	// Here, we create a set of the files that are owned by this package and only include
-	//
-	// those when copying from sourceDoc.Files.
-	ownedFiles := map[string]struct{}{}
-	for _, hdr := range ipkg.Files {
-		ownedFiles[hdr.Name] = struct{}{}
 	}
 
 	// Now copy everything over.
@@ -315,24 +313,11 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 		}
 	}
 
-	for _, f := range sourceDoc.Files {
-		if _, ok := todo[f.ID]; !ok {
-			continue
-		}
-
-		done[f.ID] = struct{}{}
-
-		f.Name = strings.TrimPrefix(f.Name, "/") // Strip leading slashes, which SPDX doesn't like.
-
-		if _, ok := ownedFiles[f.Name]; !ok {
-			continue
-		}
-
-		targetDoc.Files = append(targetDoc.Files, f)
-	}
-
 	for _, r := range sourceDoc.Relationships {
 		if _, ok := todo[r.Element]; ok {
+			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
+				continue
+			}
 			targetDoc.Relationships = append(targetDoc.Relationships, r)
 		}
 	}
@@ -352,10 +337,29 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}, 
 	return nil
 }
 
+func mergeLicensingInfos(ctx context.Context, sourceDoc, targetDoc *Document) {
+	var found bool
+	for _, sourceinfo := range sourceDoc.LicensingInfos {
+		found = false
+		for _, targetinfo := range targetDoc.LicensingInfos {
+			if targetinfo.LicenseID == sourceinfo.LicenseID {
+				if targetinfo.ExtractedText != sourceinfo.ExtractedText {
+					clog.FromContext(ctx).Warnf("source & target LicenseID %s differ in Text; please either update the package's license-path or use the correct LicenseID", targetinfo.LicenseID)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			targetDoc.LicensingInfos = append(targetDoc.LicensingInfos, sourceinfo)
+		}
+	}
+}
+
 // ParseInternalSBOM opens an SBOM inside apks and
 func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
-	data, err := sx.fs.ReadFile(path)
+	data, err := opts.FS.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
@@ -363,6 +367,26 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
 		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
 	}
+
+	// Fix up missing data, checkers require Originator &
+	// Supplier, but older apks do not have it set, copy image
+	// Supplier. Also files are stripped from sbom, thus set
+	// filesAnalyzed to false and omit packageVerificationCode
+	for i := range internalSBOM.Packages {
+		if internalSBOM.Packages[i].Originator == "" {
+			internalSBOM.Packages[i].Originator = supplier(opts)
+		}
+		if internalSBOM.Packages[i].Supplier == "" {
+			internalSBOM.Packages[i].Supplier = internalSBOM.Packages[i].Originator
+		}
+		if internalSBOM.Packages[i].FilesAnalyzed {
+			internalSBOM.Packages[i].FilesAnalyzed = false
+		}
+		if internalSBOM.Packages[i].VerificationCode != nil {
+			internalSBOM.Packages[i].VerificationCode = nil
+		}
+	}
+
 	return internalSBOM, nil
 }
 
@@ -384,14 +408,21 @@ func renderDoc(doc *Document, path string) error {
 	return nil
 }
 
+func supplier(opts *options.Options) string {
+	if opts.OS.Name == "" {
+		return NOASSERTION
+	}
+	return "Organization: " + opts.OS.Name
+}
+
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
+			"SPDXRef-Package-Image-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		DownloadLocation: NOASSERTION,
 		PrimaryPurpose:   "CONTAINER",
 		FilesAnalyzed:    false,
@@ -415,64 +446,30 @@ func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	}
 }
 
-// apkPackage returns a SPDX package describing an apk
-func (sx *SPDX) apkPackage(opts *options.Options, pkg *apk.InstalledPackage) Package {
-	return Package{
-		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s-%s", pkg.Name, pkg.Version,
-		)),
-		Name:             pkg.Name,
-		Version:          pkg.Version,
-		Supplier:         "Organization: " + opts.OS.Name,
-		FilesAnalyzed:    false,
-		LicenseConcluded: pkg.License,
-		Description:      pkg.Description,
-		DownloadLocation: pkg.URL,
-		Originator:       fmt.Sprintf("Person: %s", pkg.Maintainer),
-		SourceInfo:       "Package info from apk database",
-		Checksums: []Checksum{
-			{
-				Algorithm: "SHA1",
-				Value:     fmt.Sprintf("%x", pkg.Checksum),
-			},
-		},
-		ExternalRefs: []ExternalRef{
-			{
-				Category: ExtRefPackageManager,
-				Locator: purl.NewPackageURL(
-					"apk", opts.OS.ID, pkg.Name, pkg.Version,
-					purl.QualifiersFromMap(
-						map[string]string{"arch": opts.ImageInfo.Arch.ToAPK()},
-					), "").String(),
-				Type: ExtRefTypePurl,
-			},
-		},
-	}
-}
-
 // LayerPackage returns a package describing the layer
-func (sx *SPDX) layerPackage(opts *options.Options) *Package {
-	layerPackageName := opts.ImageInfo.LayerDigest
+func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Package {
+	layerPackageName := hashToString(layer.Digest)
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	return &Package{
-		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
+		ID:               fmt.Sprintf("SPDXRef-Package-ImageLayer-%s", mainPkgID),
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		Originator:       "",
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
 		ExternalRefs: []ExternalRef{
 			{
 				Category: ExtRefPackageManager,
 				Type:     ExtRefTypePurl,
 				Locator: purl.NewPackageURL(
-					purl.TypeOCI, "", opts.ImagePurlName(), opts.ImageInfo.LayerDigest,
+					purl.TypeOCI, "", opts.ImagePurlName(), hashToString(layer.Digest),
 					nil, "",
-				).String() + "?" + opts.LayerPurlQualifiers().String(),
+				).String() + "?" + opts.LayerPurlQualifiers(layer).String(),
 			},
 		},
 	}
@@ -486,16 +483,22 @@ type Document struct {
 	DataLicense          string                `json:"dataLicense"`
 	Namespace            string                `json:"documentNamespace"`
 	DocumentDescribes    []string              `json:"documentDescribes"`
-	Files                []File                `json:"files,omitempty"`
 	Packages             []Package             `json:"packages"`
 	Relationships        []Relationship        `json:"relationships"`
 	ExternalDocumentRefs []ExternalDocumentRef `json:"externalDocumentRefs,omitempty"`
+	LicensingInfos       []LicensingInfo       `json:"hasExtractedLicensingInfos,omitempty"`
 }
 
 type ExternalDocumentRef struct {
 	Checksum           Checksum `json:"checksum"`
 	ExternalDocumentID string   `json:"externalDocumentId"`
 	SPDXDocument       string   `json:"spdxDocument"`
+}
+
+// Can also contain name, comment, seeAlso
+type LicensingInfo struct {
+	LicenseID     string `json:"licenseId"`
+	ExtractedText string `json:"extractedText"`
 }
 
 type CreationInfo struct {
@@ -517,29 +520,27 @@ type File struct {
 }
 
 type Package struct {
-	ID                   string                   `json:"SPDXID"`
-	Name                 string                   `json:"name"`
-	Version              string                   `json:"versionInfo,omitempty"`
-	FilesAnalyzed        bool                     `json:"filesAnalyzed"`
-	HasFiles             []string                 `json:"hasFiles,omitempty"`
-	LicenseInfoFromFiles []string                 `json:"licenseInfoFromFiles,omitempty"`
-	LicenseConcluded     string                   `json:"licenseConcluded,omitempty"`
-	LicenseDeclared      string                   `json:"licenseDeclared,omitempty"`
-	Description          string                   `json:"description,omitempty"`
-	DownloadLocation     string                   `json:"downloadLocation,omitempty"`
-	Originator           string                   `json:"originator,omitempty"`
-	Supplier             string                   `json:"supplier,omitempty"`
-	SourceInfo           string                   `json:"sourceInfo,omitempty"`
-	CopyrightText        string                   `json:"copyrightText,omitempty"`
-	PrimaryPurpose       string                   `json:"primaryPackagePurpose,omitempty"`
-	Checksums            []Checksum               `json:"checksums,omitempty"`
-	ExternalRefs         []ExternalRef            `json:"externalRefs,omitempty"`
-	VerificationCode     *PackageVerificationCode `json:"packageVerificationCode,omitempty"`
+	ID               string                   `json:"SPDXID"`
+	Name             string                   `json:"name"`
+	Version          string                   `json:"versionInfo,omitempty"`
+	FilesAnalyzed    bool                     `json:"filesAnalyzed"`
+	LicenseConcluded string                   `json:"licenseConcluded,omitempty"`
+	LicenseDeclared  string                   `json:"licenseDeclared,omitempty"`
+	Description      string                   `json:"description,omitempty"`
+	DownloadLocation string                   `json:"downloadLocation"`
+	Originator       string                   `json:"originator,omitempty"`
+	Supplier         string                   `json:"supplier,omitempty"`
+	SourceInfo       string                   `json:"sourceInfo,omitempty"`
+	CopyrightText    string                   `json:"copyrightText,omitempty"`
+	AttributionText  string                   `json:"attributionText,omitempty"`
+	PrimaryPurpose   string                   `json:"primaryPackagePurpose,omitempty"`
+	Checksums        []Checksum               `json:"checksums,omitempty"`
+	ExternalRefs     []ExternalRef            `json:"externalRefs,omitempty"`
+	VerificationCode *PackageVerificationCode `json:"packageVerificationCode,omitempty"`
 }
 
 type PackageVerificationCode struct {
-	Value         string   `json:"packageVerificationCodeValue,omitempty"`
-	ExcludedFiles []string `json:"packageVerificationCodeExcludedFiles,omitempty"`
+	Value string `json:"packageVerificationCodeValue,omitempty"`
 }
 
 type Checksum struct {
@@ -560,7 +561,7 @@ type Relationship struct {
 }
 
 func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
-	if opts.ImageInfo.Images == nil || len(opts.ImageInfo.Images) == 0 {
+	if len(opts.ImageInfo.Images) == 0 {
 		return errors.New("unable to render index sbom, no architecture images found")
 	}
 	documentName := "sbom"
@@ -577,7 +578,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
@@ -590,7 +591,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 		ID:               "SPDXRef-Package-" + stringToIdentifier(opts.ImageInfo.IndexDigest.DeepCopy().String()),
 		Name:             opts.ImageInfo.IndexDigest.DeepCopy().String(),
 		Version:          opts.ImageInfo.IndexDigest.DeepCopy().String(),
-		Supplier:         "Organization: " + opts.OS.Name,
+		Supplier:         supplier(opts),
 		FilesAnalyzed:    false,
 		Description:      "Multi-arch image index",
 		SourceInfo:       "Generated at image build time by apko",
@@ -624,7 +625,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 			ID:               imagePackageID,
 			Name:             fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
 			Version:          fmt.Sprintf("sha256:%s", info.Digest.DeepCopy().Hex),
-			Supplier:         "Organization: " + opts.OS.Name,
+			Supplier:         supplier(opts),
 			FilesAnalyzed:    false,
 			DownloadLocation: NOASSERTION,
 			PrimaryPurpose:   "CONTAINER",
@@ -664,12 +665,30 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 	return nil
 }
 
+// addOperatingSystem adds a package describing the operating system
+func addOperatingSystem(doc *Document, opts *options.Options) {
+	osPackage := Package{
+		ID:               fmt.Sprintf("SPDXRef-OperatingSystem-%s", stringToIdentifier(opts.OS.ID)),
+		Name:             opts.OS.ID,
+		Version:          opts.OS.Version,
+		Supplier:         supplier(opts),
+		FilesAnalyzed:    false,
+		Description:      "Operating System",
+		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "OPERATING_SYSTEM",
+	}
+
+	doc.Packages = append(doc.Packages, osPackage)
+}
+
 // addSourcePackage creates a package describing the source code
 func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *options.Options) {
 	version := ""
 	checksums := []Checksum{}
 	packageName := vcsURL
 	if url, commitHash, found := strings.Cut(vcsURL, "@"); found {
+		// This is git commit hash, currently defined as SHA1
+		// SHA256 is only experimental in gitlab
 		checksums = append(checksums, Checksum{
 			Algorithm: "SHA1",
 			Value:     commitHash,
@@ -689,23 +708,21 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 	}
 
 	sourcePackage := Package{
-		ID:                   fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
-		Name:                 packageName,
-		Version:              version,
-		Supplier:             "Organization: " + opts.OS.Name,
-		FilesAnalyzed:        false,
-		HasFiles:             []string{},
-		LicenseInfoFromFiles: []string{},
-		PrimaryPurpose:       "SOURCE",
-		Description:          "Image configuration source",
-		DownloadLocation:     downloadLocation,
-		Checksums:            checksums,
-		ExternalRefs:         []ExternalRef{},
+		ID:               fmt.Sprintf("SPDXRef-Package-%s", stringToIdentifier(vcsURL)),
+		Name:             packageName,
+		Version:          version,
+		Supplier:         supplier(opts),
+		FilesAnalyzed:    false,
+		PrimaryPurpose:   "SOURCE",
+		Description:      "Image configuration source",
+		DownloadLocation: downloadLocation,
+		Checksums:        checksums,
+		ExternalRefs:     []ExternalRef{},
 	}
 
 	// If this is a github package, add a purl to it:
-	if strings.HasPrefix(packageName, "github.com/") {
-		slug := strings.TrimPrefix(packageName, "github.com/")
+	if after, ok := strings.CutPrefix(packageName, "github.com/"); ok {
+		slug := after
 		org, user, ok := strings.Cut(slug, "/")
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{

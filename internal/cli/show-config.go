@@ -20,16 +20,20 @@ import (
 	"fmt"
 	"os"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 )
 
 func showConfig() *cobra.Command {
 	var extraKeys []string
+	var extraBuildRepos []string
 	var extraRepos []string
+	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use:   "show-config",
@@ -42,16 +46,20 @@ The derived configuration is rendered in YAML.
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ShowConfigCmd(cmd.Context(),
-				build.WithConfig(args[0]),
-				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
+				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	return cmd
 }
@@ -63,7 +71,7 @@ func ShowConfigCmd(ctx context.Context, opts ...build.Option) error {
 	}
 	defer os.RemoveAll(wd)
 
-	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+	fs := apkfs.DirFS(ctx, wd, apkfs.WithCreateDir())
 
 	bc, err := build.New(ctx, fs, opts...)
 	if err != nil {

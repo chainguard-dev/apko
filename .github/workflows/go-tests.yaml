@@ -2,22 +2,85 @@ name: Go Tests
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
+
+permissions: {}
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
     steps:
-    - name: Install Go
-      uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v3.0.0
-      with:
-        go-version: '1.21'
-        check-latest: true
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            alpinelinux.org:443
+            api.github.com:443
+            apk.cgr.dev:443
+            archive.ubuntu.com:80
+            azure.archive.ubuntu.com:80
+            dl-cdn.alpinelinux.org:443
+            dl.google.com:443
+            files.example.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            security.ubuntu.com:80
+            storage.googleapis.com:443
+            sum.golang.org:443
 
-    - name: Checkout code
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Test
-      run: make test
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      # erofs-utils supplies fsck.erofs, which several EROFS writer tests use as
+      # a second opinion from the C reference implementation. Those checks are
+      # optional by design so contributors without the package still get a green
+      # build -- which means that without this step they never run anywhere, and
+      # a misunderstanding shared by our writer and our reader would go
+      # unnoticed. Not conditional on changed paths: a mismatch can be
+      # introduced by a go-erofs bump as easily as by an apko change.
+      - name: Install erofs-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils
+          # Assert it landed on PATH: the tests degrade to a t.Log if it did
+          # not, so a silent install failure would look like a pass.
+          command -v fsck.erofs
+
+      - name: Test
+        run: |
+          # The tests golden fixtures all expect `SOURCE_DATE_EPOCH` to be `0`.
+          # They set this themselves. This environment variable is a guard to
+          # ensure that if the test environment happens to have
+          # `SOURCE_DATE_EPOCH` set, it does not end up being used. The `awk`
+          # program returns a random integer between `1` and now.
+          SOURCE_DATE_EPOCH=$(
+            awk 'BEGIN {
+              now = systime()
+              srand(now)
+
+              print 1 + int(rand() * now)
+            }'
+          )
+
+          export SOURCE_DATE_EPOCH
+
+          make test

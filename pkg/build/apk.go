@@ -17,15 +17,47 @@ package build
 import (
 	"context"
 	"fmt"
-	"regexp"
 
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+func (bc *Context) postBuildSetApk(ctx context.Context) error {
+	// When building on top of base image, we add "artificial" apkindex to repositories that is
+	// stored in some temp path. After build is done we need to bring the repositories file to
+	// clean state so that image builds are byte identical.
+	//
+	// We do not include the build-time repositories here, because this is
+	// what defines the /etc/apk/repositories file in the final image.
+	runtimeRepos := sets.List(
+		sets.New(bc.ic.Contents.Repositories...).
+			Insert(bc.ic.Contents.RuntimeOnlyRepositories...).
+			Insert(bc.o.ExtraRepos...))
+	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
+		return fmt.Errorf("failed to set apk repositories: %w", err)
+	}
+	// TODO(sfc-gh-mhazy) Handle the rest of apk files (scripts, triggers)
+	return nil
+}
+
 func (bc *Context) initializeApk(ctx context.Context) error {
-	alpineVersions := parseOptionsFromRepositories(bc.ic.Contents.Repositories)
-	if err := bc.apk.InitDB(ctx, alpineVersions...); err != nil {
+	ctx, span := otel.Tracer("apko").Start(ctx, "initializeApk")
+	defer span.End()
+
+	// We set the repositories file to be the union of all of the
+	// repositories when we initialize things, and we overwrite it
+	// with just the runtime repositories when we are done.
+	//
+	// We do not include the runtime-only repositories here, because those repos
+	// should not be used at build time.
+	buildRepos := sets.List(
+		sets.New(bc.ic.Contents.BuildRepositories...).
+			Insert(bc.ic.Contents.Repositories...).
+			Insert(bc.o.ExtraBuildRepos...).
+			Insert(bc.o.ExtraRepos...),
+	)
+	if err := bc.apk.InitDB(ctx, buildRepos...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
 	}
 
@@ -40,8 +72,11 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		repos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
-		if err := bc.apk.SetRepositories(repos); err != nil {
+		// We add auxiliary repository to resolve packages from the base image.
+		if bc.baseimg != nil {
+			buildRepos = append(buildRepos, bc.baseimg.APKIndexPath())
+		}
+		if err := bc.apk.SetRepositories(ctx, buildRepos); err != nil {
 			return fmt.Errorf("failed to initialize apk repositories: %w", err)
 		}
 		return nil
@@ -49,7 +84,16 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 
 	eg.Go(func() error {
 		packages := sets.List(sets.New(bc.ic.Contents.Packages...).Insert(bc.o.ExtraPackages...))
-		if err := bc.apk.SetWorld(packages); err != nil {
+		// Get all packages from base image and merge them into the desired world.
+		if bc.baseimg != nil {
+			basePkgs := bc.baseimg.InstalledPackages()
+			basePkgsNames := make([]string, 0, len(basePkgs))
+			for _, basePkg := range basePkgs {
+				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Name, basePkg.Version))
+			}
+			packages = append(packages, basePkgsNames...)
+		}
+		if err := bc.apk.SetWorld(ctx, packages); err != nil {
 			return fmt.Errorf("failed to initialize apk world: %w", err)
 		}
 		return nil
@@ -60,18 +104,4 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
-
-func parseOptionsFromRepositories(repos []string) []string {
-	var versions = make([]string, 0)
-	for _, r := range repos {
-		parts := repoRE.FindStringSubmatch(r)
-		if len(parts) < 2 {
-			continue
-		}
-		versions = append(versions, parts[1])
-	}
-	return versions
 }

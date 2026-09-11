@@ -16,18 +16,18 @@ package options
 
 import (
 	"fmt"
-	"io/fs"
 	"net/url"
 	"path/filepath"
 	"sort"
 	"time"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	purl "github.com/package-url/packageurl-go"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -37,7 +37,7 @@ type Options struct {
 	ImageInfo ImageInfo
 
 	// Working directory,inherited from build context
-	FS fs.FS
+	FS fs.ReaderFS
 
 	// The reference of the generated image. Used for naming and purls
 	ImageReference string
@@ -48,10 +48,7 @@ type Options struct {
 	// FileName is the base name for the sboms, the proper extension will get appended
 	FileName string
 
-	// Formats dictates which SBOM formats we will output
-	Formats []string
-
-	// Packages is alist of packages which will be listed in the SBOM
+	// Packages is a list of packages which will be listed in the SBOM
 	Packages []*apk.InstalledPackage
 }
 
@@ -68,8 +65,8 @@ type ImageInfo struct {
 	Tag             string
 	Name            string
 	Repository      string
-	LayerDigest     string
 	ImageDigest     string
+	Layers          []v1.Descriptor
 	VCSUrl          string
 	IndexMediaType  ggcrtypes.MediaType
 	ImageMediaType  ggcrtypes.MediaType
@@ -130,7 +127,7 @@ func (o *Options) ImagePurlQualifiers() (qualifiers PurlQualifiers) {
 // This function is here while a fix in the purl library gets merged
 // ref: https://github.com/package-url/packageurl-go/pull/22
 func (pq PurlQualifiers) String() string {
-	q := []purl.Qualifier{}
+	q := make([]purl.Qualifier, 0, len(pq))
 	for k, v := range pq {
 		q = append(q, purl.Qualifier{Key: k, Value: v})
 	}
@@ -149,16 +146,9 @@ func (pq PurlQualifiers) String() string {
 
 // LayerPurlQualifiers reurns the qualifiers for the purl, they are based
 // on the image with the corresponding mediatype
-func (o *Options) LayerPurlQualifiers() (qualifiers PurlQualifiers) {
+func (o *Options) LayerPurlQualifiers(layer v1.Descriptor) (qualifiers PurlQualifiers) {
 	qualifiers = o.ImagePurlQualifiers()
-	switch o.ImageInfo.ImageMediaType {
-	case ggcrtypes.OCIManifestSchema1:
-		qualifiers["mediaType"] = string(ggcrtypes.OCILayer)
-	case ggcrtypes.DockerManifestSchema2:
-		qualifiers["mediaType"] = string(ggcrtypes.DockerLayer)
-	default:
-		qualifiers["mediaType"] = ""
-	}
+	qualifiers["mediaType"] = string(layer.MediaType)
 	return qualifiers
 }
 

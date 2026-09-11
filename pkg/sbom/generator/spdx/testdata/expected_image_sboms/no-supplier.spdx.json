@@ -1,0 +1,73 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "sbom",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "0001-01-01T00:00:00Z",
+    "creators": [
+      "Tool: apko (devel)",
+      "Organization: Chainguard, Inc"
+    ],
+    "licenseListVersion": "3.27"
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/apko/",
+  "documentDescribes": [
+    "SPDXRef-Package-ImageLayer-"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-ImageLayer-",
+      "name": "",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "apko operating system layer",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Apko Images, Plc",
+      "primaryPackagePurpose": "CONTAINER",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:oci/image?mediaType=\u0026os=linux",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-OperatingSystem-apko-images",
+      "name": "apko-images",
+      "versionInfo": "3.0",
+      "filesAnalyzed": false,
+      "description": "Operating System",
+      "downloadLocation": "NOASSERTION",
+      "supplier": "Organization: Apko Images, Plc",
+      "primaryPackagePurpose": "OPERATING_SYSTEM"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-libattr1-2.5.1-r2",
+      "name": "libattr1",
+      "versionInfo": "2.5.1-r2",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Apko Images, Plc",
+      "supplier": "Organization: Apko Images, Plc",
+      "copyrightText": "TODO\n",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:apk/wolfi/libattr1@2.5.1-r2?arch=x86_64",
+          "referenceType": "purl"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-ImageLayer-",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-libattr1-2.5.1-r2"
+    }
+  ]
+}

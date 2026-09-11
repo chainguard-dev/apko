@@ -1,4 +1,5 @@
 project_name: apko
+version: 2
 
 before:
   hooks:
@@ -20,6 +21,9 @@ builds:
     - "386"
     - amd64
     - arm64
+    - ppc64le
+    - riscv64
+    - s390x
   ignore:
     - goos: darwin
       goarch: "386"
@@ -46,7 +50,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
 
 changelog:
   sort: asc
@@ -57,5 +61,5 @@ changelog:
 
 release:
   draft: false
-  prerelease: true
+  prerelease: false
   name_template: "Release {{ .Tag }}"

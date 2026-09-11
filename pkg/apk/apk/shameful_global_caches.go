@@ -1,0 +1,132 @@
+// Copyright 2023 Chainguard, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package apk
+
+import (
+	"context"
+	"maps"
+	"slices"
+	"sync"
+
+	apkometrics "chainguard.dev/apko/pkg/metrics"
+)
+
+// maxResolverCacheEntries bounds the number of distinct index combinations
+// each derived cache retains. A multi-arch resolution inserts one resolver
+// entry per arch and one disqualify entry, so the live set is that times the
+// number of distinct repo combinations resolved concurrently. Superseded
+// generations that in-flight resolutions still request stay cached and age
+// out once enough newer combinations have been inserted. Every entry pins a
+// whole index generation, so raising this trades memory for hit rate.
+const maxResolverCacheEntries = 64
+
+// lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
+// objects are immutable and remote generations are deduplicated by (url, etag)
+// in globalIndexCache, so comparing the index objects themselves is a complete
+// key. Entries hold a once-initialized value so the lock covers only the lookup
+// and concurrent requests for the same combination still build it once.
+type lruCache[V any] struct {
+	sync.Mutex
+	max     int
+	entries []lruEntry[V] // least recently used first
+}
+
+type lruEntry[V any] struct {
+	indexes []NamedIndex
+	val     func() V
+}
+
+func newLRUCache[V any](size int) *lruCache[V] {
+	return &lruCache[V]{max: size}
+}
+
+// getOrFill returns the cached value for indexes, computing and inserting it
+// on a miss. The boolean reports whether the value was already cached.
+func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
+	e, hit := c.entry(indexes, fill)
+	return e.val(), hit
+}
+
+// entry returns the cache entry for indexes, creating it on a miss. Building
+// the value happens outside the lock when the caller invokes e.val.
+func (c *lruCache[V]) entry(indexes []NamedIndex, fill func() V) (lruEntry[V], bool) {
+	c.Lock()
+	defer c.Unlock()
+
+	for i, e := range c.entries {
+		if slices.Equal(e.indexes, indexes) {
+			// Move the hit to the most recently used end.
+			c.entries = slices.Delete(c.entries, i, i+1)
+			c.entries = append(c.entries, e)
+			return e, true
+		}
+	}
+
+	e := lruEntry[V]{indexes: slices.Clone(indexes), val: sync.OnceValue(fill)}
+	c.entries = append(c.entries, e)
+	if len(c.entries) > c.max {
+		// Drop the least recently used entry.
+		c.entries = slices.Delete(c.entries, 0, 1)
+	}
+	return e, false
+}
+
+func (c *lruCache[V]) len() int {
+	c.Lock()
+	defer c.Unlock()
+	return len(c.entries)
+}
+
+// It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
+// This caches a PkgResolver based on the input []NamedIndex.
+var globalResolverCache = &resolverCache{newLRUCache[*PkgResolver](maxResolverCacheEntries)}
+
+type resolverCache struct {
+	*lruCache[*PkgResolver]
+}
+
+func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	pr, hit := r.getOrFill(indexes, func() *PkgResolver {
+		return newPkgResolver(ctx, indexes)
+	})
+	if hit {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultHit)
+	} else {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultMiss)
+	}
+	return pr.Clone()
+}
+
+// It is expensive to compute the difference between every architecture.
+// This caches that difference based on the input []NamedIndex for every architecture.
+var globalDisqualifyCache = &disqualifyCache{newLRUCache[map[*RepositoryPackage]string](maxResolverCacheEntries)}
+
+type disqualifyCache struct {
+	*lruCache[map[*RepositoryPackage]string]
+}
+
+func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
+	// Key by the arches in a fixed order so the same request always maps to
+	// the same entry regardless of map iteration order.
+	var indexes []NamedIndex
+	for _, arch := range slices.Sorted(maps.Keys(byArch)) {
+		indexes = append(indexes, byArch[arch]...)
+	}
+
+	dq, _ := r.getOrFill(indexes, func() map[*RepositoryPackage]string {
+		return disqualifyDifference(ctx, byArch)
+	})
+	return maps.Clone(dq)
+}

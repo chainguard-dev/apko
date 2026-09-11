@@ -15,68 +15,92 @@
 package options
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
+	"log"
+	"net/http"
 	"os"
 	"runtime"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
+	"chainguard.dev/apko/pkg/sbom/generator"
 )
 
-type Options struct {
-	WithVCS                 bool               `json:"withVCS,omitempty"`
-	TarballPath             string             `json:"tarballPath,omitempty"`
-	Tags                    []string           `json:"tags,omitempty"`
-	SourceDateEpoch         time.Time          `json:"sourceDateEpoch,omitempty"`
-	SBOMPath                string             `json:"sbomPath,omitempty"`
-	SBOMFormats             []string           `json:"sbomFormats,omitempty"`
-	ExtraKeyFiles           []string           `json:"extraKeyFiles,omitempty"`
-	ExtraRepos              []string           `json:"extraRepos,omitempty"`
-	ExtraPackages           []string           `json:"extraPackages,omitempty"`
-	Arch                    types.Architecture `json:"arch,omitempty"`
-	TempDirPath             string             `json:"tempDirPath,omitempty"`
-	PackageVersionTag       string             `json:"packageVersionTag,omitempty"`
-	PackageVersionTagStem   bool               `json:"packageVersionTagStem,omitempty"`
-	PackageVersionTagPrefix string             `json:"packageVersionTagPrefix,omitempty"`
-	TagSuffix               string             `json:"tagSuffix,omitempty"`
-	Local                   bool               `json:"local,omitempty"`
-	CacheDir                string             `json:"cacheDir,omitempty"`
-	Offline                 bool               `json:"offline,omitempty"`
-	Lockfile                string             `json:"lockfile,omitempty"`
-
-	Log log.Logger
+// SizeLimits configures maximum sizes for various operations to prevent unbounded reads.
+// A value of 0 means use the default, and a value of -1 means no limit.
+type SizeLimits struct {
+	// APKIndexDecompressedMaxSize is the maximum decompressed size for APKINDEX archives (default: 300 MB).
+	// This protects against gzip bombs.
+	APKIndexDecompressedMaxSize int64 `json:"apkIndexDecompressedMaxSize,omitempty"`
+	// APKControlMaxSize is the maximum decompressed size for APK control sections (default: 10 MB).
+	APKControlMaxSize int64 `json:"apkControlMaxSize,omitempty"`
+	// APKDataMaxSize is the maximum decompressed size for APK data sections (default: ~17 GB).
+	// This protects against gzip bombs.
+	APKDataMaxSize int64 `json:"apkDataMaxSize,omitempty"`
+	// HTTPResponseMaxSize is the maximum size for HTTP responses (default: ~9 GB).
+	HTTPResponseMaxSize int64 `json:"httpResponseMaxSize,omitempty"`
 }
+
+// DefaultSizeLimits returns SizeLimits with sensible default values.
+func DefaultSizeLimits() SizeLimits {
+	return SizeLimits{
+		APKIndexDecompressedMaxSize: 300 << 20, // 300 MB
+		APKControlMaxSize:           10 << 20,  // 10 MB
+		APKDataMaxSize:              16 << 30,  // ~17 GB
+		HTTPResponseMaxSize:         8 << 30,   // ~9 GB
+	}
+}
+
+type Options struct {
+	WithVCS bool `json:"withVCS,omitempty"`
+	// ImageConfigFile might, but does not have to be a filename. It might be any abstract configuration identifier.
+	ImageConfigFile string `json:"imageConfigFile,omitempty"`
+	// ImageConfigChecksum (when set) allows to detect mismatch between configuration and the lockfile.
+	ImageConfigChecksum     string                `json:"configChecksum,omitempty"`
+	TarballPath             string                `json:"tarballPath,omitempty"`
+	Tags                    []string              `json:"tags,omitempty"`
+	SourceDateEpoch         time.Time             `json:"sourceDateEpoch,omitempty"`
+	SBOMPath                string                `json:"sbomPath,omitempty"`
+	SBOMGenerators          []generator.Generator `json:"-"`
+	ExtraKeyFiles           []string              `json:"extraKeyFiles,omitempty"`
+	ExtraBuildRepos         []string              `json:"extraBuildRepos,omitempty"`
+	ExtraRepos              []string              `json:"extraRepos,omitempty"`
+	ExtraPackages           []string              `json:"extraPackages,omitempty"`
+	Arch                    types.Architecture    `json:"arch,omitempty"`
+	TempDirPath             string                `json:"tempDirPath,omitempty"`
+	PackageVersionTag       string                `json:"packageVersionTag,omitempty"`
+	PackageVersionTagStem   bool                  `json:"packageVersionTagStem,omitempty"`
+	PackageVersionTagPrefix string                `json:"packageVersionTagPrefix,omitempty"`
+	TagSuffix               string                `json:"tagSuffix,omitempty"`
+	Local                   bool                  `json:"local,omitempty"`
+	CacheDir                string                `json:"cacheDir,omitempty"`
+	DiskCacheEnabled        bool                  `json:"-"`
+	Offline                 bool                  `json:"offline,omitempty"`
+	SharedCache             *apk.Cache            `json:"-"`
+	Lockfile                string                `json:"lockfile,omitempty"`
+	// PreResolvedPackages, when non-nil, is the exact package set to
+	// install — possibly empty, which installs nothing; nil means the
+	// option is unset and the package set is settled another way.
+	PreResolvedPackages []apk.PackageContents `json:"-"`
+	Auth                auth.Authenticator    `json:"-"`
+	IncludePaths        []string              `json:"includePaths,omitempty"`
+	IgnoreSignatures    bool                  `json:"ignoreSignatures,omitempty"`
+	Transport           http.RoundTripper     `json:"-"`
+	PackageGetter       apk.PackageGetter     `json:"-"`
+	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`
+}
+
+type Auth struct{ User, Pass string }
 
 var Default = Options{
-	Log:             &log.Adapter{Out: io.Discard, Level: log.InfoLevel},
-	Arch:            types.ParseArchitecture(runtime.GOARCH),
-	SourceDateEpoch: time.Unix(0, 0).UTC(),
-}
-
-func (o *Options) Summarize(logger log.Logger) {
-	b, err := json.MarshalIndent(o, "", "\t")
-	if err != nil {
-		logger.Errorf("error marshalling build options: %v", err)
-	} else {
-		logger.Printf("build options:\n%s", string(b))
-	}
-}
-
-func (o *Options) Logger() log.Logger {
-	if o.Log != nil {
-		return o.Log
-	}
-	fields := log.Fields{}
-	emptyArch := types.Architecture("")
-
-	if o.Arch != emptyArch {
-		fields["arch"] = o.Arch.ToAPK()
-	}
-
-	return o.Log.WithFields(fields)
+	Arch:             types.ParseArchitecture(runtime.GOARCH),
+	SourceDateEpoch:  time.Unix(0, 0).UTC(),
+	Auth:             auth.DefaultAuthenticators,
+	DiskCacheEnabled: true,
+	SharedCache:      apk.NewCache(false),
+	SizeLimits:       DefaultSizeLimits(),
 }
 
 // Tempdir returns the temporary directory where apko will create
@@ -88,7 +112,7 @@ func (o *Options) TempDir() string {
 
 	path, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
 	if err != nil {
-		o.Logger().Fatalf(fmt.Errorf("creating tempdir: %w", err).Error())
+		log.Fatalf("creating tempdir: %v", err)
 	}
 	o.TempDirPath = path
 	return o.TempDirPath
@@ -101,4 +125,18 @@ func (o Options) TarballFileName() string {
 		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.ToAPK())
 	}
 	return tarName
+}
+
+// LayerFileName returns a deterministic filename for a layer blob in the given
+// format. It exists because TarballFileName's ".tar.gz" is a lie for an EROFS
+// image -- neither a tar nor gzipped -- and anything that sniffs by extension
+// would be misled by it.
+func (o Options) LayerFileName(format types.LayerFormat) string {
+	if format.Resolved() != types.LayerFormatErofs {
+		return o.TarballFileName()
+	}
+	if o.Arch.String() != "" {
+		return fmt.Sprintf("apko-%s.erofs", o.Arch.ToAPK())
+	}
+	return "apko.erofs"
 }

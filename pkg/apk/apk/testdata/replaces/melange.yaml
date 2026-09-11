@@ -1,0 +1,21 @@
+package:
+  name: replaces
+  version: 0.0.1
+  description: testdata with multiple replaces
+  dependencies:
+    replaces:
+      - foo
+      - bar
+
+environment:
+  contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    packages:
+      - alpine-baselayout-data
+      - busybox
+
+pipeline:
+  - runs: |
+      mkdir -p "${{targets.destdir}}"
+      echo "hello" > "${{targets.destdir}}/hello"

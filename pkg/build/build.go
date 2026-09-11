@@ -15,33 +15,45 @@
 package build
 
 import (
-	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/hashicorp/go-multierror"
 	"go.opentelemetry.io/otel"
 	"gopkg.in/yaml.v3"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
 )
 
+// compressionCache stores descriptor information for already-compressed layers,
+// keyed by diffID. This avoids recompressing identical layers.
+var compressionCache sync.Map // map[string]*v1.Descriptor
+
 // Context contains all of the information necessary to build an
-// OCI image. Includes the configurationfor the build,
+// OCI image. Includes the configuration for the build,
 // the path to the config file, the executor for root jails and
 // architecture emulation, the s6 supervisor to add to the image,
 // build options, and the `buildImplementation`, which handles the actual build.
@@ -50,18 +62,28 @@ type Context struct {
 	ic types.ImageConfiguration
 	o  options.Options
 
-	// imageConfigFile path to the config file used, if any, to load the ImageConfiguration
-	imageConfigFile string
-	s6              *s6.Context
-	assertions      []Assertion
-	fs              apkfs.FullFS
-	apk             *apk.APK
+	// formatOverride and annotationOverrides are what the field-level Options
+	// asked for. They are held here rather than written straight to ic, and
+	// resolved onto ic by resolveImageConfiguration once every Option has been
+	// applied.
+	formatOverride      types.LayerFormat
+	annotationOverrides map[string]string
+
+	s6      *s6.Context
+	fs      apkfs.FullFS
+	apk     *apk.APK
+	baseimg *baseimg.BaseImage
 }
 
-func (bc *Context) Summarize() {
-	bc.Logger().Printf("build context:")
-	bc.o.Summarize(bc.Logger())
-	bc.ic.Summarize(bc.Logger())
+func (bc *Context) Summarize(ctx context.Context) {
+	bc.ic.Summarize(ctx)
+}
+
+func (bc *Context) BaseImage() v1.Image {
+	if bc.baseimg != nil {
+		return bc.baseimg.Image()
+	}
+	return empty.Image
 }
 
 func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
@@ -82,21 +104,22 @@ func (bc *Context) GetBuildDateEpoch() (time.Time, error) {
 }
 
 func (bc *Context) BuildImage(ctx context.Context) error {
-	if err := bc.buildImage(ctx); err != nil {
-		bc.Logger().Debugf("buildImage failed: %v", err)
+	log := clog.FromContext(ctx)
+
+	ctx, span := otel.Tracer("apko").Start(ctx, "BuildImage")
+	defer span.End()
+
+	if _, err := bc.buildImage(ctx); err != nil {
+		log.Debugf("buildImage failed: %v", err)
 		b, err2 := yaml.Marshal(bc.ic)
 		if err2 != nil {
-			bc.Logger().Debugf("failed to marshal image configuration: %v", err2)
+			log.Debugf("failed to marshal image configuration: %v", err2)
 		} else {
-			bc.Logger().Debugf("image configuration:\n%s", string(b))
+			log.Debugf("image configuration:\n%s", string(b))
 		}
 		return err
 	}
 	return nil
-}
-
-func (bc *Context) Logger() log.Logger {
-	return bc.o.Logger()
 }
 
 // BuildLayer given the context set up, including
@@ -110,14 +133,40 @@ func (bc *Context) BuildLayer(ctx context.Context) (string, v1.Layer, error) {
 	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayer")
 	defer span.End()
 
-	bc.Summarize()
+	// Check if a non-empty layering strategy is supplied
+	if bc.ic.Layering != nil && (bc.ic.Layering.Strategy != "" || bc.ic.Layering.Budget != 0) {
+		return "", nil, fmt.Errorf("cannot use BuildLayer with a layering strategy, use BuildLayers instead")
+	}
 
 	// build image filesystem
 	if err := bc.BuildImage(ctx); err != nil {
 		return "", nil, err
 	}
+	if err := bc.postBuildSetApk(ctx); err != nil {
+		return "", nil, err
+	}
 
 	return bc.ImageLayoutToLayer(ctx)
+}
+
+// BuildLayers is like BuildLayer but has the potential to return multiple layers.
+func (bc *Context) BuildLayers(ctx context.Context) ([]v1.Layer, error) {
+	ctx, span := otel.Tracer("apko").Start(ctx, "BuildLayers")
+	defer span.End()
+
+	// Use the legacy (single-layer) strategy when:
+	// 1. Layering is nil (original behavior)
+	// 2. Layering is empty (i.e., layering: {})
+	if bc.ic.Layering == nil || (bc.ic.Layering.Strategy == "" && bc.ic.Layering.Budget == 0) {
+		_, layer, err := bc.BuildLayer(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return []v1.Layer{layer}, nil
+	}
+
+	return bc.buildLayers(ctx)
 }
 
 // ImageLayoutToLayer given an already built-out
@@ -127,47 +176,95 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	ctx, span := otel.Tracer("apko").Start(ctx, "ImageLayoutToLayer")
 	defer span.End()
 
-	// run any assertions defined
-	if err := bc.runAssertions(); err != nil {
+	if err := bc.checkPaths(ctx); err != nil {
 		return "", nil, err
 	}
 
-	layerTarGZ, diffid, digest, size, err := bc.BuildTarball(ctx)
-	// build layer tarball
+	var (
+		outfile *os.File
+		err     error
+	)
+
+	if bc.o.TarballPath != "" {
+		outfile, err = os.Create(bc.o.TarballPath)
+	} else {
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
+	}
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("creating tarball file: %w", err)
+	}
+	bc.o.TarballPath = outfile.Name()
+
+	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
+		// The EROFS path does not defer Close: it hashes the finished file, so
+		// the close has to happen first and its error has to be reported
+		// rather than swallowed by a defer. No Sync is needed either —
+		// *os.File does no userspace buffering, so once Close returns, a fresh
+		// Open sees every byte.
+		outName := outfile.Name()
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.TempDir(), bc.o.SourceDateEpoch); err != nil {
+			_ = outfile.Close()
+			return "", nil, fmt.Errorf("generating erofs image: %w", err)
+		}
+		if err := outfile.Close(); err != nil {
+			return "", nil, fmt.Errorf("closing erofs image: %w", err)
+		}
+		l, err := buildErofsLayerFromFile(outName, nil)
+		if err != nil {
+			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
+		}
+		return outName, l, nil
 	}
 
-	h := v1.Hash{
-		Algorithm: "sha256",
-		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	defer outfile.Close()
+	lw := newLayerWriter(outfile)
+
+	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
+		return "", nil, fmt.Errorf("generating tarball: %w", err)
 	}
 
-	l := &layer{
-		filename: layerTarGZ,
-		desc: &v1.Descriptor{
-			Digest:    h,
-			Size:      size,
-			MediaType: v1types.OCILayer,
-		},
-		diffid: &v1.Hash{
-			Algorithm: "sha256",
-			Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
-		},
+	l, err := lw.finalize()
+	if err != nil {
+		return "", nil, fmt.Errorf("finalizing layer: %w", err)
 	}
 
-	return layerTarGZ, l, nil
+	return outfile.Name(), l, nil
 }
 
-func (bc *Context) runAssertions() error {
-	var eg multierror.Group
+func (bc *Context) checkPaths(ctx context.Context) error {
+	log := clog.FromContext(ctx)
 
-	for _, a := range bc.assertions {
-		a := a
-		eg.Go(func() error { return a(bc) })
+	for _, p := range []string{
+		"/etc/passwd",
+		"/etc/group",
+		"/etc/os-release",
+	} {
+		if _, err := bc.fs.Stat(p); errors.Is(err, os.ErrNotExist) {
+			log.Warnf("%s is missing", p)
+		} else if err != nil {
+			return fmt.Errorf("checking %s file: %w", p, err)
+		}
 	}
+	return nil
+}
 
-	return eg.Wait().ErrorOrNil()
+// resolveImageConfiguration applies the overrides recorded by the field-level
+// Options onto ic. It runs after every Option has been applied, so that an
+// Option which replaces ic wholesale -- WithImageConfiguration, WithConfig --
+// cannot discard them by appearing later in the slice.
+func (bc *Context) resolveImageConfiguration() {
+	if bc.formatOverride != "" {
+		bc.ic.Format = bc.formatOverride
+	}
+	if len(bc.annotationOverrides) > 0 {
+		// Merge onto the configured annotations, overrides winning per key. A
+		// new map rather than a write in place: bc.ic.Annotations may still be
+		// the map the caller passed to WithImageConfiguration.
+		merged := make(map[string]string, len(bc.ic.Annotations)+len(bc.annotationOverrides))
+		maps.Copy(merged, bc.ic.Annotations)
+		maps.Copy(merged, bc.annotationOverrides)
+		bc.ic.Annotations = merged
+	}
 }
 
 // NewOptions evaluates the build.Options in the same way as New().
@@ -181,6 +278,7 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 			return nil, nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	return &bc.o, &bc.ic, nil
 }
@@ -189,6 +287,11 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 // The SOURCE_DATE_EPOCH env variable is supported and will
 // overwrite the provided timestamp if present.
 func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error) {
+	log := clog.FromContext(ctx)
+
+	ctx, span := otel.Tracer("apko").Start(ctx, "New")
+	defer span.End()
+
 	bc := Context{
 		o:  options.Default,
 		fs: fs,
@@ -199,6 +302,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			return nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
 	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
@@ -221,41 +325,62 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		bc.o.Arch = types.ParseArchitecture(runtime.GOARCH)
 	}
 
-	if bc.o.WithVCS && bc.ic.VCSUrl == "" {
-		bc.ic.ProbeVCSUrl(bc.imageConfigFile, bc.Logger())
-	}
-
 	apkOpts := []apk.Option{
 		apk.WithFS(bc.fs),
-		apk.WithLogger(bc.Logger()),
 		apk.WithArch(bc.o.Arch.ToAPK()),
 		apk.WithIgnoreMknodErrors(true),
+		apk.WithIgnoreIndexSignatures(bc.o.IgnoreSignatures),
+		apk.WithAuthenticator(bc.o.Auth),
+		apk.WithTransport(bc.o.Transport),
+		apk.WithPackageGetter(bc.o.PackageGetter),
+		apk.WithSizeLimits(&apk.SizeLimits{
+			APKIndexDecompressedMaxSize: bc.o.SizeLimits.APKIndexDecompressedMaxSize,
+			APKControlMaxSize:           bc.o.SizeLimits.APKControlMaxSize,
+			APKDataMaxSize:              bc.o.SizeLimits.APKDataMaxSize,
+			HTTPResponseMaxSize:         bc.o.SizeLimits.HTTPResponseMaxSize,
+		}),
 	}
-	// only try to pass the cache dir if one of the following is true:
-	// - the user has explicitly set a cache dir
-	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
-	// if neither of these are true, then we don't want to pass a cache dir, because
-	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
-	// is not set.
+	// WithCache resolves an empty directory through os.UserCacheDir. Check it
+	// here so builds can run in environments without a system cache directory.
+	if bc.o.DiskCacheEnabled {
+		if bc.o.CacheDir != "" {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else if _, err := os.UserCacheDir(); err == nil {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else {
+			log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+		}
+	}
+	apkOpts = append(apkOpts, apk.WithOffline(bc.o.Offline))
 
-	// note that this is not easy to do in a switch statement, because of the second
-	// condition, if err := ...; err == nil {}
-	if bc.o.CacheDir != "" {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
-	} else if _, err := os.UserCacheDir(); err == nil {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline))
-	} else {
-		bc.Logger().Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	if bc.ic.Contents.BaseImage != nil {
+		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)
+		if err != nil {
+			return nil, fmt.Errorf("baseImage path %s: %w", bc.ic.Contents.BaseImage.Image, err)
+		}
+		apkindexPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.APKIndex, bc.o.IncludePaths)
+		if err != nil {
+			return nil, fmt.Errorf("baseImage apk path %s: %w", bc.ic.Contents.BaseImage.Image, err)
+		}
+		baseImg, err := baseimg.New(imgPath, apkindexPath, bc.Arch(), bc.o.TempDir())
+		if err != nil {
+			return nil, err
+		}
+		bc.baseimg = baseImg
+		// Apko checks signatures of all indexes by default. For the base image apk index we don't
+		// have the signature. On the other hand we still want to check signatures of the remaining
+		// indexes. This way we disable signature checks only for the base image apk index.
+		apkOpts = append(apkOpts, apk.WithNoSignatureIndexes(bc.baseimg.APKIndexPath()))
 	}
 
-	apkImpl, err := apk.New(apkOpts...)
+	apkImpl, err := apk.New(ctx, apkOpts...)
 	if err != nil {
 		return nil, err
 	}
 
 	bc.apk = apkImpl
 
-	bc.Logger().Infof("doing pre-flight checks")
+	log.Debugf("doing pre-flight checks")
 	if err := bc.ic.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate configuration: %w", err)
 	}
@@ -264,17 +389,110 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		return nil, fmt.Errorf("initializing apk: %w", err)
 	}
 
-	bc.s6 = s6.New(bc.fs, bc.Logger())
+	bc.s6 = s6.New(bc.fs)
 
 	return &bc, nil
+}
+
+type notAFile struct {
+	rc *os.File
+}
+
+func (f *notAFile) Read(p []byte) (int, error) {
+	return f.rc.Read(p)
+}
+
+func (f *notAFile) Close() error {
+	return f.rc.Close()
 }
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
 type layer struct {
-	filename string
-	diffid   *v1.Hash
-	desc     *v1.Descriptor
+	mu           sync.Mutex
+	uncompressed string
+	compressed   string
+	diffid       *v1.Hash
+	desc         *v1.Descriptor
+	cacheCounted bool // first compression-cache lookup already recorded
+}
+
+// recordCacheAccess reports this layer's first compression-cache outcome.
+// Only the first lookup counts: once a layer has been compressed, compress()
+// short-circuits, so a later lookup saves nothing whether it hits or not.
+func (l *layer) recordCacheAccess(result apkometrics.CacheResult) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cacheCounted {
+		return
+	}
+	l.cacheCounted = true
+	apkometrics.RecordCompressionCacheAccess(result)
+}
+
+func (l *layer) compress() (rerr error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.compressed != "" {
+		return nil
+	}
+
+	in, err := l.Uncompressed()
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(l.uncompressed + ".gz")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := out.Close(); err != nil && rerr == nil {
+			rerr = err
+		}
+	}()
+
+	buf := pooledBufioWriter(out)
+	defer bufioPool.Put(buf)
+
+	digest := sha256.New()
+	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+	defer pgzipPool.Put(gzw)
+
+	if _, err := io.Copy(gzw, in); err != nil {
+		return err
+	}
+
+	if err := gzw.Close(); err != nil {
+		return fmt.Errorf("closing gzip writer: %w", err)
+	}
+
+	if err := buf.Flush(); err != nil {
+		return fmt.Errorf("flushing %s: %w", out.Name(), err)
+	}
+
+	stat, err := out.Stat()
+	if err != nil {
+		return fmt.Errorf("statting %s: %w", out.Name(), err)
+	}
+
+	h := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
+	}
+
+	l.desc.Digest = h
+	l.desc.Size = stat.Size()
+
+	// Store in cache for future use
+	descCopy := *l.desc
+	compressionCache.Store(l.diffid.String(), &descCopy)
+
+	l.compressed = l.uncompressed + ".gz"
+
+	return nil
 }
 
 func (l *layer) DiffID() (v1.Hash, error) {
@@ -282,28 +500,54 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Digest, nil
+	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
+
+	if err := l.compress(); err != nil {
+		return v1.Hash{}, err
+	}
 	return l.desc.Digest, nil
 }
 
 func (l *layer) Compressed() (io.ReadCloser, error) {
-	return os.Open(l.filename)
+	if err := l.compress(); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(l.compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	// There is a bug in how go uses sendfile on macos, so we need to make this not a file.
+	// See https://github.com/golang/go/issues/70000
+	return &notAFile{f}, nil
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
-	rc, err := l.Compressed()
-	if err != nil {
-		return nil, err
-	}
-
-	// In practice, this won't be called, but this should work anyway.
-	zr, err := gzip.NewReader(rc)
-	if err != nil {
-		return nil, err
-	}
-	return zr, nil
+	return os.Open(l.uncompressed)
 }
 
 func (l *layer) Size() (int64, error) {
+	// Check if we've already compressed a layer with this diffID
+	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
+		cachedDesc := cached.(*v1.Descriptor)
+		l.desc.Digest = cachedDesc.Digest
+		l.desc.Size = cachedDesc.Size
+		return l.desc.Size, nil
+	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
+
+	if err := l.compress(); err != nil {
+		return 0, err
+	}
 	return l.desc.Size, nil
 }
 
@@ -331,9 +575,9 @@ func (bc *Context) Arch() types.Architecture {
 }
 
 func (bc *Context) WantSBOM() bool {
-	return len(bc.o.SBOMFormats) != 0
+	return len(bc.o.SBOMGenerators) != 0
 }
 
-func (bc *Context) TempDir() string {
-	return bc.o.TempDir()
+func (bc *Context) APK() *apk.APK {
+	return bc.apk
 }

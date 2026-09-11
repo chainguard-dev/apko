@@ -1,50 +1,69 @@
-linters-settings:
-  depguard:
-    include-go-root: true
-    packages:
-      - io/ioutil
-    packages-with-error-message:
-      - io/ioutil: 'ioutil was deprecated in 1.16 (https://go.dev/doc/go1.16#ioutil)'
-  forbidigo:
-    forbid:
-      - ^print.*$
-  goheader:
-    template-path: header.tmpl
-    values:
-      regexp:
-        ws: "\\s*"
-  goimports:
-    local-prefixes: chainguard.dev/apko
-
-linters:
-  enable:
-  - asciicheck
-  - errcheck
-  - errorlint
-  - forbidigo
-  - gofmt
-  - goimports
-  - gosec
-  - gocritic
-  - importas
-  - prealloc
-  - misspell
-  - stylecheck
-  - tparallel
-  - unconvert
-  - unparam
-  - unused
-  - whitespace
-output:
-  uniq-by-line: false
-issues:
-  exclude-rules:
-  - path: _test\.go
-    linters:
-    - errcheck
-    - gosec
-  max-issues-per-linter: 0
-  max-same-issues: 0
+version: "2"
 run:
   issues-exit-code: 1
-  timeout: 10m
+linters:
+  enable:
+    - asciicheck
+    - bodyclose
+    - errorlint
+    - forbidigo
+    - gocritic
+    - gosec
+    - importas
+    - misspell
+    - modernize
+    - prealloc
+    - staticcheck
+    - tparallel
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^print.*$
+    goheader:
+      values:
+        regexp:
+          ws: \s*
+      template-path: header.tmpl
+    gosec:
+      excludes:
+        - G115
+    modernize:
+      disable:
+        # Suggest replacing omitempty with omitzero for struct fields.
+        - omitzero
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - chainguard.dev/apko
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

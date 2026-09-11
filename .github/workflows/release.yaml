@@ -1,20 +1,15 @@
-
-name: Create Release
+name: Release
 
 on:
-  push:
-    tags:
-    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  schedule:
+    - cron: '0 0 * * 1' # every Monday at 00:00 UTC
+  workflow_dispatch:
 
-env:
-  GO_VERSION: '1.21'
+permissions: {}
 
 jobs:
-  cli:
-    # Only release CLI for tagged releases
-    if: startsWith(github.event.ref, 'refs/tags/v')
-
-    name: Release the CLI
+  release:
+    name: Release
     runs-on: ubuntu-latest
 
     # https://docs.github.com/en/actions/reference/authentication-in-a-workflow
@@ -23,19 +18,116 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-    - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v2.2.0
-      with:
-        go-version-file: 'go.mod'
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.github.com:443
+            dl.google.com:443
+            fulcio.sigstore.dev:443
+            github.com:443
+            go.dev:443
+            goreleaser.com:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            raw.githubusercontent.com:443
+            rekor.sigstore.dev:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            tuf-repo-cdn.sigstore.dev:443
+            uploads.github.com:443
 
-    - uses: sigstore/cosign-installer@1fc5bd396d372bee37d608f955b336615edf79c8 # v3.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - uses: goreleaser/goreleaser-action@7ec5c2b0c6cdda6e8bbb49444bc797dd33d74dd8 # v2.8.1
-      with:
-        version: latest
-        install-only: true
+      - name: Check if any changes since last release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch --tags  # no creds needed: repo is public; if this ever goes private, pass token explicitly here
+          TAG=$(git tag --points-at HEAD)
+          if [ -z "$TAG" ]; then
+            echo "No tag points at HEAD, checking if changes warrant a release."
 
-    - name: Release
-      run: make release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            # Get the last release tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+            if [ -n "$LAST_TAG" ]; then
+              echo "Last release tag: $LAST_TAG"
+
+              # Get all changed files since last tag
+              CHANGED_FILES=$(git diff --name-only "$LAST_TAG"..HEAD)
+
+              # Only release if changes include .go files, go.mod, go.sum, or LICENSE
+              RELEASE_WORTHY_CHANGES=$(echo "$CHANGED_FILES" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^LICENSE$)' || true)
+
+              if [ -z "$RELEASE_WORTHY_CHANGES" ]; then
+                echo "No Go source files, go.mod, go.sum, or LICENSE changed since last release. Skipping release."
+                echo "need_release=no" >> "$GITHUB_OUTPUT"
+              else
+                echo "Found release-worthy changes since last release:"
+                echo "$RELEASE_WORTHY_CHANGES"
+                echo "need_release=yes" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "No previous tags found. Creating first release."
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            RELEASE=$(gh release view "$TAG" --json tagName --jq '.tagName' || echo "none")
+            if [ "$RELEASE" == "$TAG" ]; then
+              echo "A release exists for tag $TAG, which has the latest changes, so no need for a new tag or release."
+              echo "need_release=no" >> "$GITHUB_OUTPUT"
+            else
+              echo "Tag $TAG exists, but no release is associated. Need a new release."
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
+              echo "existing_tag=$TAG" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Bump version and push tag
+        id: create_tag
+        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
+        if: steps.check.outputs.need_release == 'yes' && steps.check.outputs.existing_tag == ''
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.check.outputs.need_release == 'yes'
+        with:
+          persist-credentials: false
+          ref: ${{ steps.check.outputs.existing_tag || steps.create_tag.outputs.new_tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.check.outputs.need_release == 'yes'
+        with:
+          go-version-file: './go.mod'
+          check-latest: true
+          # Disable caching to avoid cache poisoning of release artifacts.
+          cache: false
+
+      # Cosign is used by goreleaser to sign release artifacts.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.check.outputs.need_release == 'yes'
+        with:
+          # https://github.com/goreleaser/goreleaser/issues/6195
+          cosign-release: "v2.6.1"
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        if: steps.check.outputs.need_release == 'yes'
+        with:
+          version: latest
+          install-only: true
+
+      - name: Release
+        if: steps.check.outputs.need_release == 'yes'
+        run: make release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.check.outputs.existing_tag || steps.create_tag.outputs.new_tag }}

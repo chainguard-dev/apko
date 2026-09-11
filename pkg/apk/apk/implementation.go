@@ -1,0 +1,1393 @@
+// Copyright 2023 Chainguard, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package apk
+
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
+	"go.lsp.dev/uri"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.step.sm/crypto/jose"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
+
+	"chainguard.dev/apko/pkg/apk/auth"
+	"chainguard.dev/apko/pkg/apk/expandapk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
+
+	"github.com/chainguard-dev/clog"
+)
+
+const (
+	// DefaultHTTPResponseSize is the default maximum size for HTTP responses (2 GB).
+	DefaultHTTPResponseSize = 2 << 30
+)
+
+type APK struct {
+	arch               string
+	version            string
+	fs                 apkfs.FullFS
+	executor           Executor
+	ignoreMknodErrors  bool
+	client             *http.Client
+	cache              *cache
+	offline            bool
+	ignoreSignatures   bool
+	noSignatureIndexes []string
+	auth               auth.Authenticator
+	packageGetter      PackageGetter
+	sizeLimits         *SizeLimits
+
+	// filename to owning package, last write wins
+	installedFiles map[string]*Package
+
+	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
+	// It's stuffed here to avoid plumbing it across every method, but it's optional.
+	ByArch map[string]*APK
+}
+
+// apkIndexDecompressedMaxSize returns the configured max decompressed APK index size or 0 for default.
+func (a *APK) apkIndexDecompressedMaxSize() int64 {
+	if a.sizeLimits != nil && a.sizeLimits.APKIndexDecompressedMaxSize != 0 {
+		return a.sizeLimits.APKIndexDecompressedMaxSize
+	}
+	return 0 // use default
+}
+
+func New(ctx context.Context, options ...Option) (*APK, error) {
+	opt := defaultOpts()
+	for _, o := range options {
+		if err := o(opt); err != nil {
+			return nil, err
+		}
+	}
+	if opt.cache != nil {
+		opt.cache.offline = opt.offline
+	}
+
+	if opt.fs == nil {
+		// This is expensive so we only want to do it if we aren't passed WithFS.
+		opt.fs = apkfs.DirFS(ctx, "/")
+	}
+
+	// Wrap transport with response size limiter
+	transport := opt.transport
+	var httpResponseMaxSize int64
+	if opt.sizeLimits != nil {
+		httpResponseMaxSize = opt.sizeLimits.HTTPResponseMaxSize
+	}
+	transport = newLimitedResponseTransport(transport, httpResponseMaxSize)
+
+	client := retryablehttp.NewClient()
+	client.HTTPClient = &http.Client{Transport: transport}
+	client.Logger = clog.FromContext(ctx)
+
+	httpClient := client.StandardClient()
+	if opt.offline {
+		httpClient.Transport = offlineTransport{}
+	}
+
+	// Create default PackageGetter if none provided
+	packageGetter := opt.packageGetter
+	if packageGetter == nil {
+		var getterOpts []packageGetterOption
+		if opt.sizeLimits != nil {
+			if opt.sizeLimits.APKControlMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKControlMaxSize(opt.sizeLimits.APKControlMaxSize))
+			}
+			if opt.sizeLimits.APKDataMaxSize != 0 {
+				getterOpts = append(getterOpts, withAPKDataMaxSize(opt.sizeLimits.APKDataMaxSize))
+			}
+		}
+		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
+	}
+
+	return &APK{
+		client:             httpClient,
+		fs:                 opt.fs,
+		arch:               opt.arch,
+		executor:           opt.executor,
+		ignoreMknodErrors:  opt.ignoreMknodErrors,
+		version:            opt.version,
+		cache:              opt.cache,
+		offline:            opt.offline,
+		ignoreSignatures:   opt.ignoreSignatures,
+		noSignatureIndexes: opt.noSignatureIndexes,
+		installedFiles:     map[string]*Package{},
+		auth:               opt.auth,
+		packageGetter:      packageGetter,
+		sizeLimits:         opt.sizeLimits,
+	}, nil
+}
+
+type directory struct {
+	path  string
+	perms os.FileMode
+}
+type file struct {
+	path     string
+	perms    os.FileMode
+	contents []byte
+}
+
+type deviceFile struct {
+	path  string
+	major uint32
+	minor uint32
+	perms os.FileMode
+}
+
+var baseDirectories = []directory{
+	{"/tmp", 0o777 | fs.ModeSticky},
+	{"/dev", 0o755},
+	{"/etc", 0o755},
+	{"/opt", 0o755},
+	{"/proc", 0o555},
+	{"/var", 0o755},
+	{"/usr", 0o755},
+}
+
+// directories is a list of directories to create relative to the root. It will not do MkdirAll, so you
+// must include the parent.
+// It assumes that the following directories already exist:
+//
+//		/var
+//		/tmp
+//		/dev
+//		/etc
+//	    /proc
+var initDirectories = []directory{
+	{"/etc/apk", 0o755},
+	{"/etc/apk/keys", 0o755},
+	{"/usr/lib", 0o755},
+	{"/usr/lib/apk", 0o755},
+	{"/usr/lib/apk/db", 0o755},
+	{"/usr/lib/apk/exec", 0o755},
+	{"/var/cache", 0o755},
+	{"/var/cache/apk", 0o755},
+	{"/var/cache/misc", 0o755},
+}
+
+// files is a list of files to create relative to the root, as well as optional content.
+// We will not do MkdirAll for the parent dir it is in, so it must exist.
+var initFiles = []file{
+	{"/etc/apk/world", 0o644, []byte("\n")},
+	{"/etc/apk/repositories", 0o644, []byte("\n")},
+	{"/usr/lib/apk/db/lock", 0o600, nil},
+	{"/usr/lib/apk/db/triggers", 0o644, nil},
+	{"/usr/lib/apk/db/installed", 0o644, nil},
+}
+
+// deviceFiles is a list of files to create relative to the root.
+var initDeviceFiles = []deviceFile{
+	{"/dev/zero", 1, 5, 0o666},
+	{"/dev/urandom", 1, 9, 0o666},
+	{"/dev/null", 1, 3, 0o666},
+	{"/dev/random", 1, 8, 0o666},
+	{"/dev/console", 5, 1, 0o620},
+}
+
+// ListInitFiles list the files that are installed during the InitDB phase.
+func (a *APK) ListInitFiles() []tar.Header {
+	headers := make([]tar.Header, 0, 20)
+
+	// additionalFiles are files we need but can only be resolved in the context of
+	// this func, e.g. we need the architecture
+	additionalFiles := []file{
+		{"/etc/apk/arch", 0o644, []byte(a.arch + "\n")},
+	}
+
+	for _, e := range initDirectories {
+		headers = append(headers, tar.Header{
+			Name:     e.path,
+			Mode:     int64(e.perms),
+			Typeflag: tar.TypeDir,
+			Uid:      0,
+			Gid:      0,
+		})
+	}
+	for _, e := range append(initFiles, additionalFiles...) {
+		headers = append(headers, tar.Header{
+			Name:     e.path,
+			Mode:     int64(e.perms),
+			Typeflag: tar.TypeReg,
+			Uid:      0,
+			Gid:      0,
+		})
+	}
+	for _, e := range initDeviceFiles {
+		headers = append(headers, tar.Header{
+			Name:     e.path,
+			Typeflag: tar.TypeChar,
+			Mode:     int64(e.perms),
+			Uid:      0,
+			Gid:      0,
+		})
+	}
+
+	// add scripts.tar with nothing in it
+	headers = append(headers, tar.Header{
+		Name:     scriptsFilePath,
+		Mode:     int64(scriptsTarPerms),
+		Typeflag: tar.TypeReg,
+		Uid:      0,
+		Gid:      0,
+	})
+	return headers
+}
+
+// Initialize the APK database for a given build context.
+// Assumes base directories are in place and checks them.
+// Returns the list of files and directories and files installed and permissions,
+// unless those files will be included in the installed database, in which case they can
+// be retrieved via GetInstalled().
+func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
+	log := clog.FromContext(ctx)
+	/*
+		equivalent of: "apk add --initdb --arch arch --root root"
+	*/
+	log.Debug("initializing apk database")
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "InitDB")
+	defer span.End()
+
+	// additionalFiles are files we need but can only be resolved in the context of
+	// this func, e.g. we need the architecture
+	additionalFiles := []file{
+		{"/etc/apk/arch", 0o644, []byte(a.arch + "\n")},
+	}
+
+	for _, e := range baseDirectories {
+		stat, err := a.fs.Stat(e.path)
+		switch {
+		case err != nil && errors.Is(err, fs.ErrNotExist):
+			err := a.fs.Mkdir(e.path, e.perms)
+			if err != nil {
+				return fmt.Errorf("failed to create base directory %s: %w", e.path, err)
+			}
+		case err != nil:
+			return fmt.Errorf("error opening base directory %s: %w", e.path, err)
+		case !stat.IsDir():
+			return fmt.Errorf("base directory %s is not a directory", e.path)
+		// Compare every non-type bit, not just Perm(): /tmp is expected to be
+		// sticky, and Perm() masks fs.ModeSticky off, so the two could never
+		// be equal.
+		case stat.Mode()&^fs.ModeType != e.perms:
+			return fmt.Errorf("base directory %s has incorrect permissions: %s, expected %s", e.path, stat.Mode()&^fs.ModeType, e.perms)
+		}
+	}
+	for _, e := range initDirectories {
+		err := a.fs.Mkdir(e.path, e.perms)
+		switch {
+		case err != nil && !errors.Is(err, fs.ErrExist):
+			return fmt.Errorf("failed to create directory %s: %w", e.path, err)
+		case err != nil && errors.Is(err, fs.ErrExist):
+			stat, err := a.fs.Stat(e.path)
+			if err != nil {
+				return fmt.Errorf("failed to stat directory %s: %w", e.path, err)
+			}
+			if !stat.IsDir() {
+				return fmt.Errorf("failed to create directory %s: already exists as file", e.path)
+			}
+		}
+	}
+	for _, e := range append(initFiles, additionalFiles...) {
+		if err := a.fs.WriteFile(e.path, e.contents, e.perms); err != nil {
+			return fmt.Errorf("failed to create file %s: %w", e.path, err)
+		}
+	}
+	for _, e := range initDeviceFiles {
+		perms := uint32(e.perms.Perm())
+		err := a.fs.Mknod(e.path, unix.S_IFCHR|perms, int(unix.Mkdev(e.major, e.minor)))
+		if !a.ignoreMknodErrors && err != nil {
+			return fmt.Errorf("failed to create char device %s: %w", e.path, err)
+		}
+	}
+
+	// add scripts.tar with nothing in it
+	scriptsTarPerms := 0o644
+	TarFile, err := a.fs.OpenFile(scriptsFilePath, os.O_CREATE|os.O_WRONLY, fs.FileMode(scriptsTarPerms))
+	if err != nil {
+		return fmt.Errorf("could not create tarball file '%s', got error '%w'", scriptsFilePath, err)
+	}
+	defer TarFile.Close()
+	tarWriter := tar.NewWriter(TarFile)
+	defer tarWriter.Close()
+
+	// nothing to add to it; scripts.tar should be empty
+
+	// Perform key discovery for the various build-time repositories.
+	for _, repo := range buildRepos {
+		if ver, ok := ParseAlpineVersion(repo); ok {
+			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
+				var nokeysErr *NoKeysFoundError
+				if !a.offline && !errors.As(err, &nokeysErr) {
+					return &AlpineKeyFetchError{
+						Repository: repo,
+						Version:    ver,
+						Err:        err,
+					}
+				}
+				log.Debugf("ignoring missing keys: %v", err)
+			}
+		}
+
+		if err := a.fetchChainguardKeys(ctx, repo); err != nil {
+			return fmt.Errorf("fetching chainguard keys for %s: %w", repo, err)
+		}
+	}
+
+	log.Debug("finished initializing apk database")
+	return nil
+}
+
+// hasUsrMergeBaseImage checks if the base image uses a usr-merge filesystem layout.
+// This is determined by checking if any installed packages provide the "merged-lib" virtual package.
+// The merged-lib virtual is provided by wolfi-baselayout to indicate usr-merge layout where
+// traditional directories like /lib, /bin, /sbin are symlinked to their /usr counterparts.
+// See: https://github.com/wolfi-dev/os/blob/main/wolfi-baselayout.yaml
+func (a *APK) hasUsrMergeBaseImage() bool {
+	installedPkgs, err := a.GetInstalled()
+	if err != nil || len(installedPkgs) == 0 {
+		return false
+	}
+
+	for _, pkg := range installedPkgs {
+		if slices.Contains(pkg.Provides, "merged-lib") {
+			return true
+		}
+	}
+	return false
+}
+
+// Resolves the possible locations of APK's DB and assures that it will exist at /lib/apk/db.
+func (a *APK) resolveApkDB(ctx context.Context) error {
+	log := clog.FromContext(ctx)
+	log.Debug("resolving APK DB location")
+
+	// Check if we have base image packages that provide merged-lib
+	// This indicates the base image has usr-merge layout
+	hasUsrMergeBase := a.hasUsrMergeBaseImage()
+
+	_, span := otel.Tracer("go-apk").Start(ctx, "resolveApkDB")
+	defer span.End()
+
+	// Do nothing more if /lib already points at usr/lib (absolute or relative).
+	if target, err := a.fs.Readlink("/lib"); err == nil {
+		// MemFS will only let Readlink succeed on a real symlink.
+		// Prepend "/" and Clean to collapse things like "/../usr/lib" → "/usr/lib".
+		if path.Clean("/"+target) == "/usr/lib" {
+			log.Debug("/lib is a symlink to /usr/lib")
+			return nil
+		}
+	}
+
+	// Do nothing more if /lib/apk already points at usr/lib/apk (absolute or relative).
+	// This is the case when we start with empty layering.
+	if target, err := a.fs.Readlink("/lib/apk"); err == nil {
+		if path.Clean("/"+target) == "/usr/lib/apk" {
+			log.Debug("/lib is a symlink to /usr/lib/apk")
+			return nil
+		}
+	}
+
+	// create /lib as a directory if is missing
+	if _, err := a.fs.Stat("lib"); errors.Is(err, fs.ErrNotExist) {
+		// If we have a usr-merge base image, we should NOT create /lib as a directory
+		// because the base image already has /lib as a symlink to /usr/lib
+		if hasUsrMergeBase {
+			// Don't create /lib - the base image has it as a symlink
+			// Create the symlink in our filesystem to match the base
+			_ = a.fs.Symlink("usr/lib", "lib")
+			// If we can't create the symlink, just skip - the base has it
+			return nil
+		}
+		if err := a.fs.Mkdir("lib", 0o755); err != nil {
+			return fmt.Errorf("creating lib: %w", err)
+		}
+		log.Debug("created /lib as a directory")
+	}
+
+	// if /lib/apk already exists, as it will with alpine's version of apk-tools, handle it
+	if d, err := a.fs.Stat("lib/apk"); err == nil {
+		if d.IsDir() {
+			log.Debug("lib/apk is already a directory- we're likely building from alpine")
+			children, err := a.fs.ReadDir("lib/apk")
+			if err != nil {
+				return fmt.Errorf("reading /lib/apk: %w", err)
+			}
+			for _, child := range children {
+				if !child.IsDir() {
+					return fmt.Errorf("/lib/apk contains file %s, refusing to replace", child.Name())
+				}
+				// check if that subdir is empty
+				subents, err := a.fs.ReadDir(path.Join("lib/apk", child.Name()))
+				if err != nil {
+					return fmt.Errorf("reading /lib/apk/%s: %w", child.Name(), err)
+				}
+				if len(subents) > 0 {
+					return fmt.Errorf("/lib/apk/%s is not empty, refusing to replace", child.Name())
+				}
+				// Delete the child directory as it is empty
+				if err := a.fs.Remove(path.Join("lib/apk", child.Name())); err != nil {
+					return fmt.Errorf("removing /lib/apk/%s: %w", child.Name(), err)
+				}
+			}
+			// all children are empty dirs → safe to delete lib/apk
+			if err := a.fs.Remove("lib/apk"); err != nil {
+				return fmt.Errorf("removing /lib/apk: %w", err)
+			}
+		}
+	}
+
+	// create symlink /lib/apk → /usr/lib/apk
+	if err := a.fs.Symlink("../usr/lib/apk", "lib/apk"); err != nil {
+		return fmt.Errorf("creating lib/apk symlink: %w", err)
+	}
+	log.Debug("created symlink for lib/apk")
+	return nil
+}
+
+var repoRE = regexp.MustCompile(`^http[s]?://.+\/alpine\/([^\/]+)\/[^\/]+$`)
+
+// ParseAlpineVersion parses the Alpine version from a repository URL.
+// Returns the version string (e.g., "v3.21") and true if successful.
+func ParseAlpineVersion(repo string) (version string, ok bool) {
+	parts := repoRE.FindStringSubmatch(repo)
+	if len(parts) < 2 {
+		return "", false
+	}
+	return parts[1], true
+}
+
+// loadSystemKeyring returns the keys found in the system keyring
+// directory by trying some common locations. These can be overridden
+// by passing one or more directories as arguments.
+func (a *APK) loadSystemKeyring(ctx context.Context, locations ...string) ([]string, error) {
+	log := clog.FromContext(ctx)
+	var ring []string
+	if len(locations) == 0 {
+		locations = []string{
+			filepath.Join(DefaultSystemKeyRingPath, a.arch),
+		}
+	}
+	for _, d := range locations {
+		keyFiles, err := fs.ReadDir(a.fs, d)
+
+		if errors.Is(err, os.ErrNotExist) {
+			log.Warnf("%s doesn't exist, skipping...", d)
+			continue
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("reading keyring directory: %w", err)
+		}
+
+		for _, f := range keyFiles {
+			ext := filepath.Ext(f.Name())
+			p := filepath.Join(d, f.Name())
+
+			if ext == ".pub" {
+				ring = append(ring, p)
+			} else {
+				log.Warnf("%s has invalid extension (%s), skipping...", p, ext)
+			}
+		}
+	}
+	if len(ring) > 0 {
+		return ring, nil
+	}
+	// Return an error since reading the system keyring is the last resort
+	return nil, errors.New("no suitable keyring directory found")
+}
+
+// Installs the specified keys into the APK keyring inside the build context.
+func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string) error {
+	log := clog.FromContext(ctx)
+	log.Debug("initializing apk keyring")
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "InitKeyring")
+	defer span.End()
+
+	if err := a.fs.MkdirAll(DefaultKeyRingPath, 0o755); err != nil {
+		return fmt.Errorf("failed to make keys dir: %w", err)
+	}
+
+	if len(extraKeyFiles) > 0 {
+		log.Debugf("appending %d extra keys to keyring", len(extraKeyFiles))
+		keyFiles = append(keyFiles, extraKeyFiles...)
+	}
+
+	var eg errgroup.Group
+
+	for _, element := range keyFiles {
+		eg.Go(func() error {
+			log.Debugf("installing key %v", element)
+
+			var asURL *url.URL
+			var err error
+			if strings.HasPrefix(element, "https://") || strings.HasPrefix(element, "http://") {
+				asURL, err = url.Parse(element)
+			} else {
+				// Attempt to parse non-https elements into URI's so they are translated into
+				// file:// URLs allowing them to parse into a url.URL{}
+				asURL, err = url.Parse(string(fileURI(element)))
+			}
+			if err != nil {
+				return fmt.Errorf("failed to parse key as URI: %w", err)
+			}
+
+			var data []byte
+			switch asURL.Scheme {
+			case "file": //nolint:goconst
+				data, err = os.ReadFile(element)
+				if err != nil {
+					return fmt.Errorf("failed to read apk key: %w", err)
+				}
+			case "https", "http": //nolint:goconst
+				client := a.client
+				if a.cache != nil {
+					client = a.cache.client(client, true)
+				}
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
+				if err != nil {
+					return err
+				}
+				if err := a.auth.AddAuth(ctx, req); err != nil {
+					return fmt.Errorf("failed to add auth to request: %w", err)
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					return fmt.Errorf("failed to fetch apk key: %w", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode < 200 || resp.StatusCode > 299 {
+					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
+				}
+
+				data, err = io.ReadAll(resp.Body)
+				if err != nil {
+					return fmt.Errorf("failed to read apk key response: %w", err)
+				}
+			default:
+				return fmt.Errorf("scheme %s not supported", asURL.Scheme)
+			}
+
+			// #nosec G306 -- apk keyring must be publicly readable
+			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", filepath.Base(element)), data,
+				0o644); err != nil {
+				return fmt.Errorf("failed to write apk key: %w", err)
+			}
+
+			return nil
+		})
+	}
+
+	return eg.Wait()
+}
+
+// ResolveWorld determine the target state for the requested dependencies in /etc/apk/world. Does not install anything.
+func (a *APK) ResolveWorld(ctx context.Context) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+	log := clog.FromContext(ctx)
+	log.Debug("determining desired apk world")
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "ResolveWorld")
+	defer span.End()
+
+	// to fix the world, we need to:
+	// 1. Get the apkIndexes for each repository for the target arch
+	indexes, err := a.GetRepositoryIndexes(ctx, a.ignoreSignatures)
+	if err != nil {
+		return toInstall, conflicts, fmt.Errorf("error getting repository indexes: %w", err)
+	}
+	// debugging info, if requested
+	log.Debugf("got %d indexes:\n%s", len(indexes), strings.Join(indexNames(indexes), "\n"))
+
+	// 2. Get the dependency tree for each package from the world file
+	directPkgs, err := a.GetWorld()
+	if err != nil {
+		return toInstall, conflicts, fmt.Errorf("error getting world packages: %w", err)
+	}
+	resolver := NewPkgResolver(ctx, indexes)
+
+	// For other architectures we're building (if any), we want to disqualify any packages not present in all archs.
+	allArchs := map[string][]NamedIndex{}
+	for otherArch, otherAPK := range a.ByArch {
+		indexes, err := otherAPK.GetRepositoryIndexes(ctx, a.ignoreSignatures)
+		if err != nil {
+			return toInstall, conflicts, fmt.Errorf("getting indexes for %q sibling: %w", otherArch, err)
+		}
+		allArchs[otherArch] = indexes
+	}
+
+	toInstall, conflicts, err = resolver.GetPackagesWithDependencies(ctx, directPkgs, allArchs)
+	if err != nil {
+		return
+	}
+	log.Debugf("got %d packages to install:\n%s", len(toInstall), strings.Join(packageRefs(toInstall), "\n"))
+	return
+}
+
+func (a *APK) CalculateWorld(ctx context.Context, allpkgs []*RepositoryPackage) ([]*APKResolved, error) {
+	// TODO: Consider making this configurable option.
+	jobs := runtime.GOMAXPROCS(0)
+
+	var g errgroup.Group
+	g.SetLimit(jobs + 1)
+
+	resolved := make([]*APKResolved, len(allpkgs))
+
+	// concurrently fetch and expand all our APKs.
+	for i, pkg := range allpkgs {
+		g.Go(func() error {
+			expanded, err := a.packageGetter.GetPackage(ctx, pkg)
+			if err != nil {
+				return fmt.Errorf("expanding %s: %w", pkg.Name, err)
+			}
+			resolved[i] = NewAPKResolved(pkg, expanded)
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("calculating world: %w", withCause(ctx, err))
+	}
+
+	return resolved, nil
+}
+
+// Sometimes we get an opaque error about context cancellation, and it's unclear what caused it.
+// If we get something useful from ctx via context.Cause, we'll annotate err with it.
+func withCause(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return fmt.Errorf("%w: %w", err, cause)
+	}
+
+	return err
+}
+
+func (a *APK) ResolveAndCalculateWorld(ctx context.Context) ([]*APKResolved, error) {
+	log := clog.FromContext(ctx)
+	log.Debug("resolving and calculating 'world' (packages to install)")
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "CalculateWorld")
+	defer span.End()
+
+	allpkgs, _, err := a.ResolveWorld(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting package dependencies: %w", err)
+	}
+
+	return a.CalculateWorld(ctx, allpkgs)
+}
+
+// FixateWorld force apk's resolver to re-resolve the requested dependencies in /etc/apk/world.
+func (a *APK) FixateWorld(ctx context.Context, sourceDateEpoch *time.Time) ([]InstalledDiff, error) {
+	log := clog.FromContext(ctx)
+	/*
+		equivalent of: "apk fix --arch arch --root root"
+		with possible options for --no-scripts, --no-cache, --update-cache
+
+		current default is: cache=false, updateCache=true, executeScripts=false
+	*/
+	log.Debug("synchronizing with desired apk world")
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "FixateWorld")
+	defer span.End()
+
+	// to fix the world, we need to:
+	// 1. Get the apkIndexes for each repository for the target arch
+	allpkgs, conflicts, err := a.ResolveWorld(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting package dependencies: %w", err)
+	}
+
+	// 3. For each name on the list:
+	//     a. Check if it is installed, if so, skip
+	//     b. Get the .apk file
+	//     c. Install the .apk file
+	//     d. Update /usr/lib/apk/db/scripts.tar
+	//     d. Update /usr/lib/apk/db/triggers
+	//     e. Update the installed file
+	for _, pkg := range conflicts {
+		isInstalled, err := a.isInstalledPackage(pkg)
+		if err != nil {
+			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkg, err)
+		}
+		if isInstalled {
+			return nil, fmt.Errorf("cannot install due to conflict with %s", pkg)
+		}
+	}
+	// Cast []*RepositoryPackage into []InstallablePackage.
+	allInstPkgs := make([]InstallablePackage, len(allpkgs))
+	for i, pkg := range allpkgs {
+		allInstPkgs[i] = pkg
+	}
+
+	return a.InstallPackages(ctx, sourceDateEpoch, allInstPkgs)
+}
+
+// InstalledDiff tracks a package and the incremental change it wrote to the installed database file.
+// This is used by our layering mechanism to generate partial idb files per layer to satisfy scanners.
+// Mostly, this just makes the return type of InstallPackages cleaner so it's easier to track which
+// package produced which diff to the idb file.
+type InstalledDiff struct {
+	Package *Package
+	Diff    []byte
+}
+
+func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, allpkgs []InstallablePackage) ([]InstalledDiff, error) {
+	// TODO: Consider making this configurable option.
+	jobs := runtime.GOMAXPROCS(0)
+
+	var g errgroup.Group
+	g.SetLimit(jobs + 1)
+
+	expanded := make([]*expandapk.APKExpanded, len(allpkgs))
+
+	// Track what files were installed by which packages so we can deduplicate in idb.
+	allFiles := make([][]tar.Header, len(allpkgs))
+	infos := make([]*Package, len(allpkgs))
+
+	// A slice of pseudo-promises that get closed when expanded[i] is ready.
+	done := make([]chan struct{}, len(allpkgs))
+	for i := range allpkgs {
+		done[i] = make(chan struct{})
+	}
+
+	// Kick off a goroutine that sequentially installs packages as they become ready.
+	//
+	// We could probably do better than this by mirroring the dependency graph or even
+	// just computing non-overlapping packages based on the installed files, but we'll
+	// keep this simple for now by assuming we must install in the given order exactly.
+	g.Go(func() error {
+		for i, ch := range done {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ch:
+				exp := expanded[i]
+				pkg := allpkgs[i]
+
+				if exp == nil {
+					return fmt.Errorf("expansion of %s failed", pkg)
+				}
+
+				isInstalled, err := a.isInstalledPackage(pkg.PackageName())
+				if err != nil {
+					return fmt.Errorf("error checking if package %s is installed: %w", pkg, err)
+				}
+
+				if isInstalled {
+					continue
+				}
+
+				// The data in .PKGINFO is more complete than what is in APKINDEX.
+				pkgInfo, err := exp.PkgInfo()
+				if err != nil {
+					return fmt.Errorf("failed to read .PKGINFO for %s: %w", pkg, err)
+				}
+				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
+				infos[i] = asPackage
+
+				installedFiles, err := a.installPackage(ctx, asPackage, ExpandedContents(exp), sourceDateEpoch)
+				if err != nil {
+					return fmt.Errorf("installing %s: %w", pkg, err)
+				}
+
+				allFiles[i] = installedFiles
+			}
+		}
+
+		return nil
+	})
+
+	// Meanwhile, concurrently fetch and expand all our APKs.
+	// We signal they are ready to be installed by closing done[i].
+	for i, pkg := range allpkgs {
+		g.Go(func() error {
+			defer func() { close(done[i]) }()
+			exp, err := a.packageGetter.GetPackage(ctx, pkg)
+			if err != nil {
+				return fmt.Errorf("expanding %s: %w", pkg, err)
+			}
+
+			expanded[i] = exp
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("installing packages: %w", withCause(ctx, err))
+	}
+
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// InstallPackageContents installs exactly the given packages, in the given
+// order, from their supplied contents: no index is consulted, no dependency
+// resolution happens, and nothing is fetched — the caller has already settled
+// the set and supplies each member's contents.
+func (a *APK) InstallPackageContents(ctx context.Context, sourceDateEpoch *time.Time, all []PackageContents) ([]InstalledDiff, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "InstallPackageContents")
+	defer span.End()
+
+	allFiles := make([][]tar.Header, len(all))
+	infos := make([]*Package, len(all))
+
+	for i, contents := range all {
+		pkgInfo, err := contents.PkgInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read .PKGINFO for package %d: %w", i, err)
+		}
+
+		// A multi-arch build reuses one option set for every architecture
+		// context, so contents for the wrong architecture arrive here
+		// silently; refuse them rather than installing foreign binaries.
+		if pkgInfo.Arch != "" && pkgInfo.Arch != "noarch" && pkgInfo.Arch != a.arch {
+			return nil, fmt.Errorf("package %s targets architecture %q, not this context's %q", pkgInfo.Name, pkgInfo.Arch, a.arch)
+		}
+
+		isInstalled, err := a.isInstalledPackage(pkgInfo.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkgInfo.Name, err)
+		}
+		if isInstalled {
+			continue
+		}
+
+		// The package checksum is, by definition, the SHA1 of the compressed
+		// control section.
+		section, err := contents.ControlSection()
+		if err != nil {
+			return nil, fmt.Errorf("opening control section for %s: %w", pkgInfo.Name, err)
+		}
+		checksum := sha1.Sum(section) //nolint:gosec // this is what apk tools is using
+		asPackage := pkgInfo.AsPackage(checksum[:], uint64(contents.Size()))
+		infos[i] = asPackage
+
+		installedFiles, err := a.installPackage(ctx, asPackage, contents, sourceDateEpoch)
+		if err != nil {
+			return nil, fmt.Errorf("installing %s: %w", pkgInfo.Name, err)
+		}
+
+		allFiles[i] = installedFiles
+	}
+
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// recordInstalled writes the installed-database entries for the given
+// packages and their files, dropping files a later package overwrote.
+func (a *APK) recordInstalled(ctx context.Context, infos []*Package, allFiles [][]tar.Header) ([]InstalledDiff, error) {
+	diffs := make([]InstalledDiff, 0, len(allFiles))
+
+	// update the installed file
+	for i, files := range allFiles {
+		pkg := infos[i]
+
+		// TODO: We currently skip over packages that are already installed.
+		// I'm ignoring this for now because that isn't really a thing that can happen,
+		// but if there are overlapping files from an already installed package, we should
+		// modify those in the idb file.
+		if pkg == nil {
+			continue
+		}
+
+		// Remove any files that were overwritten by another package.
+		files = slices.DeleteFunc(files, func(hdr tar.Header) bool {
+			owner, ok := a.installedFiles[hdr.Name]
+			if !ok {
+				// Keep directories, which actually should be duplicated in the idb.
+				return false
+			}
+
+			return owner != pkg
+		})
+
+		diff, err := a.AddInstalledPackage(pkg, files)
+		if err != nil {
+			return nil, fmt.Errorf("unable to update installed file for pkg %s: %w", pkg.Name, err)
+		}
+
+		diffs = append(diffs, InstalledDiff{
+			Package: pkg,
+			Diff:    diff,
+		})
+	}
+
+	// Resolve the APK DB location
+	if err := a.resolveApkDB(ctx); err != nil {
+		return nil, err
+	}
+	return diffs, nil
+}
+
+type NoKeysFoundError struct {
+	arch     string
+	releases []string
+}
+
+func (e *NoKeysFoundError) Error() string {
+	return fmt.Sprintf("no keys found for arch %s and releases %v", e.arch, e.releases)
+}
+
+// AlpineKeyFetchError reports a failure to retrieve signing keys for an
+// Alpine package repository.
+type AlpineKeyFetchError struct {
+	Repository string
+	Version    string
+	Err        error
+}
+
+func (e *AlpineKeyFetchError) Error() string {
+	return fmt.Sprintf("failed to fetch Alpine keys for %s: %v", e.Repository, e.Err)
+}
+
+func (e *AlpineKeyFetchError) Unwrap() error {
+	return e.Err
+}
+
+// FetchAlpineReleases fetches and returns the Alpine releases metadata from alpinelinux.org.
+func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, error) {
+	u := alpineReleasesURL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	// NB: Not setting basic auth, since we know Alpine doesn't support it.
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unable to get alpine releases at %s: %v", u, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read alpine releases: %w", err)
+	}
+	var releases Releases
+	if err := json.Unmarshal(b, &releases); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal alpine releases: %w", err)
+	}
+	return &releases, nil
+}
+
+// fetchAlpineKeys fetches the public keys for the repositories in the APK database.
+func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
+	defer span.End()
+
+	client := a.client
+	if a.cache != nil {
+		client = a.cache.client(client, true)
+	}
+	releases, err := FetchAlpineReleases(ctx, client)
+	if err != nil {
+		return err
+	}
+	var urls []string
+	// now just need to get the keys for the desired architecture and releases
+	for _, version := range alpineVersions {
+		branch := releases.GetReleaseBranch(version)
+		if branch == nil {
+			continue
+		}
+		urls = append(urls, branch.KeysFor(a.arch, time.Now())...)
+	}
+	if len(urls) == 0 {
+		return &NoKeysFoundError{arch: a.arch, releases: alpineVersions}
+	}
+	// get the keys for each URL and save them to a file with that name
+	for _, u := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return err
+		}
+		// NB: Not setting basic auth, since we know Alpine doesn't support it.
+		res, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to fetch alpine key %s: %w", u, err)
+		}
+		defer res.Body.Close()
+		basefilenameEscape := filepath.Base(u)
+		basefilename, err := url.PathUnescape(basefilenameEscape)
+		if err != nil {
+			return fmt.Errorf("failed to unescape key filename %s: %w", basefilenameEscape, err)
+		}
+		filename := filepath.Join(keysDirPath, basefilename)
+		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open key file %s: %w", filename, err)
+		}
+		defer f.Close()
+		if _, err := io.Copy(f, res.Body); err != nil {
+			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		}
+	}
+	return nil
+}
+
+type Key struct {
+	ID    string
+	Bytes []byte
+}
+
+// FetchKeyBytes downloads a keyring from the given URL and returns its raw bytes.
+// It applies the provided authenticator (which may be nil for anonymous fetches).
+func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticator, keyURL string) ([]byte, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "FetchKeyBytes")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keyURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch key %s: %w", keyURL, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch key %s: %s", keyURL, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyURL, err)
+	}
+	return b, nil
+}
+
+// DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
+	defer span.End()
+
+	if !strings.HasPrefix(repository, "https://") && !strings.HasPrefix(repository, "http://") {
+		// Ignore non-remote repositories.
+		return nil, nil
+	}
+	asURL, err := url.Parse(strings.TrimSuffix(repository, "/") + "/apk-configuration")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse repository URL: %w", err)
+	}
+
+	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.AddAuth(ctx, discoveryRequest); err != nil {
+		return nil, err
+	}
+
+	discoveryResponse, err := client.Do(discoveryRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
+	}
+	defer discoveryResponse.Body.Close()
+	switch discoveryResponse.StatusCode {
+	case http.StatusNotFound:
+		// This doesn't implement Chainguard-style key discovery.
+		return nil, nil
+
+	case http.StatusOK:
+		// proceed!
+		break
+
+	default:
+		return nil, fmt.Errorf("chainguard key discovery was unsuccessful for repo %s: %v", repository, discoveryResponse.Status)
+	}
+	// Parse our the JWKS URI
+	var discovery struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.NewDecoder(discoveryResponse.Body).Decode(&discovery); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal discovery payload: %w", err)
+	}
+
+	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
+		return nil, err
+	}
+	jwksResponse, err := client.Do(jwksRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+	defer jwksResponse.Body.Close()
+	if jwksResponse.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch JWKS: %v", jwksResponse.Status)
+	}
+
+	jwks := jose.JSONWebKeySet{}
+	if err := json.NewDecoder(jwksResponse.Body).Decode(&jwks); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JWKS: %w", err)
+	}
+
+	keys := make([]Key, 0, len(jwks.Keys))
+	for _, key := range jwks.Keys {
+		if key.KeyID == "" {
+			return nil, fmt.Errorf(`key missing "kid"`)
+		}
+		keyName := key.KeyID + ".rsa.pub"
+
+		rsaKey, ok := key.Key.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("unsupported JWKS key type %T for key %q: expected *rsa.PublicKey", key.Key, key.KeyID)
+		}
+		b, err := x509.MarshalPKIXPublicKey(rsaKey)
+		if err != nil {
+			return nil, err
+		} else if len(b) == 0 {
+			return nil, fmt.Errorf("empty public key")
+		}
+		var buf bytes.Buffer
+		if err := pem.Encode(&buf, &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: b,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to pem encode key %s: %w", keyName, err)
+		}
+
+		keys = append(keys, Key{
+			ID:    keyName,
+			Bytes: buf.Bytes(),
+		})
+	}
+
+	return keys, nil
+}
+
+func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error) {
+	client := a.client
+	if a.cache != nil {
+		client = a.cache.client(client, false)
+
+		if !a.cache.offline {
+			rc := retryablehttp.NewClient()
+			rc.HTTPClient = client
+			rc.Logger = clog.FromContext(ctx)
+			client = rc.StandardClient()
+		}
+
+		keys, _, err := a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
+			return DiscoverKeys(ctx, client, a.auth, repository)
+		})
+		return keys, err
+	}
+
+	return DiscoverKeys(ctx, client, a.auth, repository)
+}
+
+// fetchChainguardKeys fetches the public keys for the repositories in the APK database.
+func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
+	defer span.End()
+
+	log := clog.FromContext(ctx)
+
+	if !strings.HasPrefix(repository, "https://") && !strings.HasPrefix(repository, "http://") {
+		log.Debugf("ignoring non-http(s) repository %s", repository)
+		return nil
+	}
+
+	keys, err := a.DiscoverKeys(ctx, repository)
+	if err != nil {
+		log.Debugf("ignoring missing keys for %s: %v", repository, err)
+	}
+
+	for _, key := range keys {
+		filename := filepath.Join(keysDirPath, key.ID)
+		if err := a.fs.WriteFile(filename, key.Bytes, 0o644); err != nil {
+			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		}
+	}
+	return nil
+}
+
+// fileURI converts a local filesystem path into a file:// URI. It mirrors the
+// behavior of the uri.New/uri.File helpers that were removed in
+// go.lsp.dev/uri v1.0.1: an input that is already a file:// URI is returned
+// unchanged, otherwise the path is made absolute and rendered as a file:// URL.
+func fileURI(s string) uri.URI {
+	if u, err := url.PathUnescape(s); err == nil {
+		s = u
+	}
+
+	if strings.HasPrefix(s, "file://") {
+		return uri.URI(s)
+	}
+
+	p := s
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p)}
+	return uri.URI(u.String())
+}
+
+func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
+	u := pkg.URL()
+
+	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
+		return uri.Parse(u)
+	}
+
+	return fileURI(u), nil
+}
+
+func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
+	asURI, err := packageAsURI(pkg)
+	if err != nil {
+		return nil, err
+	}
+
+	return url.Parse(string(asURI))
+}
+
+// FetchPackage fetches the given package and returns a ReadCloser for its contents.
+// This is only kept for backwards compatibility, prefer using packageGetter.GetPackage instead.
+func (a *APK) FetchPackage(ctx context.Context, pkg FetchablePackage) (io.ReadCloser, error) {
+	// To keep existing behavior, this always uses the default package getter.
+	var getterOpts []packageGetterOption
+	if a.sizeLimits != nil {
+		if a.sizeLimits.APKControlMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKControlMaxSize(a.sizeLimits.APKControlMaxSize))
+		}
+		if a.sizeLimits.APKDataMaxSize != 0 {
+			getterOpts = append(getterOpts, withAPKDataMaxSize(a.sizeLimits.APKDataMaxSize))
+		}
+	}
+	getter := newDefaultPackageGetter(a.client, a.cache, a.auth, getterOpts...)
+	return getter.fetchPackage(ctx, pkg)
+}
+
+type WriteHeaderer interface {
+	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
+}
+
+// installPackage installs a single package and updates installed db.
+func (a *APK) installPackage(ctx context.Context, pkg *Package, contents PackageContents, sourceDateEpoch *time.Time) ([]tar.Header, error) {
+	log := clog.FromContext(ctx)
+	log.Infof("installing %s (%s)", pkg.Name, pkg.Version)
+
+	// For expanded APKs we don't remove the backing tempDir because our
+	// cached files are advertised by symlinks pointing into them.
+	//
+	// This is not a big deal because the temp files if not referred by
+	// a symlink will be cleaned up anyway.
+
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "installPackage", trace.WithAttributes(attribute.String("package", pkg.Name)))
+	defer span.End()
+
+	var (
+		err            error
+		installedFiles []tar.Header
+	)
+
+	if wh, ok := a.fs.(WriteHeaderer); ok {
+		entries, err := contents.Entries()
+		if err != nil {
+			return nil, fmt.Errorf("reading install records for pkg %s: %w", pkg.Name, err)
+		}
+		installedFiles, err = a.lazilyInstallAPKFiles(ctx, wh, entries, contents.FS(), pkg)
+		if err != nil {
+			return nil, fmt.Errorf("unable to install files for pkg %s: %w", pkg.Name, err)
+		}
+	} else {
+		// The non-WriteHeaderer path streams the whole data section as a
+		// tar, which not every contents carrier can produce.
+		pd, ok := contents.(interface{ PackageData() (*os.File, error) })
+		if !ok {
+			return nil, fmt.Errorf("installing %s: filesystem does not implement WriteHeaderer and the package contents carry no data stream", pkg.Name)
+		}
+		packageData, err := pd.PackageData()
+		if err != nil {
+			return nil, fmt.Errorf("opening package data for %s: %w", pkg.Name, err)
+		}
+		defer packageData.Close()
+
+		installedFiles, err = a.installAPKFiles(ctx, packageData, pkg)
+		if err != nil {
+			return nil, fmt.Errorf("unable to install files for pkg %s: %w", pkg.Name, err)
+		}
+	}
+
+	// update the scripts.tar
+	controlData, err := contents.ControlData()
+	if err != nil {
+		return nil, fmt.Errorf("opening control data for %s: %w", pkg.Name, err)
+	}
+	controlTar := bytes.NewReader(controlData)
+	if err := a.updateScriptsTar(pkg, controlTar, sourceDateEpoch); err != nil {
+		return nil, fmt.Errorf("unable to update scripts.tar for pkg %s: %w", pkg.Name, err)
+	}
+
+	// update the triggers
+	pkgInfo, err := contents.PkgInfo()
+	if err != nil {
+		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
+	}
+	if err := a.updateTriggers(pkg, pkgInfo.Triggers); err != nil {
+		return nil, fmt.Errorf("unable to update triggers for pkg %s: %w", pkg.Name, err)
+	}
+
+	return installedFiles, nil
+}
+
+func packageRefs(pkgs []*RepositoryPackage) []string {
+	names := make([]string, len(pkgs))
+	for i, pkg := range pkgs {
+		names[i] = fmt.Sprintf("%s (%s) %s", pkg.Name, pkg.Version, pkg.URL())
+	}
+	return names
+}

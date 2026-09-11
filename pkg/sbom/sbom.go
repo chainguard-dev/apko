@@ -15,61 +15,15 @@
 package sbom
 
 import (
-	"fmt"
-	"io"
-	"io/fs"
-	"path/filepath"
-
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	osr "github.com/dominodatalab/os-release"
-
 	"chainguard.dev/apko/pkg/sbom/options"
-)
-
-var (
-	osReleasePath    = filepath.Join("etc", "os-release")
-	packageIndexPath = filepath.Join("lib", "apk", "db", "installed")
 )
 
 var DefaultOptions = options.Options{
 	OS: options.OSInfo{
-		ID:      "unknown",
-		Name:    "Alpine Linux",
-		Version: "Unknown",
+		Name: "Chainguard, Inc.", // This populates the supplier for index SBOMs.
 	},
 	ImageInfo: options.ImageInfo{
 		Images: []options.ArchImageInfo{},
 	},
 	FileName: "sbom",
-	Formats:  []string{"spdx", "cyclonedx"},
-}
-
-// readReleaseDataInternal reads the information from /etc/os-release
-func ReadReleaseData(fsys fs.FS) (*osr.Data, error) {
-	f, err := fsys.Open(osReleasePath)
-	if err != nil {
-		return nil, fmt.Errorf("opening os-release: %w", err)
-	}
-	defer f.Close()
-	osReleaseData, err := io.ReadAll(f)
-	if err != nil {
-		return nil, fmt.Errorf("reading os-release: %w", err)
-	}
-
-	return osr.Parse(string(osReleaseData)), nil
-}
-
-func ReadPackageIndex(fsys fs.FS) (packages []*apk.Package, err error) {
-	installedDB, err := fsys.Open(packageIndexPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening APK installed db: %w", err)
-	}
-	defer installedDB.Close()
-
-	// apk.ParsePackageIndex closes the file itself
-	packages, err = apk.ParsePackageIndex(installedDB)
-	if err != nil {
-		return nil, fmt.Errorf("parsing APK installed db: %w", err)
-	}
-	return packages, nil
 }

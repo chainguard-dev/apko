@@ -1,0 +1,11 @@
+contents:
+  build_repositories:
+    - "secret repository"
+  runtime_repositories:
+    - "runtime repository"
+  repositories:
+    - "repository"
+  keyring:
+    - "key"
+  packages:
+    - "package"

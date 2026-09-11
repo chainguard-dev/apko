@@ -16,9 +16,12 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 
+	"github.com/chainguard-dev/clog/slag"
+	charmlog "github.com/charmbracelet/log"
 	cranecmd "github.com/google/go-containerregistry/cmd/crane/cmd"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/release-utils/version"
@@ -30,29 +33,37 @@ func New() *cobra.Command {
 	if err != nil {
 		cwd = ""
 	}
+	level := slag.Level(slog.LevelInfo)
 	cmd := &cobra.Command{
 		Use:               "apko",
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			http.DefaultTransport = userAgentTransport{http.DefaultTransport}
 			if workDir != "" {
 				if err := os.Chdir(workDir); err != nil {
-					fmt.Printf("failed to change dir to %s: %v\n", workDir, err)
+					return fmt.Errorf("failed to change dir to %s: %w", workDir, err)
 				}
 			}
+			slog.SetDefault(slog.New(charmlog.NewWithOptions(os.Stderr, charmlog.Options{ReportTimestamp: true, Level: charmlog.Level(level)})))
+			return nil
 		},
 	}
+	cmd.PersistentFlags().Var(&level, "log-level", "log level (e.g. debug, info, warn, error, fatal, panic)")
 
 	cmd.AddCommand(cranecmd.NewCmdAuthLogin("apko")) // apko login
 	cmd.AddCommand(buildCmd())
 	cmd.AddCommand(buildMinirootFS())
+	cmd.AddCommand(buildCPIO())
 	cmd.AddCommand(showConfig())
 	cmd.AddCommand(publish())
 	cmd.AddCommand(showPackages())
 	cmd.AddCommand(dotcmd())
 	cmd.AddCommand(lock())
 	cmd.AddCommand(resolve())
+	cmd.AddCommand(installKeys())
+	cmd.AddCommand(cleanCmd())
+	cmd.AddCommand(erofsCmd())
 	cmd.AddCommand(version.Version())
 
 	cmd.PersistentFlags().StringVarP(&workDir, "workdir", "C", cwd, "working dir (default is current dir where executed)")

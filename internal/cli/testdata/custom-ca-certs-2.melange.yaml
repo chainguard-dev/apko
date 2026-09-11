@@ -1,0 +1,48 @@
+package:
+  name: custom-ca-certs-2
+  version: 1.0.0
+  epoch: 0
+  description: "custom CA certificates package 2 (test)"
+  copyright:
+    - license: MIT
+  dependencies:
+    provides:
+      - custom-ca-certificates
+
+environment:
+  contents:
+    packages:
+      - busybox
+
+pipeline:
+  - name: Install certificates
+    runs: |
+      mkdir -p ${{targets.destdir}}/usr/local/share/ca-certificates
+      cat >${{targets.destdir}}/usr/local/share/ca-certificates/cert-c.crt <<'CERTEOF'
+      -----BEGIN CERTIFICATE-----
+      MIIBwjCCAWegAwIBAgIUBKZDifzRAz30jwlcoQLIOxkBPLMwCgYIKoZIzj0EAwIw
+      NTEeMBwGA1UEAwwVVGVzdCBDQSBDZXJ0aWZpY2F0ZSAzMRMwEQYDVQQKDApUZXN0
+      IE9yZyAzMCAXDTI2MDIyNzIwMzk1OVoYDzIxMjYwMjAzMjAzOTU5WjA1MR4wHAYD
+      VQQDDBVUZXN0IENBIENlcnRpZmljYXRlIDMxEzARBgNVBAoMClRlc3QgT3JnIDMw
+      WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARx/10O/q2rOnQtpBXHjARAUryfNWjD
+      UXeshzFk44hrv45loTsGQcyb5vAL6h3FSdBN91njUch4eF1NEYLKoR3Qo1MwUTAd
+      BgNVHQ4EFgQUhLbWEa0IUIixKPBVvuKxhK6UMnMwHwYDVR0jBBgwFoAUhLbWEa0I
+      UIixKPBVvuKxhK6UMnMwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBG
+      AiEAqgTlOPOiNJLPJhMjRl9Zpaq6TTGfh+awe7N3fcEdHVICIQDfgVRRkuv1KTWk
+      44YBh2/IaTSFwFo8cd39Fnv7CYi/2g==
+      -----END CERTIFICATE-----
+      CERTEOF
+      cat >${{targets.destdir}}/usr/local/share/ca-certificates/cert-d.crt <<'CERTEOF'
+      -----BEGIN CERTIFICATE-----
+      MIIBwTCCAWegAwIBAgIUPrm4YvABD98JhdU93qPsAgryo0UwCgYIKoZIzj0EAwIw
+      NTEeMBwGA1UEAwwVVGVzdCBDQSBDZXJ0aWZpY2F0ZSA0MRMwEQYDVQQKDApUZXN0
+      IE9yZyA0MCAXDTI2MDIyNzIwNDAwMFoYDzIxMjYwMjAzMjA0MDAwWjA1MR4wHAYD
+      VQQDDBVUZXN0IENBIENlcnRpZmljYXRlIDQxEzARBgNVBAoMClRlc3QgT3JnIDQw
+      WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQbR9hBg7/IeSBYJzUvBUxnnaNmoOJj
+      ESG5CiOa2980CC5aixcLof5kk/9K16B+OLIGSUE+Ya98N0vNP8KmDmvBo1MwUTAd
+      BgNVHQ4EFgQU6ZlpZtkvodhxZX1aRsM44dY0SJ8wHwYDVR0jBBgwFoAU6ZlpZtkv
+      odhxZX1aRsM44dY0SJ8wDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBF
+      AiARCNSY4WZ7Tl1oAmWghJz0Sxzi57JY4pdrvzyzYQNrhgIhAPMAzTOf33fVRhaX
+      wB7TKj2HAGTDpoliTH80SMWJN3jK
+      -----END CERTIFICATE-----
+      CERTEOF

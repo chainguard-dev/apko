@@ -1,0 +1,13 @@
+# This was very slow once.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+
+  packages:
+    - abseil-cpp-dev
+    - pkgconf
+
+archs:
+- arm64
