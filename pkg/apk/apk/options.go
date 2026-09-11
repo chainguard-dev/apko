@@ -40,6 +40,7 @@ type opts struct {
 	transport          http.RoundTripper
 	packageGetter      PackageGetter
 	sizeLimits         *SizeLimits
+	prefetchedIndexes  []NamedIndex
 }
 
 // SizeLimits configures maximum sizes for various APK operations.
@@ -64,6 +65,16 @@ func WithExecutor(executor Executor) Option {
 func WithArch(arch string) Option {
 	return func(o *opts) error {
 		o.arch = arch
+		return nil
+	}
+}
+
+// WithPrefetchedIndexes supplies an index snapshot for this APK's architecture.
+// When set, GetRepositoryIndexes returns it verbatim instead of fetching and
+// revalidating, so a caller can resolve against indexes captured once up front.
+func WithPrefetchedIndexes(indexes []NamedIndex) Option {
+	return func(o *opts) error {
+		o.prefetchedIndexes = indexes
 		return nil
 	}
 }

@@ -171,6 +171,17 @@ func WithExtraRepos(repos []string) Option {
 	}
 }
 
+// WithPrefetchedIndexes supplies a per-architecture index snapshot that
+// resolves use verbatim instead of fetching. Capture it once with
+// PrefetchIndexes and pass it to every resolve so they share one index
+// generation, skipping the per-resolve HEAD round-trips.
+func WithPrefetchedIndexes(byArch map[types.Architecture][]apk.NamedIndex) Option {
+	return func(bc *Context) error {
+		bc.o.PrefetchedIndexes = byArch
+		return nil
+	}
+}
+
 func WithExtraPackages(packages []string) Option {
 	return func(bc *Context) error {
 		bc.o.ExtraPackages = packages
