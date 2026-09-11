@@ -314,6 +314,26 @@ func TestAddInstalledPackageAdded(t *testing.T) {
 	}
 }
 
+func TestPackageToInstalledReplacesPriority(t *testing.T) {
+	t.Run("zero replaces_priority produces no q: line", func(t *testing.T) {
+		lines := PackageToInstalled(&Package{Name: "testpkg", Version: "1.0.0"})
+		for _, l := range lines {
+			require.False(t, strings.HasPrefix(l, "q:"), "replaces_priority of 0 must not produce a q: line, matching apk-tools")
+		}
+	})
+
+	t.Run("non-zero replaces_priority is written and round-trips", func(t *testing.T) {
+		pkg := &Package{Name: "testpkg", Version: "1.0.0", ReplacesPriority: 7}
+		lines := PackageToInstalled(pkg)
+		require.Contains(t, lines, "q:7")
+
+		installed, err := ParseInstalled(strings.NewReader(strings.Join(lines, "\n") + "\n\n"))
+		require.NoError(t, err)
+		require.Len(t, installed, 1)
+		require.EqualValues(t, 7, installed[0].ReplacesPriority)
+	})
+}
+
 func TestIsInstalledPackage(t *testing.T) {
 	a, _, err := testGetTestAPK()
 	require.NoErrorf(t, err, "unable to initialize APK implementation: %v", err)
