@@ -18,10 +18,40 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
-	"sort"
+	"slices"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
+
+func processRepositoryURLs(repositories []string) error {
+	for idx, repo := range repositories {
+		parts := strings.Split(repo, " ")
+		switch len(parts) {
+		case 2:
+			tag := parts[0]
+			rawURL := parts[1]
+			if !strings.HasPrefix(tag, "@") || len(tag) <= 1 {
+				return fmt.Errorf("invalid tag format in repository: %s (expected @tag format)", tag)
+			}
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = tag + " " + parsed.Redacted()
+		case 1:
+			rawURL := repo
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = parsed.Redacted()
+		default:
+			return fmt.Errorf("invalid repository format: %s (expected either 'url' or '@tag url')", repo)
+		}
+	}
+	return nil
+}
 
 type User struct {
 	// Required: The name of the user
@@ -37,6 +67,10 @@ type User struct {
 }
 
 type GID *uint32
+
+// UID is a nullable user ID. A nil UID means "unset" (distinct from an
+// explicit 0), which lets path mutations leave ownership untouched.
+type UID *uint32
 
 type Group struct {
 	// Required: The name of the group
@@ -54,15 +88,19 @@ type PathMutation struct {
 	//
 	// This can be one of: directory, empty-file, hardlink, symlink, permissions
 	Type string `json:"type,omitempty"`
-	// The mutation's desired user ID
-	UID uint32 `json:"uid,omitempty"`
-	// The mutation's desired group ID
-	GID uint32 `json:"gid,omitempty"`
+	// The mutation's desired user ID. If unset (nil), ownership is left
+	// untouched unless gid is set (see Recursive).
+	UID UID `json:"uid,omitempty" yaml:"uid,omitempty"`
+	// The mutation's desired group ID. If unset (nil), ownership is left
+	// untouched unless uid is set (see Recursive).
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// The permission bits for the path
 	Permissions uint32 `json:"permissions,omitempty"`
 	// The source path to mutate
 	Source string `json:"source,omitempty"`
-	// Toggle whether to mutate recursively
+	// Toggle whether to mutate recursively. Honored for the "directory" and
+	// "permissions" types: the permissions, and uid/gid when set, are applied
+	// to every entry beneath the path.
 	Recursive bool `json:"recursive,omitempty"`
 }
 
@@ -88,6 +126,12 @@ type ImageContents struct {
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// APK signing public keys installed into /etc/apk/keys after package
+	// resolution, so runtime `apk add` against runtime_repositories can verify
+	// re-signed packages. A runtime trust anchor only — not consulted during
+	// build-time package resolution. Each entry is an inline {name, content}
+	// public key.
+	RuntimeKeyring []RuntimeKeyringEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
 	// Optional: Base image to build on top of. Warning: Experimental.
@@ -96,26 +140,16 @@ type ImageContents struct {
 
 // MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
 // the ImageContents struct fields.
-func (i ImageContents) MarshalYAML() (interface{}, error) {
+func (i ImageContents) MarshalYAML() (any, error) {
 	type redactedImageContents ImageContents
 	ri := redactedImageContents(i)
 
-	for idx, repo := range ri.BuildRepositories {
-		rawURL := repo
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			return nil, fmt.Errorf("parsing repository URL: %w", err)
-		}
-		ri.BuildRepositories[idx] = parsed.Redacted()
+	if err := processRepositoryURLs(ri.BuildRepositories); err != nil {
+		return nil, err
 	}
 
-	for idx, repo := range ri.Repositories {
-		rawURL := repo
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			return nil, fmt.Errorf("parsing repository URL: %w", err)
-		}
-		ri.Repositories[idx] = parsed.Redacted()
+	if err := processRepositoryURLs(ri.Repositories); err != nil {
+		return nil, err
 	}
 
 	for idx, key := range ri.Keyring {
@@ -199,6 +233,41 @@ type ImageConfiguration struct {
 
 	// Optional: Configuration to control layering of the OCI image.
 	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
+
+	// Optional: Layer payload format. One of "tar" (default) or "erofs".
+	// "erofs" is experimental and tracks the draft erofs/erofs-image-spec.
+	Format LayerFormat `json:"format,omitempty" yaml:"format,omitempty"`
+
+	// Optional: Certificates to install in the container image
+	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+}
+
+// LayerFormat selects the on-wire layer payload format.
+type LayerFormat string
+
+const (
+	// LayerFormatTar produces gzip-compressed tar layers (OCI/Docker default).
+	LayerFormatTar LayerFormat = "tar"
+	// LayerFormatErofs produces uncompressed EROFS filesystem layers per the
+	// draft erofs/erofs-image-spec.
+	LayerFormatErofs LayerFormat = "erofs"
+)
+
+// Resolved returns the format with the empty default coerced to LayerFormatTar.
+func (f LayerFormat) Resolved() LayerFormat {
+	if f == "" {
+		return LayerFormatTar
+	}
+	return f
+}
+
+// Valid reports whether f is a recognized layer format.
+func (f LayerFormat) Valid() bool {
+	switch f.Resolved() {
+	case LayerFormatTar, LayerFormatErofs:
+		return true
+	}
+	return false
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -207,7 +276,7 @@ type Architecture string
 
 func (a Architecture) String() string { return string(a) }
 
-func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (a *Architecture) UnmarshalYAML(unmarshal func(any) error) error {
 	var buf string
 	if err := unmarshal(&buf); err != nil {
 		return err
@@ -401,20 +470,51 @@ func ParseArchitectures(in []string) []Architecture {
 	for k := range uniq {
 		archs = append(archs, k)
 	}
-	sort.Slice(archs, func(i, j int) bool {
-		return archs[i] < archs[j]
-	})
+	slices.Sort(archs)
 	return archs
 }
 
 type SBOM struct {
-	Arch   string
-	Path   string
-	Format string
-	Digest v1.Hash
+	Arch          string
+	Path          string
+	Format        string
+	PredicateType string
+	Digest        v1.Hash
 }
 
 type Layering struct {
 	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
+}
+
+type AdditionalCertificateEntry struct {
+	// Required: Name of the certificate entry
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: PEM-encoded certificate content to install in the image.
+	// Must contain exactly one certificate.
+	// The certificate will be:
+	// 1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)
+	// 2. Installed as an individual file in the ca-certificates.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
+}
+
+type ImageCertificates struct {
+	// Additional certificates to install in the image
+	Additional []AdditionalCertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
+	// Providers is a list of virtual package names that identify packages
+	// containing CA certificate files to be assembled into the system CA bundle.
+	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
+}
+
+// RuntimeKeyringEntry is a single inline APK signing public key, mirroring
+// AdditionalCertificateEntry. Keys are content-bearing by design: the key bytes
+// live in the configuration itself (no URIs to fetch), so builds stay
+// reproducible and the locked configuration carries the full trust anchor.
+type RuntimeKeyringEntry struct {
+	// Required: the filename the key is written to under /etc/apk/keys. Must
+	// match the filename the repository's APKINDEX signature references
+	// (.SIGN.RSA256.<name>), or apk will not find the key at runtime.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: the PEM-encoded RSA public key content.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
 }

@@ -1,6 +1,6 @@
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-base
     - python3

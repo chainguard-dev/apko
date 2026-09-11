@@ -1,0 +1,16 @@
+contents:
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
+    - https://apk.cgr.dev/chainguard
+    - ./testdata/packages
+  packages:
+    - replayout
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64

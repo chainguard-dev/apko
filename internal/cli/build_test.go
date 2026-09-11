@@ -16,7 +16,6 @@ package cli_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -30,10 +29,13 @@ import (
 	"chainguard.dev/apko/internal/cli"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestBuild(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	golden := filepath.Join("testdata", "golden")
@@ -41,7 +43,15 @@ func TestBuild(t *testing.T) {
 	config := filepath.Join("testdata", "apko.yaml")
 
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden:latest")}
+	opts := []build.Option{
+		build.WithConfig(config, []string{}),
+		build.WithSBOMGenerators(spdx.New()),
+		build.WithTags("golden:latest"),
+		build.WithAnnotations(map[string]string{
+			"org.opencontainers.image.vendor": "Vendor",
+			"org.opencontainers.image.title":  "Title",
+		}),
+	}
 
 	sbomPath := filepath.Join(tmp, "sboms")
 	err := os.MkdirAll(sbomPath, 0o750)
@@ -91,7 +101,7 @@ func TestBuild(t *testing.T) {
 		// https://github.com/google/go-cmp/issues/224#issuecomment-650429859
 		transformJSON := cmp.FilterValues(func(x, y []byte) bool {
 			return json.Valid(x) && json.Valid(y)
-		}, cmp.Transformer("ParseJSON", func(in []byte) (out interface{}) {
+		}, cmp.Transformer("ParseJSON", func(in []byte) (out any) {
 			if err := json.Unmarshal(in, &out); err != nil {
 				panic(err) // should never occur given previous filter to ensure valid JSON
 			}
@@ -105,11 +115,13 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildWithBase(t *testing.T) {
+	unsetSourceDateEpoch(t)
+
 	// top_image golden file can be regenerated using ./internal/cli/testdata/regenerate_golden_top_image.sh script.
 
 	// TODO(sfc-gh-mhazy) Check sboms after base image support is reflected in them.
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tmp := t.TempDir()
 	apkoTempDir := t.TempDir()
 
@@ -118,7 +130,7 @@ func TestBuildWithBase(t *testing.T) {
 	lockfile := filepath.Join("testdata", "image_on_top.apko.lock.json")
 
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
-	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMFormats([]string{"spdx"}), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
+	opts := []build.Option{build.WithConfig(config, []string{}), build.WithSBOMGenerators(spdx.New()), build.WithTags("golden_top:latest"), build.WithLockFile(lockfile), build.WithTempDir(apkoTempDir)}
 
 	sbomPath := filepath.Join(tmp, "sboms")
 	err := os.MkdirAll(sbomPath, 0o750)

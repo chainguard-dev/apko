@@ -87,7 +87,7 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 		// Get all packages from base image and merge them into the desired world.
 		if bc.baseimg != nil {
 			basePkgs := bc.baseimg.InstalledPackages()
-			var basePkgsNames []string
+			basePkgsNames := make([]string, 0, len(basePkgs))
 			for _, basePkg := range basePkgs {
 				basePkgsNames = append(basePkgsNames, fmt.Sprintf("%s=%s", basePkg.Name, basePkg.Version))
 			}

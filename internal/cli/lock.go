@@ -18,16 +18,20 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
@@ -162,17 +166,28 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		},
 	}
 
+	explicitClient := &http.Client{}
 	for _, keyring := range ic.Contents.Keyring {
+		b, err := loadKeyringBytes(ctx, explicitClient, keyring)
+		if err != nil {
+			return fmt.Errorf("failed to load keyring %s: %w", keyring, err)
+		}
 		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
-			Name: stripURLScheme(keyring),
-			URL:  keyring,
+			Name:    stripURLScheme(keyring),
+			URL:     keyring,
+			Content: string(b),
 		})
 	}
 
+	// Discover and add auto-discovered keys from repositories
+	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
+	if err != nil {
+		return fmt.Errorf("failed to discover keys: %w", err)
+	}
+	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
+
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
-		arch := arch
-
 		log := log.With("arch", arch.ToAPK())
 		ctx := clog.WithLogger(ctx, log)
 
@@ -238,6 +253,12 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
+
+	// Sort keyrings by name for reproducible lock files
+	sort.Slice(lock.Contents.Keyrings, func(i, j int) bool {
+		return lock.Contents.Keyrings[i].Name < lock.Contents.Keyrings[j].Name
+	})
+
 	return lock.SaveToFile(output)
 }
 
@@ -263,4 +284,114 @@ func stripURLScheme(url string) string {
 		strings.TrimPrefix(url, "https://"),
 		"http://",
 	)
+}
+
+// loadKeyringBytes returns the raw bytes of a keyring referenced by a URL or
+// a local file path. It is used to embed keyring content into the lock file so
+// downstream consumers don't need to re-fetch a URL that may 404 after key
+// rotation.
+func loadKeyringBytes(ctx context.Context, client *http.Client, keyring string) ([]byte, error) {
+	if strings.HasPrefix(keyring, "https://") || strings.HasPrefix(keyring, "http://") {
+		return apk.FetchKeyBytes(ctx, client, auth.DefaultAuthenticators, keyring)
+	}
+	return os.ReadFile(keyring)
+}
+
+// discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
+	log := clog.FromContext(ctx)
+
+	// Collect all unique repositories
+	repoSet := make(map[string]struct{})
+	for _, repo := range ic.Contents.BuildRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.RuntimeOnlyRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.Repositories {
+		repoSet[repo] = struct{}{}
+	}
+
+	// Map to track discovered keys by URL to avoid duplicates
+	discoveredKeyMap := make(map[string]pkglock.LockKeyring)
+
+	// Fetch Alpine releases once (cached by HTTP client)
+	client := &http.Client{}
+	var alpineReleases *apk.Releases
+
+	// Discover keys for each repository and architecture
+	for repo := range repoSet {
+		// Try Alpine-style key discovery
+		if ver, ok := apk.ParseAlpineVersion(repo); ok {
+			// Fetch releases.json if not already fetched
+			if alpineReleases == nil {
+				releases, err := apk.FetchAlpineReleases(ctx, client)
+				if err != nil {
+					return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
+				}
+				alpineReleases = releases
+			}
+
+			branch := alpineReleases.GetReleaseBranch(ver)
+			if branch == nil {
+				log.Debugf("Alpine version %s not found in releases", ver)
+				continue
+			}
+
+			// Get keys for each architecture
+			for _, arch := range archs {
+				log.Debugf("Discovering Alpine keys for %s (version %s, arch %s)", repo, ver, arch.ToAPK())
+				urls := branch.KeysFor(arch.ToAPK(), time.Now())
+				if len(urls) == 0 {
+					log.Debugf("No keys found for arch %s and version %s", arch.ToAPK(), ver)
+					continue
+				}
+
+				// Fetch and embed each key's bytes.
+				for _, u := range urls {
+					if _, ok := discoveredKeyMap[u]; ok {
+						continue
+					}
+					b, err := apk.FetchKeyBytes(ctx, client, nil, u)
+					if err != nil {
+						return nil, fmt.Errorf("failed to fetch alpine key %s: %w", u, err)
+					}
+					discoveredKeyMap[u] = pkglock.LockKeyring{
+						Name:    stripURLScheme(u),
+						URL:     u,
+						Content: string(b),
+					}
+				}
+			}
+		}
+
+		// Try Chainguard-style key discovery
+		log.Debugf("Attempting Chainguard-style key discovery for %s", repo)
+		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo)
+		if err != nil {
+			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
+		} else if len(keys) > 0 {
+			log.Debugf("Discovered %d Chainguard-style keys for %s", len(keys), repo)
+			// For each JWKS key, emit a URL: repository + "/" + KeyID
+			repoBase := strings.TrimSuffix(repo, "/")
+			for _, key := range keys {
+				keyURL := repoBase + "/" + key.ID
+				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
+					Name:    stripURLScheme(keyURL),
+					URL:     keyURL,
+					Content: string(key.Bytes),
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	discoveredKeys := make([]pkglock.LockKeyring, 0, len(discoveredKeyMap))
+	for _, key := range discoveredKeyMap {
+		discoveredKeys = append(discoveredKeys, key)
+	}
+
+	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
+	return discoveredKeys, nil
 }

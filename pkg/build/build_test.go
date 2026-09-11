@@ -16,14 +16,20 @@ package build_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
@@ -122,6 +128,194 @@ func TestBuildImage(t *testing.T) {
 	require.Equal(t, installed[0].Version, "1.0.0-r0")
 	require.Equal(t, installed[1].Name, "replayout")
 	require.Equal(t, installed[1].Version, "1.0.0-r0")
+}
+
+func TestLockImageConfigurationWithoutDiskCache(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+
+	srv := httptest.NewServer(http.FileServer(http.Dir("testdata/packages")))
+	defer srv.Close()
+
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{
+			Repositories: []string{srv.URL},
+			Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+			Packages:     []string{"pretend-baselayout"},
+		},
+		Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+	}
+
+	_, _, err := build.LockImageConfiguration(t.Context(), ic, build.WithoutDiskCache())
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestLockImageConfigurationOfflineWithoutDiskCache(t *testing.T) {
+	t.Run("local repository", func(t *testing.T) {
+		repository, err := filepath.Abs("testdata/packages")
+		require.NoError(t, err)
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{repository},
+				Keyring:      []string{filepath.Join(repository, "melange.rsa.pub")},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err = build.LockImageConfiguration(t.Context(), ic,
+			build.WithOffline(true),
+			build.WithoutDiskCache(),
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("remote repository", func(t *testing.T) {
+		var requests atomic.Int64
+		files := http.FileServer(http.Dir("testdata/packages"))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			files.ServeHTTP(w, r)
+		}))
+		defer srv.Close()
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{srv.URL},
+				Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err := build.LockImageConfiguration(t.Context(), ic,
+			build.WithCache(t.TempDir(), true, apk.NewCache(false)),
+			build.WithoutDiskCache(),
+		)
+		var got *apk.OfflineNetworkError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, &apk.OfflineNetworkError{
+			Method: http.MethodGet,
+			URL:    srv.URL + "/melange.rsa.pub",
+		}, got)
+		require.Equal(t, int64(0), requests.Load())
+	})
+}
+
+func TestDiskCacheOptions(t *testing.T) {
+	sharedCache := apk.NewCache(false)
+
+	tests := []struct {
+		name        string
+		options     []build.Option
+		wantEnabled bool
+	}{
+		{
+			name:        "default",
+			wantEnabled: true,
+		},
+		{
+			name:    "disabled",
+			options: []build.Option{build.WithoutDiskCache()},
+		},
+		{
+			name: "empty directory enables automatic location",
+			options: []build.Option{
+				build.WithoutDiskCache(),
+				build.WithCache("", false, sharedCache),
+			},
+			wantEnabled: true,
+		},
+		{
+			name: "last option disables",
+			options: []build.Option{
+				build.WithCache("custom", false, sharedCache),
+				build.WithoutDiskCache(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := build.NewOptions(tt.options...)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantEnabled, got.DiskCacheEnabled)
+		})
+	}
+}
+
+func TestBuildImageWithCertPackages(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("apko-certs.yaml", []string{"testdata"}),
+	}
+
+	fsys := fs.NewMemFS()
+
+	// Pre-create the CA bundle file (in a real image, the ca-certificates
+	// package provides this). installCertificates only appends to existing
+	// bundles.
+	require.NoError(t, fsys.MkdirAll("etc/ssl/certs", 0o755))
+	require.NoError(t, fsys.WriteFile("etc/ssl/certs/ca-certificates.crt", []byte{}, 0o644))
+
+	bc, err := build.New(ctx, fsys, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.BuildImage(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	installed, err := bc.InstalledPackages()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have pretend-baselayout + custom-ca-certs-1 + custom-ca-certs-2.
+	require.Len(t, installed, 3)
+
+	// Verify the CA bundle contains all 4 certificates.
+	bundlePath := "etc/ssl/certs/ca-certificates.crt"
+	bundleData, err := fsys.ReadFile(bundlePath)
+	require.NoError(t, err, "CA bundle should exist at %s", bundlePath)
+
+	bundle := string(bundleData)
+	require.Contains(t, bundle, "-----BEGIN CERTIFICATE-----")
+
+	// Count the number of certificates in the bundle.
+	certCount := strings.Count(bundle, "-----BEGIN CERTIFICATE-----")
+	require.Equal(t, 4, certCount, "expected 4 certificates in the CA bundle, got %d", certCount)
+
+	// Verify individual cert files exist in the filesystem (installed by packages).
+	certPaths := []string{
+		"usr/local/share/ca-certificates/cert-a.crt",
+		"usr/local/share/ca-certificates/cert-b.crt",
+		"usr/local/share/ca-certificates/cert-c.crt",
+		"usr/local/share/ca-certificates/cert-d.crt",
+	}
+	for _, p := range certPaths {
+		_, err := fsys.Stat(p)
+		require.NoError(t, err, "cert file %s should exist", p)
+	}
+
+	// A sha256 sidecar should be written next to the bundle, in sha256sum -c
+	// format, matching the final (post-append) contents of the bundle.
+	sidecarPath := "etc/ssl/certs/.ca-certificates.crt.sha256"
+	sidecarData, err := fsys.ReadFile(sidecarPath)
+	require.NoError(t, err, "CA bundle checksum sidecar should exist at %s", sidecarPath)
+
+	sum := sha256.Sum256(bundleData)
+	require.Equal(t,
+		fmt.Sprintf("%s  ca-certificates.crt\n", hex.EncodeToString(sum[:])),
+		string(sidecarData),
+		"sidecar must record the sha256 of the updated bundle")
 }
 
 func TestBuildImageFromLockFile(t *testing.T) {

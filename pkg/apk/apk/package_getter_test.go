@@ -1,0 +1,494 @@
+package apk
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/apk/auth"
+)
+
+func TestFetchPackage(t *testing.T) {
+	var (
+		repo          = Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+		packages      = []*Package{&testPkg}
+		repoWithIndex = repo.WithIndex(&APKIndex{
+			Packages: packages,
+		})
+		testEtag = "testetag"
+		pkg      = NewRepositoryPackage(&testPkg, repoWithIndex)
+		ctx      = context.Background()
+	)
+	prepGetter := func(t *testing.T, tr http.RoundTripper, cacheDir string) *defaultPackageGetter {
+		// set a client so we use local testdata instead of heading out to the Internet each time
+		path, err := filepath.Abs(cacheDir)
+		require.NoErrorf(t, err, "unable to get absolute path for cache dir")
+		httpClient := &http.Client{Transport: tr}
+		return newDefaultPackageGetter(httpClient, &cache{
+			dir:     path,
+			offline: false,
+			shared:  NewCache(false),
+		}, auth.DefaultAuthenticators)
+	}
+	t.Run("no cache", func(t *testing.T) {
+		a := prepGetter(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, "")
+		_, err := a.fetchPackage(ctx, pkg)
+		require.NoErrorf(t, err, "unable to install package")
+	})
+	t.Run("cache miss no network", func(t *testing.T) {
+		// we use a transport that always returns a 404 so we know we're not hitting the network
+		// it should fail for a cache hit
+		tmpDir := t.TempDir()
+		a := prepGetter(t, &testLocalTransport{fail: true}, tmpDir)
+		_, err := a.fetchPackage(ctx, pkg)
+		require.Error(t, err, "should fail when no cache and no network")
+	})
+	t.Run("cache miss network should fill cache", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepGetter(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, tmpDir)
+		// fill the cache
+		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		err := os.MkdirAll(repoDir, 0o755)
+		require.NoError(t, err, "unable to mkdir cache")
+
+		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
+		cacheApkDir := strings.TrimSuffix(cacheApkFile, ".apk")
+
+		_, err = a.GetPackage(ctx, pkg)
+		require.NoErrorf(t, err, "unable to install pkg")
+		// check that the package file is in place
+		_, err = os.Stat(cacheApkDir)
+		require.NoError(t, err, "apk file not found in cache")
+		// check that the contents are the same
+		exp, err := a.cachedPackage(ctx, pkg, cacheApkDir)
+		if err != nil {
+			t.Logf("did not find cachedPackage(%q) in %s: %v", pkg.Name, cacheApkDir, err)
+			files, err := os.ReadDir(cacheApkDir)
+			require.NoError(t, err, "listing "+cacheApkDir)
+			for _, f := range files {
+				t.Logf("  found %q", f.Name())
+			}
+		}
+		require.NoError(t, err, "unable to read cache apk file")
+		f, err := exp.APK()
+		require.NoError(t, err, "unable to read cached files as apk")
+		defer f.Close()
+
+		apk1, err := io.ReadAll(f)
+		require.NoError(t, err, "unable to read cached apk bytes")
+
+		apk2, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, testPkgFilename))
+		require.NoError(t, err, "unable to read previous apk file")
+		require.Equal(t, apk1, apk2, "apk files do not match")
+	})
+	t.Run("handle missing cache files when expanding APK", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepGetter(t, http.DefaultTransport, tmpDir)
+
+		// Fill the cache
+		exp, err := a.GetPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expand package")
+		_, err = os.Stat(exp.TarFile)
+		require.NoError(t, err, "unable to stat cached tar file")
+
+		// Delete the tar file from the cache
+		require.NoError(t, os.Remove(exp.TarFile), "unable to delete cached tar file")
+		_, err = os.Stat(exp.TarFile)
+		require.ErrorIs(t, err, os.ErrNotExist, "unexpectedly able to stat cached tar file that should have been deleted")
+
+		// Expand the package again, this should re-populate the cache.
+		exp2, err := a.GetPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expandPackage after deleting cached tar file")
+		_, err = os.Stat(exp2.TarFile)
+		require.NoError(t, err, "unable to stat cached tar file")
+
+		// Delete and recreate the tar file from the cache (changing its inodes)
+		bs, err := os.ReadFile(exp2.TarFile)
+		require.NoError(t, err, "unable to read cached tar file")
+		require.NoError(t, os.Remove(exp2.TarFile), "unable to delete cached tar file")
+		require.NoError(t, os.WriteFile(exp2.TarFile, bs, 0o644), "unable to recreate cached tar file")
+
+		// Ensure that the underlying reader is different (i.e. we re-read the file)
+		exp3, err := a.GetPackage(ctx, pkg)
+		require.NoError(t, err, "unable to expandPackage after deleting and recreating cached tar file")
+		require.NotEqual(t, exp2.TarFS.UnderlyingReader(), exp3.TarFS.UnderlyingReader())
+
+		// We should be able to read the APK contents
+		rc, err := exp3.APK()
+		require.NoError(t, err, "unable to get reader for APK()")
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err, "unable to read APK contents")
+	})
+	t.Run("cache hit no etag", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepGetter(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
+			tmpDir)
+		// fill the cache
+		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		err := os.MkdirAll(repoDir, 0o755)
+		require.NoError(t, err, "unable to mkdir cache")
+
+		contents, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, testPkgFilename))
+		require.NoError(t, err, "unable to read apk file")
+		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
+		err = os.WriteFile(cacheApkFile, contents, 0o644) //nolint:gosec // we're writing a test file
+		require.NoError(t, err, "unable to write cache apk file")
+
+		_, err = a.fetchPackage(ctx, pkg)
+		require.NoErrorf(t, err, "unable to install pkg")
+		// check that the package file is in place
+		_, err = os.Stat(cacheApkFile)
+		require.NoError(t, err, "apk file not found in cache")
+		// check that the contents are the same as the original
+		apk1, err := os.ReadFile(cacheApkFile)
+		require.NoError(t, err, "unable to read cache apk file")
+		require.Equal(t, apk1, contents, "apk files do not match")
+	})
+	t.Run("cache hit etag match", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepGetter(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
+			tmpDir)
+		// fill the cache
+		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		err := os.MkdirAll(repoDir, 0o755)
+		require.NoError(t, err, "unable to mkdir cache")
+
+		contents, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, testPkgFilename))
+		require.NoError(t, err, "unable to read apk file")
+		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
+		err = os.WriteFile(cacheApkFile, contents, 0o644) //nolint:gosec // we're writing a test file
+		require.NoError(t, err, "unable to write cache apk file")
+		err = os.WriteFile(cacheApkFile+".etag", []byte(testEtag), 0o644) //nolint:gosec // we're writing a test file
+		require.NoError(t, err, "unable to write etag")
+
+		_, err = a.fetchPackage(ctx, pkg)
+		require.NoErrorf(t, err, "unable to install pkg")
+		// check that the package file is in place
+		_, err = os.Stat(cacheApkFile)
+		require.NoError(t, err, "apk file not found in cache")
+		// check that the contents are the same as the original
+		apk1, err := os.ReadFile(cacheApkFile)
+		require.NoError(t, err, "unable to read cache apk file")
+		require.Equal(t, apk1, contents, "apk files do not match")
+	})
+	t.Run("cache hit etag miss", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		a := prepGetter(t,
+			&testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "abcdefg"}}},
+			tmpDir)
+		// fill the cache
+		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
+		err := os.MkdirAll(repoDir, 0o755)
+		require.NoError(t, err, "unable to mkdir cache")
+
+		contents, err := os.ReadFile(filepath.Join(testPrimaryPkgDir, testPkgFilename))
+		require.NoError(t, err, "unable to read apk file")
+		cacheApkFile := filepath.Join(repoDir, testPkgFilename)
+		err = os.WriteFile(cacheApkFile, contents, 0o644) //nolint:gosec // we're writing a test file
+		require.NoError(t, err, "unable to write cache apk file")
+		err = os.WriteFile(cacheApkFile+".etag", []byte(testEtag), 0o644) //nolint:gosec // we're writing a test file
+		require.NoError(t, err, "unable to write etag")
+
+		_, err = a.fetchPackage(ctx, pkg)
+		require.NoErrorf(t, err, "unable to install pkg")
+		// check that the package file is in place
+		_, err = os.Stat(cacheApkFile)
+		require.NoError(t, err, "apk file not found in cache")
+		// check that the contents are the same as the original
+		apk1, err := os.ReadFile(cacheApkFile)
+		require.NoError(t, err, "unable to read cache apk file")
+		apk2, err := os.ReadFile(filepath.Join(testAlternatePkgDir, testPkgFilename))
+		require.NoError(t, err, "unable to read testdata apk file")
+		require.Equal(t, apk1, apk2, "apk files do not match")
+	})
+}
+
+func TestAuth_good(t *testing.T) {
+	called := false
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if gotuser, gotpass, ok := r.BasicAuth(); !ok || gotuser != testUser || gotpass != testPass {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
+	}))
+	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
+
+	repo := Repository{URI: s.URL}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	getter := newDefaultPackageGetter(http.DefaultClient, nil, auth.StaticAuth(host, testUser, testPass))
+
+	_, err := getter.GetPackage(ctx, pkg)
+	require.NoErrorf(t, err, "unable to expand package")
+	require.True(t, called, "did not make request")
+}
+
+func TestAuth_bad(t *testing.T) {
+	called := false
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if gotuser, gotpass, ok := r.BasicAuth(); !ok || gotuser != testUser || gotpass != testPass {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
+	}))
+	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
+
+	repo := Repository{URI: s.URL}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	getter := newDefaultPackageGetter(http.DefaultClient, nil, auth.StaticAuth(host, "baduser", "badpass"))
+
+	_, err := getter.GetPackage(ctx, pkg)
+	require.Error(t, err, "unable to expand package")
+	require.True(t, called, "did not make request")
+}
+
+// TestGetPackage_ChecksumMismatch confirms that a package served by a repository
+// that does not match the checksum recorded in the (signed) APKINDEX is rejected
+// rather than silently installed. This guards against compromised mirrors or
+// poisoned caches substituting package contents.
+func TestGetPackage_ChecksumMismatch(t *testing.T) {
+	tampered := testPkg
+	// Flip one byte of the recorded checksum so the downloaded content's
+	// real control-section SHA-1 will not match.
+	tampered.Checksum = append([]byte(nil), testPkg.Checksum...)
+	tampered.Checksum[0] ^= 0xff
+
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&tampered}})
+	pkg := NewRepositoryPackage(&tampered, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	_, err := a.GetPackage(ctx, pkg)
+	require.Error(t, err, "expected checksum mismatch to be detected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+// TestCachedPackage_TamperedControl confirms that a cache entry whose
+// on-disk control file no longer matches its content-addressable filename
+// is rejected rather than served. This protects against cache corruption
+// or tampering after an entry was originally written.
+func TestCachedPackage_TamperedControl(t *testing.T) {
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	// Populate the cache.
+	exp, err := a.GetPackage(ctx, pkg)
+	require.NoError(t, err, "populating cache")
+	ctlPath := exp.ControlFile
+	require.FileExists(t, ctlPath)
+
+	cacheDir := filepath.Dir(ctlPath)
+
+	// Tamper with the cached control file. Overwrite with different bytes
+	// so its SHA-1 no longer matches the content-addressable filename.
+	require.NoError(t, os.WriteFile(ctlPath, []byte("tampered"), 0o644))
+
+	_, err = a.cachedPackage(ctx, pkg, cacheDir)
+	require.Error(t, err, "expected tampered cache entry to be rejected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+// TestGetPackage_HashVerification confirms that GetPackage checks both the
+// control hash and the data hash and that each failure path returns a
+// distinguishable error. A synthetic APK is used so the test is fully
+// self-contained and will regress if either check is removed.
+func TestGetPackage_HashVerification(t *testing.T) {
+	ctx := context.Background()
+	getter := newDefaultPackageGetter(http.DefaultClient, nil, auth.DefaultAuthenticators)
+
+	entries := []testDirEntry{
+		{path: "usr/", dir: true, perms: 0o755},
+		{path: "usr/bin/hello", perms: 0o755, content: []byte("hello")},
+	}
+
+	t.Run("success", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		exp, err := getter.GetPackage(ctx, ip)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+		_ = exp.Close()
+	})
+
+	t.Run("control hash mismatch", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		ip.checksum = "Q1" + base64.StdEncoding.EncodeToString(make([]byte, 20)) // all-zero SHA-1
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "control hash mismatch")
+	})
+
+	t.Run("data hash mismatch", func(t *testing.T) {
+		wrongHash := fmt.Sprintf("%x", make([]byte, 32)) // 32 zero bytes, hex-encoded
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, wrongHash)
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "data hash mismatch")
+	})
+}
+
+func TestIsRetryableError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"context canceled", context.Canceled, false},
+		{"context deadline", context.DeadlineExceeded, false},
+		{"unexpected EOF", io.ErrUnexpectedEOF, true},
+		{"wrapped unexpected EOF", fmt.Errorf("expanding foo: %w", io.ErrUnexpectedEOF), true},
+		{"connection reset", syscall.ECONNRESET, true},
+		{"connection aborted", syscall.ECONNABORTED, true},
+		{"net.OpError", &net.OpError{Op: "read", Err: errors.New("reset")}, true},
+		{"string unexpected EOF", errors.New("something unexpected EOF happened"), true},
+		{"string connection reset", errors.New("connection reset by peer"), true},
+		{"string broken pipe", errors.New("write: broken pipe"), true},
+		{"http 500", &httpStatusError{statusCode: 500, status: "500 Internal Server Error", url: "https://example.com/pkg.apk"}, true},
+		{"http 502", &httpStatusError{statusCode: 502, status: "502 Bad Gateway", url: "https://example.com/pkg.apk"}, true},
+		{"http 429", &httpStatusError{statusCode: 429, status: "429 Too Many Requests", url: "https://example.com/pkg.apk"}, true},
+		{"http 404", &httpStatusError{statusCode: 404, status: "404 Not Found", url: "https://example.com/pkg.apk"}, false},
+		{"wrapped http 503", fmt.Errorf("fetching package: %w", &httpStatusError{statusCode: 503, status: "503 Service Unavailable", url: "https://example.com/pkg.apk"}), true},
+		{"checksum mismatch", errors.New("control hash mismatch: expected abc, got def"), false},
+		{"generic error", errors.New("some other error"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRetryableError(tt.err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// truncatingTransport serves a valid APK file but truncates the response on the first N requests.
+type truncatingTransport struct {
+	root      string
+	failCount int32 // number of remaining requests to truncate
+	attempts  atomic.Int32
+}
+
+func (t *truncatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	attempt := t.attempts.Add(1)
+
+	filename := filepath.Base(req.URL.Path)
+	data, err := os.ReadFile(filepath.Join(t.root, filename))
+	if err != nil {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("not found")),
+		}, nil
+	}
+
+	if attempt <= atomic.LoadInt32(&t.failCount) {
+		// Return a truncated response to simulate unexpected EOF during decompression.
+		truncated := data[:len(data)/2]
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(string(truncated))),
+		}, nil
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(string(data))),
+	}, nil
+}
+
+func TestGetPackage_RetryOnTransientError(t *testing.T) {
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	tr := &truncatingTransport{
+		root:      testPrimaryPkgDir,
+		failCount: 1, // fail once, then succeed
+	}
+
+	getter := newDefaultPackageGetter(
+		&http.Client{Transport: tr},
+		nil,
+		auth.DefaultAuthenticators,
+	)
+
+	exp, err := getter.GetPackage(ctx, pkg)
+	require.NoError(t, err, "expected retry to succeed")
+	require.NotNil(t, exp)
+	_ = exp.Close()
+
+	// Should have taken 2 attempts (1 failure + 1 success).
+	require.Equal(t, int32(2), tr.attempts.Load(), "expected exactly 2 fetch attempts")
+}
+
+func TestGetPackage_NoRetryOnPermanentError(t *testing.T) {
+	tampered := testPkg
+	tampered.Checksum = make([]byte, len(testPkg.Checksum)) // wrong checksum
+	ctx := context.Background()
+
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&tampered}})
+	pkg := NewRepositoryPackage(&tampered, repoWithIndex)
+
+	// Use a transport that always serves the real APK data so we can count attempts.
+	tr := &truncatingTransport{
+		root:      testPrimaryPkgDir,
+		failCount: 0, // never truncate — always serve valid data
+	}
+
+	getter := newDefaultPackageGetter(
+		&http.Client{Transport: tr},
+		nil,
+		auth.DefaultAuthenticators,
+	)
+
+	_, err := getter.GetPackage(ctx, pkg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "control hash mismatch")
+
+	// Should have attempted exactly once — permanent errors must not be retried.
+	require.Equal(t, int32(1), tr.attempts.Load(), "expected exactly 1 fetch attempt for permanent error")
+}

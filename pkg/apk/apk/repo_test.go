@@ -92,7 +92,7 @@ guyM+Ks3c29KlRf3iX35Gt0CAwEAAQ==
 )
 
 func TestGetRepositoryIndexes(t *testing.T) {
-	prepLayout := func(t *testing.T, cache string, repos []string) *APK {
+	prepLayout := func(t *testing.T, tr http.RoundTripper, cache string, repos []string) *APK {
 		src := apkfs.NewMemFS()
 		err := src.MkdirAll("etc/apk", 0o755)
 		require.NoError(t, err, "unable to mkdir /etc/apk")
@@ -113,7 +113,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 			require.NoErrorf(t, err, "unable to write repositories")
 		}
 
-		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors)}
+		opts := []Option{WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithTransport(tr)}
 		if cache != "" {
 			opts = append(opts, WithCache(cache, false, NewCache(false)))
 		}
@@ -124,19 +124,13 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		return a
 	}
 	t.Run("no cache", func(t *testing.T) {
-		a := prepLayout(t, "", nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, "", nil)
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
 	})
 	t.Run("RSA256 signed", func(t *testing.T) {
-		a := prepLayout(t, "", nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true},
-		})
+		a := prepLayout(t, &testLocalTransport{root: testRSA256IndexPkgDir, basenameOnly: true}, "", nil)
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -145,10 +139,7 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that always returns a 404 so we know we're not hitting the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, nil)
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{fail: true},
-		})
+		a := prepLayout(t, &testLocalTransport{fail: true}, tmpDir, nil)
 		_, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.Error(t, err, "should fail when no cache and no network")
 	})
@@ -156,11 +147,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true},
-		})
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -176,19 +164,16 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// we use a transport that can read from the network
 		// it should fail for a cache hit
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, []string{testAlpineRepos})
+		a := prepLayout(t, &testLocalTransport{
+			root:         testPrimaryPkgDir,
+			basenameOnly: true,
+			headers: map[string][]string{
+				http.CanonicalHeaderKey("etag"): {"an-etag"},
+			},
+		}, tmpDir, []string{testAlpineRepos})
 		// fill the cache
 		repoDir := filepath.Join(tmpDir, url.QueryEscape(testAlpineRepos), testArch)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{
-				root:         testPrimaryPkgDir,
-				basenameOnly: true,
-				headers: map[string][]string{
-					http.CanonicalHeaderKey("etag"): {"an-etag"},
-				},
-			},
-		})
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -201,15 +186,12 @@ func TestGetRepositoryIndexes(t *testing.T) {
 	})
 	t.Run("repo url with http basic auth", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		a := prepLayout(t, tmpDir, []string{"https://user:pass@dl-cdn.alpinelinux.org/alpine/v3.16/main"})
+		a := prepLayout(t, &testLocalTransport{
+			root:             testPrimaryPkgDir,
+			basenameOnly:     true,
+			requireBasicAuth: true,
+		}, tmpDir, []string{"https://user:pass@dl-cdn.alpinelinux.org/alpine/v3.16/main"})
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{
-				root:             testPrimaryPkgDir,
-				basenameOnly:     true,
-				requireBasicAuth: true,
-			},
-		})
 		ctx := context.Background()
 		indexes, err := a.GetRepositoryIndexes(ctx, false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -219,13 +201,11 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
+		tr := &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}}
 
 		// get our APK struct
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, tr, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		// Use the client to fill the cache.
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -235,9 +215,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 
 		// Update the transport to serve the same etag, but different content to
 		// verify that we serve from the cache instead of the response.
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
+		tr.root = testAlternatePkgDir
+
 		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
 		require.Greater(t, len(indexes), 0, "no indexes found")
@@ -251,13 +230,11 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// it should succeed for a cache hit
 		tmpDir := t.TempDir()
 		testEtag := "test-etag"
+		tr := &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}}
 
 		// get our APK struct
-		a := prepLayout(t, tmpDir, nil)
+		a := prepLayout(t, tr, tmpDir, nil)
 
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag}}},
-		})
 		// Use the client to fill the cache.
 		indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -268,9 +245,8 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		// Update the transport to serve a different etag and different content,
 		// to verify that when the etag changes we use the data from the
 		// response.
-		a.SetClient(&http.Client{
-			Transport: &testLocalTransport{root: testAlternatePkgDir, basenameOnly: true, headers: map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}},
-		})
+		tr.root = testAlternatePkgDir
+		tr.headers = map[string][]string{http.CanonicalHeaderKey("etag"): {testEtag + "change"}}
 
 		indexes, err = a.GetRepositoryIndexes(context.Background(), false)
 		require.NoErrorf(t, err, "unable to get indexes")
@@ -286,17 +262,13 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		eg := errgroup.Group{}
-		for i := 0; i < 100; i++ {
-			i := i
+		for i := range 100 {
 			eg.Go(func() error {
-				a := prepLayout(t, tmpDir, nil)
-				a.SetClient(&http.Client{
-					Transport: &testLocalTransport{
-						root:         testPrimaryPkgDir,
-						basenameOnly: true,
-						headers:      map[string][]string{http.CanonicalHeaderKey("etag"): {fmt.Sprint(i)}},
-					},
-				})
+				a := prepLayout(t, &testLocalTransport{
+					root:         testPrimaryPkgDir,
+					basenameOnly: true,
+					headers:      map[string][]string{http.CanonicalHeaderKey("etag"): {fmt.Sprint(i)}},
+				}, tmpDir, nil)
 				indexes, err := a.GetRepositoryIndexes(context.Background(), false)
 				require.NoErrorf(t, err, "unable to get indexes")
 				require.Greater(t, len(indexes), 0, "no indexes found")
@@ -792,7 +764,7 @@ func TestSortPackages(t *testing.T) {
 				pkgs            []*RepositoryPackage
 				pkg             *RepositoryPackage
 				existing        = map[string]*RepositoryPackage{}
-				existingOrigins = map[string]bool{}
+				existingOrigins = map[string]string{}
 			)
 			for _, pkg := range tt.pkgs {
 				// we cheat and use the InstalledSize for the preferred order, so that it gets carried around.
@@ -806,7 +778,7 @@ func TestSortPackages(t *testing.T) {
 			}
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = NewRepositoryPackage(pkg.pkg, &RepositoryWithIndex{Repository: &Repository{URI: pkg.repo}})
-				existingOrigins[pkg.pkg.Origin] = true
+				existingOrigins[pkg.pkg.Origin] = pkg.pkg.Version
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
 			pr := NewPkgResolver(context.Background(), []NamedIndex{})
@@ -926,6 +898,246 @@ func TestHigherProvidedVersion(t *testing.T) {
 	for i, pkg := range pkgs {
 		require.Equal(t, pkg.Filename(), wantPkgs[i])
 	}
+}
+
+// When an origin is bumped to a new version that no longer ships one of its
+// old subpackages, but the old subpackage still lingers in the index providing
+// some so:, the resolver must not prefer that stale package over a fresh
+// provider in a different origin just because we already pulled the origin at
+// a different version.
+//
+// As a contrived example, if we want to drop libcrypt1 from glibc's origin,
+// it was difficult because we would prefer the libcrypt.so.1 provider due to
+// that same-origin heuristic. This tests that the heuristic does not activate
+// if the origins match but the versions don't.
+func TestProviderAcrossOriginVersionBump(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "glibc", Version: "1", Origin: "glibc"},
+			{Name: "libcrypt1", Version: "1", Origin: "glibc",
+				Provides: []string{"so:libcrypt.so.1=1"}},
+			{Name: "glibc", Version: "2", Origin: "glibc"},
+			{Name: "libxcrypt", Version: "2", Origin: "libxcrypt",
+				Provides: []string{"so:libcrypt.so.1=1"}},
+			{Name: "consumer", Version: "1",
+				Dependencies: []string{"so:libcrypt.so.1"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"consumer", "glibc=2"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.NotContains(t, got, "libcrypt1-1.apk", "should not pull stale libcrypt1 from old glibc origin")
+	require.Contains(t, got, "libxcrypt-2.apk", "should select libxcrypt for so:libcrypt.so.1")
+	require.Contains(t, got, "glibc-2.apk")
+}
+
+// An index can retain old builds of a package whose provider priority is
+// higher than the current build's, for example when a priority assignment bug
+// was fixed in between. Provider priority is compared before version, so a
+// direct dependency on the package name would select the stale build. The
+// same-origin heuristic must rescue this: once the origin is pulled in at the
+// current version (here via the meta package), the candidate matching that
+// origin version wins over the stale higher-priority build.
+//
+// This is the py3-pybind11 case from the wolfi index: py3.10-pybind11
+// 2.13.6-r1 lingers with k=312 while the current 3.0.4-r0 build has k=310.
+func TestSameOriginVersionBeatsStaleProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "2.13.6-r1", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 312},
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 310},
+			{Name: "py3-supported-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Dependencies: []string{"py3.10-pybind11"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3-supported-pybind11"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Contains(t, got, "py3.10-pybind11-3.0.4-r0.apk", "should select the current build of py3.10-pybind11")
+	require.NotContains(t, got, "py3.10-pybind11-2.13.6-r1.apk", "should not select the stale higher-priority build")
+}
+
+// Provider priority arbitrates between different packages providing the same
+// virtual name. It must not arbitrate between builds of the named package
+// itself: there, the higher version wins, regardless of what priority each
+// build declared for its virtual provides.
+//
+// This is the py3-pybind11 case again, but with a direct dependency on the
+// package name, so the same-origin heuristic cannot help.
+func TestDirectDependencyPrefersVersionOverProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "2.13.6-r1", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 312},
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11", "py3-pybind11-dev"}, ProviderPriority: 310},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3.10-pybind11"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"py3.10-pybind11-3.0.4-r0.apk"}, got)
+}
+
+// A package that carries an unversioned provide can still satisfy a versioned pin
+// on its own name. A pinned closure names every package as a versioned
+// constraint, so here both unbound-mailcow-compat (which provides unbound-config
+// unversioned) and the unbound-config pin resolve cleanly.
+//
+// The unbound-config pin resolves to the compat package alone through the compat
+// package's own version: filterPackages matches a candidate against its package
+// version, and because unbound-config and unbound-mailcow-compat are subpackages
+// of the same origin they share the version the pin asks for.
+// TestUnversionedProvideVersionMismatchDivergesFromApk covers differing versions.
+func TestUnversionedProvideDoesNotDisqualifyAgainstVersionedConstraint(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "unbound-config", Version: "1.25.1-r2", Origin: "unbound"},
+			{Name: "unbound-mailcow-compat", Version: "1.25.1-r2", Origin: "unbound",
+				Provides: []string{"unbound-config"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(),
+		[]string{"unbound-mailcow-compat=1.25.1-r2", "unbound-config=1.25.1-r2"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"unbound-mailcow-compat-1.25.1-r2.apk"}, got)
+}
+
+// apko satisfies a versioned pin from a candidate's own package version or from a
+// versioned provides: entry. apk-tools is more permissive: it treats an
+// unversioned provide as a null version that matches any versioned constraint,
+// since apk_dep_is_provided defers to apk_version_match where a null version
+// compares equal to anything:
+// https://github.com/alpinelinux/apk-tools/blob/097d611f2b7da0f6aa42955d53de7ad569133503/src/version.c#L285-L289
+//
+// So apko looks to the named package for the version, and a pin that only a
+// differently-versioned, unversioned provider could satisfy goes unmet. This is a
+// deliberate, known difference from apk-tools; the pinned closures that motivate
+// the fix above stay within apko's behaviour, because the provider and the
+// provided name share an origin and so a version.
+func TestUnversionedProvideVersionMismatchDivergesFromApk(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "unbound-mailcow-compat", Version: "9.9.9-r9", Origin: "unbound",
+				Provides: []string{"unbound-config"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	_, _, err := resolver.GetPackagesWithDependencies(context.Background(),
+		[]string{"unbound-config=1.25.1-r2"}, nil)
+	require.ErrorContains(t, err, "unbound-config=1.25.1-r2")
+}
+
+// Between different packages providing the same unversioned virtual name,
+// provider priority decides, as in apk-tools' compare_providers:
+// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L667
+func TestProviderPriorityArbitratesVirtualProvides(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "py3.10-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11-dev"}, ProviderPriority: 310},
+			{Name: "py3.13-pybind11", Version: "3.0.4-r0", Origin: "py3-pybind11",
+				Provides: []string{"py3-pybind11-dev"}, ProviderPriority: 313},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"py3-pybind11-dev"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"py3.13-pybind11-3.0.4-r0.apk"}, got)
+}
+
+// Between providers of a versioned virtual name, the version each provides
+// for that name decides before provider priority, as in apk-tools'
+// compare_providers:
+// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L667
+func TestVersionedProvideBeatsProviderPriority(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov-a", Version: "1.0-r0", Origin: "prov-a",
+				Provides: []string{"virt=2.0"}, ProviderPriority: 1},
+			{Name: "prov-b", Version: "9.0-r0", Origin: "prov-b",
+				Provides: []string{"virt=1.0"}, ProviderPriority: 999},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"virt"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"prov-a-1.0-r0.apk"}, got)
+}
+
+// When providers of a virtual name tie on the version they provide for it and
+// on priority, the higher build version wins, regardless of repository order.
+//
+// This is a deliberate divergence from apk-tools, which prefers the lowest
+// available repository here. Image configurations can layer a variant
+// repository ahead of the main one, with packages providing the same sonames
+// as the main repository's packages. An image depending on such a soname must
+// not resolve it to the variant build just because the variant repository is
+// configured first.
+func TestHigherVersionBreaksProviderTieAcrossRepositories(t *testing.T) {
+	repoA := Repository{URI: "https://example.invalid/a"}
+	indexA := repoA.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov-variant", Version: "1.0-r1", Origin: "prov-variant",
+				Provides: []string{"so:libprov.so.12=12"}},
+		},
+	})
+	repoB := Repository{URI: "https://example.invalid/b"}
+	indexB := repoB.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "prov", Version: "1.0-r2", Origin: "prov",
+				Provides: []string{"so:libprov.so.12=12"}},
+		},
+	})
+	resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{indexA, indexB}))
+	pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"so:libprov.so.12"}, nil)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		got = append(got, p.Filename())
+	}
+	require.Equal(t, []string{"prov-1.0-r2.apk"}, got)
 }
 
 func TestConstrains(t *testing.T) {

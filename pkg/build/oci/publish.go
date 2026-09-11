@@ -162,8 +162,6 @@ func PublishImagesFromIndex(ctx context.Context, idx v1.ImageIndex, repo name.Re
 
 	var g errgroup.Group
 	for i, m := range manifest.Manifests {
-		i, m := i, m
-
 		dig := repo.Digest(m.Digest.String())
 		digests[i] = dig
 

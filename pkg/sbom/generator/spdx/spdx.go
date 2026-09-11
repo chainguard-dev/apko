@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,8 +33,15 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/sbom/options"
 )
+
+func init() {
+	generator.RegisterGenerator("spdx", func() generator.Generator {
+		return New()
+	})
+}
 
 // https://spdx.github.io/spdx-spec/3-package-information/#32-package-spdx-identifier
 var validIDCharsRe = regexp.MustCompile(`[^a-zA-Z0-9-.]+`)
@@ -45,12 +53,10 @@ const (
 	apkSBOMdir           = "/var/lib/db/sbom"
 )
 
-type SPDX struct {
-	fs apkfs.FullFS
-}
+type SPDX struct{}
 
-func New(fs apkfs.FullFS) SPDX {
-	return SPDX{fs}
+func New() *SPDX {
+	return &SPDX{}
 }
 
 func (sx *SPDX) Key() string {
@@ -59,6 +65,10 @@ func (sx *SPDX) Key() string {
 
 func (sx *SPDX) Ext() string {
 	return "spdx.json"
+}
+
+func (sx *SPDX) PredicateType() string {
+	return "https://spdx.dev/Document"
 }
 
 func stringToIdentifier(in string) (out string) {
@@ -99,7 +109,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
 		DataLicense:    "CC0-1.0",
 		Namespace:      "https://spdx.org/spdxdocs/apko/",
@@ -146,7 +156,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 
 	for _, pkg := range opts.Packages {
 		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(opts, doc, pkg); err != nil {
+		if err := sx.ProcessInternalApkSBOM(ctx, opts, doc, pkg); err != nil {
 			return fmt.Errorf("parsing internal apk SBOM: %w", err)
 		}
 	}
@@ -173,7 +183,7 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 // locateApkSBOM returns the path to the SBOM in the given filesystem, using the
 // given Package's name and version. It returns an empty string if the SBOM is
 // not found.
-func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error) {
+func locateApkSBOM(fsys apkfs.ReaderFS, ipkg *apk.InstalledPackage) (string, error) {
 	re := regexp.MustCompile(`-r\d+$`)
 	for _, s := range []string{
 		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),
@@ -196,9 +206,9 @@ func locateApkSBOM(fsys apkfs.FullFS, ipkg *apk.InstalledPackage) (string, error
 	return "", nil
 }
 
-func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
+func (sx *SPDX) ProcessInternalApkSBOM(ctx context.Context, opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
 	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(sx.fs, ipkg)
+	path, err := locateApkSBOM(opts.FS, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
@@ -215,9 +225,20 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipk
 	}
 
 	// Cycle the top level elements...
+	// Find elements described by the document - check both documentDescribes array
+	// and DESCRIBES relationships (from SPDXRef-DOCUMENT)
 	idsDescribedByAPKSBOM := map[string]struct{}{}
+
+	// First check documentDescribes array
 	for _, elementID := range apkSBOMDoc.DocumentDescribes {
 		idsDescribedByAPKSBOM[elementID] = struct{}{}
+	}
+
+	// Also check for DESCRIBES relationships from SPDXRef-DOCUMENT
+	for _, rel := range apkSBOMDoc.Relationships {
+		if rel.Element == "SPDXRef-DOCUMENT" && rel.Type == "DESCRIBES" {
+			idsDescribedByAPKSBOM[rel.Related] = struct{}{}
+		}
 	}
 
 	// ... searching for a 1st level package
@@ -234,9 +255,15 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipk
 		}
 	}
 
-	// Copy the targetElementIDs
-	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
+	sortedTargetElementIDs := make([]string, 0, len(targetElementIDs))
 	for id := range targetElementIDs {
+		sortedTargetElementIDs = append(sortedTargetElementIDs, id)
+	}
+	// Sort the element IDs so repeated builds produce the same relationship order.
+	sort.Strings(sortedTargetElementIDs)
+
+	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
+	for _, id := range sortedTargetElementIDs {
 		todo[id] = struct{}{}
 	}
 
@@ -244,8 +271,19 @@ func (sx *SPDX) ProcessInternalApkSBOM(opts *options.Options, doc *Document, ipk
 		return fmt.Errorf("copying element: %w", err)
 	}
 
-	if err := mergeLicensingInfos(apkSBOMDoc, doc); err != nil {
-		return fmt.Errorf("merging LicensingInfos: %w", err)
+	mergeLicensingInfos(ctx, apkSBOMDoc, doc)
+
+	// Add CONTAINS relationships from the document root package to all top-level elements from the internal SBOM.
+	// This ensures they are reachable from the document root for tools that traverse the SBOM graph.
+	if len(doc.DocumentDescribes) > 0 {
+		rootPkgID := doc.DocumentDescribes[0]
+		for _, elementID := range sortedTargetElementIDs {
+			doc.Relationships = append(doc.Relationships, Relationship{
+				Element: rootPkgID,
+				Type:    "CONTAINS",
+				Related: elementID,
+			})
+		}
 	}
 
 	return nil
@@ -299,14 +337,14 @@ func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) 
 	return nil
 }
 
-func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
+func mergeLicensingInfos(ctx context.Context, sourceDoc, targetDoc *Document) {
 	var found bool
 	for _, sourceinfo := range sourceDoc.LicensingInfos {
 		found = false
 		for _, targetinfo := range targetDoc.LicensingInfos {
 			if targetinfo.LicenseID == sourceinfo.LicenseID {
 				if targetinfo.ExtractedText != sourceinfo.ExtractedText {
-					return fmt.Errorf("source & target LicenseID %s differ in Text; perhaps multiple versions of the package have different contents of files provided in license-path", targetinfo.LicenseID)
+					clog.FromContext(ctx).Warnf("source & target LicenseID %s differ in Text; please either update the package's license-path or use the correct LicenseID", targetinfo.LicenseID)
 				}
 				found = true
 				break
@@ -316,13 +354,12 @@ func mergeLicensingInfos(sourceDoc, targetDoc *Document) error {
 			targetDoc.LicensingInfos = append(targetDoc.LicensingInfos, sourceinfo)
 		}
 	}
-	return nil
 }
 
 // ParseInternalSBOM opens an SBOM inside apks and
 func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document, error) {
 	internalSBOM := &Document{}
-	data, err := sx.fs.ReadFile(path)
+	data, err := opts.FS.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening sbom file %s: %w", path, err)
 	}
@@ -381,7 +418,7 @@ func supplier(opts *options.Options) string {
 func (sx *SPDX) imagePackage(opts *options.Options) (p *Package) {
 	return &Package{
 		ID: stringToIdentifier(fmt.Sprintf(
-			"SPDXRef-Package-%s", opts.ImageInfo.ImageDigest,
+			"SPDXRef-Package-Image-%s", opts.ImageInfo.ImageDigest,
 		)),
 		Name:             opts.ImageInfo.ImageDigest,
 		Version:          opts.ImageInfo.ImageDigest,
@@ -415,12 +452,13 @@ func (sx *SPDX) layerPackage(opts *options.Options, layer v1.Descriptor) *Packag
 	mainPkgID := stringToIdentifier(layerPackageName)
 
 	return &Package{
-		ID:               fmt.Sprintf("SPDXRef-Package-%s", mainPkgID),
+		ID:               fmt.Sprintf("SPDXRef-Package-ImageLayer-%s", mainPkgID),
 		Name:             layerPackageName,
 		Version:          opts.OS.Version,
 		FilesAnalyzed:    false,
 		Description:      "apko operating system layer",
 		DownloadLocation: NOASSERTION,
+		PrimaryPurpose:   "CONTAINER",
 		Originator:       "",
 		Supplier:         supplier(opts),
 		Checksums:        []Checksum{},
@@ -540,7 +578,7 @@ func (sx *SPDX) GenerateIndex(opts *options.Options, path string) error {
 				fmt.Sprintf("Tool: apko (%s)", version.GetVersionInfo().GitVersion),
 				"Organization: Chainguard, Inc",
 			},
-			LicenseListVersion: "3.16",
+			LicenseListVersion: "3.27",
 		},
 		DataLicense:   "CC0-1.0",
 		Namespace:     "https://spdx.org/spdxdocs/apko/",
@@ -683,8 +721,8 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 	}
 
 	// If this is a github package, add a purl to it:
-	if strings.HasPrefix(packageName, "github.com/") {
-		slug := strings.TrimPrefix(packageName, "github.com/")
+	if after, ok := strings.CutPrefix(packageName, "github.com/"); ok {
+		slug := after
 		org, user, ok := strings.Cut(slug, "/")
 		if ok {
 			sourcePackage.ExternalRefs = []ExternalRef{

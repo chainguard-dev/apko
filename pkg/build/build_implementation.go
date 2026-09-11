@@ -51,7 +51,7 @@ import (
 var pgzipThreads = min(runtime.GOMAXPROCS(0), 8)
 
 var pgzipPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		zw := gzip.NewWriter(nil)
 		if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
 			// This should never happen.
@@ -64,11 +64,17 @@ var pgzipPool = sync.Pool{
 func pooledGzipWriter(w io.Writer) *gzip.Writer {
 	zw := pgzipPool.Get().(*gzip.Writer)
 	zw.Reset(w)
+	// Reset reverts the writer to pgzip's default concurrency of
+	// GOMAXPROCS(0) blocks, so the cap has to be reapplied on every reuse.
+	if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+		// This should never happen.
+		panic(fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err))
+	}
 	return zw
 }
 
 var bufioPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewWriterSize(nil, 1<<22)
 	},
 }
@@ -152,7 +158,13 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		pkgs []apk.InstalledDiff
 		err  error
 	)
-	if bc.o.Lockfile != "" {
+	switch {
+	case bc.o.PreResolvedPackages != nil:
+		pkgs, err = bc.apk.InstallPackageContents(ctx, &bc.o.SourceDateEpoch, bc.o.PreResolvedPackages)
+		if err != nil {
+			return nil, fmt.Errorf("failed installation from pre-resolved packages: %w", err)
+		}
+	case bc.o.Lockfile != "":
 		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
@@ -170,7 +182,7 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		if err != nil {
 			return nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-	} else {
+	default:
 		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("installing apk packages: %w", err)
@@ -192,6 +204,20 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 
 	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
 		return nil, fmt.Errorf("failed to mutate paths: %w", err)
+	}
+
+	if err := bc.installCertificates(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install certificates: %w", err)
+	}
+
+	// Record checksums of the (possibly updated) CA bundles so downstream
+	// tooling (e.g. OpenSCAP) can verify they were not modified post-build.
+	if err := bc.writeCABundleChecksums(ctx); err != nil {
+		return nil, fmt.Errorf("failed to write CA bundle checksums: %w", err)
+	}
+
+	if err := bc.installRuntimeKeyring(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install runtime keyring: %w", err)
 	}
 
 	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {
@@ -240,11 +266,12 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 		return nil
 	}
 
-	libdirs := []string{"/lib"}
 	dirs, err := ldsocache.ParseLDSOConf(fsys, "etc/ld.so.conf")
 	if err != nil {
 		return fmt.Errorf("parsing /etc/ld.so.conf: %w", err)
 	}
+	libdirs := make([]string, 0, 1+len(dirs))
+	libdirs = append(libdirs, "/lib")
 	libdirs = append(libdirs, dirs...)
 	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, libdirs)
 	if err != nil {

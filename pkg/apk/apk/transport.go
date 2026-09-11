@@ -15,45 +15,59 @@
 package apk
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 )
 
-type rangeRetryTransport struct {
-	client *http.Client
-	ctx    context.Context
+// OfflineNetworkError reports a network request blocked by offline mode.
+type OfflineNetworkError struct {
+	Method string
+	URL    string
 }
 
-func newRangeRetryTransport(ctx context.Context, client *http.Client) *rangeRetryTransport {
-	return &rangeRetryTransport{
-		client: client,
-		ctx:    ctx,
+func (e *OfflineNetworkError) Error() string {
+	return fmt.Sprintf("network request blocked in offline mode: %s %s", e.Method, e.URL)
+}
+
+type offlineTransport struct{}
+
+func (offlineTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, &OfflineNetworkError{
+		Method: req.Method,
+		URL:    req.URL.Redacted(),
 	}
 }
 
+type rangeRetryTransport struct {
+	base http.RoundTripper
+}
+
+// NewRangeRetryTransport returns a transport that retries failed reads using HTTP Range requests.
+func NewRangeRetryTransport(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &rangeRetryTransport{base: base}
+}
+
 func (t *rangeRetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := rangeRetryReader{
-		client: t.client,
-		ctx:    t.ctx,
-		req:    req,
+	r := &rangeRetryReader{
+		base: t.base,
+		req:  req,
 	}
 
 	return r.reset(nil)
 }
 
 type rangeRetryReader struct {
-	client *http.Client
-	ctx    context.Context
-
-	req *http.Request
+	base http.RoundTripper
+	req  *http.Request
 
 	body io.ReadCloser
 
 	progress int64
-	total    int64
 }
 
 func (r *rangeRetryReader) reset(oerr error) (*http.Response, error) {
@@ -62,14 +76,13 @@ func (r *rangeRetryReader) reset(oerr error) (*http.Response, error) {
 		_ = r.body.Close()
 	}
 
-	req := r.req.WithContext(r.ctx)
+	req := r.req.WithContext(r.req.Context())
 
-	rangeHeader := fmt.Sprintf("bytes=%d-", r.progress)
 	if r.progress != 0 {
-		req.Header.Set("Range", rangeHeader)
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", r.progress))
 	}
 
-	resp, err := r.client.Do(req)
+	resp, err := r.base.RoundTrip(req)
 	if err != nil {
 		return resp, errors.Join(oerr, err)
 	}
@@ -78,10 +91,10 @@ func (r *rangeRetryReader) reset(oerr error) (*http.Response, error) {
 		return resp, nil
 	}
 
-	if r.total == 0 {
-		r.total = resp.ContentLength
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		// Redirects should be handed back as-is so the client can deal with them.
+		return resp, nil
 	}
-
 	if resp.StatusCode == http.StatusOK {
 		// If the upstream doesn't support Range requests for some reason and only returns 200,
 		// we need to discard anything we've already Read().
@@ -91,11 +104,11 @@ func (r *rangeRetryReader) reset(oerr error) (*http.Response, error) {
 			}
 		}
 	} else if resp.StatusCode != http.StatusPartialContent {
-		if oerr != nil {
-			return resp, fmt.Errorf("retrying %w: %s %s (Range: %s): unexpected status code: %d", oerr, req.Method, req.URL.String(), rangeHeader, resp.StatusCode)
+		if r.progress != 0 {
+			return resp, fmt.Errorf("retrying %w: %s %s (Range: %s): unexpected status code: %d", oerr, req.Method, req.URL.String(), req.Header.Get("Range"), resp.StatusCode)
 		}
 
-		return resp, fmt.Errorf("%s %s (Range: %s): unexpected status code: %d", req.Method, req.URL.String(), rangeHeader, resp.StatusCode)
+		return resp, fmt.Errorf("%s %s: unexpected status code: %d", req.Method, req.URL.String(), resp.StatusCode)
 	}
 
 	r.body = resp.Body

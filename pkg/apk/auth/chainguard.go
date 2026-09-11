@@ -27,12 +27,15 @@ func NewChainguardIdentityAuth(identity, issuer, audience string) Authenticator 
 		id:        identity,
 		iss:       issuer,
 		aud:       audience,
+		exchg:     sts.New(issuer, audience, sts.WithIdentity(identity), sts.WithUserAgent("apko")),
 		sometimes: rate.Sometimes{Interval: 10 * time.Minute},
 	}
 }
 
 type cgAuth struct {
 	id, iss, aud string
+
+	exchg sts.Exchanger
 
 	sometimes rate.Sometimes
 	cgtok     string
@@ -61,7 +64,7 @@ func (a *cgAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			return
 		}
 
-		ctok, err := sts.ExchangePair(ctx, a.iss, a.aud, tok.AccessToken, sts.WithIdentity(a.id))
+		ctok, err := a.exchg.Exchange(ctx, tok.AccessToken)
 		if err != nil {
 			a.cgerr = fmt.Errorf("exchanging token: %w", err)
 		}
@@ -76,6 +79,8 @@ func (a *cgAuth) AddAuth(ctx context.Context, req *http.Request) error {
 
 type k8sAuth struct {
 	path, id, iss, aud string
+
+	exchg sts.Exchanger
 
 	sometimes rate.Sometimes
 	cgtok     string
@@ -95,6 +100,7 @@ func NewK8sAuth(tokenPath, identity, issuer, audience string) Authenticator {
 		id:        identity,
 		iss:       issuer,
 		aud:       audience,
+		exchg:     sts.New(issuer, audience, sts.WithIdentity(identity), sts.WithUserAgent("apko-k8s")),
 		sometimes: rate.Sometimes{Interval: 10 * time.Minute},
 	}
 }
@@ -115,7 +121,7 @@ func (k *k8sAuth) AddAuth(ctx context.Context, req *http.Request) error {
 			return
 		}
 		clog.FromContext(ctx).With("iss", k.iss, "aud", k.aud).Info("Exchanging K8s token for Chainguard identity " + k.id)
-		ctok, err := sts.ExchangePair(ctx, k.iss, k.aud, string(b), sts.WithIdentity(k.id))
+		ctok, err := k.exchg.Exchange(ctx, string(b))
 		if err != nil {
 			k.cgerr = fmt.Errorf("exchanging token: %w", err)
 		}

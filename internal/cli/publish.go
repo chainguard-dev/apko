@@ -35,7 +35,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator"
 )
 
 func publish() *cobra.Command {
@@ -56,6 +56,7 @@ func publish() *cobra.Command {
 	var offline bool
 	var lockfile string
 	var ignoreSignatures bool
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "publish <config.yaml> <tag...>",
@@ -70,8 +71,9 @@ in a keychain.`,
 				return fmt.Errorf("requires at least 2 arg(s), 1 config file and at least 1 tag for the image")
 			}
 
-			if !writeSBOM {
-				sbomFormats = []string{}
+			var sbomGenerators []generator.Generator
+			if writeSBOM && len(sbomFormats) > 0 {
+				sbomGenerators = generator.Generators(sbomFormats...)
 			}
 			archs := types.ParseArchitectures(archstrs)
 			annotations, err := parseAnnotations(rawAnnotations)
@@ -109,7 +111,7 @@ in a keychain.`,
 					build.WithConfig(args[0], []string{}),
 					build.WithBuildDate(buildDate),
 					build.WithSBOM(sbomPath),
-					build.WithSBOMFormats(sbomFormats),
+					build.WithSBOMGenerators(sbomGenerators...),
 					build.WithExtraKeys(extraKeys),
 					build.WithExtraBuildRepos(extraBuildRepos),
 					build.WithExtraRepos(extraRepos),
@@ -121,6 +123,7 @@ in a keychain.`,
 					build.WithLockFile(lockfile),
 					build.WithTempDir(tmp),
 					build.WithIgnoreSignatures(ignoreSignatures),
+					build.WithFormat(format),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
@@ -140,7 +143,7 @@ in a keychain.`,
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", []string{"spdx"}, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
@@ -149,6 +152,7 @@ in a keychain.`,
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&format, "format", "", "layer payload format: 'tar' (default) or 'erofs' (experimental, tracks erofs-image-spec draft)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")

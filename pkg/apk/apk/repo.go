@@ -182,10 +182,14 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	if a.cache != nil {
 		httpClient = a.cache.client(httpClient, true)
 	}
-	opts := []IndexOption{WithIgnoreSignatures(ignoreSignatures),
+	opts := []IndexOption{
+		WithIgnoreSignatures(ignoreSignatures),
 		WithIgnoreSignatureForIndexes(a.noSignatureIndexes...),
 		WithHTTPClient(httpClient),
 		WithIndexAuthenticator(a.auth),
+	}
+	if sz := a.apkIndexDecompressedMaxSize(); sz != 0 {
+		opts = append(opts, WithIndexDecompressedMaxSize(sz))
 	}
 	return GetRepositoryIndexes(ctx, repos, keys, arch, opts...)
 }
@@ -466,6 +470,11 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 					if pp.Name != parsed.Name {
 						continue
 					}
+					// An unversioned provide can't satisfy a versioned
+					// constraint, and must not disqualify the package either.
+					if pp.Version == "" {
+						continue
+					}
 					actualVersion, err := cachedParseVersion(pp.Version)
 					// skip invalid ones
 					if err != nil {
@@ -565,11 +574,11 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
 	parents := make(map[string]bool)
 	localExisting := make(map[string]*RepositoryPackage, len(existing))
-	existingOrigins := map[string]bool{}
+	existingOrigins := map[string]string{}
 	for k, v := range existing {
 		localExisting[k] = v
 		if v != nil && v.Origin != "" {
-			existingOrigins[v.Origin] = true
+			existingOrigins[v.Origin] = v.Version
 		}
 	}
 
@@ -708,7 +717,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]string, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, context.Cause(ctx)
 	}
@@ -898,7 +907,9 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 		conflicts = append(conflicts, confs...)
 		for _, dep := range subDeps {
 			existing[dep.Name] = dep
-			existingOrigins[dep.Origin] = true
+			if dep.Origin != "" {
+				existingOrigins[dep.Origin] = dep.Version
+			}
 		}
 	}
 	return dependencies, conflicts, nil
@@ -940,11 +951,11 @@ func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 // For example, if the original search was for package "a", then pkgs may contain some that
 // are named "a", but others that provided "a". In that case, we should look not at the
 // version of the package, but the version of "a" that the package provides.
-func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) {
+func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) {
 	slices.SortFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
 }
 
-func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
+func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
 	return func(a, b *repositoryPackage) int {
 		// determine versions
 		iVersionStr := p.getDepVersionForName(a, name)
@@ -986,9 +997,12 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 		}
 		// both matched, so keep looking
 
-		// see if an origin already is installed
-		iOriginMatched := existingOrigins[a.Origin]
-		jOriginMatched := existingOrigins[b.Origin]
+		// Prefer a candidate whose origin we've already pulled in, but only at
+		// the version we pulled in. Otherwise this heuristic would keep us on
+		// an older version of an origin (e.g. when a package moves origins at
+		// a newer version, or an old binary lingers in the index after rebuild).
+		iOriginMatched := a.Origin != "" && existingOrigins[a.Origin] == a.Version
+		jOriginMatched := b.Origin != "" && existingOrigins[b.Origin] == b.Version
 		if iOriginMatched && !jOriginMatched {
 			return -1
 		}
@@ -1003,7 +1017,47 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 			return 1
 		}
 
-		// check provider priority
+		// The remaining steps follow apk-tools' compare_providers ordering
+		// (latest by requested name, then latest by principal name, then the
+		// highest declared provider priority), with one deliberate divergence
+		// in the final tiebreak below.
+		// https://github.com/alpinelinux/apk-tools/blob/20fe3dccc423bd401b9828958124664704dedb00/src/solver.c#L641-L688
+
+		// Latest by requested name: compare the versions the candidates carry
+		// for the name being resolved. An unversioned provide carries no
+		// version for the name and ties with anything.
+		if iVersionStr != "" && jVersionStr != "" && iVersionStr != jVersionStr {
+			iVersion, err := cachedParseVersion(iVersionStr)
+			if err != nil {
+				return 1
+			}
+			jVersion, err := cachedParseVersion(jVersionStr)
+			if err != nil {
+				// If j fails to parse, prefer i.
+				return -1
+			}
+			if versions := CompareVersions(iVersion, jVersion); versions != equal {
+				return -1 * versions
+			}
+		}
+
+		// Latest by principal name.
+		if a.Name == b.Name && a.Version != b.Version {
+			iVersion, err := cachedParseVersion(a.Version)
+			if err != nil {
+				return 1
+			}
+			jVersion, err := cachedParseVersion(b.Version)
+			if err != nil {
+				// If j fails to parse, prefer i.
+				return -1
+			}
+			if versions := CompareVersions(iVersion, jVersion); versions != equal {
+				return -1 * versions
+			}
+		}
+
+		// Highest declared provider priority.
 		if a.ProviderPriority != b.ProviderPriority {
 			if a.ProviderPriority > b.ProviderPriority {
 				return -1
@@ -1012,23 +1066,17 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 			// a < b
 			return 1
 		}
-		// both matched or both did not, so just compare versions
-		// version priority
-		iVersion, err := cachedParseVersion(iVersionStr)
-		if err != nil {
-			return 1
-		}
-		jVersion, err := cachedParseVersion(jVersionStr)
-		if err != nil {
-			// If j fails to parse, prefer i.
-			return -1
-		}
-		versions := CompareVersions(iVersion, jVersion)
-		if versions != equal {
-			return -1 * versions
-		}
-		// if versions are equal, they might not be the same as the package versions
-		if iVersionStr != a.Version || jVersionStr != b.Version {
+
+		// Prefer the more recent build, regardless of which repository carries
+		// it. This is where we deliberately diverge from apk-tools, which
+		// prefers the lowest available repository. Image configurations can
+		// layer a variant repository ahead of the main one, with packages
+		// providing the same virtual names, such as sonames, as the main
+		// repository's packages. Preferring the earlier repository would let
+		// those builds capture shared provides from every package in later
+		// repositories. Preferring the higher version also stops a stale
+		// build lingering in any index from winning the tie.
+		if a.Version != b.Version {
 			iVersion, err := cachedParseVersion(a.Version)
 			if err != nil {
 				return 1
@@ -1048,7 +1096,7 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 	}
 }
 
-func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]bool, pin string) *repositoryPackage {
+func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) *repositoryPackage {
 	if len(pkgs) == 0 {
 		return nil
 	}
@@ -1057,7 +1105,8 @@ func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *Repository
 
 // getDepVersionForName get the version of the package that provides the given name.
 // If the name matches the package name, then the version of the package is used;
-// if it does not, then the version of the provides is used.
+// if it does not, then the version of the provides is used. An unversioned
+// provide carries no version for the name, so it returns "".
 //
 // For example, if pkg foo v2.3 provides bar=1.2, and we look for name=bar then it returns
 // 1.2 (from the provides); else it return 2.3 (from the package itself).
@@ -1070,12 +1119,8 @@ func (p *PkgResolver) getDepVersionForName(pkg *repositoryPackage, name string) 
 	}
 	for _, prov := range pkg.Provides {
 		constraint := cachedResolvePackageNameVersionPin(prov)
-		pName, pVersion := constraint.Name, constraint.Version
-		if pVersion == "" {
-			pVersion = pkg.Version
-		}
-		if pName == name {
-			return pVersion
+		if constraint.Name == name {
+			return constraint.Version
 		}
 	}
 	return ""
@@ -1164,7 +1209,7 @@ func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) m
 	}
 
 	for arch := range allowablePackages {
-		p := newPkgResolver(ctx, byArch[arch])
+		p := globalResolverCache.Get(ctx, byArch[arch])
 		for otherArch, allowed := range allowablePackages {
 			if otherArch == arch {
 				continue

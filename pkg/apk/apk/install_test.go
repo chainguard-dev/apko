@@ -22,14 +22,21 @@ import (
 	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 	"text/template"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 type testDirEntry struct {
@@ -163,13 +170,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.Error(t, err, "some double-write error")
@@ -192,13 +199,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second", Replaces: []string{"first"}}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -221,13 +228,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "first-compat", Origin: "first"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -249,13 +256,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0o755, true, nil, nil},
 				{overwriteFilename, 0o755, false, originalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -278,13 +285,13 @@ func TestInstallAPKFiles(t *testing.T) {
 			fp1 := fakePackage(t, pkg, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, originalContent, nil},
-			})
+			}, "")
 
 			pkg2 := &Package{Name: "second", Origin: "second"}
 			fp2 := fakePackage(t, pkg2, []testDirEntry{
 				{"etc", 0755, true, nil, nil},
 				{overwriteFilename, 0755, false, finalContent, nil},
-			})
+			}, "")
 
 			_, err = apk.InstallPackages(context.Background(), nil, []InstallablePackage{fp1, fp2})
 			require.NoError(t, err)
@@ -349,74 +356,53 @@ func (t *testPackage) ChecksumString() string {
 	return t.checksum
 }
 
-func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry) InstallablePackage {
+// fakePackage builds a well-formed synthetic APK. If dataHashOverride is
+// non-empty it is written into .PKGINFO as the datahash instead of the real
+// computed SHA-256 (use "" for a correctly-formed package).
+func fakePackage(t *testing.T, pkg *Package, entries []testDirEntry, dataHashOverride string) *testPackage {
 	t.Helper()
 
-	dir := t.TempDir()
-	f, err := os.CreateTemp(dir, pkg.Name)
-	if err != nil {
-		t.Fatal(err)
+	// Pass 1: compute data section bytes and SHA-256.
+	var dataBuf bytes.Buffer
+	dh := sha256.New()
+	dataZw := gzip.NewWriter(io.MultiWriter(&dataBuf, dh))
+	dataTw := tar.NewWriter(dataZw)
+	require.NoError(t, writeFiles(dataTw, entries))
+	require.NoError(t, dataTw.Close())
+	require.NoError(t, dataZw.Close())
+	dataHash := hex.EncodeToString(dh.Sum(nil))
+	if dataHashOverride != "" {
+		dataHash = dataHashOverride
 	}
+	pkg.DataHash = dataHash
+
+	// Pass 2: write control section (with datahash now set) then data bytes.
+	f, err := os.CreateTemp(t.TempDir(), pkg.Name+"*.apk")
+	require.NoError(t, err)
 
 	h := sha1.New() //nolint:gosec
-	dh := sha256.New()
+	ctlZw := gzip.NewWriter(io.MultiWriter(f, h))
+	ctlTw := tar.NewWriter(ctlZw)
 
-	mw := io.MultiWriter(f, h)
-
-	zw := gzip.NewWriter(mw)
-	tw := tar.NewWriter(zw)
-
-	tmpl := template.New("control")
 	var b bytes.Buffer
-	if err := template.Must(tmpl.Parse(controlTemplate)).Execute(&b, pkg); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
+	require.NoError(t, template.Must(template.New("control").Parse(controlTemplate)).Execute(&b, pkg))
+	require.NoError(t, ctlTw.WriteHeader(&tar.Header{
 		Name:     ".PKGINFO",
 		Typeflag: tar.TypeReg,
 		Size:     int64(b.Len()),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := tw.Write(b.Bytes()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.Flush(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	mw = io.MultiWriter(f, dh)
-	zw.Reset(mw)
-
-	if err := writeFiles(tw, entries); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	pkg.DataHash = base64.StdEncoding.EncodeToString(dh.Sum(nil))
+	}))
+	_, err = ctlTw.Write(b.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, ctlTw.Close())
+	require.NoError(t, ctlZw.Close())
+	_, err = io.Copy(f, &dataBuf)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
 	return &testPackage{
-		pkg:      pkg,
 		file:     f.Name(),
-		checksum: base64.StdEncoding.EncodeToString(h.Sum(nil)),
+		pkg:      pkg,
+		checksum: "Q1" + base64.StdEncoding.EncodeToString(h.Sum(nil)),
 	}
 }
 
@@ -499,3 +485,200 @@ provider_priority = {{ .Dependencies.ProviderPriority }}
 {{- end }}
 datahash = {{.DataHash}}
 `
+
+// TestInstallAPKFilesModesAndOwnership covers the metadata the streaming
+// install path has to carry over from the tar headers: the mode bits outside
+// of Perm(), and the ownership.
+func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
+	type entry struct {
+		name    string
+		mode    int64 // POSIX mode bits, as they appear in a tar header
+		dir     bool
+		uid     int
+		gid     int
+		content []byte
+	}
+	entries := []entry{
+		// dirs first, so they exist before the files under them
+		{name: "opt", mode: 0o755, dir: true},
+		{name: "opt/bin", mode: 0o755, dir: true},
+		{name: "var", mode: 0o755, dir: true},
+		{name: "var/spool", mode: 0o1777, dir: true},
+		{name: "var/spool/postfix", mode: 0o2755, dir: true, gid: 101},
+		// modelled on wolfi's postfix, which ships these setgid to gid 101
+		{name: "opt/bin/postdrop", mode: 0o2755, gid: 101, content: []byte("postdrop")},
+		{name: "opt/bin/plain", mode: 0o644, content: []byte("plain")},
+		// a package that ships a header for a directory the base layout
+		// already created must not overwrite what is there
+		{name: "tmp", mode: 0o755, dir: true, uid: 7, gid: 7},
+	}
+
+	apk, src, err := testGetTestAPK()
+	require.NoErrorf(t, err, "failed to get test APK")
+
+	// stand in for InitDB, which creates /tmp as 1777 before any package installs
+	require.NoError(t, src.MkdirAll("tmp", fs.ModeDir|fs.ModeSticky|0o777))
+	require.NoError(t, src.Chmod("tmp", fs.ModeSticky|0o777))
+	require.NoError(t, src.Chown("tmp", 5, 5))
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, e := range entries {
+		hdr := &tar.Header{
+			Name:     e.name,
+			Typeflag: tar.TypeReg,
+			Mode:     e.mode,
+			Uid:      e.uid,
+			Gid:      e.gid,
+			Size:     int64(len(e.content)),
+		}
+		if e.dir {
+			hdr.Typeflag = tar.TypeDir
+			hdr.Size = 0
+		}
+		require.NoError(t, tw.WriteHeader(hdr))
+		if e.content != nil {
+			_, err := tw.Write(e.content)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(context.Background(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		fi, err := src.Stat(e.name)
+		require.NoError(t, err, "error statting %s", e.name)
+
+		wantMode := (&tar.Header{Mode: e.mode}).FileInfo().Mode() &^ fs.ModeType
+		wantUID, wantGID := e.uid, e.gid
+		if e.name == "tmp" {
+			// pre-existing: keeps the mode and owner it already had
+			wantMode = fs.ModeSticky | 0o777
+			wantUID, wantGID = 5, 5
+		}
+		if e.dir {
+			wantMode |= fs.ModeDir
+		}
+		assert.Equal(t, wantMode, fi.Mode(), "mismatched mode for %s", e.name)
+
+		hdr, ok := fi.Sys().(*tar.Header)
+		require.True(t, ok, "no tar.Header from Sys() for %s", e.name)
+		assert.Equal(t, wantUID, hdr.Uid, "mismatched uid for %s", e.name)
+		assert.Equal(t, wantGID, hdr.Gid, "mismatched gid for %s", e.name)
+	}
+}
+
+// TestInstallAPKFilesModesOnDisk is the same concern as
+// TestInstallAPKFilesModesAndOwnership, against a disk-backed filesystem.
+// Those strip setuid/setgid/sticky from the mode passed to MkdirAll and
+// OpenFile, so the bits only reach the disk if we Chmod afterwards. Ownership
+// is not asserted: Chown needs privileges the test does not have, and the
+// filesystem tolerates the EPERM.
+func TestInstallAPKFilesModesOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	src := apkfs.DirFS(t.Context(), dir)
+	require.NotNil(t, src)
+	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Size: 8}))
+	_, err = tw.Write([]byte("postdrop"))
+	require.NoError(t, err)
+	// A header owned by whoever runs the test is the one case where the disk
+	// chown actually succeeds unprivileged, so this is the entry that reaches
+	// the kernel's clearing of setgid on chown(2) rather than an EPERM the
+	// filesystem swallows. It fails if Chmod is applied before Chown.
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "selfowned", Typeflag: tar.TypeReg, Mode: 0o2755,
+		Uid: os.Getuid(), Gid: os.Getgid(), Size: 4,
+	}))
+	_, err = tw.Write([]byte("self"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	for name, want := range map[string]fs.FileMode{
+		"var/spool": fs.ModeDir | fs.ModeSticky | 0o777,
+		"postdrop":  fs.ModeSetgid | 0o755,
+		"selfowned": fs.ModeSetgid | 0o755,
+	} {
+		fi, err := os.Stat(filepath.Join(dir, name))
+		require.NoError(t, err, "error statting %s", name)
+		assert.Equal(t, want, fi.Mode(), "mismatched on-disk mode for %s", name)
+	}
+}
+
+// orderRecordingFS records the order in which Chmod and Chown reach each path.
+// It only records — every call still runs against the wrapped filesystem, so
+// there is no emulated behavior here to drift out of sync with the real thing.
+type orderRecordingFS struct {
+	apkfs.FullFS
+
+	mu    sync.Mutex
+	calls map[string][]string
+}
+
+func newOrderRecordingFS(inner apkfs.FullFS) *orderRecordingFS {
+	return &orderRecordingFS{FullFS: inner, calls: map[string][]string{}}
+}
+
+func (o *orderRecordingFS) record(path, op string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls[path] = append(o.calls[path], op)
+}
+
+func (o *orderRecordingFS) ops(path string) []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.calls[path])
+}
+
+func (o *orderRecordingFS) Chmod(path string, perm fs.FileMode) error {
+	o.record(path, "chmod")
+	return o.FullFS.Chmod(path, perm)
+}
+
+func (o *orderRecordingFS) Chown(path string, uid, gid int) error {
+	o.record(path, "chown")
+	return o.FullFS.Chown(path, uid, gid)
+}
+
+// TestInstallAPKFilesMetadataOrder pins Chown before Chmod. chown(2) on a
+// regular file clears setuid/setgid — for root too — so chowning after the
+// Chmod that restores those bits drops them again on any filesystem that
+// writes through to disk. No unprivileged test can observe that: dirFS
+// tolerates the EPERM from the disk chown and never reaches the kernel
+// behavior, so the call order is pinned here instead.
+func TestInstallAPKFilesMetadataOrder(t *testing.T) {
+	rec := newOrderRecordingFS(apkfs.NewMemFS())
+	apk, err := New(t.Context(), WithFS(rec), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Gid: 101, Size: 8}))
+	_, err = tw.Write([]byte("postdrop"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	// The setgid file is the case the kernel would bite; the sticky directory
+	// is here so the two paths cannot drift apart unnoticed.
+	for _, name := range []string{"postdrop", "var/spool"} {
+		assert.Equal(t, []string{"chown", "chmod"}, rec.ops(name),
+			"metadata calls for %s must be chown then chmod", name)
+	}
+}

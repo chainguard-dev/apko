@@ -16,7 +16,6 @@ package options
 
 import (
 	"fmt"
-	"io/fs"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -28,6 +27,7 @@ import (
 	purl "github.com/package-url/packageurl-go"
 
 	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -37,7 +37,7 @@ type Options struct {
 	ImageInfo ImageInfo
 
 	// Working directory,inherited from build context
-	FS fs.FS
+	FS fs.ReaderFS
 
 	// The reference of the generated image. Used for naming and purls
 	ImageReference string
@@ -47,9 +47,6 @@ type Options struct {
 
 	// FileName is the base name for the sboms, the proper extension will get appended
 	FileName string
-
-	// Formats dictates which SBOM formats we will output
-	Formats []string
 
 	// Packages is a list of packages which will be listed in the SBOM
 	Packages []*apk.InstalledPackage
@@ -130,7 +127,7 @@ func (o *Options) ImagePurlQualifiers() (qualifiers PurlQualifiers) {
 // This function is here while a fix in the purl library gets merged
 // ref: https://github.com/package-url/packageurl-go/pull/22
 func (pq PurlQualifiers) String() string {
-	q := []purl.Qualifier{}
+	q := make([]purl.Qualifier, 0, len(pq))
 	for k, v := range pq {
 		q = append(q, purl.Qualifier{Key: k, Value: v})
 	}

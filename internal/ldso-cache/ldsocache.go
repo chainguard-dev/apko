@@ -17,6 +17,7 @@ package ldsocache
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"debug/elf"
 	"encoding/binary"
 	"errors"
@@ -26,9 +27,10 @@ import (
 	"log"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"unsafe"
+
+	"chainguard.dev/apko/pkg/elfmeta"
 )
 
 const debug = false
@@ -187,6 +189,16 @@ func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
 		}
 	}
 
+	// Pre-computed metadata (see pkg/elfmeta) short-circuits the parse: a
+	// package that stamped its ELF facts at build time hands them over here
+	// and the scan never opens the library. Any miss or malformation falls
+	// through to the parse below.
+	if ei, err := stampedElfInfo(fsys, fullpath); err == nil {
+		return finishLibInfo(fullpath, realname, ei), nil
+	} else if errors.Is(err, errNotDyn) {
+		return li, fmt.Errorf("not a dynamic object (pre-computed): %s", fullpath)
+	}
+
 	libf, err := fsys.Open(fullpath)
 	if err != nil {
 		return li, err
@@ -207,23 +219,52 @@ func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
 	if err != nil {
 		return li, err
 	}
+	return finishLibInfo(fullpath, realname, ei), nil
+}
+
+// finishLibInfo applies the no-SONAME fallback and assembles the result,
+// identically for parsed and pre-computed metadata.
+func finishLibInfo(fullpath, realname string, ei elfInfo) libInfo {
 	// ldconfig will add an entry for a .so file even if it has
 	// no SONAME. Observed with libR.so on Ubuntu.
 	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
 		debugf("DEBUG: %s has no SONAME, using filename as an SONAME\n", realname)
 		ei.Sonames = append(ei.Sonames, realname)
 	}
-	if len(ei.Sonames) == 0 && strings.HasSuffix(realname, ".so") {
-		debugf("DEBUG: %s has no DT_SONAME, using %s as an SONAME\n", realname, realname)
-		ei.Sonames = append(ei.Sonames, realname)
-	}
 
-	li = libInfo{
+	return libInfo{
 		path: fullpath,
 		elf:  ei,
 	}
+}
 
-	return li, nil
+// errNotDyn reports pre-computed metadata that says "checked, not a dynamic
+// object" — a skip, distinct from "no metadata" (which means parse).
+var errNotDyn = errors.New("pre-computed metadata: not a dynamic object")
+
+// stampedElfInfo reads pre-computed ELF metadata for the file, when the
+// filesystem supports xattrs and the file carries one. GetXattr resolves
+// symlinks like every other path operation, so a dirent that is a link
+// hands back its target's stamp — the facts live on the regular file.
+func stampedElfInfo(fsys fs.FS, fullpath string) (elfInfo, error) {
+	xfs, ok := fsys.(interface {
+		GetXattr(path string, attr string) ([]byte, error)
+	})
+	if !ok {
+		return elfInfo{}, fmt.Errorf("filesystem carries no xattrs")
+	}
+	b, err := xfs.GetXattr(fullpath, elfmeta.Xattr)
+	if err != nil {
+		return elfInfo{}, err
+	}
+	info, err := elfmeta.Decode(b)
+	if err != nil {
+		return elfInfo{}, err
+	}
+	if !info.Dyn {
+		return elfInfo{}, errNotDyn
+	}
+	return elfInfo{Machine: info.Machine, Sonames: info.Sonames}, nil
 }
 
 // accepts a library name and returns its name and a version
@@ -232,27 +273,7 @@ func getLibInfo(fsys fs.FS, dir string, dirent fs.DirEntry) (libInfo, error) {
 //
 // returns an error if realname doesn't comply w/ the name scheme
 func ParseLibFilename(realname string) (string, string, error) {
-	var name string
-	var ver string
-	// ldconfig(8) says it "will look only at files that are named lib*.so*
-	// (for regular shared objects) or ld-*.so* (for the dynamic loader itself).
-	// Other files will be ignored.
-	if !strings.HasPrefix(realname, "lib") && !strings.HasPrefix(realname, "ld-") {
-		return "", "", fmt.Errorf("filename does not start with 'lib' or 'ld-': %s", realname)
-	}
-	if strings.HasSuffix(realname, ".so") {
-		name = strings.TrimSuffix(realname, ".so")
-		ver = ""
-		return name, ver, nil
-	}
-	idx := strings.LastIndex(realname, ".so.")
-	if idx < 1 {
-		return "", "", fmt.Errorf("invalid library name: %s", realname)
-	}
-	name = realname[:idx]
-	ver = realname[idx+len(".so."):]
-
-	return name, ver, nil
+	return elfmeta.ParseLibFilename(realname)
 }
 
 // Scan `libdir` for shared libraries. Adds a new entry into `entryMap` for
@@ -351,13 +372,53 @@ func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, er
 		allEntries = append(allEntries, entries...)
 	}
 
-	// ld expects entries to be reverse-sorted by name. Otherwise
-	// it may report "No such file or directory"
-	sort.Slice(allEntries, func(i, j int) bool {
-		return filepath.Base(allEntries[j].Name) < filepath.Base(allEntries[i].Name)
+	// The dynamic linker binary-searches /etc/ld.so.cache using
+	// _dl_cache_libcmp, so entries must be ordered by that same comparison or
+	// ld.so may fail to find a library that is present in the cache (reporting
+	// "cannot open shared object file"). glibc's ldconfig emits entries in
+	// descending order, so we negate the comparison.
+	slices.SortFunc(allEntries, func(entry, other LDSOCacheEntry) int {
+		return -dlCacheLibcmp(filepath.Base(entry.Name), filepath.Base(other.Name))
 	})
 
 	return allEntries, nil
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// dlCacheLibcmp mirrors glibc's _dl_cache_libcmp (elf/dl-cache.c), the
+// comparison the dynamic linker uses to binary-search /etc/ld.so.cache. Runs of
+// digits are compared numerically, and a digit is considered greater than any
+// non-digit at the same position. It returns a negative number, 0, or a
+// positive number as libName is less than, equal to, or greater than otherName.
+func dlCacheLibcmp(libName, otherName string) int {
+	pos, otherPos := 0, 0
+	for pos < len(libName) && otherPos < len(otherName) {
+		switch char, otherChar := libName[pos], otherName[otherPos]; {
+		case isDigit(char) && isDigit(otherChar):
+			// Compare the two version-number runs numerically.
+			var version, otherVersion int
+			for ; pos < len(libName) && isDigit(libName[pos]); pos++ {
+				version = version*10 + int(libName[pos]-'0')
+			}
+			for ; otherPos < len(otherName) && isDigit(otherName[otherPos]); otherPos++ {
+				otherVersion = otherVersion*10 + int(otherName[otherPos]-'0')
+			}
+			if version != otherVersion {
+				return cmp.Compare(version, otherVersion)
+			}
+		case isDigit(char):
+			return 1 // a digit outranks a non-digit
+		case isDigit(otherChar):
+			return -1
+		case char != otherChar:
+			return cmp.Compare(char, otherChar)
+		default:
+			pos, otherPos = pos+1, otherPos+1
+		}
+	}
+	// Whichever name still has characters left is the greater one.
+	return cmp.Compare(len(libName)-pos, len(otherName)-otherPos)
 }
 
 func BuildCacheFileForDirs(fsys fs.FS, libdirs []string) (*LDSOCacheFile, error) {
@@ -491,13 +552,8 @@ func LoadCacheFile(r io.ReadSeeker) (*LDSOCacheFile, error) {
 // extractShlibName extracts a shared library from the string table.
 func extractShlibName(strtable []byte, startIdx uint32) string {
 	subset := strtable[startIdx:]
-	terminatorPos := bytes.IndexByte(subset, 0x0)
-
-	if terminatorPos == -1 {
-		return string(subset)
-	}
-
-	return string(subset[:terminatorPos])
+	name, _, _ := bytes.Cut(subset, []byte{0x0})
+	return string(name)
 }
 
 func (cf *LDSOCacheFile) Write(w io.Writer) error {
@@ -508,7 +564,7 @@ func (cf *LDSOCacheFile) Write(w io.Writer) error {
 	fileEntryTableSize := int(unsafe.Sizeof(LDSORawCacheHeader{}) + (uintptr(len(cf.Entries)) * unsafe.Sizeof(LDSORawCacheEntry{})))
 
 	// Build the string table.
-	lrcEntries := []LDSORawCacheEntry{}
+	lrcEntries := make([]LDSORawCacheEntry, 0, len(cf.Entries))
 	stringTable := []byte{}
 	for _, lib := range cf.Entries {
 		cursor := uint32(fileEntryTableSize) + uint32(len(stringTable))

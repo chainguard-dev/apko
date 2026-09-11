@@ -33,10 +33,21 @@ type opts struct {
 	fs                 apkfs.FullFS
 	version            string
 	cache              *cache
+	offline            bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	ignoreSignatures   bool
 	transport          http.RoundTripper
+	packageGetter      PackageGetter
+	sizeLimits         *SizeLimits
+}
+
+// SizeLimits configures maximum sizes for various APK operations.
+type SizeLimits struct {
+	APKIndexDecompressedMaxSize int64
+	APKControlMaxSize           int64
+	APKDataMaxSize              int64
+	HTTPResponseMaxSize         int64
 }
 
 type Option func(*opts) error
@@ -103,10 +114,19 @@ func WithCache(cacheDir string, offline bool, shared *Cache) Option {
 			}
 		}
 		o.cache = &cache{
-			dir:     cacheDir,
-			offline: offline,
-			shared:  shared,
+			dir:    cacheDir,
+			shared: shared,
 		}
+		o.offline = offline
+		return nil
+	}
+}
+
+// WithOffline controls whether network requests are permitted. Cached and
+// local resources remain available in offline mode.
+func WithOffline(offline bool) Option {
+	return func(o *opts) error {
+		o.offline = offline
 		return nil
 	}
 }
@@ -140,6 +160,23 @@ func WithTransport(t http.RoundTripper) Option {
 		if t != nil {
 			o.transport = t
 		}
+		return nil
+	}
+}
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg PackageGetter) Option {
+	return func(o *opts) error {
+		o.packageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets size limits for APK operations.
+func WithSizeLimits(limits *SizeLimits) Option {
+	return func(o *opts) error {
+		o.sizeLimits = limits
 		return nil
 	}
 }

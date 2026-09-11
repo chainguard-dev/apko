@@ -11,6 +11,7 @@ linters:
     - gosec
     - importas
     - misspell
+    - modernize
     - prealloc
     - staticcheck
     - tparallel
@@ -29,6 +30,10 @@ linters:
     gosec:
       excludes:
         - G115
+    modernize:
+      disable:
+        # Suggest replacing omitempty with omitzero for struct fields.
+        - omitzero
   exclusions:
     generated: lax
     presets:

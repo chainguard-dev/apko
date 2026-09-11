@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -50,10 +51,15 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		return nil, err
 	}
 
+	// Compute comment
 	comment := "This is an apko single-layer image"
 	if len(layers) > 1 {
-		// TODO: Consider plumbing per-layer info here?
 		comment = ""
+	}
+	title, titleok := ic.Annotations["org.opencontainers.image.title"]
+	vendor, vendorok := ic.Annotations["org.opencontainers.image.vendor"]
+	if titleok && vendorok {
+		comment = title + " by " + vendor
 	}
 
 	adds := make([]mutate.Addendum, 0, len(layers))
@@ -71,7 +77,7 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 		log.Infof("layer digest: %v", digest)
 		log.Infof("layer diffID: %v", diffid)
 
-		adds = append(adds, mutate.Addendum{
+		add := mutate.Addendum{
 			Layer: layer,
 			History: v1.History{
 				Author:    "apko",
@@ -79,7 +85,16 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 				CreatedBy: "apko",
 				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
 			},
-		})
+		}
+		// Layers built by apko may carry descriptor-level annotations (for
+		// example, EROFS layers tag their composition role per the draft
+		// erofs/erofs-image-spec).
+		if a, ok := layer.(interface{ LayerAnnotations() map[string]string }); ok {
+			if anns := a.LayerAnnotations(); len(anns) > 0 {
+				add.Annotations = anns
+			}
+		}
+		adds = append(adds, add)
 	}
 
 	// If building an OCI layer, then we should assume OCI manifest and config too
@@ -177,6 +192,17 @@ func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.L
 
 	if ic.StopSignal != "" {
 		cfg.Config.StopSignal = ic.StopSignal
+	}
+
+	// Signal EROFS-bearing manifests via os.features per
+	// erofs/erofs-image-spec §5.4 so hosts that don't implement the spec can
+	// identify and skip them without parsing layer bytes. §5.4 wants this in
+	// two places; the index platform descriptor is the other, handled in
+	// generateIndexWithMediaType, which copies it from here.
+	if ic.Format.Resolved() == types.LayerFormatErofs {
+		if !slices.Contains(cfg.OSFeatures, "erofs") {
+			cfg.OSFeatures = append(cfg.OSFeatures, "erofs")
+		}
 	}
 
 	img, err := mutate.ConfigFile(v1Image, cfg)

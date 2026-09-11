@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //go:build windows || darwin || js || wasm
-// +build windows darwin js wasm
 
 package apk
 

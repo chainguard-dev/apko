@@ -93,6 +93,12 @@ func TestMergeInto(t *testing.T) {
 			Volumes: []string{
 				"volume1",
 			},
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "foo",
+					Content: "bar",
+				}},
+			},
 		},
 		target: types.ImageConfiguration{
 			Contents: types.ImageContents{
@@ -119,6 +125,12 @@ func TestMergeInto(t *testing.T) {
 			},
 			Volumes: []string{
 				"volume1",
+			},
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "foo",
+					Content: "bar",
+				}},
 			},
 		},
 	}, {
@@ -237,6 +249,129 @@ func TestMergeInto(t *testing.T) {
 			err := tt.source.MergeInto(&tt.target)
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, tt.target)
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name          string
+		configuration types.ImageConfiguration
+		expectError   string
+	}{{
+		name: "no cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: "configured additional certificate has no name",
+	}, {
+		name: "path walking cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "trying/../../../to/break",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate "trying/../../../to/break" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "weird characters cert name",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "my-cert@123!",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate "my-cert@123!" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "cert name starting with period",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    ".hidden-cert",
+					Content: "test",
+				}},
+			},
+		},
+		expectError: `configured additional certificate ".hidden-cert" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "cert name with period is valid",
+		configuration: types.ImageConfiguration{
+			Certificates: &types.ImageCertificates{
+				Additional: []types.AdditionalCertificateEntry{{
+					Name:    "my-cert.pem",
+					Content: "test",
+				}},
+			},
+		},
+	}, {
+		name: "runtime_keyring name with periods is valid",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "mirror.rsa.pub", Content: "test"}},
+			},
+		},
+	}, {
+		name: "runtime_keyring name starting with period",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: ".mirror.rsa.pub", Content: "test"}},
+			},
+		},
+		expectError: `runtime_keyring entry ".mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "runtime_keyring name with path separator",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "subdir/mirror.rsa.pub", Content: "test"}},
+			},
+		},
+		expectError: `runtime_keyring entry "subdir/mirror.rsa.pub" has an invalid name, it must match ^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`,
+	}, {
+		name: "duplicate runtime_keyring name",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{
+					{Name: "mirror.rsa.pub", Content: "test"},
+					{Name: "mirror.rsa.pub", Content: "test"},
+				},
+			},
+		},
+		expectError: `runtime_keyring entry "mirror.rsa.pub" is a duplicate`,
+	}, {
+		name: "runtime_keyring entry without name",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Content: "test"}},
+			},
+		},
+		expectError: `configured runtime_keyring entry has no name`,
+	}, {
+		name: "runtime_keyring entry without content",
+		configuration: types.ImageConfiguration{
+			Contents: types.ImageContents{
+				RuntimeKeyring: []types.RuntimeKeyringEntry{{Name: "mirror.rsa.pub"}},
+			},
+		},
+		expectError: `runtime_keyring entry "mirror.rsa.pub" has no content`,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.configuration.Validate()
+			if tt.expectError != "" {
+				require.EqualError(t, err, tt.expectError)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

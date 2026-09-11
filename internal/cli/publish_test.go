@@ -15,7 +15,7 @@
 package cli_test
 
 import (
-	"context"
+	"archive/tar"
 	"fmt"
 	"io"
 	"io/fs"
@@ -29,20 +29,24 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
-	"chainguard.dev/apko/internal/tarfs"
+	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestPublish(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
@@ -69,7 +73,7 @@ func TestPublish(t *testing.T) {
 	opts := []build.Option{
 		build.WithConfig(config, []string{}),
 		build.WithTags(dst),
-		build.WithSBOMFormats(sbom.DefaultOptions.Formats),
+		build.WithSBOMGenerators(spdx.New()),
 		build.WithAnnotations(map[string]string{"foo": "bar"}),
 	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
@@ -87,6 +91,8 @@ func TestPublish(t *testing.T) {
 	idx, err := remote.Index(ref, ropt...)
 	require.NoError(t, err)
 
+	checkEarlyFiles(t, idx)
+
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
 
@@ -95,7 +101,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:91213f5088cd9e4e0b8daa74f86085c7007c5896ade6ef0ef9bcbcdda16f5f2d"
+	want := "sha256:1cc2a29f39af74ad432a283ee466dd43130dd9292e49f18baaaa3d890a857347"
 	require.Equal(t, want, digest.String())
 
 	// Check that the sbomPath is not empty.
@@ -114,7 +120,9 @@ func (s *sentinel) RoundTrip(in *http.Request) (*http.Response, error) {
 }
 
 func TestPublishLayering(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
@@ -141,7 +149,7 @@ func TestPublishLayering(t *testing.T) {
 	opts := []build.Option{
 		build.WithConfig(config, []string{}),
 		build.WithTags(dst),
-		build.WithSBOMFormats(sbom.DefaultOptions.Formats),
+		build.WithSBOMGenerators(spdx.New()),
 		build.WithAnnotations(map[string]string{"foo": "bar"}),
 	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
@@ -159,6 +167,8 @@ func TestPublishLayering(t *testing.T) {
 	idx, err := remote.Index(ref, ropt...)
 	require.NoError(t, err)
 
+	checkEarlyFiles(t, idx)
+
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
 
@@ -167,7 +177,7 @@ func TestPublishLayering(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:72435e8671ef7d79007d93066b54c81b875e567ccd396945d7b9ec083f96cba0"
+	want := "sha256:f5dc65ebea1afb5693ec323d6fdfa4b899a0c73af634d776a88bd44852d4216c"
 	require.Equal(t, want, digest.String())
 
 	im, err := idx.IndexManifest()
@@ -199,5 +209,48 @@ func TestPublishLayering(t *testing.T) {
 		if !strings.Contains(string(b), "apk.cgr.dev/runtime-only-repo") {
 			t.Errorf("etc/apk/repositories does not contain expected runtime_repositories entry %q", "apk.cgr.dev/runtime-only-repo")
 		}
+	}
+}
+
+// checkEarlyFiles ensures that certain important files are present
+// early in the image tarball, which can help with performance when
+// extracting or using the image.
+func checkEarlyFiles(t *testing.T, idx v1.ImageIndex) {
+	mf, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.NotEmpty(t, len(mf.Manifests))
+
+	img, err := idx.Image(mf.Manifests[0].Digest)
+	require.NoError(t, err)
+
+	rc := mutate.Extract(img)
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+
+	fileOffsets := map[string]int{}
+	offset := 0
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		fileOffsets[h.Name] = offset
+		offset += int(h.Size)
+	}
+
+	requiredFiles := []string{
+		"etc/apk/repositories",
+		"etc/passwd",
+		"etc/apko.json",
+		"etc/os-release",
+	}
+	maxOffset := 4000 // files should be in the first N bytes of the extracted tar
+	for _, f := range requiredFiles {
+		pos, ok := fileOffsets[f]
+		assert.True(t, ok, "file %q not found in image", f)
+		t.Logf("file %q found at offset %d", f, pos)
+		assert.Less(t, pos, maxOffset, "file %q found too late in image (pos %d)", f, pos)
 	}
 }

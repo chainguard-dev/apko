@@ -24,78 +24,100 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
+            api.github.com:443
+            auth.docker.io:443
+            cgr.dev:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            packages.wolfi.dev:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            proxy.golang.org:443
+            registry-1.docker.io:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
 
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       - name: Install crane
-        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+        uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
 
       - name: Build apko
         run: make apko
 
       - name: Test on_top_of_base example - usr-merge base image handling
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_PLATFORM: ${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}
         run: |
           set -euxo pipefail
 
           # Test with busybox base image (has usr-merge layout with /lib -> /usr/lib symlink)
           # This verifies that apko correctly handles building on top of base images with usr-merge layout
           BASE_IMAGE="cgr.dev/chainguard/busybox:latest"
-          OUTPUT_TAR="test-output-${{ matrix.arch }}.tar"
+          OUTPUT_TAR="test-output-${MATRIX_ARCH}.tar"
 
-          echo "Testing on_top_of_base example with ${{ matrix.arch }} architecture..."
+          echo "Testing on_top_of_base example with ${MATRIX_ARCH} architecture..."
 
           # Build image on top of base using the parameterized build.sh script
           ./examples/on_top_of_base/build.sh \
             ./apko \
             "$BASE_IMAGE" \
             "$OUTPUT_TAR" \
-            "${{ matrix.arch }}"
+            "${MATRIX_ARCH}"
 
           # Load the built image
           docker load -i "$OUTPUT_TAR"
 
           # Determine the correct image tag based on architecture
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+          if [ "${MATRIX_ARCH}" = "x86_64" ]; then
             IMAGE_TAG="base_image:latest-amd64"
           else
             IMAGE_TAG="base_image:latest-arm64"
           fi
 
           # Test that shell works (verifies /lib symlink is preserved correctly)
-          echo "Testing shell execution on ${{ matrix.arch }}..."
-          if docker run --rm --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+          echo "Testing shell execution on ${MATRIX_ARCH}..."
+          if docker run --rm --platform "linux/${MATRIX_PLATFORM}" \
              --entrypoint /bin/sh "$IMAGE_TAG" \
-             -c "echo 'Shell works on ${{ matrix.arch }}'" | grep -q "Shell works"; then
-            echo "Shell executes correctly on ${{ matrix.arch }}"
+             -c "echo 'Shell works on ${MATRIX_ARCH}'" | grep -q "Shell works"; then
+            echo "Shell executes correctly on ${MATRIX_ARCH}"
           else
-            echo "FAILED: Shell failed to execute on ${{ matrix.arch }} (indicates broken /lib symlink)"
+            echo "FAILED: Shell failed to execute on ${MATRIX_ARCH} (indicates broken /lib symlink)"
             exit 1
           fi
 
           # Test another binary to be thorough
-          echo "Testing busybox execution on ${{ matrix.arch }}..."
-          if docker run --rm --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+          echo "Testing busybox execution on ${MATRIX_ARCH}..."
+          if docker run --rm --platform "linux/${MATRIX_PLATFORM}" \
              --entrypoint /bin/busybox "$IMAGE_TAG" echo "Busybox works" | grep -q "Busybox works"; then
-            echo "Busybox executes correctly on ${{ matrix.arch }}"
+            echo "Busybox executes correctly on ${MATRIX_ARCH}"
           else
-            echo "FAILED: Busybox failed to execute on ${{ matrix.arch }}"
+            echo "FAILED: Busybox failed to execute on ${MATRIX_ARCH}"
             exit 1
           fi
 
-          echo "PASSED: on_top_of_base example test for ${{ matrix.arch }}"
+          echo "PASSED: on_top_of_base example test for ${MATRIX_ARCH}"
 
       - name: Clean up
         if: always()

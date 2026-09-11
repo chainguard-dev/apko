@@ -28,8 +28,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/klauspost/compress/gzip"
 )
 
 type InstalledPackage struct {
@@ -50,6 +48,17 @@ func (a *APK) GetInstalled() ([]*InstalledPackage, error) {
 // AddInstalledPackage add a package to the list of installed packages and returns
 // the _incremental_ diff installing the package had on the idb file.
 func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, error) {
+	// A record with an empty P: value is written without complaint and then
+	// discarded wholesale by ParseInstalled, which gates on pkg.Name != "". The
+	// package's files are left in the image belonging to no package at all, and
+	// absent from the generated SBOM. Refuse to write a record we cannot read
+	// back: at best it vanishes silently, and nothing downstream can tell that
+	// from a package that was never installed.
+	if pkg.Name == "" {
+		return nil, fmt.Errorf("refusing to add a package with an empty name: the record " +
+			"would be silently discarded when the installed database is read back")
+	}
+
 	// be sure to open the file in append mode so we add to the end
 	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -70,6 +79,25 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 
 		if f.Typeflag == tar.TypeDir {
 			dirName := strings.TrimSuffix(f.Name, fmt.Sprintf("%c", filepath.Separator))
+			// The database spells the top-level directory as a bare "F:" with no
+			// value. An entry whose name is nothing but separators denotes that
+			// same directory, so normalise every spelling of it to the marker
+			// rather than emitting "F:/" or "F://" for some of them.
+			if strings.Trim(dirName, "/") == "" {
+				dirName = ""
+			}
+			// ParseInstalled rejects an "M:" line following the bare marker
+			// ("M entry cannot be associated with top level dir"), and that
+			// error aborts the whole read, so the record would take the entire
+			// database down rather than merely being wrong. A root entry with
+			// default ownership and mode emits no M: line and is representable,
+			// so only the non-default case has to be refused.
+			if dirName == "" && (perm != 0o755 || user != 0 || group != 0) {
+				return nil, fmt.Errorf("refusing to record ownership or permissions for the "+
+					"top-level directory of package %q (entry %q, mode %04o, uid %d, gid %d): "+
+					"the installed database cannot express them and the resulting record "+
+					"would make the whole database unreadable", pkg.Name, f.Name, perm, user, group)
+			}
 			pkgLines = append(pkgLines, fmt.Sprintf("F:%s", dirName))
 			if perm != 0o755 || user != 0 || group != 0 {
 				pkgLines = append(pkgLines, fmt.Sprintf("M:%d:%d:%04o", user, group, perm))
@@ -121,13 +149,8 @@ func (a *APK) isInstalledPackage(pkg string) (bool, error) {
 }
 
 // updateScriptsTar insert the scripts into the tarball
-func (a *APK) updateScriptsTar(pkg *Package, controlTarGz io.Reader, sourceDateEpoch *time.Time) error {
-	gz, err := gzip.NewReader(controlTarGz)
-	if err != nil {
-		return fmt.Errorf("unable to gunzip control tar.gz file: %w", err)
-	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
+func (a *APK) updateScriptsTar(pkg *Package, controlData io.Reader, sourceDateEpoch *time.Time) error {
+	tr := tar.NewReader(controlData)
 	fi, err := a.fs.Stat(scriptsFilePath)
 	if err != nil {
 		return fmt.Errorf("unable to stat scripts file: %w", err)
@@ -196,38 +219,13 @@ func (a *APK) readScriptsTar() (io.ReadCloser, error) {
 	return a.fs.Open(scriptsFilePath)
 }
 
-// TODO: We should probably parse control section on the first pass and reuse it.
-func (a *APK) controlValue(controlTarGz io.Reader, want string) ([]string, error) {
-	gz, err := gzip.NewReader(controlTarGz)
-	if err != nil {
-		return nil, fmt.Errorf("unable to gunzip control tar file: %w", err)
-	}
-	defer gz.Close()
-
-	mapping, err := controlValue(gz, want)
-	if err != nil {
-		return nil, err
-	}
-
-	values, ok := mapping[want]
-	if !ok {
-		return []string{}, nil
-	}
-	return values, nil
-}
-
 // updateTriggers insert the triggers into the triggers file
-func (a *APK) updateTriggers(pkg *Package, controlTarGz io.Reader) error {
+func (a *APK) updateTriggers(pkg *Package, values []string) error {
 	triggers, err := a.fs.OpenFile(triggersFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("unable to open triggers file %s: %w", triggersFilePath, err)
 	}
 	defer triggers.Close()
-
-	values, err := a.controlValue(controlTarGz, "triggers")
-	if err != nil {
-		return fmt.Errorf("updating triggers for %s: %w", pkg.Name, err)
-	}
 
 	for _, value := range values {
 		if _, err := fmt.Fprintf(triggers, "Q1%s %s\n", base64.StdEncoding.EncodeToString(pkg.Checksum), value); err != nil {
@@ -269,7 +267,10 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 			continue
 		}
 
-		if len(line) > 1 && line[1:2] != ":" {
+		if len(line) < 2 {
+			return nil, fmt.Errorf("cannot parse line %d: expected \"<token>:<value>\", saw %q", linenr, line)
+		}
+		if line[1:2] != ":" {
 			return nil, fmt.Errorf("cannot parse line %d: expected \":\" in not found", linenr)
 		}
 
@@ -432,7 +433,7 @@ func removeOrphanedEntries(headers []tar.Header) int {
 
 	// Build a set of all directory paths (with and without trailing slashes)
 	dirPaths := make(map[string]bool)
-	for i := 0; i < len(headers); i++ {
+	for i := range headers {
 		if headers[i].Typeflag == tar.TypeDir {
 			// Add both versions of the path (with and without trailing slash)
 			cleanPath := strings.TrimSuffix(headers[i].Name, "/")
@@ -446,7 +447,7 @@ func removeOrphanedEntries(headers []tar.Header) int {
 	dirPaths["."] = true
 
 	writeIndex := 0
-	for readIndex := 0; readIndex < len(headers); readIndex++ {
+	for readIndex := range headers {
 		keep := true
 		header := headers[readIndex]
 
@@ -460,7 +461,14 @@ func removeOrphanedEntries(headers []tar.Header) int {
 					keep = false
 					break
 				}
-				parentPath = filepath.Dir(parentPath)
+				parent := filepath.Dir(parentPath)
+				if parent == parentPath {
+					// filepath.Dir("/") is "/", so an absolute path would walk
+					// here forever. A fixed point means the root has been
+					// reached and the hierarchy is exhausted.
+					break
+				}
+				parentPath = parent
 			}
 		}
 

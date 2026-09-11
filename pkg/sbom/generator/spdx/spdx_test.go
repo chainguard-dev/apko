@@ -33,20 +33,20 @@ import (
 	"chainguard.dev/apko/pkg/sbom/options"
 )
 
-// TODO: clean this up and make consistent with the other test cases
-var testOpts = &options.Options{
-	ImageInfo: options.ImageInfo{
-		Layers: []v1.Descriptor{{}},
-	},
-	OS: options.OSInfo{
-		Name:    "unknown",
-		ID:      "unknown",
-		Version: "3.0",
-	},
-	FileName: "sbom",
-	Packages: []*apk.InstalledPackage{
-		{
-			Package: apk.Package{
+func testOpts(fsys apkfs.FullFS) *options.Options {
+	return &options.Options{
+		FS: fsys,
+		ImageInfo: options.ImageInfo{
+			Layers: []v1.Descriptor{{}},
+		},
+		OS: options.OSInfo{
+			Name:    "unknown",
+			ID:      "unknown",
+			Version: "3.0",
+		},
+		FileName: "sbom",
+		Packages: []*apk.InstalledPackage{
+			{
 				Name:        "musl",
 				Version:     "1.2.2-r7",
 				Arch:        "x86_64",
@@ -60,16 +60,16 @@ var testOpts = &options.Options{
 				},
 			},
 		},
-	},
+	}
 }
 
-// TODO: clean this up and make consistent with the other test cases
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(t.Context(), testOpts, path)
+	opts := testOpts(fsys)
+	sx := New()
+	path := filepath.Join(dir, opts.FileName+"."+sx.Ext())
+	err := sx.Generate(t.Context(), opts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 }
@@ -93,10 +93,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "font-ubuntu",
-							Version: "0.869-r1",
-						},
+						Name:    "font-ubuntu",
+						Version: "0.869-r1",
 					},
 				},
 			},
@@ -115,10 +113,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "libattr1",
-							Version: "2.5.1-r2",
-						},
+						Name:    "libattr1",
+						Version: "2.5.1-r2",
 					},
 				},
 			},
@@ -137,16 +133,12 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "logstash-8",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8",
+						Version: "8.15.3-r4",
 					},
 					{
-						Package: apk.Package{
-							Name:    "logstash-8-compat",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8-compat",
+						Version: "8.15.3-r4",
 					},
 				},
 			},
@@ -165,22 +157,56 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "unbound-libs",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-libs",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound-config",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-config",
+						Version: "1.23.0-r0",
+					},
+				},
+			},
+		},
+		{
+			name: "describes-relationship",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Name:    "test-pkg-describes",
+						Version: "1.0.0-r0",
+					},
+				},
+			},
+		},
+		{
+			name: "both-describes-methods",
+			opts: &options.Options{
+				ImageInfo: options.ImageInfo{
+					Layers: []v1.Descriptor{{}},
+				},
+				OS: options.OSInfo{
+					Name:    "unknown",
+					ID:      "unknown",
+					Version: "3.0",
+				},
+				FileName: "sbom",
+				Packages: []*apk.InstalledPackage{
+					{
+						Name:    "test-pkg-both",
+						Version: "1.0.0-r0",
 					},
 				},
 			},
@@ -190,6 +216,7 @@ func TestSPDX_Generate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fsys := apkfs.NewMemFS()
+			tt.opts.FS = fsys
 			sbomDir := path.Join("var", "lib", "db", "sbom")
 			err := fsys.MkdirAll(sbomDir, 0750)
 			require.NoError(t, err)
@@ -205,7 +232,7 @@ func TestSPDX_Generate(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			sx := New(fsys)
+			sx := New()
 			imageSBOMName := fmt.Sprintf("%s.spdx.json", tt.name)
 			imageSBOMDestPath := filepath.Join(t.TempDir(), imageSBOMName)
 			err = sx.Generate(t.Context(), tt.opts, imageSBOMDestPath)
@@ -244,22 +271,63 @@ func TestSPDX_Generate(t *testing.T) {
 }
 
 func TestReproducible(t *testing.T) {
-	// Create two sboms based on the same input and ensure
-	// they are identical
+	// Create SBOMs based on the same input and ensure they are identical.
+	const (
+		packageID        = "SPDXRef-Package-glibc-2.40-r0"
+		documentRootID   = "SPDXRef-DocumentRoot-Directory-glibc"
+		internalSBOMPath = "/var/lib/db/sbom/glibc-2.40-r0.spdx.json"
+	)
+
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	d := [][]byte{}
-	for i := 0; i < 2; i++ {
+	opts := testOpts(fsys)
+	opts.Packages = []*apk.InstalledPackage{{Name: "glibc", Version: "2.40-r0"}}
+
+	internalSBOM := Document{
+		DocumentDescribes: []string{
+			packageID,
+			documentRootID,
+		},
+		Packages: []Package{
+			{ID: packageID, Name: "glibc"},
+			{ID: documentRootID, Name: "/"},
+		},
+	}
+	data, err := json.Marshal(internalSBOM)
+	require.NoError(t, err)
+	require.NoError(t, fsys.MkdirAll("/var/lib/db/sbom", 0750))
+	require.NoError(t, fsys.WriteFile(internalSBOMPath, data, 0644))
+
+	sx := New()
+	generate := func(i int) []byte {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
-		require.NoError(t, sx.Generate(t.Context(), testOpts, path))
+		require.NoError(t, sx.Generate(t.Context(), opts, path))
 		require.FileExists(t, path)
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
-		d = append(d, data)
+		return data
 	}
-	diff := cmp.Diff(d[0], d[1])
-	require.Empty(t, diff, fmt.Sprintf("difference in expected output %s", diff))
+
+	expected := generate(0)
+	var doc Document
+	require.NoError(t, json.Unmarshal(expected, &doc))
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: packageID,
+	})
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: documentRootID,
+	})
+
+	// Exercise enough new maps to detect unstable iteration order if the relationships are not sorted.
+	for i := 1; i < 100; i++ {
+		if diff := cmp.Diff(expected, generate(i)); diff != "" {
+			t.Fatalf("SBOM differs from first generation (-want +got):\n%s", diff)
+		}
+	}
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools
@@ -273,9 +341,10 @@ func TestValidateSPDX(t *testing.T) {
 	}
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
-	sx := New(fsys)
-	path := filepath.Join(dir, testOpts.FileName+"."+sx.Ext())
-	err := sx.Generate(t.Context(), testOpts, path)
+	opts := testOpts(fsys)
+	sx := New()
+	path := filepath.Join(dir, opts.FileName+"."+sx.Ext())
+	err := sx.Generate(t.Context(), opts, path)
 	require.NoError(t, err)
 	require.FileExists(t, path)
 	require.NoError(t, command.New(

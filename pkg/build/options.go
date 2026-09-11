@@ -19,12 +19,15 @@ import (
 	sha2562 "crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"net/http"
 	"time"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -33,9 +36,10 @@ import (
 type Option func(*Context) error
 
 // WithConfig sets the image configuration for the build context.
-// The image configuration is parsed from given config file.
+// The image configuration is parsed from given config file. Like
+// WithImageConfiguration it replaces the configuration rather than merging into
+// it.
 // TODO(jason): Remove this.
-// Deprecated: Use WithImageConfiguration instead.
 func WithConfig(configFile string, includePaths []string) Option {
 	return func(bc *Context) error {
 		ctx := context.Background()
@@ -68,6 +72,24 @@ func WithTags(tags ...string) Option {
 func WithTarball(path string) Option {
 	return func(bc *Context) error {
 		bc.o.TarballPath = path
+		return nil
+	}
+}
+
+// WithFormat sets the layer payload format ("tar" or "erofs"). The value
+// overrides any format declared in the image configuration, wherever this
+// Option appears in the slice relative to WithImageConfiguration or
+// WithConfig. Empty means "leave the configured value alone".
+func WithFormat(format string) Option {
+	return func(bc *Context) error {
+		if format == "" {
+			return nil
+		}
+		f := types.LayerFormat(format)
+		if !f.Valid() {
+			return fmt.Errorf("invalid --format %q (must be %q or %q)", format, types.LayerFormatTar, types.LayerFormatErofs)
+		}
+		bc.formatOverride = f
 		return nil
 	}
 }
@@ -110,9 +132,20 @@ func WithSBOM(path string) Option {
 	}
 }
 
+// WithSBOMFormats sets the SBOM generators to use.
+//
+// Deprecated: use WithSBOMGenerators instead.
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
-		bc.o.SBOMFormats = formats
+		bc.o.SBOMGenerators = generator.Generators(formats...)
+		return nil
+	}
+}
+
+// WithSBOMGenerators sets the SBOM generators to use.
+func WithSBOMGenerators(generators ...generator.Generator) Option {
+	return func(bc *Context) error {
+		bc.o.SBOMGenerators = generators
 		return nil
 	}
 }
@@ -153,7 +186,10 @@ func WithIncludePaths(includePaths []string) Option {
 }
 
 // WithImageConfiguration sets the ImageConfiguration object
-// to use when building.
+// to use when building. It replaces the configuration rather than merging into
+// it, so any earlier Option that set one of its fields directly is discarded.
+// The field-level Options (WithFormat, WithAnnotations) are exempt: they are
+// resolved after every Option has been applied.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
 		bc.ic = ic
@@ -178,25 +214,44 @@ func WithVCS(enable bool) Option {
 }
 
 // WithAnnotations adds annotations from commandline to those in the config.
-// Commandline annotations take precedence.
+// Commandline annotations take precedence, wherever this Option appears in the
+// slice relative to WithImageConfiguration or WithConfig.
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
-		if bc.ic.Annotations == nil {
-			bc.ic.Annotations = make(map[string]string)
+		if bc.annotationOverrides == nil {
+			bc.annotationOverrides = make(map[string]string, len(annotations))
 		}
-		for k, v := range annotations {
-			bc.ic.Annotations[k] = v
-		}
+		maps.Copy(bc.annotationOverrides, annotations)
 		return nil
 	}
 }
 
-// WithCache set the cache directory to use
+// WithCache enables disk caching in cacheDir. An empty cacheDir uses the
+// system cache directory.
 func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	return func(bc *Context) error {
 		bc.o.CacheDir = cacheDir
+		bc.o.DiskCacheEnabled = true
 		bc.o.Offline = offline
 		bc.o.SharedCache = shared
+		return nil
+	}
+}
+
+// WithOffline controls whether network requests are permitted. Cached and
+// local resources remain available in offline mode.
+func WithOffline(offline bool) Option {
+	return func(bc *Context) error {
+		bc.o.Offline = offline
+		return nil
+	}
+}
+
+// WithoutDiskCache keeps downloaded packages and repository indexes out of
+// the filesystem cache. In-memory package-resolution caches remain available.
+func WithoutDiskCache() Option {
+	return func(bc *Context) error {
+		bc.o.DiskCacheEnabled = false
 		return nil
 	}
 }
@@ -204,6 +259,22 @@ func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 func WithLockFile(lockFile string) Option {
 	return func(bc *Context) error {
 		bc.o.Lockfile = lockFile
+		return nil
+	}
+}
+
+// WithPreResolvedPackages provides the exact package set to install, in
+// order, with the contents each member installs from. The build installs
+// precisely these: no index is consulted and no dependency resolution
+// happens — including for an empty set, which installs precisely nothing.
+// The image configuration's package list still names the requested world
+// (written to /etc/apk/world); this option settles how it is satisfied.
+func WithPreResolvedPackages(contents []apk.PackageContents) Option {
+	return func(bc *Context) error {
+		if contents == nil {
+			contents = []apk.PackageContents{}
+		}
+		bc.o.PreResolvedPackages = contents
 		return nil
 	}
 }
@@ -235,6 +306,23 @@ func WithIgnoreSignatures(ignore bool) Option {
 func WithTransport(t http.RoundTripper) Option {
 	return func(bc *Context) error {
 		bc.o.Transport = t
+		return nil
+	}
+}
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg apk.PackageGetter) Option {
+	return func(bc *Context) error {
+		bc.o.PackageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets the size limits for various operations.
+func WithSizeLimits(limits options.SizeLimits) Option {
+	return func(bc *Context) error {
+		bc.o.SizeLimits = limits
 		return nil
 	}
 }

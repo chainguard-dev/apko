@@ -361,8 +361,7 @@ func TestUpdateScriptsTar(t *testing.T) {
 		".post-upgrade": []byte("echo 'post upgrade'"),
 	}
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	tw := tar.NewWriter(&buf)
 	for name, content := range scripts {
 		_ = tw.WriteHeader(&tar.Header{
 			Name: name,
@@ -379,7 +378,6 @@ func TestUpdateScriptsTar(t *testing.T) {
 	})
 	_, _ = tw.Write([]byte(pkginfo))
 	tw.Close()
-	gw.Close()
 
 	// pass the controltargz to updateScriptsTar
 	r := bytes.NewReader(buf.Bytes())
@@ -434,38 +432,9 @@ func TestUpdateTriggers(t *testing.T) {
 		Version:  "1.0.0",
 		Checksum: randBytes,
 	}
-	// this is not a fully valid PKGINFO file by any stretch, but for now it is sufficient
 	triggers := "/bin /usr/bin /foo /bar/*"
-	pkginfo := strings.Join([]string{
-		fmt.Sprintf("pkgname = %s", pkg.Name),
-		fmt.Sprintf("pkgver = %s", pkg.Version),
-		fmt.Sprintf("triggers = %s", triggers),
-	}, "\n")
-	// construct the controlTarGz
-	scripts := map[string][]byte{
-		".pre-install":  []byte("echo 'pre install'"),
-		".post-install": []byte("echo 'post install'"),
-		".pre-upgrade":  []byte("echo 'pre upgrade'"),
-		".post-upgrade": []byte("echo 'post upgrade'"),
-		".PKGINFO":      []byte(pkginfo),
-	}
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-	for name, content := range scripts {
-		_ = tw.WriteHeader(&tar.Header{
-			Name: name,
-			Mode: 0o644,
-			Size: int64(len(content)),
-		})
-		_, _ = tw.Write(content)
-	}
-	tw.Close()
-	gw.Close()
 
-	// pass the controltargz to updateScriptsTar
-	r := bytes.NewReader(buf.Bytes())
-	err = a.updateTriggers(pkg, r)
+	err = a.updateTriggers(pkg, []string{triggers})
 	require.NoError(t, err, "unable to update triggers: %v", err)
 
 	// successfully wrote it; not check that it was written correctly
@@ -684,6 +653,52 @@ func TestParseInstalledPackages(t *testing.T) {
 	}
 }
 
+func TestParseInstalledShortLine(t *testing.T) {
+	// A single-character line in an installed database has no ":" delimiter and
+	// no value. Before the length guard, the "len(line) > 1" short-circuit let a
+	// length-1 line skip the delimiter check and then "line[2:]" sliced out of
+	// range and panicked. It should now be reported as a parse error instead.
+	for _, in := range []string{
+		"P:foo\nV:1.0\nP\n",
+		"P",
+		"X",
+	} {
+		t.Run(in, func(t *testing.T) {
+			_, err := ParseInstalled(strings.NewReader(in))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "cannot parse line")
+		})
+	}
+}
+
+// mustNotHang runs fn on its own goroutine and fails, rather than wedging the
+// whole test binary, if it does not return. removeOrphanedEntries walks each
+// entry's parent chain, and a bug in the termination condition turns that into
+// an infinite loop -- which without this helper costs the package's full
+// -timeout and reports a goroutine dump instead of naming the offending input.
+//
+// The budget is derived from the harness's own deadline so that a short
+// `go test -timeout` is not consumed by the watchdog. The guarded calls take
+// microseconds, so any budget above a few milliseconds is ample. On timeout the
+// goroutine is deliberately leaked: the guarded functions take no context and
+// cannot be cancelled, and the test is failing anyway.
+func mustNotHang(t *testing.T, what string, fn func()) {
+	t.Helper()
+	budget := time.Second
+	if d, ok := t.Deadline(); ok {
+		if quarter := time.Until(d) / 4; quarter > 0 && quarter < budget {
+			budget = quarter
+		}
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); fn() }()
+	select {
+	case <-done:
+	case <-time.After(budget):
+		t.Fatalf("%s did not return within %s; the parent walk is not terminating", what, budget)
+	}
+}
+
 func TestRemoveOrphanedEntries(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -741,6 +756,80 @@ func TestRemoveOrphanedEntries(t *testing.T) {
 			headers:  []tar.Header{},
 			expected: nil,
 		},
+		{
+			// filepath.Dir("/") is "/", so an absolute path never reaches "" or
+			// "." and the walk spun forever before the fixed-point check. These
+			// rows assert which entries survive, not merely that we return:
+			// a walk that gave up at the root and dropped everything would
+			// terminate just as happily.
+			name: "absolute root dir and a file under it",
+			headers: []tar.Header{
+				{Name: "/x", Typeflag: tar.TypeReg},
+				{Name: "/", Typeflag: tar.TypeDir},
+			},
+			expected: []string{"/x", "/"},
+		},
+		{
+			name:     "double-slash dir alone",
+			headers:  []tar.Header{{Name: "//", Typeflag: tar.TypeDir}},
+			expected: []string{"//"},
+		},
+		{
+			name: "deep absolute hierarchy, all reachable",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "/usr", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin/sh", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"/", "/usr", "/usr/bin", "/usr/bin/sh"},
+		},
+		{
+			name: "absolute hierarchy with a gap in the middle",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "/usr", Typeflag: tar.TypeDir},
+				{Name: "/usr/bin/sh", Typeflag: tar.TypeReg}, // missing /usr/bin
+			},
+			expected: []string{"/", "/usr"},
+		},
+		{
+			name:     "absolute file whose parent is absent",
+			headers:  []tar.Header{{Name: "/usr/bin/sh", Typeflag: tar.TypeReg}},
+			expected: nil,
+		},
+		{
+			name: "mixed absolute and relative entries",
+			headers: []tar.Header{
+				{Name: "/", Typeflag: tar.TypeDir},
+				{Name: "usr", Typeflag: tar.TypeDir},
+				{Name: "usr/bin", Typeflag: tar.TypeDir},
+				{Name: "/etc", Typeflag: tar.TypeDir},
+				{Name: "/etc/hosts", Typeflag: tar.TypeReg},
+			},
+			expected: []string{"/", "usr", "usr/bin", "/etc", "/etc/hosts"},
+		},
+		{
+			// The walk must check the WHOLE ancestor chain, not just the
+			// immediate parent. dirPaths is built from the original headers, so
+			// "usr/bin" stays in the set even though it is itself dropped --
+			// a walk that stopped one level up would let the child through.
+			name: "grandparent missing though immediate parent is present",
+			headers: []tar.Header{
+				{Name: "usr/bin", Typeflag: tar.TypeDir}, // missing usr
+				{Name: "usr/bin/cmd", Typeflag: tar.TypeReg},
+			},
+			expected: nil,
+		},
+		{
+			name: "gap three levels up",
+			headers: []tar.Header{
+				{Name: "usr/share/doc", Typeflag: tar.TypeDir}, // missing usr, usr/share
+				{Name: "usr/share/doc/x", Typeflag: tar.TypeDir},
+				{Name: "usr/share/doc/x/y", Typeflag: tar.TypeReg},
+			},
+			expected: nil,
+		},
 	}
 
 	for _, tt := range cases {
@@ -748,7 +837,10 @@ func TestRemoveOrphanedEntries(t *testing.T) {
 			headersCopy := make([]tar.Header, len(tt.headers))
 			copy(headersCopy, tt.headers)
 
-			newLen := removeOrphanedEntries(headersCopy)
+			var newLen int
+			mustNotHang(t, "removeOrphanedEntries", func() {
+				newLen = removeOrphanedEntries(headersCopy)
+			})
 			results := headersCopy[:newLen]
 
 			var resultNames []string
@@ -1129,7 +1221,7 @@ func TestParseInstalledFiles(t *testing.T) {
 				t.Fatalf("package %s not found installed in %s\n", c.pkgName, c.installedFile)
 			}
 
-			got := []string{}
+			got := make([]string, 0, len(installedPkg.Files))
 			for _, i := range installedPkg.Files {
 				got = append(got, i.Name)
 			}

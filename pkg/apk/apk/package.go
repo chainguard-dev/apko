@@ -20,16 +20,14 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha1" //nolint:gosec // this is what apk tools is using
-	"encoding/base64"
 	"fmt"
 	"hash"
 	"io"
 	"strings"
 	"time"
 
-	"gopkg.in/ini.v1"
-
 	"chainguard.dev/apko/pkg/apk/expandapk"
+	"chainguard.dev/apko/pkg/apk/types"
 )
 
 // PackageToInstalled takes a Package and returns it as the string representation of lines in a /usr/lib/apk/db/installed file.
@@ -102,66 +100,11 @@ type InstallablePackage interface {
 }
 
 // PackageInfo represents the information present in .PKGINFO.
-type PackageInfo struct {
-	Name             string   `ini:"pkgname"`
-	Version          string   `ini:"pkgver"`
-	Arch             string   `ini:"arch"`
-	Description      string   `ini:"pkgdesc"`
-	License          string   `ini:"license"`
-	Origin           string   `ini:"origin"`
-	Maintainer       string   `ini:"maintainer"`
-	URL              string   `ini:"url"`
-	Dependencies     []string `ini:"depend,,allowshadow"`
-	Provides         []string `ini:"provides,,allowshadow"`
-	InstallIf        []string `ini:"install_if,,allowshadow"`
-	Size             uint64   `ini:"size"`
-	ProviderPriority uint64   `ini:"provider_priority"`
-	BuildDate        int64    `ini:"builddate"`
-	RepoCommit       string   `ini:"commit"`
-	Replaces         []string `ini:"replaces,,allowshadow"`
-	DataHash         string   `ini:"datahash"`
-}
+type PackageInfo = types.PackageInfo
 
 // Package represents a single package with the information present in an
 // APKINDEX.
-type Package struct {
-	Name             string `ini:"pkgname"`
-	Version          string `ini:"pkgver"`
-	Arch             string `ini:"arch"`
-	Description      string `ini:"pkgdesc"`
-	License          string `ini:"license"`
-	Origin           string `ini:"origin"`
-	Maintainer       string `ini:"maintainer"`
-	URL              string `ini:"url"`
-	Checksum         []byte
-	Dependencies     []string `ini:"depend,,allowshadow"`
-	Provides         []string `ini:"provides,,allowshadow"`
-	InstallIf        []string
-	Size             uint64 `ini:"size"`
-	InstalledSize    uint64
-	ProviderPriority uint64 `ini:"provider_priority"`
-	BuildTime        time.Time
-	BuildDate        int64    `ini:"builddate"`
-	RepoCommit       string   `ini:"commit"`
-	Replaces         []string `ini:"replaces,,allowshadow"`
-	DataHash         string   `ini:"datahash"`
-}
-
-func (p *Package) String() string {
-	return fmt.Sprintf("%s (ver:%s arch:%s)", p.Name, p.Version, p.Arch)
-}
-func (p *Package) PackageName() string { return p.Name }
-
-// Filename returns the package filename as it's named in a repository.
-func (p *Package) Filename() string {
-	// Note: Doesn't use fmt.Sprintf because we call this a lot when we disqualify images.
-	return p.Name + "-" + p.Version + ".apk"
-}
-
-// ChecksumString returns a human-readable version of the control section checksum.
-func (p *Package) ChecksumString() string {
-	return "Q1" + base64.StdEncoding.EncodeToString(p.Checksum)
-}
+type Package = types.Package
 
 // ParsePackage parses a .apk file and returns a Package struct
 func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Package, error) {
@@ -229,14 +172,9 @@ func ParsePackageInfo(apkPackage io.Reader) (*PackageInfo, hash.Hash, error) {
 		}
 
 		if hdr.Name == ".PKGINFO" {
-			cfg, err := ini.ShadowLoad(tr)
+			pkg, err := types.ParsePackageInfo(tr)
 			if err != nil {
-				return nil, nil, fmt.Errorf("ini.ShadowLoad(): %w", err)
-			}
-
-			pkg := new(PackageInfo)
-			if err = cfg.MapTo(pkg); err != nil {
-				return nil, nil, fmt.Errorf("cfg.MapTo(): %w", err)
+				return nil, nil, fmt.Errorf("parsing .PKGINFO: %w", err)
 			}
 
 			return pkg, h, nil
