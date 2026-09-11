@@ -25,15 +25,18 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"golang.org/x/sys/unix"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 const (
@@ -44,6 +47,8 @@ const (
 
 	xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 )
+
+var _ apk.WriteHeaderer = (*memFS)(nil)
 
 type tarEntry struct {
 	tfs      fs.FS
@@ -59,11 +64,12 @@ type memFS struct {
 func New() *memFS {
 	return &memFS{
 		tree: &node{
-			dir:      true,
-			children: map[string]*node{},
-			xattrs:   map[string][]byte{},
-			name:     "/",
-			mode:     fs.ModeDir | 0o755,
+			dir:       true,
+			children:  map[string]*node{},
+			xattrs:    map[string][]byte{},
+			hardlinks: map[string]*tar.Header{},
+			name:      "/",
+			mode:      fs.ModeDir | 0o755,
 		},
 	}
 }
@@ -79,11 +85,9 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 		return nil, nil
 	}
 
-	if strings.HasPrefix(hexsum, "Q1") {
+	if b64, ok := strings.CutPrefix(hexsum, "Q1"); ok {
 		// This is nonstandard but something we did at one point, handle it.
 		// In other contexts, this Q1 prefix means "this is sha1 not md5".
-		b64 := strings.TrimPrefix(hexsum, "Q1")
-
 		checksum, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {
 			return nil, fmt.Errorf("decoding base64 checksum from header for %q: %w", header.Name, err)
@@ -100,7 +104,7 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 	return checksum, nil
 }
 
-func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
+func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
@@ -108,12 +112,15 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
 		if fi, err := m.Stat(hdr.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			if target, err := m.Readlink(hdr.Name); err == nil {
 				if fi, err = m.Stat(target); err == nil && fi.IsDir() {
-					return nil
+					return false, nil
 				}
 			}
 		}
 		if err := m.MkdirAll(hdr.Name, hdr.FileInfo().Mode().Perm()); err != nil {
-			return fmt.Errorf("error creating directory %s: %w", hdr.Name, err)
+			return false, fmt.Errorf("error creating directory %s: %w", hdr.Name, err)
+		}
+		if err := m.Chtimes(hdr.Name, hdr.AccessTime, hdr.ModTime); err != nil {
+			return false, fmt.Errorf("error chtime on directory %s: %w", hdr.Name, err)
 		}
 
 		for k, v := range hdr.PAXRecords {
@@ -122,19 +129,25 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
 			}
 			attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
 			if err := m.SetXattr(hdr.Name, attrName, []byte(v)); err != nil {
-				return fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
+				return false, fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
 			}
 		}
 
-	case tar.TypeReg:
+	case tar.TypeReg, tar.TypeSymlink:
+		if hdr.Typeflag == tar.TypeSymlink {
+			// TODO: I think we can drop this because the header checksum thing should catch this.
+			if target, err := m.Readlink(hdr.Name); err == nil && target == hdr.Linkname {
+				return false, nil
+			}
+		}
 		// We trust this because we verify it earlier in ExpandAPK.
 		checksum, err := checksumFromHeader(&hdr)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		if checksum == nil {
-			return fmt.Errorf("checksum is nil for %s", hdr.Name)
+			return false, fmt.Errorf("checksum is nil for %s", hdr.Name)
 		}
 
 		te := tarEntry{
@@ -144,8 +157,9 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
 			pkg:      pkg,
 		}
 
-		if err := m.writeHeader(hdr.Name, te); err != nil {
-			return fmt.Errorf("writing header for %q: %w", hdr.Name, err)
+		installed, err := m.writeHeader(hdr.Name, te)
+		if err != nil {
+			return false, fmt.Errorf("writing header for %q: %w", hdr.Name, err)
 		}
 
 		for k, v := range hdr.PAXRecords {
@@ -154,29 +168,20 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) error {
 			}
 			attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
 			if err := m.SetXattr(hdr.Name, attrName, []byte(v)); err != nil {
-				return fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
+				return false, fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
 			}
 		}
 
-	case tar.TypeSymlink:
-		// some underlying filesystems and some memfs that we use in tests do not support symlinks.
-		// attempt it, and if it fails, just copy it.
-		// if it already exists, pointing to the same target, we can ignore it
-		if target, err := m.Readlink(hdr.Name); err == nil && target == hdr.Linkname {
-			return nil
-		}
-		if err := m.Symlink(hdr.Linkname, hdr.Name); err != nil {
-			return fmt.Errorf("unable to install symlink from %s -> %s: %w", hdr.Name, hdr.Linkname, err)
-		}
+		return installed, nil
 	case tar.TypeLink:
-		if err := m.Link(hdr.Linkname, hdr.Name); err != nil {
-			return err
+		if err := m.link(hdr.Linkname, hdr.Name, &hdr); err != nil {
+			return false, err
 		}
 	default:
-		return fmt.Errorf("unsupported file type %s %v", hdr.Name, hdr.Typeflag)
+		return false, fmt.Errorf("unsupported file type %s %v", hdr.Name, hdr.Typeflag)
 	}
 
-	return nil
+	return true, nil
 }
 
 // getNode returns the node for the given path. If the path is not found, it
@@ -256,13 +261,12 @@ func (m *memFS) Mkdir(path string, perms fs.FileMode) error {
 	}
 	// now create the directory
 	anode.children[filepath.Base(path)] = &node{
-		name:       filepath.Base(path),
-		mode:       fs.ModeDir | perms,
-		dir:        true,
-		modTime:    time.Now(),
-		createTime: time.Now(),
-		children:   map[string]*node{},
-		xattrs:     map[string][]byte{},
+		name:      filepath.Base(path),
+		mode:      fs.ModeDir | perms,
+		dir:       true,
+		children:  map[string]*node{},
+		xattrs:    map[string][]byte{},
+		hardlinks: map[string]*tar.Header{},
 	}
 	return nil
 }
@@ -279,7 +283,7 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 		}
 		node = targetNode
 	}
-	return node.fileInfo(path), nil
+	return node.fileInfo("", path), nil
 }
 
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
@@ -287,7 +291,7 @@ func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return node.fileInfo(path), nil
+	return node.fileInfo("", path), nil
 }
 
 func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
@@ -306,13 +310,12 @@ func (m *memFS) MkdirAll(path string, perm fs.FileMode) error {
 		newnode, ok := anode.children[part]
 		if !ok {
 			newnode = &node{
-				name:       part,
-				mode:       fs.ModeDir | perm,
-				dir:        true,
-				modTime:    time.Now(),
-				createTime: time.Now(),
-				children:   map[string]*node{},
-				xattrs:     map[string][]byte{},
+				name:      part,
+				mode:      fs.ModeDir | perm,
+				dir:       true,
+				children:  map[string]*node{},
+				xattrs:    map[string][]byte{},
+				hardlinks: map[string]*tar.Header{},
 			}
 			anode.children[part] = newnode
 		}
@@ -378,12 +381,11 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		if !ok {
 			// create the file
 			anode = &node{
-				name:       base,
-				mode:       perm,
-				dir:        false,
-				modTime:    time.Now(),
-				createTime: time.Now(),
-				xattrs:     map[string][]byte{},
+				name:      base,
+				mode:      perm,
+				dir:       false,
+				xattrs:    map[string][]byte{},
+				hardlinks: map[string]*tar.Header{},
 			}
 			parentAnode.children[base] = anode
 		}
@@ -431,17 +433,17 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 	return newMemFile(anode, name, m, flag), nil
 }
 
-func (m *memFS) writeHeader(name string, te tarEntry) error {
+func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 	parent := filepath.Dir(name)
 	base := filepath.Base(name)
 
 	parentAnode, err := m.getNode(parent)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !parentAnode.dir {
-		return fmt.Errorf("parent is not a directory")
+		return false, fmt.Errorf("parent is not a directory")
 	}
 	if parentAnode.children == nil {
 		parentAnode.children = map[string]*node{}
@@ -455,20 +457,21 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 			name:       base,
 			mode:       te.header.FileInfo().Mode(),
 			dir:        false,
-			modTime:    time.Now(),
-			createTime: time.Now(),
+			modTime:    te.header.ModTime,
+			linkTarget: te.header.Linkname,
 			xattrs:     map[string][]byte{},
+			hardlinks:  map[string]*tar.Header{},
 			te:         &te,
 		}
 		parentAnode.children[base] = anode
-		return nil
+		return true, nil
 	}
 
 	want, got := te, existing.te
 
 	if got == nil {
 		if existing.data == nil {
-			return fmt.Errorf("conflicting file for %q has no tar entry", name)
+			return false, fmt.Errorf("conflicting file for %q has no tar entry", name)
 		}
 
 		// This can happen when go-apk's InitKeyring conflicts with alpine-keys.
@@ -479,54 +482,53 @@ func (m *memFS) writeHeader(name string, te tarEntry) error {
 		checksum := h.Sum(nil)
 
 		if bytes.Equal(want.checksum, checksum) {
-			return nil
+			return false, nil
 		}
 
-		return fmt.Errorf("conflicting file for %q with checksum %x, existing has checksum %x", name, want.checksum, checksum)
+		return false, fmt.Errorf("conflicting file for %q with checksum %x, existing has checksum %x", name, want.checksum, checksum)
 	}
 
 	// Files have the same checksum, that's fine.
 	if bytes.Equal(got.checksum, want.checksum) {
-		return nil
+		return false, nil
 	}
 
 	// If the existing file's package replaces the package we want to install, we don't need to write this file.
-	for _, replace := range got.pkg.Replaces {
-		if want.pkg.Name == replace {
-			return nil
-		}
+	if slices.Contains(got.pkg.Replaces, want.pkg.Name) {
+		return false, nil
 	}
 
 	// Otherwise, determine if the package we are installing replaces the existing package.
-	replaces := false
-	for _, replace := range want.pkg.Replaces {
-		if got.pkg.Name == replace {
-			replaces = true
-			break
-		}
-	}
+	replaces := slices.Contains(want.pkg.Replaces, got.pkg.Name)
 
 	// Or if they're from the same origin.
 	sameOrigin := got.pkg.Origin == want.pkg.Origin
 
 	// At this point we know the files conflict, but it's okay if this file replaces that one.
 	if !sameOrigin && !replaces {
-		return fmt.Errorf("conflicting file %q in %q has different origin %q != %q in %q", name, got.pkg.Name, got.pkg.Origin, want.pkg.Origin, want.pkg.Name)
+		return false, apk.FileConflictError{
+			Path: name,
+			Origins: map[string]string{
+				got.pkg.Name:  got.pkg.Origin,
+				want.pkg.Name: want.pkg.Origin,
+			},
+		}
 	}
 
 	anode := &node{
 		name:       base,
 		mode:       te.header.FileInfo().Mode(),
 		dir:        false,
-		modTime:    time.Now(),
-		createTime: time.Now(),
+		modTime:    te.header.ModTime,
+		linkTarget: te.header.Linkname,
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
 		te:         &te,
 	}
 	parentAnode.children[base] = anode
 
 	// If we got here, they're different, but want replaces got, so it's all cool.
-	return nil
+	return true, nil
 }
 
 func (m *memFS) ReadFile(name string) ([]byte, error) {
@@ -554,8 +556,8 @@ func (m *memFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	return nil
 }
 
-func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	anode, err := m.getNode(name)
+func (m *memFS) ReadDir(parent string) ([]fs.DirEntry, error) {
+	anode, err := m.getNode(parent)
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +566,7 @@ func (m *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	var de = make([]fs.DirEntry, 0, len(anode.children))
 	for name, node := range anode.children {
-		de = append(de, fs.FileInfoToDirEntry(node.fileInfo(name)))
+		de = append(de, fs.FileInfoToDirEntry(node.fileInfo(parent, name)))
 	}
 	// we need them in a consistent order, so sort them by filename, which is what os.ReadDir() does
 	sort.Slice(de, func(i, j int) bool {
@@ -590,13 +592,13 @@ func (m *memFS) Mknod(path string, mode uint32, dev int) error {
 		return fs.ErrExist
 	}
 	anode.children[base] = &node{
-		name:       base,
-		mode:       fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
-		modTime:    time.Now(),
-		createTime: time.Now(),
-		major:      unix.Major(uint64(dev)),
-		minor:      unix.Minor(uint64(dev)),
-		xattrs:     map[string][]byte{},
+		name:      base,
+		mode:      fs.FileMode(mode) | os.ModeCharDevice | os.ModeDevice,
+		major:     unix.Major(uint64(dev)),
+		minor:     unix.Minor(uint64(dev)),
+		xattrs:    map[string][]byte{},
+		hardlinks: map[string]*tar.Header{},
+		modTime:   anode.modTime,
 	}
 
 	return nil
@@ -630,6 +632,7 @@ func (m *memFS) Chmod(path string, perm fs.FileMode) error {
 	anode.mode = perm | (anode.mode & os.ModeType)
 	return nil
 }
+
 func (m *memFS) Chown(path string, uid, gid int) error {
 	anode, err := m.getNode(path)
 	if err != nil {
@@ -640,8 +643,19 @@ func (m *memFS) Chown(path string, uid, gid int) error {
 	return nil
 }
 
+func (m *memFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
+	anode, err := m.getNode(path)
+	if err != nil {
+		return err
+	}
+	anode.modTime = mtime
+	return nil
+}
+
 func (m *memFS) Create(name string) (apkfs.File, error) {
-	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o666)
+	// we are not honoring umask here, so choose a safer default than
+	// 0o666 used by os.Create()
+	return m.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
 }
 
 func (m *memFS) Symlink(oldname, newname string) error {
@@ -659,14 +673,15 @@ func (m *memFS) Symlink(oldname, newname string) error {
 	anode.children[base] = &node{
 		name:       base,
 		mode:       0o777 | os.ModeSymlink,
-		modTime:    time.Now(),
 		linkTarget: oldname,
 		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
+		modTime:    anode.modTime,
 	}
 	return nil
 }
 
-func (m *memFS) Link(oldname, newname string) error {
+func (m *memFS) link(oldname, newname string, hdr *tar.Header) error {
 	parent := filepath.Dir(newname)
 	base := filepath.Base(newname)
 	anode, err := m.getNode(parent)
@@ -684,7 +699,14 @@ func (m *memFS) Link(oldname, newname string) error {
 	}
 	anode.children[base] = target
 	target.linkCount++
+	if hdr != nil {
+		target.hardlinks[newname] = hdr
+	}
 	return nil
+}
+
+func (m *memFS) Link(oldname, newname string) error {
+	return m.link(oldname, newname, nil)
 }
 
 func (m *memFS) Readlink(name string) (target string, err error) {
@@ -783,6 +805,27 @@ func (m *memFS) ListXattrs(path string) (map[string][]byte, error) {
 	return ret, nil
 }
 
+func (m *memFS) Sub(path string) (apkfs.FullFS, error) {
+	cleanPath := filepath.Clean(path)
+
+	if cleanPath == "." {
+		return m, nil
+	}
+
+	info, err := m.Stat(cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("not a directory")
+	}
+
+	return &apkfs.SubFS{
+		FS:   m,
+		Root: cleanPath,
+	}, nil
+}
+
 type memFile struct {
 	node     *node
 	fs       *memFS
@@ -855,7 +898,10 @@ func (f *memFile) ReadAt(p []byte, off int64) (n int, err error) {
 		return 0, fs.ErrClosed
 	}
 	if f.rc != nil {
-		// tarfs-backed files don't support ReadAt.
+		if ra, ok := f.rc.(io.ReaderAt); ok {
+			return ra.ReadAt(p, off)
+		}
+		// This would be a surprise!
 		return 0, fs.ErrInvalid
 	}
 	if off >= int64(len(f.node.data)) {
@@ -913,7 +959,6 @@ type node struct {
 	name         string
 	data         []byte
 	modTime      time.Time
-	createTime   time.Time
 	linkTarget   string
 	linkCount    int // extra links, so 0 means a single pointer. O-based, like most compuuter counting systems.
 	major, minor uint32
@@ -921,20 +966,24 @@ type node struct {
 	mu           sync.Mutex
 	xattrs       map[string][]byte
 
+	hardlinks map[string]*tar.Header
+
 	// This stores metadata for a tarfs-backed file.
 	te *tarEntry
 }
 
-func (n *node) fileInfo(name string) fs.FileInfo {
+func (n *node) fileInfo(parent, name string) fs.FileInfo {
 	return &memFileInfo{
-		node: n,
-		name: name,
+		node:   n,
+		name:   name,
+		parent: parent,
 	}
 }
 
 type memFileInfo struct {
 	*node
-	name string
+	name   string
+	parent string
 }
 
 func (m *memFileInfo) Name() string {
@@ -942,8 +991,8 @@ func (m *memFileInfo) Name() string {
 }
 
 func (m *memFileInfo) Size() int64 {
-	if m.node.te != nil && len(m.data) == 0 {
-		return m.node.te.header.Size
+	if m.te != nil && len(m.data) == 0 {
+		return m.te.header.Size
 	}
 	return int64(len(m.data))
 }
@@ -961,9 +1010,28 @@ func (m *memFileInfo) IsDir() bool {
 }
 
 func (m *memFileInfo) Sys() any {
-	return &tar.Header{
+	name := path.Join(m.parent, m.name)
+	th := &tar.Header{
+		Name: name,
 		Mode: int64(m.mode),
 		Uid:  m.uid,
 		Gid:  m.gid,
 	}
+
+	// Preserve hardlink info if we have it.
+	if hl, ok := m.hardlinks[name]; ok {
+		th.Typeflag = hl.Typeflag
+		th.Linkname = hl.Linkname
+	}
+
+	return th
+}
+
+// This is a bit janky, but we need a way to know who owns this.
+func (m *memFileInfo) Package() *apk.Package {
+	if m.te == nil {
+		return nil
+	}
+
+	return m.te.pkg
 }

@@ -3,59 +3,33 @@
   "$id": "https://chainguard.dev/apko/pkg/build/types/image-configuration",
   "$ref": "#/$defs/ImageConfiguration",
   "$defs": {
-    "AccountsOption": {
+    "AdditionalCertificateEntry": {
       "properties": {
-        "RunAs": {
-          "type": "string"
+        "name": {
+          "type": "string",
+          "description": "Required: Name of the certificate entry"
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: PEM-encoded certificate content to install in the image.\nMust contain exactly one certificate.\nThe certificate will be:\n1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)\n2. Installed as an individual file in the ca-certificates."
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "RunAs"
-      ],
-      "description": "AccountsOption describes an optional deviation to an apko environment's run-as setting."
+      "type": "object"
     },
-    "BuildOption": {
+    "BaseImageDescriptor": {
       "properties": {
-        "Contents": {
-          "$ref": "#/$defs/ContentsOption"
+        "image": {
+          "type": "string",
+          "description": "Required: Path to the base image OCI layout. Right now only local files are supported."
         },
-        "Accounts": {
-          "$ref": "#/$defs/AccountsOption"
-        },
-        "Environment": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "Entrypoint": {
-          "$ref": "#/$defs/ImageEntrypoint"
+        "apkindex": {
+          "type": "string",
+          "description": "Required: Path to file representing installed packages in the base image in APKINDEX format.\n(Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX"
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Contents",
-        "Accounts",
-        "Environment",
-        "Entrypoint"
-      ],
-      "description": "BuildOption describes an optional deviation to an apko environment."
-    },
-    "ContentsOption": {
-      "properties": {
-        "Packages": {
-          "$ref": "#/$defs/ListOption"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Packages"
-      ],
-      "description": "ContentsOption describes an optional deviation to an apko environment's contents block."
+      "type": "object"
     },
     "Group": {
       "properties": {
@@ -102,6 +76,26 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ImageCertificates": {
+      "properties": {
+        "additional": {
+          "items": {
+            "$ref": "#/$defs/AdditionalCertificateEntry"
+          },
+          "type": "array",
+          "description": "Additional certificates to install in the image"
+        },
+        "providers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Providers is a list of virtual package names that identify packages\ncontaining CA certificate files to be assembled into the system CA bundle."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "ImageConfiguration": {
       "properties": {
         "contents": {
@@ -133,14 +127,14 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Optional: List of CPU architectures to build the container image for\n\nThe list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x"
+          "description": "Optional: List of CPU architectures to build the container image for\n\nThe list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64"
         },
         "environment": {
           "additionalProperties": {
             "type": "string"
           },
           "type": "object",
-          "description": "Optional: Envionment variables to set in the container image"
+          "description": "Optional: Environment variables to set in the container image"
         },
         "paths": {
           "items": {
@@ -148,10 +142,6 @@
           },
           "type": "array",
           "description": "Optional: List of paths mutations"
-        },
-        "os-release": {
-          "$ref": "#/$defs/OSRelease",
-          "description": "Optional: The /etc/os-release configuration for the container image"
         },
         "vcs-url": {
           "type": "string",
@@ -166,14 +156,7 @@
         },
         "include": {
           "type": "string",
-          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration"
-        },
-        "options": {
-          "additionalProperties": {
-            "$ref": "#/$defs/BuildOption"
-          },
-          "type": "object",
-          "description": "Optional: A map of named build option deviations\n\nDeprecated: Use WithExtraPackages."
+          "description": "Optional: Path to a local file containing additional image configuration\n\nThe included configuration is deep merged with the parent configuration\n\nDeprecated: This will be removed in a future release."
         },
         "volumes": {
           "items": {
@@ -181,6 +164,18 @@
           },
           "type": "array",
           "description": "Optional: A list of volumes to configure\n\nThis is _not_ the same as Paths, but refers to the OCI spec \"volumes\"\nfield used by some container runtimes (docker) to create volumes at\nruntime. For most use cases, this is not needed, but consider using this\nwhen the image requires special volume configuration at runtime for\nsupported container runtimes."
+        },
+        "layering": {
+          "$ref": "#/$defs/Layering",
+          "description": "Optional: Configuration to control layering of the OCI image."
+        },
+        "format": {
+          "type": "string",
+          "description": "Optional: Layer payload format. One of \"tar\" (default) or \"erofs\".\n\"erofs\" is experimental and tracks the draft erofs/erofs-image-spec."
+        },
+        "certificates": {
+          "$ref": "#/$defs/ImageCertificates",
+          "description": "Optional: Certificates to install in the container image"
         }
       },
       "additionalProperties": false,
@@ -188,12 +183,26 @@
     },
     "ImageContents": {
       "properties": {
+        "build_repositories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of apk repositories to use for pulling packages at build time,\nwhich are not installed into /etc/apk/repositories in the image (to\ninstall packages at runtime)"
+        },
+        "runtime_repositories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "A list of apk repositories that are installed into /etc/apk/repositories in the image but not used\nat build time"
+        },
         "repositories": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "A list of apk repositories to use for pulling packages"
+          "description": "A list of apk repositories to use for pulling packages during both the\ninitial construction of the image, and also at runtime by seeding them\ninto /etc/apk/repositories in the resulting image."
         },
         "keyring": {
           "items": {
@@ -202,12 +211,23 @@
           "type": "array",
           "description": "A list of public keys used to verify the desired repositories"
         },
+        "runtime_keyring": {
+          "items": {
+            "$ref": "#/$defs/RuntimeKeyringEntry"
+          },
+          "type": "array",
+          "description": "APK signing public keys installed into /etc/apk/keys after package\nresolution, so runtime `apk add` against runtime_repositories can verify\nre-signed packages. A runtime trust anchor only — not consulted during\nbuild-time package resolution. Each entry is an inline {name, content}\npublic key."
+        },
         "packages": {
           "items": {
             "type": "string"
           },
           "type": "array",
           "description": "A list of packages to include in the image"
+        },
+        "baseimage": {
+          "$ref": "#/$defs/BaseImageDescriptor",
+          "description": "Optional: Base image to build on top of. Warning: Experimental."
         }
       },
       "additionalProperties": false,
@@ -237,54 +257,13 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "ListOption": {
+    "Layering": {
       "properties": {
-        "Add": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "strategy": {
+          "type": "string"
         },
-        "Remove": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "Add",
-        "Remove"
-      ],
-      "description": "ListOption describes an optional deviation to a list, for example, a list of packages."
-    },
-    "OSRelease": {
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Optional: The name of the OS"
-        },
-        "id": {
-          "type": "string",
-          "description": "Optional: The unique identifier for the OS"
-        },
-        "version-id": {
-          "type": "string",
-          "description": "Optional: The unique identifier for the version of the OS"
-        },
-        "pretty-name": {
-          "type": "string",
-          "description": "Optional: The human readable description of the OS"
-        },
-        "home-url": {
-          "type": "string",
-          "description": "Optional: The URL of the homepage for the OS"
-        },
-        "bug-report-url": {
-          "type": "string",
-          "description": "Optional: The URL of the bug reporting website for the OS"
+        "budget": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,
@@ -302,11 +281,11 @@
         },
         "uid": {
           "type": "integer",
-          "description": "The mutation's desired user ID"
+          "description": "The mutation's desired user ID. If unset (nil), ownership is left\nuntouched unless gid is set (see Recursive)."
         },
         "gid": {
           "type": "integer",
-          "description": "The mutation's desired group ID"
+          "description": "The mutation's desired group ID. If unset (nil), ownership is left\nuntouched unless uid is set (see Recursive)."
         },
         "permissions": {
           "type": "integer",
@@ -318,11 +297,26 @@
         },
         "recursive": {
           "type": "boolean",
-          "description": "Toggle whether to mutate recursively"
+          "description": "Toggle whether to mutate recursively. Honored for the \"directory\" and\n\"permissions\" types: the permissions, and uid/gid when set, are applied\nto every entry beneath the path."
         }
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "RuntimeKeyringEntry": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Required: the filename the key is written to under /etc/apk/keys. Must\nmatch the filename the repository's APKINDEX signature references\n(.SIGN.RSA256.\u003cname\u003e), or apk will not find the key at runtime."
+        },
+        "content": {
+          "type": "string",
+          "description": "Required: the PEM-encoded RSA public key content."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "RuntimeKeyringEntry is a single inline APK signing public key, mirroring AdditionalCertificateEntry."
     },
     "User": {
       "properties": {
@@ -337,6 +331,14 @@
         "gid": {
           "type": "integer",
           "description": "Required: The user's group ID"
+        },
+        "shell": {
+          "type": "string",
+          "description": "Optional: The user's shell"
+        },
+        "homedir": {
+          "type": "string",
+          "description": "Optional: The user's home directory"
         }
       },
       "additionalProperties": false,

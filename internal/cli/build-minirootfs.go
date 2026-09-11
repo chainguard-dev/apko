@@ -20,22 +20,26 @@ import (
 	"os"
 	"runtime"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
-	"chainguard.dev/apko/pkg/log"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func buildMinirootFS() *cobra.Command {
-	var debugEnabled bool
-	var quietEnabled bool
 	var buildDate string
 	var buildArch string
 	var sbomPath string
-	var logPolicy []string
+	var ignoreSignatures bool
+	var extraKeys []string
+	var extraBuildRepos []string
+	var extraRepos []string
+	var extraPackages []string
+	var sizeLimits options.SizeLimits
 
 	cmd := &cobra.Command{
 		Use:     "build-minirootfs",
@@ -44,51 +48,44 @@ func buildMinirootFS() *cobra.Command {
 		Example: `  apko build-minirootfs <config.yaml> <output.tar.gz>`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
-
 			return BuildMinirootFSCmd(cmd.Context(),
-				build.WithLogger(logger),
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
+				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
+				build.WithExtraRepos(extraRepos),
+				build.WithExtraPackages(extraPackages),
 				build.WithTarball(args[1]),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
-				build.WithDebugLogging(debugEnabled),
+				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithSizeLimits(sizeLimits),
 			)
 		},
 	}
 
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
+	addClientLimitFlags(cmd, &sizeLimits)
 
 	return cmd
 }
 
 func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
 	defer os.RemoveAll(wd)
 
-	fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
-	bc, err := build.New(ctx, fs, opts...)
+	bc, err := build.New(ctx, tarfs.New(), opts...)
 	if err != nil {
 		return err
 	}
@@ -96,16 +93,15 @@ func BuildMinirootFSCmd(ctx context.Context, opts ...build.Option) error {
 	ic := bc.ImageConfiguration()
 
 	if len(ic.Archs) != 0 {
-		bc.Logger().Printf("WARNING: ignoring archs in config, only building for current arch (%s)", bc.Arch())
+		log.Warnf("ignoring archs in config, only building for current arch (%s)", bc.Arch())
 	}
 
-	bc.Logger().Printf("building minirootfs '%s'", bc.TarballPath())
-
+	log.Debugf("building minirootfs %s", bc.TarballPath())
 	layerTarGZ, _, err := bc.BuildLayer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to build layer image: %w", err)
 	}
-	bc.Logger().Printf("wrote minirootfs to %s\n", layerTarGZ)
+	log.Debugf("wrote minirootfs to %s", layerTarGZ)
 
 	return nil
 }

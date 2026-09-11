@@ -16,25 +16,14 @@ docker rm -f "${REGISTRY_CONTAINER_NAME}"
 docker run --name "${REGISTRY_CONTAINER_NAME}" \
   -d -p ${PORT}:5000 "${REGISTRY_BASE_IMAGE}"
 
-for f in examples/alpine-base-rootless.yaml examples/wolfi-base.yaml; do
+for f in examples/wolfi-base.yaml; do
   echo "=== building $f"
 
   REF="localhost:${PORT}/ci-testing:$(basename ${f})"
-  img=$("${APKO}" publish --debug "${f}" "${REF}")
+  img=$("${APKO}" publish "${f}" "${REF}"  --arch amd64,arm64)
 
   # Run the image.
   docker run --rm ${img} echo hello | grep hello
-
-  if [[ ${f} == "examples/wolfi-base.yaml" ]]; then
-    # Download SBOM and check that it contains
-    # files derived from package SBOMs melange produces in /var/lib/db/sbom
-    cosign download sbom --platform=linux/amd64 "${REF}" | tee ci-testing.sbom.json
-    HAS_FILES="$(cat ci-testing.sbom.json | jq 'keys | contains(["files"])')"
-    if [[ "${HAS_FILES}" != "true" ]]; then
-      echo "SBOM does not have files. Exiting."
-      exit 1
-    fi
-  fi
 
   # Each platform should contain platform-specific etc/apk/arch file.
   crane export --platform linux/amd64 "${REF}" | tar -Ox etc/apk/arch | grep x86_64

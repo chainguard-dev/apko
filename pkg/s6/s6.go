@@ -15,21 +15,17 @@
 package s6
 
 import (
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
-
-	"chainguard.dev/apko/pkg/log"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
 
 type Services map[string]string
 
 type Context struct {
-	fs  apkfs.FullFS
-	Log log.Logger
+	fs apkfs.FullFS
 }
 
-func New(fs apkfs.FullFS, logger log.Logger) *Context {
+func New(fs apkfs.FullFS) *Context {
 	return &Context{
-		fs:  fs,
-		Log: logger,
+		fs: fs,
 	}
 }

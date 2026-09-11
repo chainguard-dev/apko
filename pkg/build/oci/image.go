@@ -15,8 +15,11 @@
 package oci
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -28,56 +31,79 @@ import (
 	v1tar "github.com/google/go-containerregistry/pkg/v1/tarball"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/shlex"
-	"github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sigstore/cosign/v2/pkg/oci/signed"
-	"golang.org/x/exp/maps"
+
+	"github.com/chainguard-dev/clog"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 	"chainguard.dev/apko/pkg/options"
 )
 
-func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger log.Logger) (oci.SignedImage, error) {
-	mediaType, err := layer.MediaType()
-	if err != nil {
-		return nil, fmt.Errorf("accessing layer MediaType: %w", err)
-	}
-	imageType := humanReadableImageType(mediaType)
-	logger.Printf("building image from layer")
+func BuildImageFromLayer(ctx context.Context, baseImage v1.Image, layer v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
+	return BuildImageFromLayers(ctx, baseImage, []v1.Layer{layer}, oic, created, arch)
+}
 
-	digest, err := layer.Digest()
-	if err != nil {
-		return nil, fmt.Errorf("could not calculate layer digest: %w", err)
-	}
+func BuildImageFromLayers(ctx context.Context, baseImage v1.Image, layers []v1.Layer, oic types.ImageConfiguration, created time.Time, arch types.Architecture) (v1.Image, error) {
+	log := clog.FromContext(ctx)
 
-	diffid, err := layer.DiffID()
-	if err != nil {
-		return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
+	// Create a copy to avoid modifying the original ImageConfiguration.
+	ic := &types.ImageConfiguration{}
+	if err := oic.MergeInto(ic); err != nil {
+		return nil, err
 	}
 
-	logger.Printf("%s layer digest: %v", imageType, digest)
-	logger.Printf("%s layer diffID: %v", imageType, diffid)
-
-	adds := make([]mutate.Addendum, 0, 1)
-	adds = append(adds, mutate.Addendum{
-		Layer: layer,
-		History: v1.History{
-			Author:    "apko",
-			Comment:   "This is an apko single-layer image",
-			CreatedBy: "apko",
-			Created:   v1.Time{Time: created},
-		},
-	})
-
-	emptyImage := empty.Image
-	if mediaType == ggcrtypes.OCILayer {
-		// If building an OCI layer, then we should assume OCI manifest and config too
-		emptyImage = mutate.MediaType(emptyImage, ggcrtypes.OCIManifestSchema1)
-		emptyImage = mutate.ConfigMediaType(emptyImage, ggcrtypes.OCIConfigJSON)
+	// Compute comment
+	comment := "This is an apko single-layer image"
+	if len(layers) > 1 {
+		comment = ""
 	}
-	v1Image, err := mutate.Append(emptyImage, adds...)
+	title, titleok := ic.Annotations["org.opencontainers.image.title"]
+	vendor, vendorok := ic.Annotations["org.opencontainers.image.vendor"]
+	if titleok && vendorok {
+		comment = title + " by " + vendor
+	}
+
+	adds := make([]mutate.Addendum, 0, len(layers))
+	for _, layer := range layers {
+		digest, err := layer.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("could not calculate layer digest: %w", err)
+		}
+
+		diffid, err := layer.DiffID()
+		if err != nil {
+			return nil, fmt.Errorf("could not calculate layer diff id: %w", err)
+		}
+
+		log.Infof("layer digest: %v", digest)
+		log.Infof("layer diffID: %v", diffid)
+
+		add := mutate.Addendum{
+			Layer: layer,
+			History: v1.History{
+				Author:    "apko",
+				Comment:   comment,
+				CreatedBy: "apko",
+				Created:   v1.Time{Time: created}, // TODO: Consider per-layer creation time?
+			},
+		}
+		// Layers built by apko may carry descriptor-level annotations (for
+		// example, EROFS layers tag their composition role per the draft
+		// erofs/erofs-image-spec).
+		if a, ok := layer.(interface{ LayerAnnotations() map[string]string }); ok {
+			if anns := a.LayerAnnotations(); len(anns) > 0 {
+				add.Annotations = anns
+			}
+		}
+		adds = append(adds, add)
+	}
+
+	// If building an OCI layer, then we should assume OCI manifest and config too
+	baseImage = mutate.MediaType(baseImage, ggcrtypes.OCIManifestSchema1)
+	baseImage = mutate.ConfigMediaType(baseImage, ggcrtypes.OCIConfigJSON)
+
+	v1Image, err := mutate.Append(baseImage, adds...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to append %s layer to empty image: %w", imageType, err)
+		return nil, fmt.Errorf("unable to append oci layer to empty image: %w", err)
 	}
 
 	annotations := ic.Annotations
@@ -90,14 +116,13 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 			annotations["org.opencontainers.image.revision"] = hash
 		}
 	}
+	annotations["org.opencontainers.image.created"] = created.Format(time.RFC3339)
 
-	if mediaType != ggcrtypes.DockerLayer && len(annotations) > 0 {
-		v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
-	}
+	v1Image = mutate.Annotations(v1Image, annotations).(v1.Image)
 
 	cfg, err := v1Image.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get %s config file: %w", imageType, err)
+		return nil, fmt.Errorf("unable to get oci config file: %w", err)
 	}
 
 	cfg = cfg.DeepCopy()
@@ -108,6 +133,7 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 	cfg.Created = v1.Time{Time: created}
 	cfg.Config.Labels = make(map[string]string)
 	cfg.OS = "linux"
+	cfg.Config.Labels = annotations
 
 	// NOTE: Need to allow empty Entrypoints. The runtime will override to `/bin/sh -c` and handle quoting
 	switch {
@@ -146,7 +172,7 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		env = map[string]string{}
 	}
 	for k, v := range map[string]string{
-		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":          "/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	} {
 		if _, found := env[k]; !found {
@@ -168,17 +194,29 @@ func BuildImageFromLayer(layer v1.Layer, ic types.ImageConfiguration, created ti
 		cfg.Config.StopSignal = ic.StopSignal
 	}
 
-	v1Image, err = mutate.ConfigFile(v1Image, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("unable to update %s config file: %w", imageType, err)
+	// Signal EROFS-bearing manifests via os.features per
+	// erofs/erofs-image-spec §5.4 so hosts that don't implement the spec can
+	// identify and skip them without parsing layer bytes. §5.4 wants this in
+	// two places; the index platform descriptor is the other, handled in
+	// generateIndexWithMediaType, which copies it from here.
+	if ic.Format.Resolved() == types.LayerFormatErofs {
+		if !slices.Contains(cfg.OSFeatures, "erofs") {
+			cfg.OSFeatures = append(cfg.OSFeatures, "erofs")
+		}
 	}
 
-	si := signed.Image(v1Image)
-	return si, nil
+	img, err := mutate.ConfigFile(v1Image, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to update oci config file: %w", err)
+	}
+
+	return img, nil
 }
 
-func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, logger log.Logger, opts options.Options) error {
-	v1Image, err := BuildImageFromLayer(layer, ic, opts.SourceDateEpoch, opts.Arch, logger)
+func BuildImageTarballFromLayer(ctx context.Context, imageRef string, layer v1.Layer, outputTarGZ string, ic types.ImageConfiguration, opts options.Options) error {
+	log := clog.FromContext(ctx)
+	emptyImage := empty.Image
+	v1Image, err := BuildImageFromLayer(ctx, emptyImage, layer, ic, opts.SourceDateEpoch, opts.Arch)
 	if err != nil {
 		return err
 	}
@@ -195,6 +233,6 @@ func BuildImageTarballFromLayer(imageRef string, layer v1.Layer, outputTarGZ str
 		return fmt.Errorf("unable to write image to disk: %w", err)
 	}
 
-	logger.Printf("output image file to %s", outputTarGZ)
+	log.Infof("output image file to %s", outputTarGZ)
 	return nil
 }

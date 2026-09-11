@@ -16,23 +16,97 @@ package build_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
-	"github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/stretchr/testify/require"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
+	"chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
+	"chainguard.dev/apko/pkg/build/types"
 )
 
-func TestBuildLayer(t *testing.T) {
+func TestBuildLayers(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	layers, err := bc.BuildLayers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, layers, 2)
+}
+
+func TestBuildLayersWithEmptyLayering(t *testing.T) {
+	ctx := context.Background()
+
+	// Use the empty-layering.yaml file we created in testdata
+	opts := []build.Option{
+		build.WithConfig("empty-layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should build successfully and return a single layer
+	layers, err := bc.BuildLayers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should fall back to the legacy single-layer approach with empty layering
+	require.Len(t, layers, 1)
+
+	// BuildLayer should also work with empty layering
+	_, _, err = bc.BuildLayer(ctx)
+	require.NoError(t, err, "BuildLayer should not fail with empty layering")
+}
+
+func TestBuildLayerWithLayeringStrategy(t *testing.T) {
+	ctx := context.Background()
+
+	// Use a config with a non-empty layering strategy
+	opts := []build.Option{
+		build.WithConfig("layering.yaml", []string{"testdata"}),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should return an error when trying to use BuildLayer with a layering strategy
+	_, _, err = bc.BuildLayer(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot use BuildLayer with a layering strategy")
 }
 
 func TestBuildImage(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
+		build.WithConfig("apko.yaml", []string{"testdata"}),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -49,17 +123,207 @@ func TestBuildImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Len(t, installed, 1)
-	require.Equal(t, installed[0].Name, "tzdata")
-	require.Equal(t, installed[0].Version, "2023c-r0")
+	require.Len(t, installed, 2)
+	require.Equal(t, installed[0].Name, "pretend-baselayout")
+	require.Equal(t, installed[0].Version, "1.0.0-r0")
+	require.Equal(t, installed[1].Name, "replayout")
+	require.Equal(t, installed[1].Version, "1.0.0-r0")
+}
+
+func TestLockImageConfigurationWithoutDiskCache(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+
+	srv := httptest.NewServer(http.FileServer(http.Dir("testdata/packages")))
+	defer srv.Close()
+
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{
+			Repositories: []string{srv.URL},
+			Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+			Packages:     []string{"pretend-baselayout"},
+		},
+		Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+	}
+
+	_, _, err := build.LockImageConfiguration(t.Context(), ic, build.WithoutDiskCache())
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestLockImageConfigurationOfflineWithoutDiskCache(t *testing.T) {
+	t.Run("local repository", func(t *testing.T) {
+		repository, err := filepath.Abs("testdata/packages")
+		require.NoError(t, err)
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{repository},
+				Keyring:      []string{filepath.Join(repository, "melange.rsa.pub")},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err = build.LockImageConfiguration(t.Context(), ic,
+			build.WithOffline(true),
+			build.WithoutDiskCache(),
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("remote repository", func(t *testing.T) {
+		var requests atomic.Int64
+		files := http.FileServer(http.Dir("testdata/packages"))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			files.ServeHTTP(w, r)
+		}))
+		defer srv.Close()
+
+		ic := types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{srv.URL},
+				Keyring:      []string{srv.URL + "/melange.rsa.pub"},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+		}
+
+		_, _, err := build.LockImageConfiguration(t.Context(), ic,
+			build.WithCache(t.TempDir(), true, apk.NewCache(false)),
+			build.WithoutDiskCache(),
+		)
+		var got *apk.OfflineNetworkError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, &apk.OfflineNetworkError{
+			Method: http.MethodGet,
+			URL:    srv.URL + "/melange.rsa.pub",
+		}, got)
+		require.Equal(t, int64(0), requests.Load())
+	})
+}
+
+func TestDiskCacheOptions(t *testing.T) {
+	sharedCache := apk.NewCache(false)
+
+	tests := []struct {
+		name        string
+		options     []build.Option
+		wantEnabled bool
+	}{
+		{
+			name:        "default",
+			wantEnabled: true,
+		},
+		{
+			name:    "disabled",
+			options: []build.Option{build.WithoutDiskCache()},
+		},
+		{
+			name: "empty directory enables automatic location",
+			options: []build.Option{
+				build.WithoutDiskCache(),
+				build.WithCache("", false, sharedCache),
+			},
+			wantEnabled: true,
+		},
+		{
+			name: "last option disables",
+			options: []build.Option{
+				build.WithCache("custom", false, sharedCache),
+				build.WithoutDiskCache(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := build.NewOptions(tt.options...)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantEnabled, got.DiskCacheEnabled)
+		})
+	}
+}
+
+func TestBuildImageWithCertPackages(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("apko-certs.yaml", []string{"testdata"}),
+	}
+
+	fsys := fs.NewMemFS()
+
+	// Pre-create the CA bundle file (in a real image, the ca-certificates
+	// package provides this). installCertificates only appends to existing
+	// bundles.
+	require.NoError(t, fsys.MkdirAll("etc/ssl/certs", 0o755))
+	require.NoError(t, fsys.WriteFile("etc/ssl/certs/ca-certificates.crt", []byte{}, 0o644))
+
+	bc, err := build.New(ctx, fsys, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.BuildImage(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	installed, err := bc.InstalledPackages()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have pretend-baselayout + custom-ca-certs-1 + custom-ca-certs-2.
+	require.Len(t, installed, 3)
+
+	// Verify the CA bundle contains all 4 certificates.
+	bundlePath := "etc/ssl/certs/ca-certificates.crt"
+	bundleData, err := fsys.ReadFile(bundlePath)
+	require.NoError(t, err, "CA bundle should exist at %s", bundlePath)
+
+	bundle := string(bundleData)
+	require.Contains(t, bundle, "-----BEGIN CERTIFICATE-----")
+
+	// Count the number of certificates in the bundle.
+	certCount := strings.Count(bundle, "-----BEGIN CERTIFICATE-----")
+	require.Equal(t, 4, certCount, "expected 4 certificates in the CA bundle, got %d", certCount)
+
+	// Verify individual cert files exist in the filesystem (installed by packages).
+	certPaths := []string{
+		"usr/local/share/ca-certificates/cert-a.crt",
+		"usr/local/share/ca-certificates/cert-b.crt",
+		"usr/local/share/ca-certificates/cert-c.crt",
+		"usr/local/share/ca-certificates/cert-d.crt",
+	}
+	for _, p := range certPaths {
+		_, err := fsys.Stat(p)
+		require.NoError(t, err, "cert file %s should exist", p)
+	}
+
+	// A sha256 sidecar should be written next to the bundle, in sha256sum -c
+	// format, matching the final (post-append) contents of the bundle.
+	sidecarPath := "etc/ssl/certs/.ca-certificates.crt.sha256"
+	sidecarData, err := fsys.ReadFile(sidecarPath)
+	require.NoError(t, err, "CA bundle checksum sidecar should exist at %s", sidecarPath)
+
+	sum := sha256.Sum256(bundleData)
+	require.Equal(t,
+		fmt.Sprintf("%s  ca-certificates.crt\n", hex.EncodeToString(sum[:])),
+		string(sidecarData),
+		"sidecar must record the sha256 of the updated bundle")
 }
 
 func TestBuildImageFromLockFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithLockFile(filepath.Join("testdata", "tzdata.lock.json")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
+		build.WithLockFile(filepath.Join("testdata", "apko.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -76,17 +340,19 @@ func TestBuildImageFromLockFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Len(t, installed, 1)
-	require.Equal(t, installed[0].Name, "tzdata")
-	require.Equal(t, installed[0].Version, "2023c-r0")
+	require.Len(t, installed, 2)
+	require.Equal(t, installed[0].Name, "pretend-baselayout")
+	require.Equal(t, installed[0].Version, "1.0.0-r0")
+	require.Equal(t, installed[1].Name, "replayout")
+	require.Equal(t, installed[1].Version, "1.0.0-r0")
 }
 
 func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
-		build.WithConfig(filepath.Join("testdata", "tzdata.yaml")),
-		build.WithLockFile(filepath.Join("testdata", "tzdata.pre-0.13.lock.json")),
+		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
+		build.WithLockFile(filepath.Join("testdata", "apko.pre-0.13.lock.json")),
 	}
 
 	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
@@ -94,7 +360,80 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = bc.BuildImage(ctx)
-	require.Equal(t, "failed getting packages for install from lockfile testdata/tzdata.pre-0.13.lock.json: "+
-		"locked package tzdata has missing checksum (please regenerate the lock file with Apko >=0.13)",
+	require.Equal(t, "failed getting packages for install from lockfile testdata/apko.pre-0.13.lock.json: "+
+		"locked package pretend-baselayout has missing checksum (please regenerate the lock file with Apko >=0.13)",
 		err.Error())
+}
+
+func TestAuth_good(t *testing.T) {
+	called := false
+	testUser, testPass := "user", "pass"
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", "234")
+		if r.Method == http.MethodHead {
+			return
+		}
+
+		called = true
+		if gotuser, gotpass, ok := r.BasicAuth(); !ok || gotuser != testUser || gotpass != testPass {
+			t.Logf("got user: %q, pass: %q", gotuser, gotpass)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		http.FileServer(http.Dir("testdata/packages")).ServeHTTP(w, r)
+	}))
+	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
+
+	ctx := context.Background()
+	bc, err := build.New(ctx, fs.NewMemFS(),
+		build.WithImageConfiguration(types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Repositories: []string{s.URL},
+				Keyring:      []string{s.URL + "/melange.rsa.pub"},
+				Packages:     []string{"pretend-baselayout"},
+			},
+			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
+		}),
+		build.WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = bc.BuildImage(ctx)
+	require.NoError(t, err, "build image failed")
+	require.True(t, called)
+}
+
+func TestAuth_bad(t *testing.T) {
+	called := false
+	testUser, testPass := "user", "pass"
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", "345")
+		if r.Method == http.MethodHead {
+			return
+		}
+
+		called = true
+		if gotuser, gotpass, ok := r.BasicAuth(); !ok || gotuser != testUser || gotpass != testPass {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		http.FileServer(http.Dir("testdata/packages")).ServeHTTP(w, r)
+	}))
+	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
+
+	ctx := context.Background()
+	_, err := build.New(ctx, fs.NewMemFS(),
+		build.WithImageConfiguration(types.ImageConfiguration{
+			Contents: types.ImageContents{
+				Keyring: []string{s.URL + "/melange.rsa.pub"},
+				// We don't even need to specify repository or packages, since keyring init will fail without auth.
+			},
+			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
+		}),
+		build.WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")),
+	)
+	require.Error(t, err, "build should have failed to init keyring")
+	require.True(t, called)
 }

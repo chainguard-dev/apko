@@ -15,17 +15,18 @@
 package oci
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
 )
 
 func TestBuildImageFromLayer(t *testing.T) {
@@ -57,10 +58,12 @@ func TestBuildImageFromLayer(t *testing.T) {
 			RootFS:  v1.RootFS{Type: "layers", DiffIDs: []v1.Hash{diffID}},
 			Config: v1.Config{
 				Env: []string{
-					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -84,10 +87,12 @@ func TestBuildImageFromLayer(t *testing.T) {
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
-					"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -95,7 +100,7 @@ func TestBuildImageFromLayer(t *testing.T) {
 		cfg: types.ImageConfiguration{
 			Environment: map[string]string{
 				"FOO":  "bar",
-				"PATH": "/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"PATH": "/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 			},
 		},
 		want: &v1.ConfigFile{
@@ -112,10 +117,12 @@ func TestBuildImageFromLayer(t *testing.T) {
 			Config: v1.Config{
 				Env: []string{
 					"FOO=bar",
-					"PATH=/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					"PATH=/something/else:/another/one:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}, {
@@ -143,12 +150,16 @@ func TestBuildImageFromLayer(t *testing.T) {
 					"PATH=",
 					"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
 				},
-				Labels: map[string]string{},
+				Labels: map[string]string{
+					"org.opencontainers.image.created": now.Format(time.RFC3339),
+				},
 			},
 		},
 	}} {
 		t.Run(c.desc, func(t *testing.T) {
-			got, err := BuildImageFromLayer(layer, c.cfg, now, types.ParseArchitecture(""), log.DefaultLogger())
+			ctx := context.Background()
+			emptyImage := empty.Image
+			got, err := BuildImageFromLayer(ctx, emptyImage, layer, c.cfg, now, types.ParseArchitecture(""))
 			require.NoError(t, err)
 			gotcfg, err := got.ConfigFile()
 			require.NoError(t, err)
@@ -159,6 +170,24 @@ func TestBuildImageFromLayer(t *testing.T) {
 	}
 }
 
-func TestBuildImageTarballFromLayer(t *testing.T) {
+func TestBuildImageFromLayer_ErofsOSFeatures(t *testing.T) {
+	layer := static.NewLayer([]byte("hello"), ggcrtypes.MediaType("application/vnd.erofs"))
+	ctx := context.Background()
+	now := time.Now()
 
+	ic := types.ImageConfiguration{Format: types.LayerFormatErofs}
+	img, err := BuildImageFromLayer(ctx, empty.Image, layer, ic, now, types.ParseArchitecture(""))
+	require.NoError(t, err)
+
+	cfg, err := img.ConfigFile()
+	require.NoError(t, err)
+	require.Contains(t, cfg.OSFeatures, "erofs", "expected os.features to include erofs for EROFS-format builds")
+
+	// Default (tar) format must not advertise erofs.
+	tarLayer := static.NewLayer([]byte("hello"), ggcrtypes.OCILayer)
+	img2, err := BuildImageFromLayer(ctx, empty.Image, tarLayer, types.ImageConfiguration{}, now, types.ParseArchitecture(""))
+	require.NoError(t, err)
+	cfg2, err := img2.ConfigFile()
+	require.NoError(t, err)
+	require.NotContains(t, cfg2.OSFeatures, "erofs", "tar-format builds must not declare erofs in os.features")
 }

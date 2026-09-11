@@ -1,0 +1,30 @@
+C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
+P:a-pkg
+V:1.2.3-r1
+A:x86_64
+S:9180
+I:40960
+T:A sample package
+U:http://a.package.org
+L:Apache-2.0
+o:a-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
+
+C:Q1Pi7+Lp0TdU9DNxeZKvFbOSjmncw=
+P:b-pkg
+V:1.1.1-r1
+A:x86_64
+S:5243
+I:11392
+T:Another package
+U:http://b.package.org
+L:Apache-2.0
+o:b-pkg
+m:maintainer <maint@iner.org>
+t:1600096848
+c:af13bd168c9d86ede4ad1be5c4ceac79253a7e26
+D:so:libc.musl-x86_64.so.1
+

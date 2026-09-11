@@ -15,29 +15,46 @@
 package build
 
 import (
+	"context"
+	sha2562 "crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"maps"
+	"net/http"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/log"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
+
+	"github.com/chainguard-dev/clog"
 )
 
 // Option is an option for the build context.
 type Option func(*Context) error
 
 // WithConfig sets the image configuration for the build context.
-// The image configuration is parsed from given config file.
-func WithConfig(configFile string) Option {
+// The image configuration is parsed from given config file. Like
+// WithImageConfiguration it replaces the configuration rather than merging into
+// it.
+// TODO(jason): Remove this.
+func WithConfig(configFile string, includePaths []string) Option {
 	return func(bc *Context) error {
-		bc.o.Log.Printf("loading config file: %s", configFile)
+		ctx := context.Background()
+		log := clog.FromContext(ctx)
+		log.Debugf("loading config file: %s", configFile)
 
 		var ic types.ImageConfiguration
-		if err := ic.Load(configFile, bc.Logger()); err != nil {
+		hasher := sha2562.New()
+		if err := ic.Load(ctx, configFile, includePaths, hasher); err != nil { //nolint:staticcheck
 			return fmt.Errorf("failed to load image configuration: %w", err)
 		}
 
 		bc.ic = ic
-		bc.imageConfigFile = configFile
+		bc.o.ImageConfigFile = configFile
+		bc.o.ImageConfigChecksum = "sha256-" + base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 		return nil
 	}
@@ -59,13 +76,20 @@ func WithTarball(path string) Option {
 	}
 }
 
-// WithAssertions adds assertions to validate the result
-// of this build context.
-// Assertions are checked in parallel at the end of the
-// build process.
-func WithAssertions(a ...Assertion) Option {
+// WithFormat sets the layer payload format ("tar" or "erofs"). The value
+// overrides any format declared in the image configuration, wherever this
+// Option appears in the slice relative to WithImageConfiguration or
+// WithConfig. Empty means "leave the configured value alone".
+func WithFormat(format string) Option {
 	return func(bc *Context) error {
-		bc.assertions = append(bc.assertions, a...)
+		if format == "" {
+			return nil
+		}
+		f := types.LayerFormat(format)
+		if !f.Valid() {
+			return fmt.Errorf("invalid --format %q (must be %q or %q)", format, types.LayerFormatTar, types.LayerFormatErofs)
+		}
+		bc.formatOverride = f
 		return nil
 	}
 }
@@ -108,9 +132,20 @@ func WithSBOM(path string) Option {
 	}
 }
 
+// WithSBOMFormats sets the SBOM generators to use.
+//
+// Deprecated: use WithSBOMGenerators instead.
 func WithSBOMFormats(formats []string) Option {
 	return func(bc *Context) error {
-		bc.o.SBOMFormats = formats
+		bc.o.SBOMGenerators = generator.Generators(formats...)
+		return nil
+	}
+}
+
+// WithSBOMGenerators sets the SBOM generators to use.
+func WithSBOMGenerators(generators ...generator.Generator) Option {
+	return func(bc *Context) error {
+		bc.o.SBOMGenerators = generators
 		return nil
 	}
 }
@@ -118,6 +153,13 @@ func WithSBOMFormats(formats []string) Option {
 func WithExtraKeys(keys []string) Option {
 	return func(bc *Context) error {
 		bc.o.ExtraKeyFiles = keys
+		return nil
+	}
+}
+
+func WithExtraBuildRepos(repos []string) Option {
+	return func(bc *Context) error {
+		bc.o.ExtraBuildRepos = repos
 		return nil
 	}
 }
@@ -136,8 +178,18 @@ func WithExtraPackages(packages []string) Option {
 	}
 }
 
+func WithIncludePaths(includePaths []string) Option {
+	return func(bc *Context) error {
+		bc.o.IncludePaths = includePaths
+		return nil
+	}
+}
+
 // WithImageConfiguration sets the ImageConfiguration object
-// to use when building.
+// to use when building. It replaces the configuration rather than merging into
+// it, so any earlier Option that set one of its fields directly is discarded.
+// The field-level Options (WithFormat, WithAnnotations) are exempt: they are
+// resolved after every Option has been applied.
 func WithImageConfiguration(ic types.ImageConfiguration) Option {
 	return func(bc *Context) error {
 		bc.ic = ic
@@ -153,24 +205,6 @@ func WithArch(arch types.Architecture) Option {
 	}
 }
 
-// WithLogger sets the log.Logger implementation to be used by the build context.
-func WithLogger(logger log.Logger) Option {
-	return func(bc *Context) error {
-		bc.o.Log = logger
-		return nil
-	}
-}
-
-// WithDebugLogging sets the debug log level for the build context.
-func WithDebugLogging(enable bool) Option {
-	return func(bc *Context) error {
-		if enable {
-			bc.o.Log.SetLevel(log.DebugLevel)
-		}
-		return nil
-	}
-}
-
 // WithVCS enables VCS URL probing for the build context.
 func WithVCS(enable bool) Option {
 	return func(bc *Context) error {
@@ -180,24 +214,44 @@ func WithVCS(enable bool) Option {
 }
 
 // WithAnnotations adds annotations from commandline to those in the config.
-// Commandline annotations take precedence.
+// Commandline annotations take precedence, wherever this Option appears in the
+// slice relative to WithImageConfiguration or WithConfig.
 func WithAnnotations(annotations map[string]string) Option {
 	return func(bc *Context) error {
-		if bc.ic.Annotations == nil {
-			bc.ic.Annotations = make(map[string]string)
+		if bc.annotationOverrides == nil {
+			bc.annotationOverrides = make(map[string]string, len(annotations))
 		}
-		for k, v := range annotations {
-			bc.ic.Annotations[k] = v
-		}
+		maps.Copy(bc.annotationOverrides, annotations)
 		return nil
 	}
 }
 
-// WithCacheDir set the cache directory to use
-func WithCacheDir(cacheDir string, offline bool) Option {
+// WithCache enables disk caching in cacheDir. An empty cacheDir uses the
+// system cache directory.
+func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	return func(bc *Context) error {
 		bc.o.CacheDir = cacheDir
+		bc.o.DiskCacheEnabled = true
 		bc.o.Offline = offline
+		bc.o.SharedCache = shared
+		return nil
+	}
+}
+
+// WithOffline controls whether network requests are permitted. Cached and
+// local resources remain available in offline mode.
+func WithOffline(offline bool) Option {
+	return func(bc *Context) error {
+		bc.o.Offline = offline
+		return nil
+	}
+}
+
+// WithoutDiskCache keeps downloaded packages and repository indexes out of
+// the filesystem cache. In-memory package-resolution caches remain available.
+func WithoutDiskCache() Option {
+	return func(bc *Context) error {
+		bc.o.DiskCacheEnabled = false
 		return nil
 	}
 }
@@ -205,6 +259,70 @@ func WithCacheDir(cacheDir string, offline bool) Option {
 func WithLockFile(lockFile string) Option {
 	return func(bc *Context) error {
 		bc.o.Lockfile = lockFile
+		return nil
+	}
+}
+
+// WithPreResolvedPackages provides the exact package set to install, in
+// order, with the contents each member installs from. The build installs
+// precisely these: no index is consulted and no dependency resolution
+// happens — including for an empty set, which installs precisely nothing.
+// The image configuration's package list still names the requested world
+// (written to /etc/apk/world); this option settles how it is satisfied.
+func WithPreResolvedPackages(contents []apk.PackageContents) Option {
+	return func(bc *Context) error {
+		if contents == nil {
+			contents = []apk.PackageContents{}
+		}
+		bc.o.PreResolvedPackages = contents
+		return nil
+	}
+}
+
+func WithTempDir(tmp string) Option {
+	return func(bc *Context) error {
+		bc.o.TempDirPath = tmp
+		return nil
+	}
+}
+
+func WithAuthenticator(a auth.Authenticator) Option {
+	return func(bc *Context) error {
+		bc.o.Auth = a
+		return nil
+	}
+}
+
+// WithIgnoreSignatures sets whether to ignore repository signature verification.
+// Default is false.
+func WithIgnoreSignatures(ignore bool) Option {
+	return func(bc *Context) error {
+		bc.o.IgnoreSignatures = ignore
+		return nil
+	}
+}
+
+// WithTransport allows explicitly setting the inner HTTP transport.
+func WithTransport(t http.RoundTripper) Option {
+	return func(bc *Context) error {
+		bc.o.Transport = t
+		return nil
+	}
+}
+
+// WithPackageGetter sets a custom PackageGetter for fetching, expanding, and caching packages.
+// If not provided, a DefaultPackageGetter will be created automatically.
+func WithPackageGetter(pg apk.PackageGetter) Option {
+	return func(bc *Context) error {
+		bc.o.PackageGetter = pg
+		return nil
+	}
+}
+
+// WithSizeLimits sets the size limits for various operations.
+func WithSizeLimits(limits options.SizeLimits) Option {
+	return func(bc *Context) error {
+		bc.o.SizeLimits = limits
 		return nil
 	}
 }

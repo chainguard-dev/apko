@@ -1,0 +1,22 @@
+contents:
+  keyring:
+    - ./testdata/melange.rsa.pub
+  build_repositories:
+    - ./packages
+  runtime_repositories:
+    - apk.cgr.dev/runtime-only-repo
+  repositories:
+    - ./testdata/packages
+  packages:
+    - replayout
+
+entrypoint:
+  command: /bin/sh -l
+
+archs:
+- x86_64
+- aarch64
+
+layering:
+  strategy: origin
+  budget: 2

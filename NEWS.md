@@ -4,6 +4,7 @@
 * Add `apko lock`: https://github.com/chainguard-dev/apko/pull/979
 * Add per-package `checksum` field to the lockfile.
 * Deprecate `apko resolve` (please use `apko lock` instead).
+* Fix an issue with duplicate file entries in installed DB and SBOMs.
 
 # Changes from 0.11.3 to 0.12.0
 

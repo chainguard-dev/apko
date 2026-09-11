@@ -16,11 +16,42 @@ package types
 
 import (
 	"fmt"
+	"net/url"
 	"runtime"
-	"sort"
+	"slices"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
+
+func processRepositoryURLs(repositories []string) error {
+	for idx, repo := range repositories {
+		parts := strings.Split(repo, " ")
+		switch len(parts) {
+		case 2:
+			tag := parts[0]
+			rawURL := parts[1]
+			if !strings.HasPrefix(tag, "@") || len(tag) <= 1 {
+				return fmt.Errorf("invalid tag format in repository: %s (expected @tag format)", tag)
+			}
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = tag + " " + parsed.Redacted()
+		case 1:
+			rawURL := repo
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return fmt.Errorf("parsing repository URL: %w", err)
+			}
+			repositories[idx] = parsed.Redacted()
+		default:
+			return fmt.Errorf("invalid repository format: %s (expected either 'url' or '@tag url')", repo)
+		}
+	}
+	return nil
+}
 
 type User struct {
 	// Required: The name of the user
@@ -28,8 +59,18 @@ type User struct {
 	// Required: The user ID
 	UID uint32 `json:"uid,omitempty"`
 	// Required: The user's group ID
-	GID uint32 `json:"gid,omitempty"`
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
+	// Optional: The user's shell
+	Shell string `json:"shell,omitempty"`
+	// Optional: The user's home directory
+	HomeDir string `json:"homedir,omitempty"`
 }
+
+type GID *uint32
+
+// UID is a nullable user ID. A nil UID means "unset" (distinct from an
+// explicit 0), which lets path mutations leave ownership untouched.
+type UID *uint32
 
 type Group struct {
 	// Required: The name of the group
@@ -47,40 +88,80 @@ type PathMutation struct {
 	//
 	// This can be one of: directory, empty-file, hardlink, symlink, permissions
 	Type string `json:"type,omitempty"`
-	// The mutation's desired user ID
-	UID uint32 `json:"uid,omitempty"`
-	// The mutation's desired group ID
-	GID uint32 `json:"gid,omitempty"`
+	// The mutation's desired user ID. If unset (nil), ownership is left
+	// untouched unless gid is set (see Recursive).
+	UID UID `json:"uid,omitempty" yaml:"uid,omitempty"`
+	// The mutation's desired group ID. If unset (nil), ownership is left
+	// untouched unless uid is set (see Recursive).
+	GID GID `json:"gid,omitempty" yaml:"gid,omitempty"`
 	// The permission bits for the path
 	Permissions uint32 `json:"permissions,omitempty"`
 	// The source path to mutate
 	Source string `json:"source,omitempty"`
-	// Toggle whether to mutate recursively
+	// Toggle whether to mutate recursively. Honored for the "directory" and
+	// "permissions" types: the permissions, and uid/gid when set, are applied
+	// to every entry beneath the path.
 	Recursive bool `json:"recursive,omitempty"`
 }
 
-type OSRelease struct {
-	// Optional: The name of the OS
-	Name string `json:"name,omitempty"`
-	// Optional: The unique identifier for the OS
-	ID string `json:"id,omitempty"`
-	// Optional: The unique identifier for the version of the OS
-	VersionID string `json:"version-id,omitempty" yaml:"version-id"`
-	// Optional: The human readable description of the OS
-	PrettyName string `json:"pretty-name,omitempty" yaml:"pretty-name"`
-	// Optional: The URL of the homepage for the OS
-	HomeURL string `json:"home-url,omitempty" yaml:"home-url"`
-	// Optional: The URL of the bug reporting website for the OS
-	BugReportURL string `json:"bug-report-url,omitempty" yaml:"bug-report-url"`
+type BaseImageDescriptor struct {
+	// Required: Path to the base image OCI layout. Right now only local files are supported.
+	Image string `json:"image,omitempty" yaml:"image,omitempty"`
+	// Required: Path to file representing installed packages in the base image in APKINDEX format.
+	// (Assumes regular Alpine repository layout, that is: set /foo/bar if the index is /foo/bor/{aarch64|x86_64}/APKINDEX
+	APKIndex string `json:"apkindex,omitempty" yaml:"apkindex,omitempty"`
 }
 
 type ImageContents struct {
-	// A list of apk repositories to use for pulling packages
+	// A list of apk repositories to use for pulling packages at build time,
+	// which are not installed into /etc/apk/repositories in the image (to
+	// install packages at runtime)
+	BuildRepositories []string `json:"build_repositories,omitempty" yaml:"build_repositories,omitempty"`
+	// A list of apk repositories that are installed into /etc/apk/repositories in the image but not used
+	// at build time
+	RuntimeOnlyRepositories []string `json:"runtime_repositories,omitempty" yaml:"runtime_repositories,omitempty"`
+	// A list of apk repositories to use for pulling packages during both the
+	// initial construction of the image, and also at runtime by seeding them
+	// into /etc/apk/repositories in the resulting image.
 	Repositories []string `json:"repositories,omitempty" yaml:"repositories,omitempty"`
 	// A list of public keys used to verify the desired repositories
 	Keyring []string `json:"keyring,omitempty" yaml:"keyring,omitempty"`
+	// APK signing public keys installed into /etc/apk/keys after package
+	// resolution, so runtime `apk add` against runtime_repositories can verify
+	// re-signed packages. A runtime trust anchor only — not consulted during
+	// build-time package resolution. Each entry is an inline {name, content}
+	// public key.
+	RuntimeKeyring []RuntimeKeyringEntry `json:"runtime_keyring,omitempty" yaml:"runtime_keyring,omitempty"`
 	// A list of packages to include in the image
 	Packages []string `json:"packages,omitempty" yaml:"packages,omitempty"`
+	// Optional: Base image to build on top of. Warning: Experimental.
+	BaseImage *BaseImageDescriptor `json:"baseimage,omitempty" yaml:"baseimage,omitempty" apko:"experimental"`
+}
+
+// MarshalYAML implements yaml.Marshaler for ImageContents, redacting URLs in
+// the ImageContents struct fields.
+func (i ImageContents) MarshalYAML() (any, error) {
+	type redactedImageContents ImageContents
+	ri := redactedImageContents(i)
+
+	if err := processRepositoryURLs(ri.BuildRepositories); err != nil {
+		return nil, err
+	}
+
+	if err := processRepositoryURLs(ri.Repositories); err != nil {
+		return nil, err
+	}
+
+	for idx, key := range ri.Keyring {
+		rawURL := key
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("parsing public key URL: %w", err)
+		}
+		ri.Keyring[idx] = parsed.Redacted()
+	}
+
+	return ri, nil
 }
 
 type ImageEntrypoint struct {
@@ -98,9 +179,9 @@ type ImageAccounts struct {
 	// Required: The user to run the container as. This can be a username or UID.
 	RunAs string `json:"run-as,omitempty" yaml:"run-as"`
 	// Required: List of users to populate the image with
-	Users []User `json:"users,omitempty"`
+	Users []User `json:"users,omitempty" yaml:"users"`
 	// Required: List of groups to populate the image with
-	Groups []Group `json:"groups,omitempty"`
+	Groups []Group `json:"groups,omitempty" yaml:"groups"`
 }
 
 type ImageConfiguration struct {
@@ -124,14 +205,12 @@ type ImageConfiguration struct {
 	Accounts ImageAccounts `json:"accounts,omitempty" yaml:"accounts,omitempty"`
 	// Optional: List of CPU architectures to build the container image for
 	//
-	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x
+	// The list of supported architectures is: 386, amd64, arm64, arm/v6, arm/v7, ppc64le, riscv64, s390x, loong64
 	Archs []Architecture `json:"archs,omitempty" yaml:"archs,omitempty"`
-	// Optional: Envionment variables to set in the container image
+	// Optional: Environment variables to set in the container image
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
 	// Optional: List of paths mutations
 	Paths []PathMutation `json:"paths,omitempty" yaml:"paths,omitempty"`
-	// Optional: The /etc/os-release configuration for the container image
-	OSRelease OSRelease `json:"os-release,omitempty" yaml:"os-release,omitempty"`
 	// Optional: The link to version control system for this container's source code
 	VCSUrl string `json:"vcs-url,omitempty" yaml:"vcs-url,omitempty"`
 	// Optional: Annotations to apply to the images manifests
@@ -139,11 +218,10 @@ type ImageConfiguration struct {
 	// Optional: Path to a local file containing additional image configuration
 	//
 	// The included configuration is deep merged with the parent configuration
-	Include string `json:"include,omitempty" yaml:"include,omitempty"`
-	// Optional: A map of named build option deviations
 	//
-	// Deprecated: Use WithExtraPackages.
-	Options map[string]BuildOption `json:"options,omitempty" yaml:"options,omitempty"`
+	// Deprecated: This will be removed in a future release.
+	Include string `json:"include,omitempty" yaml:"include,omitempty"`
+
 	// Optional: A list of volumes to configure
 	//
 	// This is _not_ the same as Paths, but refers to the OCI spec "volumes"
@@ -152,6 +230,44 @@ type ImageConfiguration struct {
 	// when the image requires special volume configuration at runtime for
 	// supported container runtimes.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+
+	// Optional: Configuration to control layering of the OCI image.
+	Layering *Layering `json:"layering,omitempty" yaml:"layering,omitempty"`
+
+	// Optional: Layer payload format. One of "tar" (default) or "erofs".
+	// "erofs" is experimental and tracks the draft erofs/erofs-image-spec.
+	Format LayerFormat `json:"format,omitempty" yaml:"format,omitempty"`
+
+	// Optional: Certificates to install in the container image
+	Certificates *ImageCertificates `json:"certificates,omitempty" yaml:"certificates,omitempty"`
+}
+
+// LayerFormat selects the on-wire layer payload format.
+type LayerFormat string
+
+const (
+	// LayerFormatTar produces gzip-compressed tar layers (OCI/Docker default).
+	LayerFormatTar LayerFormat = "tar"
+	// LayerFormatErofs produces uncompressed EROFS filesystem layers per the
+	// draft erofs/erofs-image-spec.
+	LayerFormatErofs LayerFormat = "erofs"
+)
+
+// Resolved returns the format with the empty default coerced to LayerFormatTar.
+func (f LayerFormat) Resolved() LayerFormat {
+	if f == "" {
+		return LayerFormatTar
+	}
+	return f
+}
+
+// Valid reports whether f is a recognized layer format.
+func (f LayerFormat) Valid() bool {
+	switch f.Resolved() {
+	case LayerFormatTar, LayerFormatErofs:
+		return true
+	}
+	return false
 }
 
 // Architecture represents a CPU architecture for the container image.
@@ -160,7 +276,7 @@ type Architecture string
 
 func (a Architecture) String() string { return string(a) }
 
-func (a *Architecture) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (a *Architecture) UnmarshalYAML(unmarshal func(any) error) error {
 	var buf string
 	if err := unmarshal(&buf); err != nil {
 		return err
@@ -176,6 +292,7 @@ var (
 	arm64   = Architecture("arm64")
 	armv6   = Architecture("arm/v6")
 	armv7   = Architecture("arm/v7")
+	loong64 = Architecture("loong64")
 	ppc64le = Architecture("ppc64le")
 	riscv64 = Architecture("riscv64")
 	s390x   = Architecture("s390x")
@@ -189,6 +306,7 @@ var AllArchs = []Architecture{
 	arm64,
 	armv6,
 	armv7,
+	loong64,
 	ppc64le,
 	riscv64,
 	s390x,
@@ -196,7 +314,7 @@ var AllArchs = []Architecture{
 
 // ToAPK returns the apk-style equivalent string for the Architecture.
 func (a Architecture) ToAPK() string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return "x86"
 	case amd64:
@@ -207,6 +325,8 @@ func (a Architecture) ToAPK() string {
 		return "armhf"
 	case armv7:
 		return "armv7"
+	case loong64:
+		return "loongarch64"
 	default:
 		return string(a)
 	}
@@ -214,7 +334,7 @@ func (a Architecture) ToAPK() string {
 
 func (a Architecture) ToOCIPlatform() *v1.Platform {
 	plat := v1.Platform{OS: "linux"}
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case armv6:
 		plat.Architecture = "arm"
 		plat.Variant = "v6"
@@ -228,7 +348,7 @@ func (a Architecture) ToOCIPlatform() *v1.Platform {
 }
 
 func (a Architecture) ToQEmu() string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return "i386"
 	case amd64:
@@ -245,7 +365,7 @@ func (a Architecture) ToQEmu() string {
 }
 
 func (a Architecture) ToTriplet(suffix string) string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return fmt.Sprintf("i486-pc-linux-%s", suffix)
 	case amd64:
@@ -266,7 +386,7 @@ func (a Architecture) ToTriplet(suffix string) string {
 }
 
 func (a Architecture) ToRustTriplet(suffix string) string {
-	switch a {
+	switch a := ParseArchitecture(a.String()); a {
 	case _386:
 		return fmt.Sprintf("i686-unknown-linux-%s", suffix)
 	case amd64:
@@ -287,7 +407,7 @@ func (a Architecture) ToRustTriplet(suffix string) string {
 }
 
 func (a Architecture) Compatible(b Architecture) bool {
-	switch b {
+	switch ParseArchitecture(b.String()) {
 	case _386:
 		return a == b
 	case amd64:
@@ -320,6 +440,8 @@ func ParseArchitecture(s string) Architecture {
 		return armv6
 	case "armv7":
 		return armv7
+	case "loong64", "loongarch64":
+		return loong64
 	}
 	return Architecture(s)
 }
@@ -348,15 +470,51 @@ func ParseArchitectures(in []string) []Architecture {
 	for k := range uniq {
 		archs = append(archs, k)
 	}
-	sort.Slice(archs, func(i, j int) bool {
-		return archs[i] < archs[j]
-	})
+	slices.Sort(archs)
 	return archs
 }
 
 type SBOM struct {
-	Arch   string
-	Path   string
-	Format string
-	Digest v1.Hash
+	Arch          string
+	Path          string
+	Format        string
+	PredicateType string
+	Digest        v1.Hash
+}
+
+type Layering struct {
+	Strategy string `json:"strategy,omitempty" yaml:"strategy,omitempty"`
+	Budget   int    `json:"budget,omitempty" yaml:"budget,omitempty"`
+}
+
+type AdditionalCertificateEntry struct {
+	// Required: Name of the certificate entry
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: PEM-encoded certificate content to install in the image.
+	// Must contain exactly one certificate.
+	// The certificate will be:
+	// 1. Appended to the default certificate bundles (e.g., /etc/ssl/certs/ca-certificates.crt)
+	// 2. Installed as an individual file in the ca-certificates.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
+}
+
+type ImageCertificates struct {
+	// Additional certificates to install in the image
+	Additional []AdditionalCertificateEntry `json:"additional,omitempty" yaml:"additional,omitempty"`
+	// Providers is a list of virtual package names that identify packages
+	// containing CA certificate files to be assembled into the system CA bundle.
+	Providers []string `json:"providers,omitempty" yaml:"providers,omitempty"`
+}
+
+// RuntimeKeyringEntry is a single inline APK signing public key, mirroring
+// AdditionalCertificateEntry. Keys are content-bearing by design: the key bytes
+// live in the configuration itself (no URIs to fetch), so builds stay
+// reproducible and the locked configuration carries the full trust anchor.
+type RuntimeKeyringEntry struct {
+	// Required: the filename the key is written to under /etc/apk/keys. Must
+	// match the filename the repository's APKINDEX signature references
+	// (.SIGN.RSA256.<name>), or apk will not find the key at runtime.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	// Required: the PEM-encoded RSA public key content.
+	Content string `json:"content,omitempty" yaml:"content,omitempty"`
 }

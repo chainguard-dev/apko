@@ -1,0 +1,28 @@
+package:
+  name: package-x
+  version: 1.0.0
+  epoch: 0
+  description: "package x"
+  copyright:
+    - license: MIT
+  dependencies:
+    runtime:
+      - pretend-baselayout
+  target-architecture:
+    - aarch64
+    - x86_64
+
+environment:
+  contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    packages:
+      - busybox
+
+pipeline:
+  - name: Generate file
+    runs: |
+      mkdir -p ${{targets.destdir}}/x
+      cat >${{targets.destdir}}/x/hello.txt <<EOF
+      HELLO
+      EOF

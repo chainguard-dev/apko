@@ -15,26 +15,29 @@
 package build
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"errors"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
+	"github.com/chainguard-dev/clog"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1types "github.com/google/go-containerregistry/pkg/v1/types"
+	gzip "github.com/klauspost/pgzip"
+
+	ldsocache "chainguard.dev/apko/internal/ldso-cache"
+	"chainguard.dev/apko/pkg/apk/apk"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
-
-	gzip "github.com/klauspost/pgzip"
-	"go.opentelemetry.io/otel"
-
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	"github.com/chainguard-dev/go-apk/pkg/tarball"
-	"github.com/sigstore/cosign/v2/pkg/oci"
 )
 
 // pgzip's default is GOMAXPROCS(0)
@@ -47,135 +50,268 @@ import (
 // concurrent builds on giant machines, and uses only 1 core on tiny machines.
 var pgzipThreads = min(runtime.GOMAXPROCS(0), 8)
 
-func min(l, r int) int {
-	if l < r {
-		return l
-	}
-
-	return r
+var pgzipPool = sync.Pool{
+	New: func() any {
+		zw := gzip.NewWriter(nil)
+		if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+			// This should never happen.
+			panic(fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err))
+		}
+		return zw
+	},
 }
 
-// BuildTarball takes the fully populated working directory and saves it to
-// an OCI image layer tar.gz file.
-func (bc *Context) BuildTarball(ctx context.Context) (string, hash.Hash, hash.Hash, int64, error) {
-	ctx, span := otel.Tracer("apko").Start(ctx, "BuildTarball")
-	defer span.End()
-
-	var outfile *os.File
-	var err error
-
-	if bc.o.TarballPath != "" {
-		outfile, err = os.Create(bc.o.TarballPath)
-	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+func pooledGzipWriter(w io.Writer) *gzip.Writer {
+	zw := pgzipPool.Get().(*gzip.Writer)
+	zw.Reset(w)
+	// Reset reverts the writer to pgzip's default concurrency of
+	// GOMAXPROCS(0) blocks, so the cap has to be reapplied on every reuse.
+	if err := zw.SetConcurrency(1<<20, pgzipThreads); err != nil {
+		// This should never happen.
+		panic(fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err))
 	}
-	if err != nil {
-		return "", nil, nil, 0, fmt.Errorf("opening the build context tarball path failed: %w", err)
-	}
-	bc.o.TarballPath = outfile.Name()
-	defer outfile.Close()
+	return zw
+}
 
-	// we use a general override of 0,0 for all files, but the specific overrides, that come from the installed package DB, come later
-	tw, err := tarball.NewContext(
-		tarball.WithSourceDateEpoch(bc.o.SourceDateEpoch),
-	)
-	if err != nil {
-		return "", nil, nil, 0, fmt.Errorf("failed to construct tarball build context: %w", err)
-	}
+var bufioPool = sync.Pool{
+	New: func() any {
+		return bufio.NewWriterSize(nil, 1<<22)
+	},
+}
 
-	digest := sha256.New()
+func pooledBufioWriter(w io.Writer) *bufio.Writer {
+	bw := bufioPool.Get().(*bufio.Writer)
+	bw.Reset(w)
+	return bw
+}
 
-	buf := bufio.NewWriterSize(outfile, 1<<22)
-	gzw := gzip.NewWriter(io.MultiWriter(digest, buf))
-	if err := gzw.SetConcurrency(1<<20, pgzipThreads); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("tried to set pgzip concurrency to %d: %w", pgzipThreads, err)
-	}
+// layerWriter allows lazily writing files to a tarball instead
+// of doing everything in one pass, this is necessary for multi-layer
+// images where we are writing to multiple layers at the same time.
+type layerWriter struct {
+	w        *tar.Writer
+	stack    []*file // only used by multi-layer builds
+	finalize func() (*layer, error)
+}
 
+// newLayerWriter wraps a file with a gzipping tar writer that computes
+// everything we need to know to implement a v1.Layer, which it will
+// produce when finalize() is called.
+func newLayerWriter(out *os.File) *layerWriter {
 	diffid := sha256.New()
 
-	if err := tw.WriteTar(ctx, io.MultiWriter(diffid, gzw), bc.fs, bc.fs); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("failed to generate tarball for image: %w", err)
-	}
-	if err := gzw.Close(); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("closing gzip writer: %w", err)
-	}
+	buf := pooledBufioWriter(out)
 
-	if err := buf.Flush(); err != nil {
-		return "", nil, nil, 0, fmt.Errorf("flushing %s: %w", outfile.Name(), err)
-	}
+	w := tar.NewWriter(io.MultiWriter(diffid, buf))
 
-	stat, err := outfile.Stat()
-	if err != nil {
-		return "", nil, nil, 0, fmt.Errorf("stat(%q): %w", outfile.Name(), err)
-	}
+	// Just capturing everything in a closure here is more straightforward
+	// to read (as a translation from what used to implement this) than
+	// adding a bunch of fields to layerWriter.
+	return &layerWriter{
+		w: w,
+		finalize: func() (*layer, error) {
+			defer bufioPool.Put(buf)
 
-	bc.Logger().Infof("built image layer tarball as %s", outfile.Name())
-	return outfile.Name(), diffid, digest, stat.Size(), nil
+			if err := w.Close(); err != nil {
+				return nil, fmt.Errorf("closing tar writer: %w", err)
+			}
+
+			if err := buf.Flush(); err != nil {
+				return nil, fmt.Errorf("flushing %s: %w", out.Name(), err)
+			}
+
+			l := &layer{
+				uncompressed: out.Name(),
+				desc: &v1.Descriptor{
+					MediaType: v1types.OCILayer,
+				},
+				diffid: &v1.Hash{
+					Algorithm: "sha256",
+					Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
+				},
+			}
+
+			return l, nil
+		},
+	}
 }
 
-func (bc *Context) buildImage(ctx context.Context) error {
-	ctx, span := otel.Tracer("apko").Start(ctx, "buildImage")
-	defer span.End()
+func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) {
+	log := clog.FromContext(ctx)
 
-	if bc.o.Lockfile != "" {
+	// When using base image for the build, apko adds new layer on top of the base. This means
+	// it will override files from lower layers. We add all installed packages from base to current
+	// installed file so that the final installed file contains all image's packages.
+	if bc.baseimg != nil {
+		basePkgs := bc.baseimg.InstalledPackages()
+		// Index for loop to make golang-ci happy.
+		// See https://stackoverflow.com/questions/62446118/implicit-memory-aliasing-in-for-loop
+		for index := range basePkgs {
+			_, err := bc.apk.AddInstalledPackage(&basePkgs[index].Package, basePkgs[index].Files)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	var (
+		pkgs []apk.InstalledDiff
+		err  error
+	)
+	switch {
+	case bc.o.PreResolvedPackages != nil:
+		pkgs, err = bc.apk.InstallPackageContents(ctx, &bc.o.SourceDateEpoch, bc.o.PreResolvedPackages)
+		if err != nil {
+			return nil, fmt.Errorf("failed installation from pre-resolved packages: %w", err)
+		}
+	case bc.o.Lockfile != "":
+		log.Debugf("Using lockfile: %s", bc.o.Lockfile)
 		lock, err := lock.FromFile(bc.o.Lockfile)
 		if err != nil {
-			return fmt.Errorf("failed to load lock-file: %w", err)
+			return nil, fmt.Errorf("failed to load lock-file: %w", err)
+		}
+		err = bc.VerifyLockfileConsistency(ctx, lock.Config)
+		if err != nil {
+			return nil, err
 		}
 		allPkgs, err := installablePackagesForArch(lock, bc.Arch())
 		if err != nil {
-			return fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
+			return nil, fmt.Errorf("failed getting packages for install from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-		err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
+		pkgs, err = bc.apk.InstallPackages(ctx, &bc.o.SourceDateEpoch, allPkgs)
 		if err != nil {
-			return fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
+			return nil, fmt.Errorf("failed installation from lockfile %s: %w", bc.o.Lockfile, err)
 		}
-	} else {
-		if err := bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch); err != nil {
-			return fmt.Errorf("installing apk packages: %w", err)
+	default:
+		pkgs, err = bc.apk.FixateWorld(ctx, &bc.o.SourceDateEpoch)
+		if err != nil {
+			return nil, fmt.Errorf("installing apk packages: %w", err)
 		}
 	}
 
-	if err := mutateAccounts(bc.fs, &bc.o, &bc.ic); err != nil {
-		return fmt.Errorf("failed to mutate accounts: %w", err)
+	// For now adding additional accounts is banned when using base image. On the other hand, we don't want to
+	// wipe out the users set in base.
+	// If one wants to add a support for adding additional users they would need to look into this piece of code.
+	if bc.ic.Contents.BaseImage == nil {
+		if err := mutateAccounts(bc.fs, &bc.ic); err != nil {
+			return nil, fmt.Errorf("failed to mutate accounts: %w", err)
+		}
+	}
+
+	if err := bc.WriteEtcApkoConfig(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install apko config: %w", err)
 	}
 
 	if err := mutatePaths(bc.fs, &bc.o, &bc.ic); err != nil {
-		return fmt.Errorf("failed to mutate paths: %w", err)
+		return nil, fmt.Errorf("failed to mutate paths: %w", err)
 	}
 
-	if err := generateOSRelease(bc.fs, &bc.o, &bc.ic); errors.Is(err, ErrOSReleaseAlreadyPresent) {
-		bc.Logger().Infof("did not generate /etc/os-release: %v", err)
-	} else if err != nil {
-		return fmt.Errorf("failed to generate /etc/os-release: %w", err)
+	if err := bc.installCertificates(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install certificates: %w", err)
 	}
 
-	if err := bc.s6.WriteSupervisionTree(bc.ic.Entrypoint.Services); err != nil {
-		return fmt.Errorf("failed to write supervision tree: %w", err)
+	// Record checksums of the (possibly updated) CA bundles so downstream
+	// tooling (e.g. OpenSCAP) can verify they were not modified post-build.
+	if err := bc.writeCABundleChecksums(ctx); err != nil {
+		return nil, fmt.Errorf("failed to write CA bundle checksums: %w", err)
+	}
+
+	if err := bc.installRuntimeKeyring(ctx); err != nil {
+		return nil, fmt.Errorf("failed to install runtime keyring: %w", err)
+	}
+
+	if err := bc.s6.WriteSupervisionTree(ctx, bc.ic.Entrypoint.Services); err != nil {
+		return nil, fmt.Errorf("failed to write supervision tree: %w", err)
 	}
 
 	// add busybox symlinks
 	installed, err := bc.apk.GetInstalled()
 	if err != nil {
-		return fmt.Errorf("getting installed packages: %w", err)
+		return nil, fmt.Errorf("getting installed packages: %w", err)
 	}
 
 	if err := installBusyboxLinks(bc.fs, installed); err != nil {
-		return err
+		return nil, err
 	}
 
 	// add necessary character devices
 	if err := installCharDevices(bc.fs); err != nil {
-		return err
+		return nil, err
 	}
 
-	bc.Logger().Infof("finished building filesystem")
+	if err := updateCache(ctx, bc.fs); err != nil {
+		return nil, err
+	}
+
+	log.Debug("finished building filesystem")
+
+	return pkgs, nil
+}
+
+func (bc *Context) VerifyLockfileConsistency(ctx context.Context, lockConfig *lock.Config) error {
+	log := clog.FromContext(ctx)
+	if lockConfig == nil {
+		log.Warnf("The lock file does not contain checksum of the config. Please regenerate.")
+	} else if bc.o.ImageConfigChecksum != "" && bc.o.ImageConfigChecksum != lockConfig.DeepChecksum {
+		return fmt.Errorf("checksum in the lock file '%v' does not matches the original config: '%v' "+
+			"(maybe regenerate the lock file)",
+			bc.o.Lockfile, bc.o.ImageConfigFile)
+	}
+	return nil
+}
+
+func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
+	if _, err := fsys.Stat("etc/ld.so.conf"); err != nil {
+		clog.FromContext(ctx).Debugf("/etc/ld.so.conf not found, skipping /etc/ld.so.cache update: %v", err)
+		return nil
+	}
+
+	dirs, err := ldsocache.ParseLDSOConf(fsys, "etc/ld.so.conf")
+	if err != nil {
+		return fmt.Errorf("parsing /etc/ld.so.conf: %w", err)
+	}
+	libdirs := make([]string, 0, 1+len(dirs))
+	libdirs = append(libdirs, "/lib")
+	libdirs = append(libdirs, dirs...)
+	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, libdirs)
+	if err != nil {
+		return fmt.Errorf("generating ldsocache: %w", err)
+	}
+	lsc, err := fsys.Create("etc/ld.so.cache")
+	if err != nil {
+		return fmt.Errorf("creating /etc/ld.so.cache: %w", err)
+	}
+	if err := cacheFile.Write(lsc); err != nil {
+		return fmt.Errorf("writing /etc/ld.so.cache: %w", err)
+	}
+	if err := fsys.Chmod("etc/ld.so.cache", 0644); err != nil {
+		return fmt.Errorf("chmod /etc/ld.so.cache: %w", err)
+	}
 
 	return nil
 }
 
+func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
+	// Encode the image configuration and write it to /etc/apko.json
+	f, err := bc.fs.Create("/etc/apko.json")
+	if err != nil {
+		return fmt.Errorf("creating /etc/apko.json: %w", err)
+	}
+	if err := json.NewEncoder(f).Encode(bc.ic); err != nil {
+		return fmt.Errorf("encoding image config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing /etc/apko.json: %w", err)
+	}
+	if err := bc.fs.Chmod("/etc/apko.json", 0444); err != nil {
+		return fmt.Errorf("chmod /etc/apko.json: %w", err)
+	}
+	return nil
+}
+
 // WriteIndex saves the index file from the given image configuration.
-func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
+func WriteIndex(ctx context.Context, o *options.Options, idx v1.ImageIndex) (string, error) {
+	log := clog.FromContext(ctx)
 	outfile := filepath.Join(o.TempDir(), "index.json")
 
 	b, err := idx.RawManifest()
@@ -185,22 +321,61 @@ func WriteIndex(o *options.Options, idx oci.SignedImageIndex) (string, error) {
 	if err := os.WriteFile(outfile, b, 0644); err != nil { //nolint:gosec // this file is fine to be readable
 		return "", fmt.Errorf("writing index file: %w", err)
 	}
-	o.Logger().Infof("built index file as %s", outfile)
+	log.Infof("built index file as %s", outfile)
 
 	return outfile, nil
 }
 
 func (bc *Context) BuildPackageList(ctx context.Context) (toInstall []*apk.RepositoryPackage, conflicts []string, err error) {
+	log := clog.FromContext(ctx)
+
+	if bc.o.Lockfile != "" {
+		return nil, nil, fmt.Errorf("assertion: cannot ResolveWorld if LockFile:%s is given", bc.o.Lockfile)
+	}
+
 	if toInstall, conflicts, err = bc.apk.ResolveWorld(ctx); err != nil {
 		return toInstall, conflicts, fmt.Errorf("resolving apk packages: %w", err)
 	}
-	bc.Logger().Infof("finished gathering apk info")
+	log.Infof("finished gathering apk info")
 
 	return toInstall, conflicts, err
 }
 
 func (bc *Context) Resolve(ctx context.Context) ([]*apk.APKResolved, error) {
 	return bc.apk.ResolveAndCalculateWorld(ctx)
+}
+
+func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, error) {
+	// Firstly, resolve the world with all packages. When using base image, the world file contains
+	// all packages from base as well. It's important that ResolveWorld operates on APKINDEX files only
+	// and doesn't fetch actual packages.
+	allPkgs, _, err := bc.apk.ResolveWorld(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var existingPkgs []*apk.InstalledPackage
+	if bc.baseimg != nil {
+		existingPkgs = bc.baseimg.InstalledPackages()
+	}
+
+	var toInstall []*apk.RepositoryPackage
+	for _, pkg := range allPkgs {
+		inBase := false
+		for _, existingPkg := range existingPkgs {
+			if pkg.Name == existingPkg.Name {
+				inBase = true
+			}
+		}
+		if !inBase {
+			toInstall = append(toInstall, pkg)
+		}
+	}
+	// Note: CalculateWorld fetches the packages - they have to be available in the repository.
+	resolvedPkgs, err := bc.apk.CalculateWorld(ctx, toInstall)
+	if err != nil {
+		return nil, err
+	}
+	return resolvedPkgs, nil
 }
 
 func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {

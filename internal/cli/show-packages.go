@@ -18,13 +18,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"text/template"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/slices"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -62,16 +62,19 @@ type pkgInfo struct {
 
 func showPackages() *cobra.Command {
 	var extraKeys []string
+	var extraBuildRepos []string
 	var extraRepos []string
 	var archstrs []string
 	var format string
 	var tmpl string
+	var cacheDir string
+	var offline bool
 
 	cmd := &cobra.Command{
 		Use:   "show-packages",
 		Short: "Show the packages and versions that would be installed by a configuration",
 		Long: `Show the packages and versions that would be installed by a configuration.
-The result is identical to the first stages of a build, but does not actuall install anything.
+The result is identical to the first stages of a build, but does not actually install anything.
 
 The output is one of several pre-defined formats, or can be customized to any go template, using
 the provided vars. See https://pkg.go.dev/text/template for more information. Available vars are
@@ -102,22 +105,28 @@ packagelock and packagelock-source are particularly useful for inserting back in
 				tmpl = format
 			}
 			return ShowPackagesCmd(cmd.Context(), tmpl, archs,
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], []string{}),
 				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&format, "format", showPkgsFormatDefault, "format for showing packages; if pre-defined from list, will use that, else go template. See https://pkg.go.dev/text/template for more information. Available vars are `.Name`, `.Version`, `.Source`")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
+	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 
 	return cmd
 }
 
 func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architecture, opts ...build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -143,7 +152,7 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -154,24 +163,22 @@ func ShowPackagesCmd(ctx context.Context, format string, archs []types.Architect
 		return fmt.Errorf("failed to parse format: %w", err)
 	}
 
-	for _, arch := range archs {
-		arch := arch
-		// working directory for this architecture
-		wd := filepath.Join(wd, arch.ToAPK())
-		bopts := slices.Clone(opts)
-		bopts = append(bopts, build.WithArch(arch))
-		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
-		bc, err := build.New(ctx, fs, bopts...)
-		if err != nil {
-			return err
-		}
-		bc.Logger().Infof("using working directory %s", wd)
+	opts = append(opts, build.WithImageConfiguration(*ic))
 
-		pkgs, _, err := bc.BuildPackageList(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get package list for image: %w", err)
+	mc, err := build.NewMultiArch(ctx, archs, opts...)
+	if err != nil {
+		return err
+	}
+
+	lists, err := mc.BuildPackageLists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get package list for image: %w", err)
+	}
+
+	for arch, pkgs := range lists {
+		if len(archs) != 1 {
+			log.Infof("packages for %s", arch)
 		}
-		fmt.Println(arch)
 		var p pkgInfo
 		for _, pkg := range pkgs {
 			p.Name = pkg.Name

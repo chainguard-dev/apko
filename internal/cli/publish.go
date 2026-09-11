@@ -28,14 +28,14 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/sync/errgroup"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
-	"chainguard.dev/apko/pkg/log"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator"
 )
 
 func publish() *cobra.Command {
@@ -45,17 +45,18 @@ func publish() *cobra.Command {
 	var sbomFormats []string
 	var archstrs []string
 	var extraKeys []string
+	var extraBuildRepos []string
 	var extraRepos []string
 	var extraPackages []string
 	var rawAnnotations []string
-	var logPolicy []string
-	var debugEnabled bool
-	var quietEnabled bool
 	var withVCS bool
 	var writeSBOM bool
 	var local bool
 	var cacheDir string
 	var offline bool
+	var lockfile string
+	var ignoreSignatures bool
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "publish <config.yaml> <tag...>",
@@ -64,28 +65,15 @@ func publish() *cobra.Command {
 
 It is assumed that you have used "docker login" to store credentials
 in a keychain.`,
-		Example: `  apko publish hello-world.yaml hello:v1.0.0 --quiet`,
+		Example: `  apko publish hello-world.yaml hello:v1.0.0`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
 			if len(args) < 2 {
 				return fmt.Errorf("requires at least 2 arg(s), 1 config file and at least 1 tag for the image")
 			}
 
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
-
-			if !writeSBOM {
-				sbomFormats = []string{}
+			var sbomGenerators []generator.Generator
+			if writeSBOM && len(sbomFormats) > 0 {
+				sbomGenerators = generator.Generators(sbomFormats...)
 			}
 			archs := types.ParseArchitectures(archstrs)
 			annotations, err := parseAnnotations(rawAnnotations)
@@ -111,27 +99,34 @@ in a keychain.`,
 			}
 			remoteOpts = append(remoteOpts, remote.Reuse(puller))
 
+			tmp, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+			if err != nil {
+				return fmt.Errorf("creating tempdir: %w", err)
+			}
+			defer os.RemoveAll(tmp)
+
 			if err := PublishCmd(cmd.Context(), imageRefs, archs, remoteOpts,
 				sbomPath,
 				[]build.Option{
-					build.WithLogger(logger),
-					build.WithConfig(args[0]),
+					build.WithConfig(args[0], []string{}),
 					build.WithBuildDate(buildDate),
-					build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 					build.WithSBOM(sbomPath),
-					build.WithSBOMFormats(sbomFormats),
+					build.WithSBOMGenerators(sbomGenerators...),
 					build.WithExtraKeys(extraKeys),
+					build.WithExtraBuildRepos(extraBuildRepos),
 					build.WithExtraRepos(extraRepos),
 					build.WithExtraPackages(extraPackages),
 					build.WithTags(args[1:]...),
-					build.WithDebugLogging(debugEnabled),
 					build.WithVCS(withVCS),
 					build.WithAnnotations(annotations),
-					build.WithCacheDir(cacheDir, offline),
+					build.WithCache(cacheDir, offline, apk.NewCache(true)),
+					build.WithLockFile(lockfile),
+					build.WithTempDir(tmp),
+					build.WithIgnoreSignatures(ignoreSignatures),
+					build.WithFormat(format),
 				},
 				[]PublishOption{
 					// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
-					WithLogger(logger),
 					WithLocal(local),
 					WithTags(args[1:]...),
 				},
@@ -142,22 +137,22 @@ in a keychain.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate an SBOM")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "path to write the SBOMs")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config.")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", []string{"spdx"}, "SBOM formats to output")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
-	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&format, "format", "", "layer payload format: 'tar' (default) or 'erofs' (experimental, tracks erofs-image-spec draft)")
 
 	// these are extra here just for publish; everything before is the same for BuildCmd as PublishCmd
 	cmd.Flags().BoolVar(&local, "local", false, "publish image just to local Docker daemon")
@@ -167,6 +162,7 @@ in a keychain.`,
 }
 
 func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architecture, ropt []remote.Option, sbomPath string, buildOpts []build.Option, publishOpts []PublishOption) error {
+	log := clog.FromContext(ctx)
 	ctx, span := otel.Tracer("apko").Start(ctx, "PublishCmd")
 	defer span.End()
 
@@ -191,24 +187,17 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	var (
 		local           = opts.local
-		logger          = opts.logger
 		tags            = opts.tags
-		additionalTags  []string
-		wantSBOM        = len(sboms) > 0 // it only generates sboms if wantSbom was true
 		builtReferences = make([]string, 0)
 	)
-	// safety
-	if logger == nil {
-		logger = log.NewLogger(os.Stderr)
-	}
 
 	if local {
 		// TODO: We shouldn't even need to build the index if we're loading a single image.
-		ref, err := oci.LoadIndex(ctx, idx, logger, tags)
+		ref, err := oci.LoadIndex(ctx, idx, tags)
 		if err != nil {
 			return fmt.Errorf("loading index: %w", err)
 		}
-		logger.Printf("using local option, exiting early")
+		log.Infof("using local option, exiting early")
 		fmt.Println(ref.String())
 		return nil
 	}
@@ -219,7 +208,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	if err != nil {
 		return fmt.Errorf("parsing %q as tag: %w", tags[0], err)
 	}
-	refs, err := oci.PublishImagesFromIndex(ctx, idx, logger, ref.Context(), ropt...)
+	refs, err := oci.PublishImagesFromIndex(ctx, idx, ref.Context(), ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing images from index: %w", err)
 	}
@@ -228,7 +217,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 	}
 
 	// publish the index
-	finalDigest, err := oci.PublishIndex(ctx, idx, logger, tags, ropt...)
+	finalDigest, err := oci.PublishIndex(ctx, idx, tags, ropt...)
 	if err != nil {
 		return fmt.Errorf("publishing image index: %w", err)
 	}
@@ -240,37 +229,6 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		//nolint:gosec // Make image ref file readable by non-root
 		if err := os.WriteFile(outputRefs, []byte(strings.Join(builtReferences, "\n")+"\n"), 0o666); err != nil {
 			return fmt.Errorf("failed to write digest: %w", err)
-		}
-	}
-
-	// TODO: Why does this happen separately from PublishIndex?
-	skipLocalCopy := strings.HasPrefix(finalDigest.Name(), fmt.Sprintf("%s/", oci.LocalDomain))
-	g, ctx := errgroup.WithContext(ctx)
-	for _, at := range additionalTags {
-		at := at
-		if skipLocalCopy {
-			// TODO: We probably don't need this now that we return early.
-			logger.Warnf("skipping local domain tag %s", at)
-			continue
-		}
-		g.Go(func() error {
-			return oci.Copy(ctx, finalDigest.Name(), at, ropt...)
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	// publish each arch-specific sbom
-	// publish the index sbom
-	if wantSBOM {
-		// TODO: Why aren't these just attached to idx?
-
-		// all sboms will be in the same directory
-		if err := oci.PostAttachSBOMsFromIndex(
-			ctx, idx, sboms, logger, tags, ropt...,
-		); err != nil {
-			return fmt.Errorf("attaching sboms to index: %w", err)
 		}
 	}
 

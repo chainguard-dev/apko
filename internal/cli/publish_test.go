@@ -15,8 +15,10 @@
 package cli_test
 
 import (
-	"context"
+	"archive/tar"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,18 +29,24 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/internal/cli"
+	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/sbom/generator/spdx"
 )
 
 func TestPublish(t *testing.T) {
-	ctx := context.Background()
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
 	tmp := t.TempDir()
 
 	// Set up a registry that requires we see a magic header.
@@ -57,12 +65,17 @@ func TestPublish(t *testing.T) {
 	st := &sentinel{s.Client().Transport}
 	dst := fmt.Sprintf("%s/test/publish", u.Host)
 
-	config := filepath.Join("testdata", "tzdata.yaml")
+	config := filepath.Join("testdata", "apko.yaml")
 
 	outputRefs := ""
 	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
 	ropt := []remote.Option{remote.WithTransport(st)}
-	opts := []build.Option{build.WithConfig(config), build.WithTags(dst), build.WithSBOMFormats(sbom.DefaultOptions.Formats)}
+	opts := []build.Option{
+		build.WithConfig(config, []string{}),
+		build.WithTags(dst),
+		build.WithSBOMGenerators(spdx.New()),
+		build.WithAnnotations(map[string]string{"foo": "bar"}),
+	}
 	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
 
 	sbomPath := filepath.Join(tmp, "sboms")
@@ -78,6 +91,8 @@ func TestPublish(t *testing.T) {
 	idx, err := remote.Index(ref, ropt...)
 	require.NoError(t, err)
 
+	checkEarlyFiles(t, idx)
+
 	// Not strictly necessary, but this will validate that the index is well-formed.
 	require.NoError(t, validate.Index(idx))
 
@@ -86,51 +101,8 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:add006b981a4421349eb1a0cb50044d2d7589ed2b3cfbbe2e7c30f005f79438f"
+	want := "sha256:1cc2a29f39af74ad432a283ee466dd43130dd9292e49f18baaaa3d890a857347"
 	require.Equal(t, want, digest.String())
-
-	sdst := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(want, ":", "-"))
-	sref, err := name.ParseReference(sdst)
-	require.NoError(t, err)
-
-	img, err := remote.Image(sref, ropt...)
-	require.NoError(t, err)
-
-	m, err := img.Manifest()
-	require.NoError(t, err)
-
-	// https://github.com/sigstore/cosign/issues/3120
-	got := m.Layers[0].Digest.String()
-
-	// This test will fail if we ever make a change in apko that changes the SBOM.
-	// Sometimes, this is intentional, and we need to change this and bump the version.
-	swant := "sha256:2cbdb42a7b4160cdcd44836a583fa23985532e1641f026365f653006545ad90c"
-	require.Equal(t, swant, got)
-
-	im, err := idx.IndexManifest()
-	require.NoError(t, err)
-
-	// We also want to check the children SBOMs because the index SBOM does not have
-	// references to the children SBOMs, just the children!
-	wantBoms := []string{
-		"sha256:a6acf3531effec2dd296834096fccff905d73f6838d9f680419c9bfbedad42f7",
-		"sha256:91097a5a791914cf2456e540671d47d369ae980c5376844ae978e56c15e8957c",
-	}
-
-	for i, m := range im.Manifests {
-		childBom := fmt.Sprintf("%s:%s.sbom", dst, strings.ReplaceAll(m.Digest.String(), ":", "-"))
-		childRef, err := name.ParseReference(childBom)
-		require.NoError(t, err)
-
-		img, err := remote.Image(childRef, ropt...)
-		require.NoError(t, err)
-
-		m, err := img.Manifest()
-		require.NoError(t, err)
-
-		got := m.Layers[0].Digest.String()
-		require.Equal(t, wantBoms[i], got)
-	}
 
 	// Check that the sbomPath is not empty.
 	sboms, err := os.ReadDir(sbomPath)
@@ -145,4 +117,140 @@ type sentinel struct {
 func (s *sentinel) RoundTrip(in *http.Request) (*http.Response, error) {
 	in.Header.Set("Magic", "SecretValue")
 	return s.rt.RoundTrip(in)
+}
+
+func TestPublishLayering(t *testing.T) {
+	unsetSourceDateEpoch(t)
+
+	ctx := t.Context()
+	tmp := t.TempDir()
+
+	// Set up a registry that requires we see a magic header.
+	// This allows us to make sure that remote options are getting passed
+	// around to anything that hits the registry.
+	r := registry.New()
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		require.Equal(t, req.Header.Get("Magic"), "SecretValue")
+		r.ServeHTTP(w, req)
+	})
+	s := httptest.NewServer(h)
+	defer s.Close()
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	st := &sentinel{s.Client().Transport}
+	dst := fmt.Sprintf("%s/test/publish", u.Host)
+
+	config := filepath.Join("testdata", "layering.yaml")
+
+	outputRefs := ""
+	archs := types.ParseArchitectures([]string{"amd64", "arm64"})
+	ropt := []remote.Option{remote.WithTransport(st)}
+	opts := []build.Option{
+		build.WithConfig(config, []string{}),
+		build.WithTags(dst),
+		build.WithSBOMGenerators(spdx.New()),
+		build.WithAnnotations(map[string]string{"foo": "bar"}),
+	}
+	publishOpts := []cli.PublishOption{cli.WithTags(dst)}
+
+	sbomPath := filepath.Join(tmp, "sboms")
+	err = os.MkdirAll(sbomPath, 0o750)
+	require.NoError(t, err)
+
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, opts, publishOpts)
+	require.NoError(t, err)
+
+	ref, err := name.ParseReference(dst)
+	require.NoError(t, err)
+
+	idx, err := remote.Index(ref, ropt...)
+	require.NoError(t, err)
+
+	checkEarlyFiles(t, idx)
+
+	// Not strictly necessary, but this will validate that the index is well-formed.
+	require.NoError(t, validate.Index(idx))
+
+	digest, err := idx.Digest()
+	require.NoError(t, err)
+
+	// This test will fail if we ever make a change in apko that changes the image.
+	// Sometimes, this is intentional, and we need to change this and bump the version.
+	want := "sha256:f5dc65ebea1afb5693ec323d6fdfa4b899a0c73af634d776a88bd44852d4216c"
+	require.Equal(t, want, digest.String())
+
+	im, err := idx.IndexManifest()
+	require.NoError(t, err)
+
+	for _, m := range im.Manifests {
+		child, err := idx.Image(m.Digest)
+		require.NoError(t, err)
+
+		cm, err := child.Manifest()
+		require.NoError(t, err)
+
+		require.Equal(t, 2, len(cm.Layers))
+
+		tr := mutate.Extract(child)
+		tmp, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		size, err := io.Copy(tmp, tr)
+		require.NoError(t, err)
+		fsys, err := tarfs.New(tmp, size)
+		require.NoError(t, err)
+
+		b, err := fs.ReadFile(fsys, "etc/apk/repositories")
+		require.NoError(t, err)
+
+		if strings.Contains(string(b), "./packages") {
+			t.Errorf("etc/apk/repositories contains build_repositories entry %q", "./packages")
+		}
+		if !strings.Contains(string(b), "apk.cgr.dev/runtime-only-repo") {
+			t.Errorf("etc/apk/repositories does not contain expected runtime_repositories entry %q", "apk.cgr.dev/runtime-only-repo")
+		}
+	}
+}
+
+// checkEarlyFiles ensures that certain important files are present
+// early in the image tarball, which can help with performance when
+// extracting or using the image.
+func checkEarlyFiles(t *testing.T, idx v1.ImageIndex) {
+	mf, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.NotEmpty(t, len(mf.Manifests))
+
+	img, err := idx.Image(mf.Manifests[0].Digest)
+	require.NoError(t, err)
+
+	rc := mutate.Extract(img)
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+
+	fileOffsets := map[string]int{}
+	offset := 0
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		fileOffsets[h.Name] = offset
+		offset += int(h.Size)
+	}
+
+	requiredFiles := []string{
+		"etc/apk/repositories",
+		"etc/passwd",
+		"etc/apko.json",
+		"etc/os-release",
+	}
+	maxOffset := 4000 // files should be in the first N bytes of the extracted tar
+	for _, f := range requiredFiles {
+		pos, ok := fileOffsets[f]
+		assert.True(t, ok, "file %q not found in image", f)
+		t.Logf("file %q found at offset %d", f, pos)
+		assert.Less(t, pos, maxOffset, "file %q found too late in image (pos %d)", f, pos)
+	}
 }

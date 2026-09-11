@@ -18,20 +18,24 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
+	"time"
 
-	"github.com/chainguard-dev/go-apk/pkg/apk"
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/slices"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/apk/auth"
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
 	pkglock "chainguard.dev/apko/pkg/lock"
-	"chainguard.dev/apko/pkg/log"
 )
 
 func lock() *cobra.Command {
@@ -45,15 +49,31 @@ func resolve() *cobra.Command {
 		"Please use `lock` command. The `resolve` command will get removed in the future versions.")
 }
 
+func RemoveLabel(s string) (string, error) {
+	if s == "" {
+		return "", fmt.Errorf("input is empty")
+	}
+
+	for strings.HasPrefix(s, "@") {
+		parts := strings.SplitN(s, " ", 2)
+		if len(parts) < 2 {
+			return "", fmt.Errorf("input does not follow the format '@label url'")
+		}
+		s = parts[1]
+	}
+
+	return s, nil
+}
+
 func lockInternal(cmdName string, extension string, deprecated string) *cobra.Command {
 	var extraKeys []string
+	var extraBuildRepos []string
 	var extraRepos []string
 	var archstrs []string
 	var output string
-
-	var logPolicy []string
-	var debugEnabled bool
-	var quietEnabled bool
+	var includePaths []string
+	var ignoreSignatures bool
+	var cacheDir string
 
 	cmd := &cobra.Command{
 		Use: cmdName,
@@ -67,49 +87,39 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 				output = fmt.Sprintf("%s."+extension, strings.TrimSuffix(args[0], filepath.Ext(args[0])))
 			}
 
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
-
 			archs := types.ParseArchitectures(archstrs)
 
-			return ResolveCmd(
+			return LockCmd(
 				cmd.Context(),
 				output,
 				archs,
 				[]build.Option{
-					build.WithLogger(logger),
-					build.WithConfig(args[0]),
+					build.WithConfig(args[0], includePaths),
 					build.WithExtraKeys(extraKeys),
+					build.WithExtraBuildRepos(extraBuildRepos),
 					build.WithExtraRepos(extraRepos),
-					build.WithDebugLogging(debugEnabled),
+					build.WithIncludePaths(includePaths),
+					build.WithIgnoreSignatures(ignoreSignatures),
+					build.WithCache(cacheDir, false, apk.NewCache(true)),
 				},
 			)
 		},
 	}
 
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
+	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 
 	return cmd
 }
 
-func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, opts []build.Option) error {
+func LockCmd(ctx context.Context, output string, archs []types.Architecture, opts []build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -117,10 +127,10 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 	defer os.RemoveAll(wd)
 
 	o, ic, err := build.NewOptions(opts...)
+
 	if err != nil {
 		return err
 	}
-
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
@@ -135,7 +145,7 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 	}
 	// save the final set we will build
 	archs = ic.Archs
-	o.Logger().Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Infof("Determining packages for %d architectures: %+v", len(ic.Archs), ic.Archs)
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -143,34 +153,54 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 
 	lock := pkglock.Lock{
 		Version: "v1",
+		Config: &pkglock.Config{
+			Name:         o.ImageConfigFile,
+			DeepChecksum: o.ImageConfigChecksum,
+		},
 		Contents: pkglock.LockContents{
-			Packages:     []pkglock.LockPkg{},
-			Repositories: []pkglock.LockRepo{},
-			Keyrings:     []pkglock.LockKeyring{},
+			Packages:                make([]pkglock.LockPkg, 0, len(ic.Contents.Packages)),
+			BuildRepositories:       make([]pkglock.LockRepo, 0, len(ic.Contents.BuildRepositories)),
+			RuntimeOnlyRepositories: make([]pkglock.LockRepo, 0, len(ic.Contents.RuntimeOnlyRepositories)),
+			Repositories:            make([]pkglock.LockRepo, 0, len(ic.Contents.Repositories)),
+			Keyrings:                make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
 		},
 	}
 
+	explicitClient := &http.Client{}
 	for _, keyring := range ic.Contents.Keyring {
+		b, err := loadKeyringBytes(ctx, explicitClient, keyring)
+		if err != nil {
+			return fmt.Errorf("failed to load keyring %s: %w", keyring, err)
+		}
 		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
-			Name: stripURLScheme(keyring),
-			URL:  keyring,
+			Name:    stripURLScheme(keyring),
+			URL:     keyring,
+			Content: string(b),
 		})
 	}
 
+	// Discover and add auto-discovered keys from repositories
+	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
+	if err != nil {
+		return fmt.Errorf("failed to discover keys: %w", err)
+	}
+	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
+
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
 	for _, arch := range archs {
-		arch := arch
+		log := log.With("arch", arch.ToAPK())
+		ctx := clog.WithLogger(ctx, log)
+
 		// working directory for this architecture
 		wd := filepath.Join(wd, arch.ToAPK())
 		bopts := append(slices.Clone(opts), build.WithArch(arch))
-		fs := apkfs.DirFS(wd, apkfs.WithCreateDir())
+		fs := apkfs.DirFS(ctx, wd, apkfs.WithCreateDir())
 		bc, err := build.New(ctx, fs, bopts...)
 		if err != nil {
 			return err
 		}
 
-		resolvedPkgs, err := bc.Resolve(ctx)
-
+		resolvedPkgs, err := bc.ResolveWithBase(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get package list for image: %w", err)
 		}
@@ -182,11 +212,11 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 				Architecture: rpkg.Package.Arch,
 				Version:      rpkg.Package.Version,
 				Control: pkglock.LockPkgRangeAndChecksum{
-					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize, rpkg.ControlSize-1),
+					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize, rpkg.SignatureSize+rpkg.ControlSize-1),
 					Checksum: "sha1-" + base64.StdEncoding.EncodeToString(rpkg.ControlHash),
 				},
 				Data: pkglock.LockPkgRangeAndChecksum{
-					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.ControlSize, rpkg.DataSize),
+					Range:    fmt.Sprintf("bytes=%d-%d", rpkg.SignatureSize+rpkg.ControlSize, rpkg.SignatureSize+rpkg.ControlSize+rpkg.DataSize-1),
 					Checksum: "sha256-" + base64.StdEncoding.EncodeToString(rpkg.DataHash),
 				},
 				Checksum: rpkg.Package.ChecksumString(),
@@ -201,16 +231,52 @@ func ResolveCmd(ctx context.Context, output string, archs []types.Architecture, 
 
 			lock.Contents.Packages = append(lock.Contents.Packages, lockPkg)
 		}
+		for _, repositoryURI := range ic.Contents.BuildRepositories {
+			repoLock, err := repoLock(repositoryURI, arch)
+			if err != nil {
+				return fmt.Errorf("locking build repositories: %w", err)
+			}
+			lock.Contents.BuildRepositories = append(lock.Contents.BuildRepositories, repoLock)
+		}
+		for _, repositoryURI := range ic.Contents.RuntimeOnlyRepositories {
+			repoLock, err := repoLock(repositoryURI, arch)
+			if err != nil {
+				return fmt.Errorf("locking runtime repositories: %w", err)
+			}
+			lock.Contents.RuntimeOnlyRepositories = append(lock.Contents.RuntimeOnlyRepositories, repoLock)
+		}
 		for _, repositoryURI := range ic.Contents.Repositories {
-			repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
-			lock.Contents.Repositories = append(lock.Contents.Repositories, pkglock.LockRepo{
-				Name:         stripURLScheme(repo.URI),
-				URL:          repo.IndexURI(),
-				Architecture: arch.ToAPK(),
-			})
+			repoLock, err := repoLock(repositoryURI, arch)
+			if err != nil {
+				return fmt.Errorf("locking repositories: %w", err)
+			}
+			lock.Contents.Repositories = append(lock.Contents.Repositories, repoLock)
 		}
 	}
+
+	// Sort keyrings by name for reproducible lock files
+	sort.Slice(lock.Contents.Keyrings, func(i, j int) bool {
+		return lock.Contents.Keyrings[i].Name < lock.Contents.Keyrings[j].Name
+	})
+
 	return lock.SaveToFile(output)
+}
+
+func repoLock(repositoryURI string, arch types.Architecture) (pkglock.LockRepo, error) {
+	repo := apk.Repository{URI: fmt.Sprintf("%s/%s", repositoryURI, arch.ToAPK())}
+	name, err := RemoveLabel(stripURLScheme(repo.URI))
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository URI: %w", err)
+	}
+	url, err := RemoveLabel(repo.IndexURI())
+	if err != nil {
+		return pkglock.LockRepo{}, fmt.Errorf("failed to remove label from repository index URI: %w", err)
+	}
+	return pkglock.LockRepo{
+		Name:         name,
+		URL:          url,
+		Architecture: arch.ToAPK(),
+	}, nil
 }
 
 func stripURLScheme(url string) string {
@@ -218,4 +284,114 @@ func stripURLScheme(url string) string {
 		strings.TrimPrefix(url, "https://"),
 		"http://",
 	)
+}
+
+// loadKeyringBytes returns the raw bytes of a keyring referenced by a URL or
+// a local file path. It is used to embed keyring content into the lock file so
+// downstream consumers don't need to re-fetch a URL that may 404 after key
+// rotation.
+func loadKeyringBytes(ctx context.Context, client *http.Client, keyring string) ([]byte, error) {
+	if strings.HasPrefix(keyring, "https://") || strings.HasPrefix(keyring, "http://") {
+		return apk.FetchKeyBytes(ctx, client, auth.DefaultAuthenticators, keyring)
+	}
+	return os.ReadFile(keyring)
+}
+
+// discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
+	log := clog.FromContext(ctx)
+
+	// Collect all unique repositories
+	repoSet := make(map[string]struct{})
+	for _, repo := range ic.Contents.BuildRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.RuntimeOnlyRepositories {
+		repoSet[repo] = struct{}{}
+	}
+	for _, repo := range ic.Contents.Repositories {
+		repoSet[repo] = struct{}{}
+	}
+
+	// Map to track discovered keys by URL to avoid duplicates
+	discoveredKeyMap := make(map[string]pkglock.LockKeyring)
+
+	// Fetch Alpine releases once (cached by HTTP client)
+	client := &http.Client{}
+	var alpineReleases *apk.Releases
+
+	// Discover keys for each repository and architecture
+	for repo := range repoSet {
+		// Try Alpine-style key discovery
+		if ver, ok := apk.ParseAlpineVersion(repo); ok {
+			// Fetch releases.json if not already fetched
+			if alpineReleases == nil {
+				releases, err := apk.FetchAlpineReleases(ctx, client)
+				if err != nil {
+					return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
+				}
+				alpineReleases = releases
+			}
+
+			branch := alpineReleases.GetReleaseBranch(ver)
+			if branch == nil {
+				log.Debugf("Alpine version %s not found in releases", ver)
+				continue
+			}
+
+			// Get keys for each architecture
+			for _, arch := range archs {
+				log.Debugf("Discovering Alpine keys for %s (version %s, arch %s)", repo, ver, arch.ToAPK())
+				urls := branch.KeysFor(arch.ToAPK(), time.Now())
+				if len(urls) == 0 {
+					log.Debugf("No keys found for arch %s and version %s", arch.ToAPK(), ver)
+					continue
+				}
+
+				// Fetch and embed each key's bytes.
+				for _, u := range urls {
+					if _, ok := discoveredKeyMap[u]; ok {
+						continue
+					}
+					b, err := apk.FetchKeyBytes(ctx, client, nil, u)
+					if err != nil {
+						return nil, fmt.Errorf("failed to fetch alpine key %s: %w", u, err)
+					}
+					discoveredKeyMap[u] = pkglock.LockKeyring{
+						Name:    stripURLScheme(u),
+						URL:     u,
+						Content: string(b),
+					}
+				}
+			}
+		}
+
+		// Try Chainguard-style key discovery
+		log.Debugf("Attempting Chainguard-style key discovery for %s", repo)
+		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo)
+		if err != nil {
+			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
+		} else if len(keys) > 0 {
+			log.Debugf("Discovered %d Chainguard-style keys for %s", len(keys), repo)
+			// For each JWKS key, emit a URL: repository + "/" + KeyID
+			repoBase := strings.TrimSuffix(repo, "/")
+			for _, key := range keys {
+				keyURL := repoBase + "/" + key.ID
+				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
+					Name:    stripURLScheme(keyURL),
+					URL:     keyURL,
+					Content: string(key.Bytes),
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	discoveredKeys := make([]pkglock.LockKeyring, 0, len(discoveredKeyMap))
+	for _, key := range discoveredKeyMap {
+		discoveredKeys = append(discoveredKeys, key)
+	}
+
+	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
+	return discoveredKeys, nil
 }

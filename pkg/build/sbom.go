@@ -15,29 +15,34 @@
 package build
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
-	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
-	"chainguard.dev/apko/pkg/sbom"
-	"chainguard.dev/apko/pkg/sbom/generator"
-	soptions "chainguard.dev/apko/pkg/sbom/options"
-
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/sigstore/cosign/v2/pkg/oci"
 	"go.opentelemetry.io/otel"
 	khash "sigs.k8s.io/release-utils/hash"
+
+	"github.com/chainguard-dev/clog"
+
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom"
+	soptions "chainguard.dev/apko/pkg/sbom/options"
 )
 
-func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) soptions.Options {
+func newSBOM(ctx context.Context, fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, bde time.Time) soptions.Options {
+	log := clog.FromContext(ctx)
 	sopt := sbom.DefaultOptions
 	sopt.FS = fsys
 	sopt.FileName = fmt.Sprintf("sbom-%s", o.Arch.ToAPK())
@@ -49,12 +54,11 @@ func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, 
 			sopt.ImageInfo.Tag = tag.TagStr()
 			sopt.ImageInfo.Name = tag.String()
 		} else {
-			o.Logger().Errorf("%s parsing tag %s, ignoring", o.Tags[0], err)
+			log.Errorf("%s parsing tag %s, ignoring", o.Tags[0], err)
 		}
 	}
 
 	sopt.ImageInfo.SourceDateEpoch = bde
-	sopt.Formats = o.SBOMFormats
 	sopt.ImageInfo.VCSUrl = ic.VCSUrl
 	sopt.ImageInfo.ImageMediaType = ggcrtypes.OCIManifestSchema1
 
@@ -66,12 +70,15 @@ func newSBOM(fsys apkfs.FullFS, o options.Options, ic types.ImageConfiguration, 
 	return sopt
 }
 
-func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img oci.SignedImage) ([]types.SBOM, error) {
+func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architecture, img v1.Image) ([]types.SBOM, error) {
+	log := clog.FromContext(ctx).With("arch", arch.ToAPK())
+	ctx = clog.WithLogger(ctx, log)
+
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateImageSBOM")
 	defer span.End()
 
 	if !bc.WantSBOM() {
-		bc.Logger().Warnf("skipping SBOM generation")
+		log.Warnf("skipping SBOM generation")
 		return nil, nil
 	}
 
@@ -85,16 +92,12 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 		return nil, fmt.Errorf("getting %s manifest: %w", arch, err)
 	}
 
-	if len(m.Layers) != 1 {
-		return nil, fmt.Errorf("unexpected layers in %s manifest: %d", arch, len(m.Layers))
-	}
+	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
+	log.Debug("Generating image SBOM")
 
-	s := newSBOM(bc.fs, bc.o, bc.ic, bde)
-	bc.Logger().Infof("Generating image SBOM for %s", arch.String())
+	s.ImageInfo.Layers = m.Layers
 
-	s.ImageInfo.LayerDigest = m.Layers[0].Digest.String()
-
-	info, err := sbom.ReadReleaseData(bc.fs)
+	info, err := fetchFSReleaseData(bc.fs)
 	if err != nil {
 		return nil, fmt.Errorf("reading release data: %w", err)
 	}
@@ -103,10 +106,11 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.OS.ID = info.ID
 	s.OS.Version = info.VersionID
 
-	pkgs, err := sbom.ReadPackageIndex(bc.fs)
+	pkgs, err := bc.apk.GetInstalled()
 	if err != nil {
 		return nil, fmt.Errorf("reading apk package index: %w", err)
 	}
+
 	s.Packages = pkgs
 
 	// Get the image digest
@@ -119,38 +123,95 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	s.ImageInfo.Arch = arch
 
 	var sboms = make([]types.SBOM, 0)
-	generators := generator.Generators(bc.fs)
-	for _, format := range s.Formats {
-		gen, ok := generators[format]
-		if !ok {
-			return nil, fmt.Errorf("unable to generate sboms: no generator available for format %s", format)
-		}
-
+	for _, gen := range bc.o.SBOMGenerators {
 		filename := filepath.Join(s.OutputDir, s.FileName+"."+gen.Ext())
-		if err := gen.Generate(&s, filename); err != nil {
-			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+		if err := gen.Generate(ctx, &s, filename); err != nil {
+			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
-			Path:   filename,
-			Format: format,
-			Arch:   arch.String(),
-			Digest: h,
+			Path:          filename,
+			Format:        gen.Key(),
+			PredicateType: gen.PredicateType(),
+			Arch:          arch.String(),
+			Digest:        h,
 		})
 	}
 	return sboms, nil
 }
 
-func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]oci.SignedImage) ([]types.SBOM, error) {
+type ReleaseData struct {
+	ID         string
+	Name       string
+	PrettyName string
+	VersionID  string
+}
+
+// fetchFSReleaseData is a helper that reads the information from /etc/os-release
+//
+// If no os-release file is found, it returns a Data struct with ID set to "unknown".
+func fetchFSReleaseData(fsys fs.FS) (*ReleaseData, error) {
+	f, err := fsys.Open("/etc/os-release")
+	if errors.Is(err, fs.ErrNotExist) {
+		return &ReleaseData{
+			ID:        "unknown",
+			Name:      "apko-generated image",
+			VersionID: "unknown",
+		}, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("opening os-release: %w", err)
+	}
+	defer f.Close()
+
+	return ParseReleaseData(f)
+}
+
+// ParseReleaseData reads the os-release data from the provided io.Reader
+func ParseReleaseData(osRelease io.Reader) (*ReleaseData, error) {
+	scanner := bufio.NewScanner(osRelease)
+
+	kv := map[string]string{}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid os-release line: %q", line)
+		}
+
+		kv[before] = strings.Trim(after, "\"")
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading os-release: %w", err)
+	}
+
+	return &ReleaseData{
+		ID:         kv["ID"],
+		Name:       kv["NAME"],
+		PrettyName: kv["PRETTY_NAME"],
+		VersionID:  kv["VERSION_ID"],
+	}, nil
+}
+
+func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageConfiguration, indexDigest name.Digest, imgs map[types.Architecture]v1.Image) ([]types.SBOM, error) {
+	log := clog.FromContext(ctx)
 	_, span := otel.Tracer("apko").Start(ctx, "GenerateIndexSBOM")
 	defer span.End()
 
-	if len(o.SBOMFormats) == 0 {
-		o.Logger().Warnf("skipping SBOM generation")
+	if len(o.SBOMGenerators) == 0 {
+		log.Warn("skipping SBOM generation")
 		return nil, nil
 	}
 
-	s := newSBOM(nil, o, ic, o.SourceDateEpoch)
-	o.Logger().Infof("Generating index SBOM")
+	s := newSBOM(ctx, nil, o, ic, o.SourceDateEpoch)
+	log.Debug("Generating index SBOM")
 
 	// Add the image digest
 	h, err := v1.NewHash(indexDigest.DigestStr())
@@ -161,7 +222,7 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 
 	s.ImageInfo.IndexMediaType = ggcrtypes.OCIImageIndex
 
-	// Make sure we have a determinstic for iterating over imgs.
+	// Make sure we have a deterministic for iterating over imgs.
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
 		archs = append(archs, arch)
@@ -170,14 +231,8 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 		return archs[i].String() < archs[j].String()
 	})
 
-	generators := generator.Generators(nil)
-	var sboms = make([]types.SBOM, 0, len(generators))
-	for _, format := range s.Formats {
-		gen, ok := generators[format]
-		if !ok {
-			return nil, fmt.Errorf("unable to generate sboms: no generator available for format %s", format)
-		}
-
+	var sboms = make([]types.SBOM, 0, len(o.SBOMGenerators))
+	for _, gen := range o.SBOMGenerators {
 		archImageInfos := make([]soptions.ArchImageInfo, 0, len(archs))
 		for _, arch := range archs {
 			i := imgs[arch]
@@ -202,12 +257,13 @@ func GenerateIndexSBOM(ctx context.Context, o options.Options, ic types.ImageCon
 
 		filename := filepath.Join(s.OutputDir, "sbom-index."+gen.Ext())
 		if err := gen.GenerateIndex(&s, filename); err != nil {
-			return nil, fmt.Errorf("generating %s sbom: %w", format, err)
+			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
 		}
 		sboms = append(sboms, types.SBOM{
-			Path:   filename,
-			Format: format,
-			Digest: h,
+			Path:          filename,
+			Format:        gen.Key(),
+			PredicateType: gen.PredicateType(),
+			Digest:        h,
 		})
 	}
 

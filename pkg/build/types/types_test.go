@@ -15,10 +15,92 @@
 package types
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+func TestYamlMarshallingRepositories(t *testing.T) {
+	const alpineMain = "https://dl-cdn.alpinelinux.org/alpine/v3.22/main"
+	const alpineCommunity = "https://dl-cdn.alpinelinux.org/alpine/v3.22/community"
+	const alpineEdgeTesting = "https://dl-cdn.alpinelinux.org/alpine/edge/testing"
+	const alpineEdgeCommunity = "https://dl-cdn.alpinelinux.org/alpine/edge/community"
+	const alpineWithCreds = "https://user:pass@dl-cdn.my.org/alpine/v3.22/main"
+
+	for _, c := range []struct {
+		desc string
+		in   ImageContents
+		want string
+	}{{
+		desc: "empty",
+		in:   ImageContents{},
+		want: "{}\n",
+	}, {
+		desc: "simple",
+		in: ImageContents{
+			Repositories:      []string{alpineMain, alpineCommunity},
+			BuildRepositories: []string{alpineMain, alpineCommunity},
+		},
+		want: fmt.Sprintf("build_repositories:\n    - %s\n    - %s\nrepositories:\n    - %s\n    - %s\n", alpineMain, alpineCommunity, alpineMain, alpineCommunity),
+	}, {
+		desc: "tagged",
+		in: ImageContents{
+			Repositories:      []string{"@testing " + alpineEdgeTesting},
+			BuildRepositories: []string{"@community " + alpineEdgeCommunity},
+		},
+		want: fmt.Sprintf("build_repositories:\n    - '@community %s'\nrepositories:\n    - '@testing %s'\n", alpineEdgeCommunity, alpineEdgeTesting),
+	}, {
+		desc: "tagged with creds",
+		in: ImageContents{
+			Repositories: []string{"@myorg " + alpineWithCreds},
+		},
+		want: fmt.Sprintf("repositories:\n    - '@myorg %s'\n", "https://user:xxxxx@dl-cdn.my.org/alpine/v3.22/main"),
+	}, {
+		desc: "invalid tag format - missing @",
+		in: ImageContents{
+			Repositories: []string{"testing https://dl-cdn.alpinelinux.org/alpine/edge/testing"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid tag format - empty tag",
+		in: ImageContents{
+			Repositories: []string{"@ https://dl-cdn.alpinelinux.org/alpine/edge/testing"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid URL in tagged repository",
+		in: ImageContents{
+			Repositories: []string{"@testing ://invalid-url"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "invalid URL in untagged repository",
+		in: ImageContents{
+			Repositories: []string{"://invalid-url"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}, {
+		desc: "too many parts in repository",
+		in: ImageContents{
+			Repositories: []string{"@testing https://example.com extra-part"},
+		},
+		want: "error", // This will cause an error during marshalling
+	}} {
+		t.Run(c.desc, func(t *testing.T) {
+			b, err := yaml.Marshal(c.in)
+			if c.want == "error" {
+				require.Error(t, err, "expected error for invalid repository format")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, c.want, string(b))
+			}
+		})
+	}
+}
 
 func TestParseArchitectures(t *testing.T) {
 	for _, c := range []struct {
@@ -60,5 +142,246 @@ func TestParseArchitectures(t *testing.T) {
 			got := ParseArchitectures(c.in)
 			require.Equal(t, c.want, got)
 		})
+	}
+}
+
+func TestOCIPlatform(t *testing.T) {
+	for _, c := range []struct {
+		desc string
+		in   string
+		want string
+	}{{
+		desc: "x86_64",
+		in:   "x86_64",
+		want: "amd64",
+	}, {
+		desc: "amd64",
+		in:   "amd64",
+		want: "amd64",
+	}, {
+		desc: "arm64",
+		in:   "arm64",
+		want: "arm64",
+	}, {
+		desc: "aarch64",
+		in:   "aarch64",
+		want: "arm64",
+	}} {
+		t.Run(c.desc, func(t *testing.T) {
+			got := Architecture(c.in)
+			require.Equal(t, c.want, got.ToOCIPlatform().Architecture)
+		})
+	}
+}
+
+var (
+	id0     = uint32(0)
+	id0T    = GID(&id0)
+	id1234  = uint32(1234)
+	id1235  = uint32(1235)
+	id1235T = GID(&id1235)
+)
+
+// Ensure unmarshalling YAML into an ImageConfiguration
+// does not result in unexpected GID=0
+func Test_YAML_Unmarshalling_UID_GID_mapping(t *testing.T) {
+	for _, test := range []struct {
+		desc        string
+		expectedUID uint32
+		expectedGID GID
+		rawYAML     string
+	}{
+		{
+			desc:        "Unique GID gets propagated",
+			expectedUID: id1234,
+			expectedGID: id1235T,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+      gid: 1235
+`,
+		},
+		{
+			desc:        "Nil GID is treated as nil (not 0)",
+			expectedUID: id1234,
+			expectedGID: nil,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+`,
+		},
+		{
+			desc:        "Able to set GID to 0",
+			expectedUID: id1234,
+			expectedGID: id0T,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+      uid: 1234
+      gid: 0
+`,
+		},
+		{
+			// TODO: This may be unintentional but matches historical behavior
+			desc:        "Missing UID and GID means UID is 0 and GID is nil",
+			expectedUID: 0,
+			expectedGID: nil,
+			rawYAML: `
+accounts:
+  users:
+    - username: testing
+`,
+		},
+	} {
+		var ic ImageConfiguration
+		if err := yaml.Unmarshal([]byte(test.rawYAML), &ic); err != nil {
+			t.Errorf("%s: unable to unmarshall: %v", test.desc, err)
+			continue
+		}
+		if numUsers := len(ic.Accounts.Users); numUsers != 1 {
+			t.Errorf("%s: expected 1 user, got %d", test.desc, numUsers)
+			continue
+		}
+		user := ic.Accounts.Users[0]
+		if test.expectedUID != user.UID {
+			t.Errorf("%s: expected UID %d got UID %d", test.desc, test.expectedUID, user.UID)
+		}
+		if diff := cmp.Diff(test.expectedGID, user.GID); diff != "" {
+			t.Errorf("%s: diff in GID: (-want, +got) = %s", test.desc, diff)
+		}
+	}
+}
+
+// Test_YAML_PathMutation_UID_GID locks the wire semantics the recursive
+// permissions feature depends on: an omitted uid/gid must unmarshal to nil
+// (leave ownership untouched), distinct from an explicit 0.
+func Test_YAML_PathMutation_UID_GID(t *testing.T) {
+	const raw = `
+paths:
+  - path: /omitted
+    type: permissions
+    permissions: 0o755
+  - path: /explicit-zero
+    type: permissions
+    permissions: 0o750
+    uid: 0
+    gid: 0
+  - path: /values
+    type: permissions
+    permissions: 0o750
+    uid: 1000
+    gid: 1001
+`
+	var ic ImageConfiguration
+	require.NoError(t, yaml.Unmarshal([]byte(raw), &ic))
+	require.Len(t, ic.Paths, 3)
+
+	// omitted → nil on both
+	require.Nil(t, ic.Paths[0].UID, "omitted uid should be nil")
+	require.Nil(t, ic.Paths[0].GID, "omitted gid should be nil")
+
+	// explicit 0 → non-nil pointer to 0 (distinct from omitted)
+	require.NotNil(t, ic.Paths[1].UID)
+	require.Equal(t, uint32(0), *ic.Paths[1].UID)
+	require.NotNil(t, ic.Paths[1].GID)
+	require.Equal(t, uint32(0), *ic.Paths[1].GID)
+
+	// explicit values round-trip
+	require.NotNil(t, ic.Paths[2].UID)
+	require.Equal(t, uint32(1000), *ic.Paths[2].UID)
+	require.NotNil(t, ic.Paths[2].GID)
+	require.Equal(t, uint32(1001), *ic.Paths[2].GID)
+
+	// Round-trip through marshal/unmarshal must preserve nil vs explicit-0.
+	out, err := yaml.Marshal(&ic)
+	require.NoError(t, err)
+	var rt ImageConfiguration
+	require.NoError(t, yaml.Unmarshal(out, &rt))
+	require.Nil(t, rt.Paths[0].UID, "nil uid must survive round-trip")
+	require.Nil(t, rt.Paths[0].GID, "nil gid must survive round-trip")
+	require.NotNil(t, rt.Paths[1].UID, "explicit 0 uid must survive round-trip")
+	require.Equal(t, uint32(0), *rt.Paths[1].UID)
+	require.NotNil(t, rt.Paths[1].GID, "explicit 0 gid must survive round-trip")
+	require.Equal(t, uint32(0), *rt.Paths[1].GID)
+}
+
+// Ensure marshalling YAML from a User
+// does not result in unexpected GID=0
+func Test_YAML_Marshalling_UID_GID_mapping(t *testing.T) {
+	for _, test := range []struct {
+		desc         string
+		user         User
+		expectedYAML string
+	}{
+		{
+			desc: "Unique UID and GID",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+				GID:      id1235T,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+gid: 1235
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			desc: "Nil GID gets omitted",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			desc: "Able to set GID to 0",
+			user: User{
+				UserName: "testing",
+				UID:      id1234,
+				GID:      id0T,
+			},
+			expectedYAML: `
+username: testing
+uid: 1234
+gid: 0
+shell: ""
+homedir: ""
+`,
+		},
+		{
+			// TODO: This may be unintentional but matches historical behavior
+			desc: "Missing UID and GID means UID is 0 and GID gets omitted",
+			user: User{
+				UserName: "testing",
+			},
+			expectedYAML: `
+username: testing
+uid: 0
+shell: ""
+homedir: ""
+`,
+		},
+	} {
+		b, err := yaml.Marshal(test.user)
+		if err != nil {
+			t.Errorf("%s: unable to marshall: %v", test.desc, err)
+			continue
+		}
+		if diff := cmp.Diff(strings.TrimPrefix(test.expectedYAML, "\n"), string(b)); diff != "" {
+			t.Errorf("%s: diff in marshalled user YAML: (-want, +got) = %s", test.desc, diff)
+		}
 	}
 }

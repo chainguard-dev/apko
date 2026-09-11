@@ -19,17 +19,14 @@ import (
 	"os"
 	"path/filepath"
 
-	apkfs "github.com/chainguard-dev/go-apk/pkg/fs"
 	"golang.org/x/sync/errgroup"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/passwd"
 )
 
-func appendGroup(o *options.Options, groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
-	o.Logger().Printf("creating group %d(%s)", group.GID, group.GroupName)
-
+func appendGroup(groups []passwd.GroupEntry, group types.Group) []passwd.GroupEntry {
 	ge := passwd.GroupEntry{
 		GroupName: group.GroupName,
 		GID:       group.GID,
@@ -41,21 +38,38 @@ func appendGroup(o *options.Options, groups []passwd.GroupEntry, group types.Gro
 }
 
 func userToUserEntry(user types.User) passwd.UserEntry {
-	if user.GID == 0 {
-		user.GID = user.UID
+	if user.Shell == "" {
+		user.Shell = "/bin/sh"
+	}
+	if user.HomeDir == "" {
+		user.HomeDir = "/home/" + user.UserName
+	}
+	// Default the GID to the UID if not provided
+	gid := user.UID
+	if user.GID != nil {
+		gid = *user.GID
 	}
 	return passwd.UserEntry{
 		UserName: user.UserName,
 		UID:      user.UID,
-		GID:      user.GID,
-		HomeDir:  "/home/" + user.UserName,
+		GID:      gid,
+		HomeDir:  user.HomeDir,
 		Password: "x",
 		Info:     "Account created by apko",
-		Shell:    "/bin/sh",
+		Shell:    user.Shell,
 	}
 }
 
-func mutateAccounts(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfiguration) error {
+// shadowEntryForUser builds a locked (!) shadow entry — these are
+// service accounts, not accounts meant to log in with a password.
+func shadowEntryForUser(userName string) passwd.ShadowEntry {
+	return passwd.ShadowEntry{
+		UserName: userName,
+		Password: "!",
+	}
+}
+
+func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 	var eg errgroup.Group
 
 	if len(ic.Accounts.Groups) != 0 {
@@ -69,7 +83,7 @@ func mutateAccounts(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfig
 			}
 
 			for _, g := range ic.Accounts.Groups {
-				gf.Entries = appendGroup(o, gf.Entries, g)
+				gf.Entries = appendGroup(gf.Entries, g)
 			}
 
 			if err := gf.WriteFile(fsys, path); err != nil {
@@ -130,6 +144,23 @@ func mutateAccounts(fsys apkfs.FullFS, o *options.Options, ic *types.ImageConfig
 
 		if err := uf.WriteFile(path); err != nil {
 			return err
+		}
+
+		// shadowEntryForUser builds a locked (!) shadow entry — these are
+		// service accounts, not accounts meant to log in with a password.
+		if len(ic.Accounts.Users) != 0 {
+			shadowPath := filepath.Join("etc", "shadow")
+
+			sf, err := passwd.ReadOrCreateShadowFile(fsys, shadowPath)
+			if err != nil {
+				return err
+			}
+			for _, u := range ic.Accounts.Users {
+				sf.Entries = append(sf.Entries, shadowEntryForUser(u.UserName))
+			}
+			if err := sf.WriteFile(shadowPath); err != nil {
+				return err
+			}
 		}
 
 		// Resolve run-as user if requested.

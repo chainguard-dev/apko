@@ -1,0 +1,14 @@
+contents:
+  baseimage: 
+    image: ./testdata/base_image/
+    apkindex: ./testdata/base_image/metadata/
+  keyring:
+    - ./testdata/melange.rsa.pub
+  repositories:
+    - ./testdata/packages
+  packages:
+    - replayout
+
+archs:
+- x86_64
+- aarch64

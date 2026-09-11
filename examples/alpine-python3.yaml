@@ -1,6 +1,6 @@
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-base
     - python3
@@ -9,4 +9,7 @@ cmd: /bin/sh -l
 
 # optional environment configuration
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
+
+archs:
+  - amd64

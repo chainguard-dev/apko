@@ -1,0 +1,17 @@
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    # Testing that old packages with potentially invalid SBOMs can produce a valid image SBOM.
+    - glibc=2.36-r3
+    - binutils=2.39-r4
+    - git=2.39.0-r0
+    - openssl=3.0.7-r0
+    - sysstat=12.6.2-r0
+    - libcrypto3=3.0.8-r0
+
+archs:
+  - x86_64
+  - aarch64

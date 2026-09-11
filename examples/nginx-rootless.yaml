@@ -1,6 +1,6 @@
 contents:
   repositories:
-    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+    - https://dl-cdn.alpinelinux.org/alpine/v3.22/main
   packages:
     - alpine-baselayout
     - nginx
@@ -21,7 +21,7 @@ accounts:
 
 # optional environment configuration
 environment:
-  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 
 # optional path mutations
 paths:
@@ -36,3 +36,6 @@ paths:
     uid: 10000
     gid: 10000
     permissions: 0o644
+
+archs:
+  - amd64

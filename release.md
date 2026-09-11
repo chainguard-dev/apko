@@ -1,33 +1,40 @@
 # Apko Release Process
 
-## Patch releases
+## Automated releases
 
-The most common type of release of Apko is a patch release. Generally we should aim to do these as often as necessary to release _backward compatible_ changes, especially to release updated dependencies to fix vulnerabilities.
+Apko uses an automated release process via GitHub Actions. Releases are handled by the [`Release` action](https://github.com/chainguard-dev/apko/actions/workflows/release.yaml).
 
-To cut a release:
-- go to https://github.com/chainguard-dev/apko/releases/new
-- click "Choose a tag" then "Find or create a new tag"
-- type a new patch version tag for the latest minor version
-  - for example, if the latest version is `v0.11.5`, create a patch release `v0.11.6`
-- click "Create new tag: v0.X.Y on publish"
-  - you can leave the release title empty
-- click "Generate release notes"
-  - make any editorial changes to the release notes you think are relevant
-- make sure "Set as the latest release" is checked
-- click **"Publish release"**
+### Scheduled releases
+
+The release workflow runs automatically every Monday at 00:00 UTC. It will:
+1. Check if there have been any changes since the last release
+2. Automatically bump the patch version if changes are detected
+3. Create a new tag and release with generated release notes
+4. Build and attach release artifacts using GoReleaser
+
+### Manual releases
+
+To trigger a release manually:
+
+1. Go to the [Release workflow](https://github.com/chainguard-dev/apko/actions/workflows/release.yaml)
+2. Click **"Run workflow"**
+3. Select the branch (usually `main`)
+4. Click **"Run workflow"**
+
+The workflow will automatically determine if a release is needed and create one if there have been changes since the last release.
 
 ### Monitor the release automation
 
-Once the tag is pushed, the [`Create Release` action](https://github.com/chainguard-dev/apko/actions/workflows/release.yaml)
-will attach the appropriate release artifacts and update release notes.
+The release job takes 20 to 30 minutes to execute and will:
+- Create a new patch version tag
+- Generate release notes
+- Build and sign release artifacts with Cosign
+- Publish the release to GitHub
 
-At the time of this writing, the release job takes 20 to 30 minutes to execute.
-
-Make any editorial changes to the release notes you think are necessary.
-You may want to highlight certain changes or remove items that aren't interesting.
-
-Once the `Release` action has been completed successfully, find your release on
+Once the `Release` action has completed successfully, find your release on
 the [releases page](https://github.com/chainguard-dev/apko/releases)
+
+You can make editorial changes to the release notes after automation completes if needed.
 
 ### Update dependents
 

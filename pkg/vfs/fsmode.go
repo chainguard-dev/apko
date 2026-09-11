@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //go:build !darwin && !linux
-// +build !darwin,!linux
 
 package vfs
 

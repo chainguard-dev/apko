@@ -15,104 +15,201 @@
 package types
 
 import (
+	"context"
 	"fmt"
+	"hash"
+	"maps"
 	"os"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 
-	"github.com/jinzhu/copier"
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 
-	"chainguard.dev/apko/pkg/fetch"
-	"chainguard.dev/apko/pkg/log"
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/vcs"
 )
 
-// Attempt to probe an upstream VCS URL if known.
-func (ic *ImageConfiguration) ProbeVCSUrl(imageConfigPath string, logger log.Logger) {
+// Regex for valid certificate names. Since the name of the certificate is used
+// as a filename, we restrict it to a safe subset of characters. Note the first
+// character must NOT be a period (.) to avoid creating hidden files and
+// directory traversal.
+var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`)
+
+// ProbeVCSUrl attempts to probe an upstream VCS URL if known.
+func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
+	log := clog.FromContext(ctx)
+
 	url, err := vcs.ProbeDirFromPath(imageConfigPath)
 	if err != nil {
-		logger.Debugf("failed to probe VCS URL: %v", err)
+		log.Debugf("failed to probe VCS URL: %v", err)
 		return
 	}
 
 	if url != "" {
 		ic.VCSUrl = url
-		logger.Printf("detected %s as VCS URL", ic.VCSUrl)
+		log.Debugf("detected %s as VCS URL", ic.VCSUrl)
 	}
 }
 
 // Parse a configuration blob into an ImageConfiguration struct.
-func (ic *ImageConfiguration) parse(configData []byte, logger log.Logger) error {
-	if err := yaml.Unmarshal(configData, ic); err != nil {
+func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, includePaths []string, configHasher hash.Hash) error {
+	log := clog.FromContext(ctx)
+	configHasher.Write(configData)
+	dec := yaml.NewDecoder(strings.NewReader(string(configData)))
+	dec.KnownFields(true)
+	if err := dec.Decode(ic); err != nil {
 		return fmt.Errorf("failed to parse image configuration: %w", err)
 	}
 
 	if ic.Include != "" {
-		logger.Printf("including %s for configuration", ic.Include)
+		log.Infof("including %s for configuration", ic.Include)
 
-		baseIc := ImageConfiguration{}
+		included := &ImageConfiguration{}
 
-		if err := baseIc.Load(ic.Include, logger); err != nil {
+		if err := included.Load(ctx, ic.Include, includePaths, configHasher); err != nil {
 			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
-		mergedIc := ImageConfiguration{}
-
-		// Copy the base configuration...
-		if err := copier.Copy(&mergedIc, &baseIc); err != nil {
-			return fmt.Errorf("failed to copy base configuration: %w", err)
+		if err := included.MergeInto(ic); err != nil {
+			return fmt.Errorf("failed to merge included configuration: %w", err)
 		}
-
-		// ... and then overlay the local configuration on top.
-		if err := copier.CopyWithOption(&mergedIc, ic, copier.Option{IgnoreEmpty: true}); err != nil {
-			return fmt.Errorf("failed to overlay specific configuration: %w", err)
-		}
-
-		// Now copy the merged configuration back to ic.
-		if err := copier.Copy(ic, &mergedIc); err != nil {
-			return fmt.Errorf("failed to copy merged configuration: %w", err)
-		}
-
-		// Merge packages, repositories and keyrings.
-		keyring := append([]string{}, baseIc.Contents.Keyring...)
-		keyring = append(keyring, mergedIc.Contents.Keyring...)
-		ic.Contents.Keyring = keyring
-
-		repos := append([]string{}, baseIc.Contents.Repositories...)
-		repos = append(repos, mergedIc.Contents.Repositories...)
-		ic.Contents.Repositories = repos
-
-		pkgs := append([]string{}, baseIc.Contents.Packages...)
-		pkgs = append(pkgs, mergedIc.Contents.Packages...)
-		ic.Contents.Packages = pkgs
 	}
 
-	repos := make([]string, 0, len(ic.Contents.Repositories))
-	for _, repo := range ic.Contents.Repositories {
-		repo = strings.TrimRight(repo, "/")
-		repos = append(repos, repo)
+	ic.Contents.BuildRepositories = trimRepos(ic.Contents.BuildRepositories)
+	ic.Contents.RuntimeOnlyRepositories = trimRepos(ic.Contents.RuntimeOnlyRepositories)
+	ic.Contents.Repositories = trimRepos(ic.Contents.Repositories)
+
+	// The top level components restriction is on the conservative side. Some of them would probably work out of the box.
+	// If someone needs any of them, it should be a matter of testing and hopefully doing minor changes.
+	if ic.Contents.BaseImage != nil {
+		if !cmp.Equal((ImageEntrypoint{}), ic.Entrypoint) ||
+			ic.Cmd != "" ||
+			ic.StopSignal != "" ||
+			ic.WorkDir != "" ||
+			!cmp.Equal((ImageAccounts{}), ic.Accounts) ||
+			len(ic.Environment) != 0 ||
+			len(ic.Paths) != 0 ||
+			len(ic.Annotations) != 0 {
+			return fmt.Errorf("when using base image, the only supported image specification are: contents, archs and includes")
+		}
 	}
-	ic.Contents.Repositories = repos
 
 	return nil
 }
 
-// Loads an image configuration given a configuration file path.
-func (ic *ImageConfiguration) Load(imageConfigPath string, logger log.Logger) error {
-	data, err := os.ReadFile(imageConfigPath)
-	if err == nil {
-		return ic.parse(data, logger)
+func trimRepos(repos []string) []string {
+	result := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		repo = strings.TrimRight(repo, "/")
+		result = append(result, repo)
+	}
+	return result
+}
+
+// Merge this configuration into the target, with the target taking precedence.
+func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
+	if reflect.ValueOf(target.Entrypoint).IsZero() {
+		target.Entrypoint = ic.Entrypoint
+	}
+	if target.Cmd == "" {
+		target.Cmd = ic.Cmd
+	}
+	if target.StopSignal == "" {
+		target.StopSignal = ic.StopSignal
+	}
+	if target.WorkDir == "" {
+		target.WorkDir = ic.WorkDir
+	}
+	if target.Layering == nil {
+		target.Layering = ic.Layering
+	}
+	if target.Format == "" {
+		target.Format = ic.Format
+	}
+	if target.Certificates == nil {
+		target.Certificates = ic.Certificates
+	}
+	if len(target.Archs) == 0 {
+		target.Archs = ic.Archs
+	}
+	if err := ic.Accounts.MergeInto(&target.Accounts); err != nil {
+		return err
+	}
+	if target.Environment == nil && ic.Environment != nil {
+		target.Environment = maps.Clone(ic.Environment)
+	} else {
+		for k, v := range ic.Environment {
+			if _, ok := target.Environment[k]; !ok {
+				target.Environment[k] = v
+			}
+		}
+	}
+	target.Paths = slices.Concat(ic.Paths, target.Paths)
+	if target.Annotations == nil && ic.Annotations != nil {
+		target.Annotations = maps.Clone(ic.Annotations)
+	} else {
+		for k, v := range ic.Annotations {
+			if _, ok := target.Annotations[k]; !ok {
+				target.Annotations[k] = v
+			}
+		}
 	}
 
-	// At this point, we're doing a remote config file.
-	logger.Warnf("remote configurations are an experimental feature and subject to change.")
+	target.Volumes = slices.Concat(ic.Volumes, target.Volumes)
 
-	data, err = fetch.Fetch(imageConfigPath)
+	// Update the contents.
+	return ic.Contents.MergeInto(&target.Contents)
+}
+
+func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
+	if target.RunAs == "" {
+		target.RunAs = a.RunAs
+	}
+	target.Users = slices.Concat(a.Users, target.Users)
+	target.Groups = slices.Concat(a.Groups, target.Groups)
+	return nil
+}
+
+func (i *ImageContents) MergeInto(target *ImageContents) error {
+	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
+	// Load-bearing: the locked config is produced via input.MergeInto, so a
+	// field omitted here is silently dropped from the dedup key and /etc/apko.json.
+	target.RuntimeKeyring = slices.Concat(i.RuntimeKeyring, target.RuntimeKeyring)
+	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
+	target.RuntimeOnlyRepositories = slices.Concat(i.RuntimeOnlyRepositories, target.RuntimeOnlyRepositories)
+	target.Repositories = slices.Concat(i.Repositories, target.Repositories)
+	target.Packages = slices.Concat(i.Packages, target.Packages)
+	if target.BaseImage == nil {
+		target.BaseImage = i.BaseImage
+	}
+	return nil
+}
+
+func (ic *ImageConfiguration) readLocal(imageconfigPath string, includePaths []string) ([]byte, error) {
+	resolvedPath, err := paths.ResolvePath(imageconfigPath, includePaths)
 	if err != nil {
-		return fmt.Errorf("unable to fetch remote include from git: %w", err)
+		return nil, err
+	}
+	return os.ReadFile(resolvedPath)
+}
+
+// Load - loads an image configuration given a configuration file path.
+// Populates configHasher with the configuration data loaded from the imageConfigPath and the other referenced files.
+// You can pass any dummy hasher (like fnv.New32()), if you don't care about the hash of the configuration.
+//
+// Deprecated: This will be removed in a future release.
+func (ic *ImageConfiguration) Load(ctx context.Context, imageConfigPath string, includePaths []string, configHasher hash.Hash) error {
+	data, err := ic.readLocal(imageConfigPath, includePaths)
+	if err != nil {
+		return err
 	}
 
-	return ic.parse(data, logger)
+	return ic.parse(ctx, data, includePaths, configHasher)
 }
 
 // Do preflight checks and mutations on an image configuration.
@@ -123,7 +220,7 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 
-	for _, u := range ic.Accounts.Users {
+	for i, u := range ic.Accounts.Users {
 		if u.UserName == "" {
 			return fmt.Errorf("configured user %v has no configured user name", u)
 		}
@@ -131,35 +228,48 @@ func (ic *ImageConfiguration) Validate() error {
 		if u.UID == 0 {
 			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
 		}
+
+		if u.HomeDir == "" {
+			ic.Accounts.Users[i].HomeDir = "/home/" + u.UserName
+		}
 	}
 
 	for _, g := range ic.Accounts.Groups {
 		if g.GroupName == "" {
 			return fmt.Errorf("configured group %v has no configured group name", g)
 		}
+	}
 
-		if g.GID == 0 {
-			return fmt.Errorf("configured group %v has GID 0", g)
+	if ic.Format != "" && !ic.Format.Valid() {
+		return fmt.Errorf("invalid layer format %q (must be %q or %q)", ic.Format, LayerFormatTar, LayerFormatErofs)
+	}
+
+	if ic.Certificates != nil {
+		for _, additional := range ic.Certificates.Additional {
+			if additional.Name == "" {
+				return fmt.Errorf("configured additional certificate has no name")
+			}
+			if !certNameRegex.MatchString(additional.Name) {
+				return fmt.Errorf("configured additional certificate %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
+			}
 		}
 	}
-
-	if ic.OSRelease.ID == "" {
-		ic.OSRelease.ID = "unknown"
+	seen := make(map[string]struct{}, len(ic.Contents.RuntimeKeyring))
+	for _, key := range ic.Contents.RuntimeKeyring {
+		if key.Name == "" {
+			return fmt.Errorf("configured runtime_keyring entry has no name")
+		}
+		if key.Content == "" {
+			return fmt.Errorf("runtime_keyring entry %q has no content", key.Name)
+		}
+		if !certNameRegex.MatchString(key.Name) {
+			return fmt.Errorf("runtime_keyring entry %q has an invalid name, it must match %s", key.Name, certNameRegex.String())
+		}
+		if _, dup := seen[key.Name]; dup {
+			return fmt.Errorf("runtime_keyring entry %q is a duplicate", key.Name)
+		}
+		seen[key.Name] = struct{}{}
 	}
-
-	if ic.OSRelease.Name == "" {
-		ic.OSRelease.Name = "apko-generated image"
-		ic.OSRelease.PrettyName = "apko-generated image"
-	}
-
-	if ic.OSRelease.VersionID == "" {
-		ic.OSRelease.VersionID = "unknown"
-	}
-
-	if ic.OSRelease.HomeURL == "" {
-		ic.OSRelease.HomeURL = "https://github.com/chainguard-dev/apko"
-	}
-
 	return nil
 }
 
@@ -175,42 +285,53 @@ func (ic *ImageConfiguration) ValidateServiceBundle() error {
 	return nil
 }
 
-func (ic *ImageConfiguration) Summarize(logger log.Logger) {
-	logger.Printf("image configuration:")
-	logger.Printf("  contents:")
-	logger.Printf("    repositories: %v", ic.Contents.Repositories)
-	logger.Printf("    keyring:      %v", ic.Contents.Keyring)
-	logger.Printf("    packages:     %v", ic.Contents.Packages)
+func (ic *ImageConfiguration) Summarize(ctx context.Context) {
+	log := clog.FromContext(ctx)
+
+	log.Infof("image configuration:")
+	log.Infof("  contents:")
+	log.Infof("    build repositories: %v", ic.Contents.BuildRepositories)
+	log.Infof("    runtime repositories: %v", ic.Contents.RuntimeOnlyRepositories)
+	log.Infof("    repositories: %v", ic.Contents.Repositories)
+	log.Infof("    keyring:      %v", ic.Contents.Keyring)
+	log.Infof("    packages:     %v", ic.Contents.Packages)
 	if ic.Entrypoint.Type != "" || ic.Entrypoint.Command != "" || len(ic.Entrypoint.Services) != 0 {
-		logger.Printf("  entrypoint:")
-		logger.Printf("    type:    %s", ic.Entrypoint.Type)
-		logger.Printf("    command:     %s", ic.Entrypoint.Command)
-		logger.Printf("    service: %v", ic.Entrypoint.Services)
-		logger.Printf("    shell fragment: %v", ic.Entrypoint.ShellFragment)
+		log.Infof("  entrypoint:")
+		log.Infof("    type:    %s", ic.Entrypoint.Type)
+		log.Infof("    command:     %s", ic.Entrypoint.Command)
+		log.Infof("    service: %v", ic.Entrypoint.Services)
+		log.Infof("    shell fragment: %v", ic.Entrypoint.ShellFragment)
 	}
 	if ic.Cmd != "" {
-		logger.Printf("  cmd: %s", ic.Cmd)
+		log.Infof("  cmd: %s", ic.Cmd)
 	}
 	if ic.StopSignal != "" {
-		logger.Printf("  stop signal: %s", ic.StopSignal)
+		log.Infof("  stop signal: %s", ic.StopSignal)
 	}
 
 	if ic.Accounts.RunAs != "" || len(ic.Accounts.Users) != 0 || len(ic.Accounts.Groups) != 0 {
-		logger.Printf("  accounts:")
-		logger.Printf("    runas:  %s", ic.Accounts.RunAs)
-		logger.Printf("    users:")
+		log.Infof("  accounts:")
+		log.Infof("    runas:  %s", ic.Accounts.RunAs)
+		log.Infof("    users:")
 		for _, u := range ic.Accounts.Users {
-			logger.Printf("      - uid=%d(%s) gid=%d", u.UID, u.UserName, u.GID)
+			log.Infof("      - uid=%d(%s) gid=%d", u.UID, u.UserName, gidToInt(u.GID))
 		}
-		logger.Printf("    groups:")
+		log.Infof("    groups:")
 		for _, g := range ic.Accounts.Groups {
-			logger.Printf("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
+			log.Infof("      - gid=%d(%s) members=%v", g.GID, g.GroupName, g.Members)
 		}
 	}
 	if len(ic.Annotations) > 0 {
-		logger.Printf("    annotations:")
+		log.Infof("    annotations:")
 		for k, v := range ic.Annotations {
-			logger.Printf("      %s: %s", k, v)
+			log.Infof("      %s: %s", k, v)
 		}
 	}
+}
+
+func gidToInt(gid GID) uint32 {
+	if gid == nil {
+		return 0
+	}
+	return *gid
 }

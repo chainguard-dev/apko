@@ -21,8 +21,7 @@ bin/
 tmp/
 _output
 
-# Development files
-apko.yaml
-output.tar
-sbom-*.cdx
-sbom-*.spdx.json
+# SBOM outputs from apko
+sbom-*
+
+.DS_Store

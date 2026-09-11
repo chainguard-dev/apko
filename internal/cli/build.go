@@ -21,29 +21,28 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
-	coci "github.com/sigstore/cosign/v2/pkg/oci"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
+	"github.com/chainguard-dev/clog"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
-	"chainguard.dev/apko/pkg/iocomb"
-	"chainguard.dev/apko/pkg/log"
-	"chainguard.dev/apko/pkg/sbom"
+	"chainguard.dev/apko/pkg/options"
+	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/tarfs"
 )
 
 func buildCmd() *cobra.Command {
-	var debugEnabled bool
-	var quietEnabled bool
 	var withVCS bool
 	var buildDate string
 	var archstrs []string
@@ -51,13 +50,17 @@ func buildCmd() *cobra.Command {
 	var sbomPath string
 	var sbomFormats []string
 	var extraKeys []string
+	var extraBuildRepos []string
 	var extraRepos []string
 	var extraPackages []string
-	var logPolicy []string
 	var rawAnnotations []string
 	var cacheDir string
 	var offline bool
 	var lockfile string
+	var includePaths []string
+	var ignoreSignatures bool
+	var sizeLimits options.SizeLimits
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -69,28 +72,13 @@ command, e.g.
 
   # docker load < output.tar
 
-Along the image, apko will generate CycloneDX and SPDX SBOMs (software
-bill of materials) describing the image contents.
+Along the image, apko will generate SBOMs (software bill of materials) describing the image contents.
 `,
 		Example: `  apko build <config.yaml> <tag> <output.tar|oci-layout-dir/>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 3 {
 				return fmt.Errorf("requires 3 arg: 1 config file, a tag for the image, and an output path")
 			}
-
-			if len(logPolicy) == 0 {
-				if quietEnabled {
-					logPolicy = []string{"builtin:discard"}
-				} else {
-					logPolicy = []string{"builtin:stderr"}
-				}
-			}
-
-			logWriter, err := iocomb.Combine(logPolicy)
-			if err != nil {
-				return fmt.Errorf("invalid logging policy: %w", err)
-			}
-			logger := log.NewLogger(logWriter)
 
 			// TODO(kaniini): Print warning when multi-arch build is requested
 			// and ignored by the build system.
@@ -100,55 +88,66 @@ bill of materials) describing the image contents.
 				return fmt.Errorf("parsing annotations from command line: %w", err)
 			}
 
-			if !writeSBOM {
-				sbomFormats = []string{}
+			var sbomGenerators []generator.Generator
+			if writeSBOM && len(sbomFormats) > 0 {
+				sbomGenerators = generator.Generators(sbomFormats...)
 			}
+
+			tmp, err := os.MkdirTemp(os.TempDir(), "apko-temp-*")
+			if err != nil {
+				return fmt.Errorf("creating tempdir: %w", err)
+			}
+			defer os.RemoveAll(tmp)
+
 			return BuildCmd(cmd.Context(), args[1], args[2], archs,
 				[]string{args[1]},
 				writeSBOM,
 				sbomPath,
-				logger,
-				build.WithLogger(logger),
-				build.WithConfig(args[0]),
+				build.WithConfig(args[0], includePaths),
 				build.WithBuildDate(buildDate),
-				build.WithAssertions(build.RequireGroupFile(true), build.RequirePasswdFile(true)),
 				build.WithSBOM(sbomPath),
-				build.WithSBOMFormats(sbomFormats),
+				build.WithSBOMGenerators(sbomGenerators...),
 				build.WithExtraKeys(extraKeys),
+				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
 				build.WithExtraPackages(extraPackages),
 				build.WithTags(args[1]),
-				build.WithDebugLogging(debugEnabled),
 				build.WithVCS(withVCS),
 				build.WithAnnotations(annotations),
-				build.WithCacheDir(cacheDir, offline),
+				build.WithCache(cacheDir, offline, apk.NewCache(true)),
 				build.WithLockFile(lockfile),
+				build.WithTempDir(tmp),
+				build.WithIncludePaths(includePaths),
+				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithSizeLimits(sizeLimits),
+				build.WithFormat(format),
 			)
 		},
 	}
 
-	cmd.Flags().BoolVar(&debugEnabled, "debug", false, "enable debug logging")
-	cmd.Flags().BoolVar(&quietEnabled, "quiet", false, "disable logging")
 	cmd.Flags().BoolVar(&withVCS, "vcs", true, "detect and embed VCS URLs")
 	cmd.Flags().StringVar(&buildDate, "build-date", "", "date used for the timestamps of the files inside the image in RFC3339 format")
 	cmd.Flags().BoolVar(&writeSBOM, "sbom", true, "generate SBOMs")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate SBOMs in dir (defaults to image directory)")
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
-	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", sbom.DefaultOptions.Formats, "SBOM formats to output")
+	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", []string{"spdx"}, "SBOM formats to output")
+	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
-	_ = cmd.Flags().MarkDeprecated("build-option", "use --package-append instead")
-	cmd.Flags().StringSliceVar(&logPolicy, "log-policy", []string{}, "logging policy to use")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "do not use network to fetch packages (cache must be pre-populated)")
 	cmd.Flags().StringVar(&lockfile, "lockfile", "", "a path to .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones (default '' means no additional constraints)")
-
+	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append.")
+	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&format, "format", "", "layer payload format: 'tar' (default) or 'erofs' (experimental, tracks erofs-image-spec draft)")
+	addClientLimitFlags(cmd, &sizeLimits)
 	return cmd
 }
 
-func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, logger log.Logger, opts ...build.Option) error {
+func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Architecture, tags []string, wantSBOM bool, sbomPath string, opts ...build.Option) error {
+	log := clog.FromContext(ctx)
 	wd, err := os.MkdirTemp("", "apko-*")
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
@@ -166,13 +165,13 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 		if _, err := layout.Write(output, idx); err != nil {
 			return fmt.Errorf("writing image layout: %w", err)
 		}
-		logrus.Infof("Final image layout at: %s", output)
+		log.Debugf("Final image layout at: %s", output)
 	} else {
 		// bundle the parts of the image into a tarball
-		if _, err := oci.BuildIndex(output, idx, append([]string{imageRef}, tags...), logger); err != nil {
+		if _, err := oci.BuildIndex(output, idx, append([]string{imageRef}, tags...)); err != nil {
 			return fmt.Errorf("bundling image: %w", err)
 		}
-		logrus.Infof("Final index tgz at: %s", output)
+		log.Debugf("Final index tgz at: %s", output)
 	}
 
 	// copy sboms over to the sbomPath target directory
@@ -187,13 +186,18 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 
 // buildImage build all of the components of an image in a single working directory.
 // Each layer is a separate file, as are config, manifests, index and sbom.
-func buildImageComponents(ctx context.Context, workDir string, archs []types.Architecture, opts ...build.Option) (idx coci.SignedImageIndex, sboms []types.SBOM, err error) {
+func buildImageComponents(ctx context.Context, workDir string, archs []types.Architecture, opts ...build.Option) (idx v1.ImageIndex, sboms []types.SBOM, err error) {
+	log := clog.FromContext(ctx)
 	ctx, span := otel.Tracer("apko").Start(ctx, "buildImageComponents")
 	defer span.End()
 
 	o, ic, err := build.NewOptions(opts...)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if ic.Contents.BaseImage != nil && o.Lockfile == "" {
+		return nil, nil, fmt.Errorf("building with base image is supported only with a lockfile")
 	}
 
 	// cases:
@@ -209,8 +213,12 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		ic.Archs = types.AllArchs
 	}
 	// save the final set we will build
-	archs = ic.Archs
-	o.Logger().Infof("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
+	log.Debugf("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
+
+	// Probe the VCS URL if it is not set and we are asked to do so.
+	if o.WithVCS && ic.VCSUrl == "" {
+		ic.ProbeVCSUrl(ctx, o.ImageConfigFile)
+	}
 
 	// The build context options is sometimes copied in the next functions. Ensure
 	// we have the directory defined and created by invoking the function early.
@@ -221,17 +229,16 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	//  image/ - the summary layer files and sboms for each architecture
 	// imageDir, created here, is where the final artifacts will be: layer tars, indexes, etc.
 
-	o.Logger().Printf("building tags %v", o.Tags)
+	log.Debugf("building tags %v", o.Tags)
 
 	var errg errgroup.Group
 	imageDir := filepath.Join(workDir, "image")
 	if err := os.MkdirAll(imageDir, 0755); err != nil {
 		return nil, nil, fmt.Errorf("unable to create working image directory %s: %w", imageDir, err)
 	}
+	opts = append(opts, build.WithSBOM(imageDir))
 
-	imgs := map[types.Architecture]coci.SignedImage{}
-	contexts := map[types.Architecture]*build.Context{}
-	imageTars := map[types.Architecture]string{}
+	imgs := map[types.Architecture]v1.Image{}
 
 	mtx := sync.Mutex{}
 
@@ -241,26 +248,31 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	// computation.
 	multiArchBDE := o.SourceDateEpoch
 
-	for _, arch := range archs {
-		arch := arch
-		bopts := slices.Clone(opts)
-		bopts = append(bopts,
-			build.WithArch(arch),
-			build.WithSBOM(imageDir),
-		)
+	configs, _, err := build.LockImageConfiguration(ctx, *ic, opts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("locking config: %w", err)
+	}
 
-		bc, err := build.New(ctx, tarfs.New(), bopts...)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// save the build context for later
-		contexts[arch] = bc
-
+	for arch, ic := range configs {
 		errg.Go(func() error {
-			layerTarGZ, layer, err := bc.BuildLayer(ctx)
+			if arch == "index" {
+				return nil
+			}
+
+			arch := types.ParseArchitecture(arch)
+			log := log.With("arch", arch.ToAPK())
+			ctx := clog.WithLogger(ctx, log)
+
+			opts := slices.Clone(opts)
+			opts = append(opts, build.WithArch(arch), build.WithImageConfiguration(*ic))
+
+			bc, err := build.New(ctx, tarfs.New(), opts...)
 			if err != nil {
-				return fmt.Errorf("failed to build layer image for %q: %w", arch, err)
+				return fmt.Errorf("new build for arch %s: %w", arch, err)
+			}
+			layers, err := bc.BuildLayers(ctx)
+			if err != nil {
+				return fmt.Errorf("building %q layer: %w", arch, err)
 			}
 
 			// Compute the "build date epoch" from the packages that were
@@ -275,19 +287,30 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 				return fmt.Errorf("failed to determine build date epoch: %w", err)
 			}
 
-			img, err := oci.BuildImageFromLayer(layer, bc.ImageConfiguration(), bde, bc.Arch(), bc.Logger())
+			img, err := oci.BuildImageFromLayers(ctx, bc.BaseImage(), layers, bc.ImageConfiguration(), bde, bc.Arch())
 			if err != nil {
 				return fmt.Errorf("failed to build OCI image for %q: %w", arch, err)
+			}
+
+			var outputs []types.SBOM
+			if len(o.SBOMGenerators) != 0 {
+				outputs, err = bc.GenerateImageSBOM(ctx, arch, img)
+				if err != nil {
+					return fmt.Errorf("generating sbom for %s: %w", arch, err)
+				}
 			}
 
 			mtx.Lock()
 			defer mtx.Unlock()
 
 			imgs[arch] = img
-			imageTars[arch] = layerTarGZ
 
 			if bde.After(multiArchBDE) {
 				multiArchBDE = bde
+			}
+
+			if len(o.SBOMGenerators) != 0 {
+				sboms = append(sboms, outputs...)
 			}
 
 			return nil
@@ -298,7 +321,7 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	}
 
 	// generate the index
-	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs)
+	finalDigest, idx, err := oci.GenerateIndex(ctx, *ic, imgs, multiArchBDE)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate OCI index: %w", err)
 	}
@@ -306,7 +329,6 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	opts = append(opts,
 		build.WithImageConfiguration(*ic),       // We mutate Archs above.
 		build.WithSourceDateEpoch(multiArchBDE), // Maximum child's time.
-		build.WithSBOM(imageDir),
 	)
 
 	o, ic, err = build.NewOptions(opts...)
@@ -314,38 +336,12 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		return nil, nil, err
 	}
 
-	if _, err := build.WriteIndex(o, idx); err != nil {
+	if _, err := build.WriteIndex(ctx, o, idx); err != nil {
 		return nil, nil, fmt.Errorf("failed to write OCI index: %w", err)
 	}
 
 	// the sboms are saved to the same working directory as the image components
-	if len(o.SBOMFormats) != 0 {
-		logrus.Info("Generating arch image SBOMs")
-		var (
-			g   errgroup.Group
-			mtx sync.Mutex
-		)
-		for arch, img := range imgs {
-			arch, img := arch, img
-			bc := contexts[arch]
-
-			g.Go(func() error {
-				outputs, err := bc.GenerateImageSBOM(ctx, arch, img)
-				if err != nil {
-					return fmt.Errorf("generating sbom for %s: %w", arch, err)
-				}
-				mtx.Lock()
-				defer mtx.Unlock()
-
-				sboms = append(sboms, outputs...)
-				return nil
-			})
-		}
-
-		if err := g.Wait(); err != nil {
-			return nil, nil, err
-		}
-
+	if len(o.SBOMGenerators) != 0 {
 		files, err := build.GenerateIndexSBOM(ctx, *o, *ic, finalDigest, imgs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating index SBOM: %w", err)
