@@ -18,132 +18,115 @@ import (
 	"context"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
+
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
+
+// maxResolverCacheEntries bounds the number of distinct index combinations
+// each derived cache retains. A multi-arch resolution inserts one resolver
+// entry per arch and one disqualify entry, so the live set is that times the
+// number of distinct repo combinations resolved concurrently. Superseded
+// generations that in-flight resolutions still request stay cached and age
+// out once enough newer combinations have been inserted. Every entry pins a
+// whole index generation, so raising this trades memory for hit rate.
+const maxResolverCacheEntries = 64
+
+// lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
+// objects are immutable and remote generations are deduplicated by (url, etag)
+// in globalIndexCache, so comparing the index objects themselves is a complete
+// key. Entries hold a once-initialized value so the lock covers only the lookup
+// and concurrent requests for the same combination still build it once.
+type lruCache[V any] struct {
+	sync.Mutex
+	max     int
+	entries []lruEntry[V] // least recently used first
+}
+
+type lruEntry[V any] struct {
+	indexes []NamedIndex
+	val     func() V
+}
+
+func newLRUCache[V any](size int) *lruCache[V] {
+	return &lruCache[V]{max: size}
+}
+
+// getOrFill returns the cached value for indexes, computing and inserting it
+// on a miss. The boolean reports whether the value was already cached.
+func (c *lruCache[V]) getOrFill(indexes []NamedIndex, fill func() V) (V, bool) {
+	e, hit := c.entry(indexes, fill)
+	return e.val(), hit
+}
+
+// entry returns the cache entry for indexes, creating it on a miss. Building
+// the value happens outside the lock when the caller invokes e.val.
+func (c *lruCache[V]) entry(indexes []NamedIndex, fill func() V) (lruEntry[V], bool) {
+	c.Lock()
+	defer c.Unlock()
+
+	for i, e := range c.entries {
+		if slices.Equal(e.indexes, indexes) {
+			// Move the hit to the most recently used end.
+			c.entries = slices.Delete(c.entries, i, i+1)
+			c.entries = append(c.entries, e)
+			return e, true
+		}
+	}
+
+	e := lruEntry[V]{indexes: slices.Clone(indexes), val: sync.OnceValue(fill)}
+	c.entries = append(c.entries, e)
+	if len(c.entries) > c.max {
+		// Drop the least recently used entry.
+		c.entries = slices.Delete(c.entries, 0, 1)
+	}
+	return e, false
+}
+
+func (c *lruCache[V]) len() int {
+	c.Lock()
+	defer c.Unlock()
+	return len(c.entries)
+}
 
 // It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
 // This caches a PkgResolver based on the input []NamedIndex.
-var globalResolverCache = &resolverCache{}
+var globalResolverCache = &resolverCache{newLRUCache[*PkgResolver](maxResolverCacheEntries)}
 
 type resolverCache struct {
-	sync.Mutex
-	children map[NamedIndex]*resolverCache
-	pr       *PkgResolver
-}
-
-func (r *resolverCache) find(indexes []NamedIndex) *PkgResolver {
-	if len(indexes) == 0 {
-		return r.pr
-	}
-
-	if r.children == nil {
-		return nil
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		return nil
-	}
-
-	return child.find(indexes[1:])
-}
-
-func (r *resolverCache) fill(indexes []NamedIndex, pr *PkgResolver) {
-	if len(indexes) == 0 {
-		r.pr = pr
-		return
-	}
-
-	if r.children == nil {
-		r.children = make(map[NamedIndex]*resolverCache)
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		child = &resolverCache{}
-		r.children[indexes[0]] = child
-	}
-
-	child.fill(indexes[1:], pr)
+	*lruCache[*PkgResolver]
 }
 
 func (r *resolverCache) Get(ctx context.Context, indexes []NamedIndex) *PkgResolver {
-	r.Lock()
-	defer r.Unlock()
-
-	if pr := r.find(indexes); pr != nil {
-		return pr.Clone()
+	pr, hit := r.getOrFill(indexes, func() *PkgResolver {
+		return newPkgResolver(ctx, indexes)
+	})
+	if hit {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultHit)
+	} else {
+		apkometrics.RecordResolverCacheAccess(apkometrics.CacheResultMiss)
 	}
-
-	pr := newPkgResolver(ctx, indexes)
-	r.fill(indexes, pr)
-
 	return pr.Clone()
-}
-
-// It is expensive to compute the complement
-// This a PkgResolver based on the input []NamedIndex.
-var globalDisqualifyCache = &disqualifyCache{}
-
-type disqualifyCache struct {
-	sync.Mutex
-	children map[NamedIndex]*disqualifyCache
-	dq       map[*RepositoryPackage]string
-}
-
-func (r *disqualifyCache) find(indexes []NamedIndex) map[*RepositoryPackage]string {
-	if len(indexes) == 0 {
-		return r.dq
-	}
-
-	if r.children == nil {
-		return nil
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		return nil
-	}
-
-	return child.find(indexes[1:])
-}
-
-func (r *disqualifyCache) fill(indexes []NamedIndex, dq map[*RepositoryPackage]string) {
-	if len(indexes) == 0 {
-		r.dq = dq
-		return
-	}
-
-	if r.children == nil {
-		r.children = make(map[NamedIndex]*disqualifyCache)
-	}
-
-	child, ok := r.children[indexes[0]]
-	if !ok {
-		child = &disqualifyCache{}
-		r.children[indexes[0]] = child
-	}
-
-	child.fill(indexes[1:], dq)
 }
 
 // It is expensive to compute the difference between every architecture.
 // This caches that difference based on the input []NamedIndex for every architecture.
-func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
-	r.Lock()
-	defer r.Unlock()
+var globalDisqualifyCache = &disqualifyCache{newLRUCache[map[*RepositoryPackage]string](maxResolverCacheEntries)}
 
-	indexes := slices.Concat(slices.Collect(maps.Values(byArch))...)
-	slices.SortFunc(indexes, func(a, b NamedIndex) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
-	if dq := r.find(indexes); dq != nil {
-		return maps.Clone(dq)
+type disqualifyCache struct {
+	*lruCache[map[*RepositoryPackage]string]
+}
+
+func (r *disqualifyCache) Get(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
+	// Key by the arches in a fixed order so the same request always maps to
+	// the same entry regardless of map iteration order.
+	var indexes []NamedIndex
+	for _, arch := range slices.Sorted(maps.Keys(byArch)) {
+		indexes = append(indexes, byArch[arch]...)
 	}
 
-	dq := disqualifyDifference(ctx, byArch)
-	r.fill(indexes, dq)
-
+	dq, _ := r.getOrFill(indexes, func() map[*RepositoryPackage]string {
+		return disqualifyDifference(ctx, byArch)
+	})
 	return maps.Clone(dq)
 }

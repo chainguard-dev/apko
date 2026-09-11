@@ -65,12 +65,10 @@ func isRetryableError(err error) bool {
 	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) {
 		return true
 	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return true
 	}
-	var httpErr *httpStatusError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*httpStatusError](err); ok {
 		return httpErr.statusCode >= 500 || httpErr.statusCode == http.StatusTooManyRequests
 	}
 	msg := err.Error()
@@ -103,11 +101,11 @@ type PackageGetter interface {
 	GetPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error)
 }
 
+const packageCacheMaxEntries = 4096
+
 // globalApkCache is the shared in-memory singleflight cache used by DefaultPackageGetter.
 // This ensures deduplication of concurrent requests across all APK instances in a process.
-// NOTE: This is used only to retain backwards compatibility with existing behavior, which
-// also uses a global cache.
-var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
+var globalApkCache = newFlightCache[string, *expandapk.APKExpanded](packageCacheMaxEntries)
 
 // defaultPackageGetter implements the standard disk-caching behavior
 // with in-memory singleflight deduplication using a global cache.
@@ -161,9 +159,7 @@ func (d *defaultPackageGetter) GetPackage(ctx context.Context, pkg InstallablePa
 		return d.getPackageImpl(ctx, pkg)
 	}
 
-	cached := true
-	val, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
-		cached = false
+	val, cached, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
 		return d.getPackageImpl(ctx, pkg)
 	})
 	if !cached {

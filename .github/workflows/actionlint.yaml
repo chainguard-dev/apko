@@ -24,7 +24,7 @@ jobs:
     name: Action lint
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -36,7 +36,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Check out code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -48,7 +48,7 @@ jobs:
           echo "files=${yamls[*]}" >> "${GITHUB_OUTPUT}"
 
       - name: Action lint
-        uses: step-security/action-actionlint@c3aa382d371c6b05513ae5907d4f77713e21813c # v1.72.0
+        uses: step-security/action-actionlint@b90a9ddb65b752bc6b6888a2f30a4941d9ff62e5 # v1.73.1
         env:
           SHELLCHECK_OPTS: "--exclude=SC2129"
         with:

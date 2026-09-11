@@ -12,6 +12,7 @@ import (
 
 	"github.com/chainguard-dev/clog"
 	"golang.org/x/oauth2"
+	"golang.org/x/term"
 	"golang.org/x/time/rate"
 )
 
@@ -102,7 +103,14 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 
 	sometimes.Do(func() {
 		cmd := exec.CommandContext(ctx, "chainctl", "auth", "token", "--audience", host) //#nosec G702 -- host is from env/default, passed as argv (no shell)
-		cmd.Stderr = io.Discard                                                          // Don't pollute logs when things fail
+		// If stderr is a terminal, let chainctl write to it so it can prompt
+		// interactively (e.g. emit a device-login URL when running headless).
+		// Otherwise discard it to avoid polluting logs when things fail.
+		if term.IsTerminal(int(os.Stderr.Fd())) {
+			cmd.Stderr = os.Stderr
+		} else {
+			cmd.Stderr = io.Discard
+		}
 		out, err := cmd.Output()
 		if err != nil {
 			// Document that automatic auth failed and how to reproduce.

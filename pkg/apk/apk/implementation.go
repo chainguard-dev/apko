@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -66,6 +67,7 @@ type APK struct {
 	ignoreMknodErrors  bool
 	client             *http.Client
 	cache              *cache
+	offline            bool
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
@@ -95,6 +97,9 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 			return nil, err
 		}
 	}
+	if opt.cache != nil {
+		opt.cache.offline = opt.offline
+	}
 
 	if opt.fs == nil {
 		// This is expensive so we only want to do it if we aren't passed WithFS.
@@ -114,6 +119,9 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	client.Logger = clog.FromContext(ctx)
 
 	httpClient := client.StandardClient()
+	if opt.offline {
+		httpClient.Transport = offlineTransport{}
+	}
 
 	// Create default PackageGetter if none provided
 	packageGetter := opt.packageGetter
@@ -138,6 +146,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		ignoreMknodErrors:  opt.ignoreMknodErrors,
 		version:            opt.version,
 		cache:              opt.cache,
+		offline:            opt.offline,
 		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
 		installedFiles:     map[string]*Package{},
@@ -296,8 +305,11 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 			return fmt.Errorf("error opening base directory %s: %w", e.path, err)
 		case !stat.IsDir():
 			return fmt.Errorf("base directory %s is not a directory", e.path)
-		case stat.Mode().Perm() != e.perms:
-			return fmt.Errorf("base directory %s has incorrect permissions: %o", e.path, stat.Mode().Perm())
+		// Compare every non-type bit, not just Perm(): /tmp is expected to be
+		// sticky, and Perm() masks fs.ModeSticky off, so the two could never
+		// be equal.
+		case stat.Mode()&^fs.ModeType != e.perms:
+			return fmt.Errorf("base directory %s has incorrect permissions: %s, expected %s", e.path, stat.Mode()&^fs.ModeType, e.perms)
 		}
 	}
 	for _, e := range initDirectories {
@@ -345,8 +357,12 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
-				if !a.cache.offline && !errors.As(err, &nokeysErr) {
-					return fmt.Errorf("failed to fetch alpine-keys: %w", err)
+				if !a.offline && !errors.As(err, &nokeysErr) {
+					return &AlpineKeyFetchError{
+						Repository: repo,
+						Version:    ver,
+						Err:        err,
+					}
 				}
 				log.Debugf("ignoring missing keys: %v", err)
 			}
@@ -551,7 +567,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			} else {
 				// Attempt to parse non-https elements into URI's so they are translated into
 				// file:// URLs allowing them to parse into a url.URL{}
-				asURL, err = url.Parse(string(uri.New(element)))
+				asURL, err = url.Parse(string(fileURI(element)))
 			}
 			if err != nil {
 				return fmt.Errorf("failed to parse key as URI: %w", err)
@@ -812,7 +828,7 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 				asPackage := pkgInfo.AsPackage(exp.ControlHash, uint64(exp.Size))
 				infos[i] = asPackage
 
-				installedFiles, err := a.installPackage(ctx, asPackage, exp, sourceDateEpoch)
+				installedFiles, err := a.installPackage(ctx, asPackage, ExpandedContents(exp), sourceDateEpoch)
 				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
@@ -844,6 +860,65 @@ func (a *APK) InstallPackages(ctx context.Context, sourceDateEpoch *time.Time, a
 		return nil, fmt.Errorf("installing packages: %w", withCause(ctx, err))
 	}
 
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// InstallPackageContents installs exactly the given packages, in the given
+// order, from their supplied contents: no index is consulted, no dependency
+// resolution happens, and nothing is fetched — the caller has already settled
+// the set and supplies each member's contents.
+func (a *APK) InstallPackageContents(ctx context.Context, sourceDateEpoch *time.Time, all []PackageContents) ([]InstalledDiff, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "InstallPackageContents")
+	defer span.End()
+
+	allFiles := make([][]tar.Header, len(all))
+	infos := make([]*Package, len(all))
+
+	for i, contents := range all {
+		pkgInfo, err := contents.PkgInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read .PKGINFO for package %d: %w", i, err)
+		}
+
+		// A multi-arch build reuses one option set for every architecture
+		// context, so contents for the wrong architecture arrive here
+		// silently; refuse them rather than installing foreign binaries.
+		if pkgInfo.Arch != "" && pkgInfo.Arch != "noarch" && pkgInfo.Arch != a.arch {
+			return nil, fmt.Errorf("package %s targets architecture %q, not this context's %q", pkgInfo.Name, pkgInfo.Arch, a.arch)
+		}
+
+		isInstalled, err := a.isInstalledPackage(pkgInfo.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error checking if package %s is installed: %w", pkgInfo.Name, err)
+		}
+		if isInstalled {
+			continue
+		}
+
+		// The package checksum is, by definition, the SHA1 of the compressed
+		// control section.
+		section, err := contents.ControlSection()
+		if err != nil {
+			return nil, fmt.Errorf("opening control section for %s: %w", pkgInfo.Name, err)
+		}
+		checksum := sha1.Sum(section) //nolint:gosec // this is what apk tools is using
+		asPackage := pkgInfo.AsPackage(checksum[:], uint64(contents.Size()))
+		infos[i] = asPackage
+
+		installedFiles, err := a.installPackage(ctx, asPackage, contents, sourceDateEpoch)
+		if err != nil {
+			return nil, fmt.Errorf("installing %s: %w", pkgInfo.Name, err)
+		}
+
+		allFiles[i] = installedFiles
+	}
+
+	return a.recordInstalled(ctx, infos, allFiles)
+}
+
+// recordInstalled writes the installed-database entries for the given
+// packages and their files, dropping files a later package overwrote.
+func (a *APK) recordInstalled(ctx context.Context, infos []*Package, allFiles [][]tar.Header) ([]InstalledDiff, error) {
 	diffs := make([]InstalledDiff, 0, len(allFiles))
 
 	// update the installed file
@@ -894,6 +969,22 @@ type NoKeysFoundError struct {
 
 func (e *NoKeysFoundError) Error() string {
 	return fmt.Sprintf("no keys found for arch %s and releases %v", e.arch, e.releases)
+}
+
+// AlpineKeyFetchError reports a failure to retrieve signing keys for an
+// Alpine package repository.
+type AlpineKeyFetchError struct {
+	Repository string
+	Version    string
+	Err        error
+}
+
+func (e *AlpineKeyFetchError) Error() string {
+	return fmt.Sprintf("failed to fetch Alpine keys for %s: %v", e.Repository, e.Err)
+}
+
+func (e *AlpineKeyFetchError) Unwrap() error {
+	return e.Err
 }
 
 // FetchAlpineReleases fetches and returns the Alpine releases metadata from alpinelinux.org.
@@ -981,6 +1072,36 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 type Key struct {
 	ID    string
 	Bytes []byte
+}
+
+// FetchKeyBytes downloads a keyring from the given URL and returns its raw bytes.
+// It applies the provided authenticator (which may be nil for anonymous fetches).
+func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticator, keyURL string) ([]byte, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "FetchKeyBytes")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keyURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil {
+		if err := a.AddAuth(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch key %s: %w", keyURL, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch key %s: %s", keyURL, res.Status)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyURL, err)
+	}
+	return b, nil
 }
 
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
@@ -1097,9 +1218,10 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 			client = rc.StandardClient()
 		}
 
-		return a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
+		keys, _, err := a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
 			return DiscoverKeys(ctx, client, a.auth, repository)
 		})
+		return keys, err
 	}
 
 	return DiscoverKeys(ctx, client, a.auth, repository)
@@ -1131,6 +1253,28 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	return nil
 }
 
+// fileURI converts a local filesystem path into a file:// URI. It mirrors the
+// behavior of the uri.New/uri.File helpers that were removed in
+// go.lsp.dev/uri v1.0.1: an input that is already a file:// URI is returned
+// unchanged, otherwise the path is made absolute and rendered as a file:// URL.
+func fileURI(s string) uri.URI {
+	if u, err := url.PathUnescape(s); err == nil {
+		s = u
+	}
+
+	if strings.HasPrefix(s, "file://") {
+		return uri.URI(s)
+	}
+
+	p := s
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p)}
+	return uri.URI(u.String())
+}
+
 func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 	u := pkg.URL()
 
@@ -1138,7 +1282,7 @@ func packageAsURI(pkg LocatablePackage) (uri.URI, error) {
 		return uri.Parse(u)
 	}
 
-	return uri.New(u), nil
+	return fileURI(u), nil
 }
 
 func packageAsURL(pkg LocatablePackage) (*url.URL, error) {
@@ -1172,11 +1316,11 @@ type WriteHeaderer interface {
 }
 
 // installPackage installs a single package and updates installed db.
-func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expandapk.APKExpanded, sourceDateEpoch *time.Time) ([]tar.Header, error) {
+func (a *APK) installPackage(ctx context.Context, pkg *Package, contents PackageContents, sourceDateEpoch *time.Time) ([]tar.Header, error) {
 	log := clog.FromContext(ctx)
 	log.Infof("installing %s (%s)", pkg.Name, pkg.Version)
 
-	// We don't want to call `defer expanded.Close()` to to remove tempDir because our
+	// For expanded APKs we don't remove the backing tempDir because our
 	// cached files are advertised by symlinks pointing into them.
 	//
 	// This is not a big deal because the temp files if not referred by
@@ -1191,14 +1335,24 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	)
 
 	if wh, ok := a.fs.(WriteHeaderer); ok {
-		installedFiles, err = a.lazilyInstallAPKFiles(ctx, wh, expanded.TarFS, pkg)
+		entries, err := contents.Entries()
+		if err != nil {
+			return nil, fmt.Errorf("reading install records for pkg %s: %w", pkg.Name, err)
+		}
+		installedFiles, err = a.lazilyInstallAPKFiles(ctx, wh, entries, contents.FS(), pkg)
 		if err != nil {
 			return nil, fmt.Errorf("unable to install files for pkg %s: %w", pkg.Name, err)
 		}
 	} else {
-		packageData, err := expanded.PackageData()
+		// The non-WriteHeaderer path streams the whole data section as a
+		// tar, which not every contents carrier can produce.
+		pd, ok := contents.(interface{ PackageData() (*os.File, error) })
+		if !ok {
+			return nil, fmt.Errorf("installing %s: filesystem does not implement WriteHeaderer and the package contents carry no data stream", pkg.Name)
+		}
+		packageData, err := pd.PackageData()
 		if err != nil {
-			return nil, fmt.Errorf("opening package file %q: %w", expanded.PackageFile, err)
+			return nil, fmt.Errorf("opening package data for %s: %w", pkg.Name, err)
 		}
 		defer packageData.Close()
 
@@ -1209,18 +1363,17 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, expanded *expand
 	}
 
 	// update the scripts.tar
-	controlData, err := expanded.ControlData()
+	controlData, err := contents.ControlData()
 	if err != nil {
-		return nil, fmt.Errorf("opening control file %q: %w", expanded.ControlFile, err)
+		return nil, fmt.Errorf("opening control data for %s: %w", pkg.Name, err)
 	}
-
 	controlTar := bytes.NewReader(controlData)
 	if err := a.updateScriptsTar(pkg, controlTar, sourceDateEpoch); err != nil {
 		return nil, fmt.Errorf("unable to update scripts.tar for pkg %s: %w", pkg.Name, err)
 	}
 
 	// update the triggers
-	pkgInfo, err := expanded.PkgInfo()
+	pkgInfo, err := contents.PkgInfo()
 	if err != nil {
 		return nil, fmt.Errorf("reading pkginfo from %s: %w", pkg.Name, err)
 	}

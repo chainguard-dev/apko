@@ -47,18 +47,16 @@ func testOpts(fsys apkfs.FullFS) *options.Options {
 		FileName: "sbom",
 		Packages: []*apk.InstalledPackage{
 			{
-				Package: apk.Package{
-					Name:        "musl",
-					Version:     "1.2.2-r7",
-					Arch:        "x86_64",
-					Description: "the musl c library (libc) implementation",
-					License:     "MIT",
-					Origin:      "musl",
-					Maintainer:  "Pkg Author <user@domain.com>",
-					Checksum: []byte{
-						0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
-						0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
-					},
+				Name:        "musl",
+				Version:     "1.2.2-r7",
+				Arch:        "x86_64",
+				Description: "the musl c library (libc) implementation",
+				License:     "MIT",
+				Origin:      "musl",
+				Maintainer:  "Pkg Author <user@domain.com>",
+				Checksum: []byte{
+					0xd, 0xe6, 0xf4, 0x8c, 0xdc, 0xad, 0x92, 0xb8, 0xcf, 0x5b,
+					0x83, 0x7f, 0x78, 0xa2, 0xd9, 0xe3, 0x70, 0x70, 0x3a, 0x5c,
 				},
 			},
 		},
@@ -95,10 +93,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "font-ubuntu",
-							Version: "0.869-r1",
-						},
+						Name:    "font-ubuntu",
+						Version: "0.869-r1",
 					},
 				},
 			},
@@ -117,10 +113,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "libattr1",
-							Version: "2.5.1-r2",
-						},
+						Name:    "libattr1",
+						Version: "2.5.1-r2",
 					},
 				},
 			},
@@ -139,16 +133,12 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "logstash-8",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8",
+						Version: "8.15.3-r4",
 					},
 					{
-						Package: apk.Package{
-							Name:    "logstash-8-compat",
-							Version: "8.15.3-r4",
-						},
+						Name:    "logstash-8-compat",
+						Version: "8.15.3-r4",
 					},
 				},
 			},
@@ -167,22 +157,16 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "unbound-libs",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-libs",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound",
+						Version: "1.23.0-r0",
 					},
 					{
-						Package: apk.Package{
-							Name:    "unbound-config",
-							Version: "1.23.0-r0",
-						},
+						Name:    "unbound-config",
+						Version: "1.23.0-r0",
 					},
 				},
 			},
@@ -201,10 +185,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "test-pkg-describes",
-							Version: "1.0.0-r0",
-						},
+						Name:    "test-pkg-describes",
+						Version: "1.0.0-r0",
 					},
 				},
 			},
@@ -223,10 +205,8 @@ func TestSPDX_Generate(t *testing.T) {
 				FileName: "sbom",
 				Packages: []*apk.InstalledPackage{
 					{
-						Package: apk.Package{
-							Name:    "test-pkg-both",
-							Version: "1.0.0-r0",
-						},
+						Name:    "test-pkg-both",
+						Version: "1.0.0-r0",
 					},
 				},
 			},
@@ -291,23 +271,63 @@ func TestSPDX_Generate(t *testing.T) {
 }
 
 func TestReproducible(t *testing.T) {
-	// Create two sboms based on the same input and ensure
-	// they are identical
+	// Create SBOMs based on the same input and ensure they are identical.
+	const (
+		packageID        = "SPDXRef-Package-glibc-2.40-r0"
+		documentRootID   = "SPDXRef-DocumentRoot-Directory-glibc"
+		internalSBOMPath = "/var/lib/db/sbom/glibc-2.40-r0.spdx.json"
+	)
+
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
 	opts := testOpts(fsys)
+	opts.Packages = []*apk.InstalledPackage{{Name: "glibc", Version: "2.40-r0"}}
+
+	internalSBOM := Document{
+		DocumentDescribes: []string{
+			packageID,
+			documentRootID,
+		},
+		Packages: []Package{
+			{ID: packageID, Name: "glibc"},
+			{ID: documentRootID, Name: "/"},
+		},
+	}
+	data, err := json.Marshal(internalSBOM)
+	require.NoError(t, err)
+	require.NoError(t, fsys.MkdirAll("/var/lib/db/sbom", 0750))
+	require.NoError(t, fsys.WriteFile(internalSBOMPath, data, 0644))
+
 	sx := New()
-	d := make([][]byte, 0, 2)
-	for i := range 2 {
+	generate := func(i int) []byte {
 		path := filepath.Join(dir, fmt.Sprintf("sbom%d.%s", i, sx.Ext()))
 		require.NoError(t, sx.Generate(t.Context(), opts, path))
 		require.FileExists(t, path)
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
-		d = append(d, data)
+		return data
 	}
-	diff := cmp.Diff(d[0], d[1])
-	require.Empty(t, diff, fmt.Sprintf("difference in expected output %s", diff))
+
+	expected := generate(0)
+	var doc Document
+	require.NoError(t, json.Unmarshal(expected, &doc))
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: packageID,
+	})
+	require.Contains(t, doc.Relationships, Relationship{
+		Element: doc.DocumentDescribes[0],
+		Type:    "CONTAINS",
+		Related: documentRootID,
+	})
+
+	// Exercise enough new maps to detect unstable iteration order if the relationships are not sorted.
+	for i := 1; i < 100; i++ {
+		if diff := cmp.Diff(expected, generate(i)); diff != "" {
+			t.Fatalf("SBOM differs from first generation (-want +got):\n%s", diff)
+		}
+	}
 }
 
 // To run TestValidateSPDX, point SPDX_TOOLS_JAR to the SPDX tools

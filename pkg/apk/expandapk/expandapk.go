@@ -30,16 +30,6 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-var slicePool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 1<<20)
-	},
-}
-
-func pooledSlice() []byte {
-	return slicePool.Get().([]byte)
-}
-
 var readerPool = sync.Pool{
 	New: func() interface{} {
 		return bufio.NewReaderSize(nil, 1<<20)
@@ -186,14 +176,6 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 		return nil, fmt.Errorf("parsing %q: %w", a.PackageFile, err)
 	}
 
-	uf, err = os.Create(a.TarFile)
-	if err != nil {
-		return nil, fmt.Errorf("opening tar file %q: %w", a.TarFile, err)
-	}
-
-	buf := pooledSlice()
-	defer slicePool.Put(buf)
-
 	// Wrap the gzip reader with a limit to protect against decompression bombs
 	var maxSize int64
 	if a.opts != nil {
@@ -201,12 +183,10 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 	}
 	limitedZr := limitio.NewLimitedReaderWithDefault(zr, maxSize, DefaultMaxDataSize)
 
-	if _, err := io.CopyBuffer(uf, limitedZr, buf); err != nil {
+	// Write the decompressed tar file atomically to avoid a concurrent
+	// reader of the cache seeing an empty or truncated file.
+	if err := writeFileAtomic(a.TarFile, limitedZr); err != nil {
 		return nil, fmt.Errorf("decompressing %q: %w", a.PackageFile, err)
-	}
-
-	if err := uf.Close(); err != nil {
-		return nil, fmt.Errorf("closing %q: %w", a.TarFile, err)
 	}
 
 	return os.Open(a.TarFile)

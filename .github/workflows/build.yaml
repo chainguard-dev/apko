@@ -17,7 +17,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -32,6 +32,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             raw.githubusercontent.com:443
             registry-1.docker.io:443
@@ -41,14 +42,16 @@ jobs:
             sum.golang.org:443
             tuf-repo-cdn.sigstore.dev:443
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
+          # Disable caching to avoid cache poisoning of release artifacts.
+          cache: false
 
       - name: build
         run: |
@@ -56,19 +59,19 @@ jobs:
           ./apko version
 
       - name: Setup cosign (needed in CI tests)
-        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           # https://github.com/goreleaser/goreleaser/issues/6195
           cosign-release: "v2.6.1"
 
       - name: Setup crane (needed in CI tests)
-        uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
+        uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
 
       - name: Run CI tests in hack/ci/
         run: |
           make ci
 
-      - uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           install-only: true
 
