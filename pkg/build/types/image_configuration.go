@@ -40,7 +40,7 @@ import (
 // directory traversal.
 var certNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+[a-zA-Z0-9_.-]*$`)
 
-// Attempt to probe an upstream VCS URL if known.
+// ProbeVCSUrl attempts to probe an upstream VCS URL if known.
 func (ic *ImageConfiguration) ProbeVCSUrl(ctx context.Context, imageConfigPath string) {
 	log := clog.FromContext(ctx)
 
@@ -128,6 +128,9 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	if target.Layering == nil {
 		target.Layering = ic.Layering
 	}
+	if target.Format == "" {
+		target.Format = ic.Format
+	}
 	if target.Certificates == nil {
 		target.Certificates = ic.Certificates
 	}
@@ -174,6 +177,9 @@ func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 
 func (i *ImageContents) MergeInto(target *ImageContents) error {
 	target.Keyring = slices.Concat(i.Keyring, target.Keyring)
+	// Load-bearing: the locked config is produced via input.MergeInto, so a
+	// field omitted here is silently dropped from the dedup key and /etc/apko.json.
+	target.RuntimeKeyring = slices.Concat(i.RuntimeKeyring, target.RuntimeKeyring)
 	target.BuildRepositories = slices.Concat(i.BuildRepositories, target.BuildRepositories)
 	target.RuntimeOnlyRepositories = slices.Concat(i.RuntimeOnlyRepositories, target.RuntimeOnlyRepositories)
 	target.Repositories = slices.Concat(i.Repositories, target.Repositories)
@@ -234,6 +240,10 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 
+	if ic.Format != "" && !ic.Format.Valid() {
+		return fmt.Errorf("invalid layer format %q (must be %q or %q)", ic.Format, LayerFormatTar, LayerFormatErofs)
+	}
+
 	if ic.Certificates != nil {
 		for _, additional := range ic.Certificates.Additional {
 			if additional.Name == "" {
@@ -243,6 +253,22 @@ func (ic *ImageConfiguration) Validate() error {
 				return fmt.Errorf("configured additional certificate %q has an invalid name, it must match %s", additional.Name, certNameRegex.String())
 			}
 		}
+	}
+	seen := make(map[string]struct{}, len(ic.Contents.RuntimeKeyring))
+	for _, key := range ic.Contents.RuntimeKeyring {
+		if key.Name == "" {
+			return fmt.Errorf("configured runtime_keyring entry has no name")
+		}
+		if key.Content == "" {
+			return fmt.Errorf("runtime_keyring entry %q has no content", key.Name)
+		}
+		if !certNameRegex.MatchString(key.Name) {
+			return fmt.Errorf("runtime_keyring entry %q has an invalid name, it must match %s", key.Name, certNameRegex.String())
+		}
+		if _, dup := seen[key.Name]; dup {
+			return fmt.Errorf("runtime_keyring entry %q is a duplicate", key.Name)
+		}
+		seen[key.Name] = struct{}{}
 	}
 	return nil
 }

@@ -127,7 +127,7 @@ func (o *Options) ImagePurlQualifiers() (qualifiers PurlQualifiers) {
 // This function is here while a fix in the purl library gets merged
 // ref: https://github.com/package-url/packageurl-go/pull/22
 func (pq PurlQualifiers) String() string {
-	q := []purl.Qualifier{}
+	q := make([]purl.Qualifier, 0, len(pq))
 	for k, v := range pq {
 		q = append(q, purl.Qualifier{Key: k, Value: v})
 	}

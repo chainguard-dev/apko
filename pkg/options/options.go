@@ -76,25 +76,31 @@ type Options struct {
 	TagSuffix               string                `json:"tagSuffix,omitempty"`
 	Local                   bool                  `json:"local,omitempty"`
 	CacheDir                string                `json:"cacheDir,omitempty"`
+	DiskCacheEnabled        bool                  `json:"-"`
 	Offline                 bool                  `json:"offline,omitempty"`
 	SharedCache             *apk.Cache            `json:"-"`
 	Lockfile                string                `json:"lockfile,omitempty"`
-	Auth                    auth.Authenticator    `json:"-"`
-	IncludePaths            []string              `json:"includePaths,omitempty"`
-	IgnoreSignatures        bool                  `json:"ignoreSignatures,omitempty"`
-	Transport               http.RoundTripper     `json:"-"`
-	PackageGetter           apk.PackageGetter     `json:"-"`
-	SizeLimits              SizeLimits            `json:"sizeLimits,omitempty"`
+	// PreResolvedPackages, when non-nil, is the exact package set to
+	// install — possibly empty, which installs nothing; nil means the
+	// option is unset and the package set is settled another way.
+	PreResolvedPackages []apk.PackageContents `json:"-"`
+	Auth                auth.Authenticator    `json:"-"`
+	IncludePaths        []string              `json:"includePaths,omitempty"`
+	IgnoreSignatures    bool                  `json:"ignoreSignatures,omitempty"`
+	Transport           http.RoundTripper     `json:"-"`
+	PackageGetter       apk.PackageGetter     `json:"-"`
+	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`
 }
 
 type Auth struct{ User, Pass string }
 
 var Default = Options{
-	Arch:            types.ParseArchitecture(runtime.GOARCH),
-	SourceDateEpoch: time.Unix(0, 0).UTC(),
-	Auth:            auth.DefaultAuthenticators,
-	SharedCache:     apk.NewCache(false),
-	SizeLimits:      DefaultSizeLimits(),
+	Arch:             types.ParseArchitecture(runtime.GOARCH),
+	SourceDateEpoch:  time.Unix(0, 0).UTC(),
+	Auth:             auth.DefaultAuthenticators,
+	DiskCacheEnabled: true,
+	SharedCache:      apk.NewCache(false),
+	SizeLimits:       DefaultSizeLimits(),
 }
 
 // Tempdir returns the temporary directory where apko will create
@@ -119,4 +125,18 @@ func (o Options) TarballFileName() string {
 		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.ToAPK())
 	}
 	return tarName
+}
+
+// LayerFileName returns a deterministic filename for a layer blob in the given
+// format. It exists because TarballFileName's ".tar.gz" is a lie for an EROFS
+// image -- neither a tar nor gzipped -- and anything that sniffs by extension
+// would be misled by it.
+func (o Options) LayerFileName(format types.LayerFormat) string {
+	if format.Resolved() != types.LayerFormatErofs {
+		return o.TarballFileName()
+	}
+	if o.Arch.String() != "" {
+		return fmt.Sprintf("apko-%s.erofs", o.Arch.ToAPK())
+	}
+	return "apko.erofs"
 }

@@ -24,7 +24,7 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -43,6 +43,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -50,32 +51,34 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-      - run: |
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+      - env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        run: |
           make apko
-          ./apko build ./examples/nginx.yaml nginx:build /tmp/nginx-${{ matrix.arch }}.tar --arch ${{ matrix.arch }}
+          ./apko build ./examples/nginx.yaml nginx:build "/tmp/nginx-${MATRIX_ARCH}.tar" --arch "${MATRIX_ARCH}"
 
       - name: Check SBOM Conformance
         run: |
           set -euxo pipefail
-          if ! ls *.spdx.json; then
+          if ! ls ./*.spdx.json; then
             echo "no SBOMs found!"
             exit 1
           fi
-          for f in *.spdx.json; do
+          for f in ./*.spdx.json; do
             echo ::group::sbom.json
-            cat $f
+            cat "$f"
             echo ::endgroup::
-            docker run --rm -v $(pwd)/$f:/$f --entrypoint "sh" cgr.dev/chainguard/wolfi-base -c "apk add spdx-tools-java && tools-java Verify /$f"
+            docker run --rm -v "$(pwd)/$f:/$f" --entrypoint "sh" cgr.dev/chainguard/wolfi-base -c "apk add spdx-tools-java && tools-java Verify /$f"
           done
 
   build-all-examples-one-arch:
@@ -91,10 +94,11 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
+            *.apple.com:443
             *.blob.core.windows.net:443
             *.githubapp.com:443
             9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com:443
@@ -102,6 +106,7 @@ jobs:
             api.github.com:443
             apk.cgr.dev:443
             auth.docker.io:443
+            cp*.cloudflare.com
             cgr.dev:443
             dl-cdn.alpinelinux.org:443
             dl.google.com:443
@@ -110,6 +115,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -117,28 +123,29 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+            updates-http.cdn-apple.com:80
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
       - run: |
           make apko
-          for cfg in $(find ./examples/ -name '*.yaml'); do
-            name=$(basename ${cfg} .yaml)
+          while IFS= read -r cfg; do
+            name=$(basename "${cfg}" .yaml)
             echo "Building ${name}..."
-            build_script=$(dirname ${cfg})/build.sh
-            if [ -f ${build_script} ]; then
-              ${build_script} ./apko
+            build_script=$(dirname "${cfg}")/build.sh
+            if [ -f "${build_script}" ]; then
+              "${build_script}" ./apko
             else
-              ./apko build ${cfg} ${name}:build /tmp/${name}.tar
-              ./apko build --offline ${cfg} ${name}:build /tmp/${name}.tar
+              ./apko build "${cfg}" "${name}:build" /tmp/"${name}".tar
+              ./apko build --offline "${cfg}" "${name}:build" /tmp/"${name}".tar
             fi
-          done
+          done < <(find ./examples/ -name '*.yaml')
 
   build-wolfi-source-date-epoch:
     name: source-date-epoch
@@ -148,7 +155,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -167,6 +174,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -174,15 +182,15 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
+      - uses: chainguard-dev/actions/setup-registry@a9d4aa7202a63f8a6b8f81bb1570a0ca54460ac5 # v1.6.34
         with:
           port: 5000
 
@@ -213,7 +221,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -232,6 +240,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -239,15 +248,15 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
+      - uses: chainguard-dev/actions/setup-registry@a9d4aa7202a63f8a6b8f81bb1570a0ca54460ac5 # v1.6.34
         with:
           port: 5000
 
@@ -278,7 +287,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -297,6 +306,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -304,16 +314,16 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
-      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
-      - uses: chainguard-dev/actions/setup-registry@c29bd2a0f4e71ad61a209c255c0164987df76aaa # v1.6.10
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
+      - uses: chainguard-dev/actions/setup-registry@a9d4aa7202a63f8a6b8f81bb1570a0ca54460ac5 # v1.6.34
         with:
           port: 5000
       - run: |
@@ -323,13 +333,13 @@ jobs:
           ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx --arch x86_64,aarch64)
 
           # Check index annotations.
-          crane manifest $ref | jq -r '.annotations.foo' | grep bar
+          crane manifest "$ref" | jq -r '.annotations.foo' | grep bar
 
           # Check per-image annotations.
-          crane manifest --platform=linux/arm64 $ref | jq -r '.annotations.foo' | grep bar
+          crane manifest --platform=linux/arm64 "$ref" | jq -r '.annotations.foo' | grep bar
 
           # Check per-image config labels.
-          crane config --platform=linux/arm64 $ref | jq -r '.config.Labels' | grep bar
+          crane config --platform=linux/arm64 "$ref" | jq -r '.config.Labels' | grep bar
 
   certificates:
     name: certificates
@@ -339,7 +349,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -358,6 +368,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -365,11 +376,11 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true
@@ -387,7 +398,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -406,6 +417,7 @@ jobs:
             objects.githubusercontent.com:443
             packages.wolfi.dev:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             proxy.golang.org:443
             registry-1.docker.io:443
             release-assets.githubusercontent.com:443
@@ -413,11 +425,11 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             updates.cdn-apple.com:443
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           check-latest: true

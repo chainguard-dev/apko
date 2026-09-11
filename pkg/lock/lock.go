@@ -59,6 +59,8 @@ type LockRepo struct {
 type LockKeyring struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Content is the raw keyring content (typically a PEM-encoded public key).
+	Content string `json:"content,omitempty"`
 }
 
 func FromFile(lockFile string) (Lock, error) {

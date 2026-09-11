@@ -16,10 +16,12 @@ package fs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -93,29 +95,33 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 		return nil
 	}
 
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		log.Warn("error opening root", "error", err)
+		return nil
+	}
+
 	var caseSensitive bool
 	if options.caseSensitiveSet {
 		caseSensitive = options.caseSensitive
 	} else {
-		// check if the underlying filesystem is case-sensitive
-		// we cannot just use it in TempDir() because these might be different filesystems
-		// find a file that does not exist
+		// Probe the underlying filesystem through the root so the probe is
+		// subject to the same sandboxing as every other write. We cannot reuse
+		// the caller's TempDir because it might be on a different filesystem.
 		for i := 0; ; i++ {
 			filename := fmt.Sprintf("test-dirfs-%d", i)
-			// filepath.Join below here is considered safe since we control filename
-			if _, err := os.Stat(filepath.Join(dir, filename)); err == nil {
+			if _, err := root.Stat(filename); err == nil {
 				continue
 			}
-			if err := os.WriteFile(filepath.Join(dir, filename), []byte("test"), 0o600); err != nil {
+			if err := root.WriteFile(filename, []byte("test"), 0o600); err != nil {
 				caseSensitive = false // If this fails, let's just assume it's not case sensitive.
 				break
 			}
-			// see if it exists
-			if _, err := os.Stat(filepath.Join(dir, strings.ToUpper(filename))); err != nil {
+			if _, err := root.Stat(strings.ToUpper(filename)); err != nil {
 				caseSensitive = true
 			}
 			// clean up our own messes
-			_ = os.Remove(filepath.Join(dir, filename))
+			_ = root.Remove(filename)
 			break
 		}
 	}
@@ -126,13 +132,19 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 	}
 	f := &dirFS{
 		base:      dir,
+		root:      root,
 		overrides: m,
 		caseMap:   caseMap,
 	}
-	// need to populate the overrides with appropriate info
-	root := os.DirFS(dir)
-
-	_ = fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
+	// Safety net for the library-consumer case where the dirFS is stashed
+	// inside another type (e.g. apk.New's fallback) and never reachable for
+	// explicit Close. Stopped by Close when it runs deterministically.
+	f.cleanup = runtime.AddCleanup(f, func(r *os.Root) { _ = r.Close() }, root)
+	// Seed overrides by walking the backing tree through the root. This
+	// refuses to follow any pre-existing symlink whose target escapes base,
+	// and root.Readlink gives us consistent sandbox semantics with the rest
+	// of the dirFS API surface.
+	_ = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -143,47 +155,108 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 		if err != nil {
 			return err
 		}
-		mode := fi.Mode()
-		perm := mode.Perm()
-		switch mode.Type() {
-		case fs.ModeDir:
-			fullPerm := os.ModeDir | perm
-			err = f.overrides.Mkdir(path, fullPerm)
-		case fs.ModeSymlink:
-			var target string
-			target, err = f.sanitizePath(path)
-			if err != nil {
-				return err
-			}
-			target, err = os.Readlink(target)
-			if err == nil {
-				err = f.overrides.Symlink(target, path)
-			}
-		case fs.ModeCharDevice:
-			var dev int
-			sys := fi.Sys()
-			st1, ok1 := sys.(*syscall.Stat_t)
-			st2, ok2 := sys.(*unix.Stat_t)
-			switch {
-			case ok1:
-				dev = int(st1.Rdev)
-			case ok2:
-				dev = int(st2.Rdev)
-			default:
-				return fmt.Errorf("unsupported type %T", sys)
-			}
-			err = f.overrides.Mknod(path, uint32(unix.S_IFCHR|mode), dev)
-		default:
-			var memFile File
-			memFile, err = f.overrides.OpenFile(path, os.O_CREATE, perm)
-			if memFile != nil {
-				_ = memFile.Close()
-			}
-		}
-		return err
+		return f.seedOverride(path, fi, root.Readlink)
 	})
 
 	return f
+}
+
+// seedOverride mirrors one entry of the backing tree into the in-memory
+// overrides. Those overrides are what every type and mode lookup on a dirFS
+// resolves against (Lstat reads them directly, Stat takes Mode() from them),
+// so an entry seeded as the wrong type is reported as the wrong type from then
+// on. readlink resolves a symlink's target through the sandboxed root.
+//
+// The same goes for the mode: seeding only Perm() would report a sticky
+// directory or a setgid binary already on disk without those bits, so
+// directories and regular files carry every non-type bit over.
+//
+// Mode and ownership have to be seeded together. A node seeded setuid but
+// left at the default uid 0 is worse than one with no setuid at all: a tree
+// holding a setuid file owned by an unprivileged user would serialize into an
+// image as setuid *root*. So the owner comes from the same Sys() as the mode,
+// and when it cannot be determined setuid/setgid are dropped instead.
+func (f *dirFS) seedOverride(path string, fi fs.FileInfo, readlink func(string) (string, error)) error {
+	mode := fi.Mode()
+	uid, gid, haveOwner := ownerFromInfo(fi)
+	seedMode := mode &^ fs.ModeType
+	if !haveOwner {
+		seedMode &^= fs.ModeSetuid | fs.ModeSetgid
+	}
+
+	switch {
+	case mode&fs.ModeSymlink != 0:
+		// Handled without ownership: memFS.getNode resolves the final path
+		// component, so a Chown here would retarget the link's target.
+		target, err := readlink(path)
+		if err != nil {
+			return err
+		}
+		return f.overrides.Symlink(target, path)
+	case mode.IsDir():
+		if err := f.overrides.Mkdir(path, os.ModeDir|seedMode); err != nil {
+			return err
+		}
+	case mode&fs.ModeCharDevice != 0:
+		// Must be a bit test: Go reports a character device as
+		// ModeDevice|ModeCharDevice (os.Lstat sets both), so comparing
+		// mode.Type() against fs.ModeCharDevice alone never matches and the
+		// device lands in the default branch as an empty regular file.
+		dev, err := rdevFromInfo(fi)
+		if err != nil {
+			return err
+		}
+		// Mknod takes the unix encoding, where the special bits are numbered
+		// differently and mean nothing on a device node anyway.
+		if err := f.overrides.Mknod(path, unix.S_IFCHR|uint32(mode.Perm()), dev); err != nil {
+			return err
+		}
+	default:
+		// Everything else — regular files, and the block devices, FIFOs and
+		// sockets the memFS overrides cannot represent — becomes an empty
+		// regular file whose content is served from disk.
+		memFile, err := f.overrides.OpenFile(path, os.O_CREATE, seedMode)
+		if memFile != nil {
+			_ = memFile.Close()
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	if !haveOwner {
+		return nil
+	}
+	return f.overrides.Chown(path, uid, gid)
+}
+
+// ownerFromInfo extracts the owning uid and gid from a FileInfo's Sys(). The
+// walk that seeds a dirFS yields *syscall.Stat_t; callers holding a value from
+// x/sys/unix yield *unix.Stat_t. Anything else — a FileInfo synthesized by a
+// memFS, say — has no owner to report.
+func ownerFromInfo(fi fs.FileInfo) (uid, gid int, ok bool) {
+	switch st := fi.Sys().(type) {
+	case *syscall.Stat_t:
+		return int(st.Uid), int(st.Gid), true
+	case *unix.Stat_t:
+		return int(st.Uid), int(st.Gid), true
+	default:
+		return 0, 0, false
+	}
+}
+
+// rdevFromInfo extracts a raw device number from a FileInfo's Sys(). os.Lstat
+// yields *syscall.Stat_t; callers holding a value from x/sys/unix yield
+// *unix.Stat_t.
+func rdevFromInfo(fi fs.FileInfo) (int, error) {
+	switch st := fi.Sys().(type) {
+	case *syscall.Stat_t:
+		return int(st.Rdev), nil
+	case *unix.Stat_t:
+		return int(st.Rdev), nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T", fi.Sys())
+	}
 }
 
 // dirFS represents a FullFS implementation based on a directory on disk.
@@ -201,6 +274,19 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 // else in memory.
 type dirFS struct {
 	base string
+	// root is a capability-style handle scoped to base. All disk operations on
+	// caller-supplied paths go through it so path resolution can never escape
+	// base via symlinks, hard links, absolute path components, or "..".
+	root *os.Root
+	// cleanup releases the root FD on garbage collection as a safety net for
+	// callers that can't reach Close() (notably the apk.New fallback which
+	// stashes the FullFS inside *APK). Deterministic release via Close() is
+	// still preferred.
+	//
+	// TODO: revisit and replace with `Close() error` on the FullFS interface
+	// once we're willing to take the breaking change across in-tree
+	// implementers and library consumers.
+	cleanup runtime.Cleanup
 	// overrides is a map of overrides for things that could not be kept on disk because of permission,
 	// filesystem or operating system limitations.
 	// It will include all directories, but no file contents.
@@ -210,6 +296,19 @@ type dirFS struct {
 	// can exist on disk. Maps the case-sensitive to the case-insensitive variant
 	caseMap      map[string]string
 	caseMapMutex sync.Mutex
+}
+
+// Close releases the underlying *os.Root file descriptor. A GC cleanup is also
+// registered as a safety net for consumers who cannot reach this method.
+// Calling Close more than once is safe.
+func (f *dirFS) Close() error {
+	if f.root == nil {
+		return nil
+	}
+	f.cleanup.Stop()
+	err := f.root.Close()
+	f.root = nil
+	return err
 }
 
 func (f *dirFS) Readlink(name string) (string, error) {
@@ -232,42 +331,41 @@ func (f *dirFS) Open(name string) (fs.File, error) {
 }
 
 func (f *dirFS) open(name string) (*fileImpl, error) {
-	fullpath, err := f.sanitizePath(name)
-	if err != nil {
-		return nil, err
-	}
+	rel := f.relPath(name)
 	baseName := filepath.Base(name)
 	if f.caseSensitiveOnDisk(name) {
-		file, err := os.Open(fullpath)
+		file, err := f.root.Open(rel)
 		if err == nil {
 			return &fileImpl{
-				file:     file,
-				name:     baseName,
-				fullpath: fullpath,
+				file: file,
+				name: baseName,
+				root: f.root,
+				rel:  rel,
 			}, nil
 		}
 		if !os.IsPermission(err) {
 			return nil, err
 		}
 		// get the original permissions
-		fi, err := os.Stat(fullpath)
+		fi, err := f.root.Stat(rel)
 		if err != nil {
-			return nil, fmt.Errorf("unable to stat file %s: %w", fullpath, err)
+			return nil, fmt.Errorf("unable to stat file %s: %w", name, err)
 		}
 		// Try to change permissions and open again.
-		if err := os.Chmod(fullpath, 0o600); err != nil {
+		if err := f.root.Chmod(rel, 0o600); err != nil {
 			return nil, fmt.Errorf("unable to read file or change permissions: %s", name)
 		}
-		file, err = os.Open(fullpath)
+		file, err = f.root.Open(rel)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read file even after change permissions: %s", name)
 		}
 		perms := fi.Mode()
 		return &fileImpl{
-			file:     file,
-			name:     baseName,
-			fullpath: fullpath,
-			perms:    &perms,
+			file:  file,
+			name:  baseName,
+			root:  f.root,
+			rel:   rel,
+			perms: &perms,
 		}, nil
 	}
 
@@ -278,11 +376,13 @@ func (f *dirFS) open(name string) (*fileImpl, error) {
 	return &fileImpl{file: file, name: baseName}, nil
 }
 
-// Open open a file for reading. Returns fs.File.
-// If the file has the wrong permissions for reading, it tries to
-// change them, and then change them back when closing.
-// This only works if the user reading the file actually has
-// permissions to change the file permissions.
+// OpenFile opens a file, returning a File.
+//
+// Non-permission bits in perm (setuid/setgid/sticky) are silently stripped —
+// *os.Root refuses them in OpenFile, and applying them eagerly would be
+// cleared again by the kernel's file_remove_privs() on the caller's next
+// write (on Linux, for non-privileged processes). Callers that need those
+// bits on disk must Chmod after the final close.
 func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	var (
 		file File
@@ -296,22 +396,14 @@ func (f *dirFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) 
 		// do we create it on disk?
 		if f.createOnDisk(name) {
 			_ = file.Close()
-			fullpath, err := f.sanitizePath(name)
-			if err != nil {
-				return nil, err
-			}
-			file, err = os.OpenFile(fullpath, flag, perm)
+			file, err = f.root.OpenFile(f.relPath(name), flag, perm.Perm())
 			if err != nil {
 				return nil, err
 			}
 		}
 	} else {
 		if f.caseSensitiveOnDisk(name) {
-			fullpath, sanErr := f.sanitizePath(name)
-			if sanErr != nil {
-				return nil, sanErr
-			}
-			file, err = os.OpenFile(fullpath, flag, perm)
+			file, err = f.root.OpenFile(f.relPath(name), flag, perm.Perm())
 		} else {
 			file, err = f.overrides.OpenFile(name, flag, perm)
 		}
@@ -336,11 +428,7 @@ func (f *dirFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	if f.caseSensitiveOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return nil, err
-		}
-		fi, err = os.Stat(fullpath)
+		fi, err = f.root.Stat(f.relPath(name))
 		if err != nil {
 			return nil, err
 		}
@@ -371,11 +459,7 @@ func (f *dirFS) Create(name string) (File, error) {
 	if f.createOnDisk(name) {
 		// close the memory one
 		_ = file.Close()
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return nil, err
-		}
-		file, err = os.Create(fullpath)
+		file, err = f.root.Create(f.relPath(name))
 		if err != nil {
 			return nil, err
 		}
@@ -389,11 +473,7 @@ func (f *dirFS) Remove(name string) error {
 		return err
 	}
 	if f.removeOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return err
-		}
-		return os.Remove(fullpath)
+		return f.root.Remove(f.relPath(name))
 	}
 	return nil
 }
@@ -405,11 +485,14 @@ func (f *dirFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		err           error
 	)
 	if f.caseSensitiveOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
+		// *os.Root does not expose ReadDir; open the directory through it and
+		// read entries from the returned *os.File.
+		dir, err := f.root.Open(f.relPath(name))
 		if err != nil {
 			return nil, err
 		}
-		onDisk, err = os.ReadDir(fullpath)
+		onDisk, err = dir.ReadDir(-1)
+		_ = dir.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -447,21 +530,17 @@ func (f *dirFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 func (f *dirFS) ReadFile(name string) ([]byte, error) {
 	if f.caseSensitiveOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return nil, err
-		}
-		return os.ReadFile(fullpath)
+		return f.root.ReadFile(f.relPath(name))
 	}
 	return f.overrides.ReadFile(name)
 }
+
+// WriteFile writes data to the named file. Non-permission bits in mode
+// (setuid/setgid/sticky) are silently stripped for the disk write — *os.Root
+// refuses them. Callers that need those bits on disk must Chmod after.
 func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 	if f.createOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(fullpath, b, mode); err != nil {
+		if err := f.root.WriteFile(f.relPath(name), b, mode.Perm()); err != nil {
 			return err
 		}
 	}
@@ -473,12 +552,7 @@ func (f *dirFS) WriteFile(name string, b []byte, mode fs.FileMode) error {
 
 func (f *dirFS) Readnod(name string) (dev int, err error) {
 	if f.caseSensitiveOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return 0, err
-		}
-		_, err = os.Stat(fullpath)
-		if err != nil {
+		if _, err := f.root.Stat(f.relPath(name)); err != nil {
 			return 0, err
 		}
 	}
@@ -486,22 +560,10 @@ func (f *dirFS) Readnod(name string) (dev int, err error) {
 }
 
 func (f *dirFS) Link(oldname, newname string) error {
-	fullpath, err := f.sanitizePath(oldname)
-	if err != nil {
-		return err
-	}
-	// for hardlink, we cannot take target as is, as it might be outside of the base.
-	// So we must sanitize it. It should point to a file that is within the filesystem.
-	target := filepath.Clean(fullpath)
-	if !strings.HasPrefix(target, f.base) {
-		return fmt.Errorf("hardlink target %s is outside of the filesystem", target)
-	}
 	if f.createOnDisk(newname) {
-		fullpath, err := f.sanitizePath(newname)
-		if err != nil {
-			return err
-		}
-		if err := os.Link(target, fullpath); err != nil {
+		// *os.Root enforces that both endpoints resolve within base, including
+		// refusing to traverse any attacker-planted symlink in either path.
+		if err := f.root.Link(f.relPath(oldname), f.relPath(newname)); err != nil {
 			return err
 		}
 	}
@@ -509,15 +571,11 @@ func (f *dirFS) Link(oldname, newname string) error {
 }
 
 func (f *dirFS) Symlink(oldname, newname string) error {
-	// For symlink, take target as is.
-	// If it is outside of the base, it will be resolved by Readlink.
-	// This enables proper symlink behaviour.
+	// The target (oldname) is stored verbatim, which preserves legitimate APK
+	// semantics (e.g., absolute paths within the image). *os.Root refuses to
+	// traverse the symlink at use time if it would escape the root.
 	if f.createOnDisk(newname) {
-		fullpath, err := f.sanitizePath(newname)
-		if err != nil {
-			return err
-		}
-		if err := os.Symlink(oldname, fullpath); err != nil {
+		if err := f.root.Symlink(oldname, f.relPath(newname)); err != nil {
 			return err
 		}
 	}
@@ -528,11 +586,8 @@ func (f *dirFS) MkdirAll(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
 	if f.createOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(fullpath, fullPerm); err != nil {
+		// *os.Root rejects type bits in the mode; strip to permission bits.
+		if err := f.root.MkdirAll(f.relPath(name), fullPerm.Perm()); err != nil {
 			return err
 		}
 	}
@@ -543,70 +598,80 @@ func (f *dirFS) Mkdir(name string, perm fs.FileMode) error {
 	// just in case, because some underlying systems miss this
 	fullPerm := os.ModeDir | perm
 	if f.createOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
-			return err
-		}
-		if err := os.Mkdir(fullpath, fullPerm); err != nil {
+		// *os.Root rejects type bits in the mode; strip to permission bits.
+		if err := f.root.Mkdir(f.relPath(name), fullPerm.Perm()); err != nil {
 			return err
 		}
 	}
 	return f.overrides.Mkdir(name, fullPerm)
 }
 
+// isUnsupportedByFS reports whether an error from a best-effort on-disk
+// metadata call is one we expect to ignore:
+//   - ENOTSUP/EOPNOTSUPP/ENOSYS: the filesystem or platform can't perform the
+//     operation (e.g. a FUSE mount that ignores mode bits).
+//   - EPERM: the process lacks privilege (e.g. chown as non-root without
+//     CAP_CHOWN, chmod of a not-owned or immutable file). This is the
+//     dominant failure mode for unprivileged builds.
+//
+// In-memory overrides remain the authoritative source for mode/ownership, so
+// the build still produces a correctly-attributed tar. Real errors (path
+// escapes, I/O failures, missing files) still surface.
+func isUnsupportedByFS(err error) bool {
+	return errors.Is(err, syscall.ENOTSUP) ||
+		errors.Is(err, syscall.EOPNOTSUPP) ||
+		errors.Is(err, syscall.ENOSYS) ||
+		errors.Is(err, syscall.EPERM)
+}
+
 func (f *dirFS) Chmod(path string, perm fs.FileMode) error {
 	if f.caseSensitiveOnDisk(path) {
-		fullpath, err := f.sanitizePath(path)
-		if err != nil {
+		if err := f.root.Chmod(f.relPath(path), perm); err != nil && !isUnsupportedByFS(err) {
 			return err
 		}
-		// ignore error, as we track it in memory anyways, and disk filesystem might not support it
-		_ = os.Chmod(fullpath, perm)
 	}
 	return f.overrides.Chmod(path, perm)
 }
 
 func (f *dirFS) Chown(path string, uid, gid int) error {
 	if f.caseSensitiveOnDisk(path) {
-		fullpath, err := f.sanitizePath(path)
-		if err != nil {
+		if err := f.root.Chown(f.relPath(path), uid, gid); err != nil && !isUnsupportedByFS(err) {
 			return err
 		}
-		// ignore error, as we track it in memory anyways, and disk filesystem might not support it
-		_ = os.Chown(fullpath, uid, gid)
 	}
 	return f.overrides.Chown(path, uid, gid)
 }
 
 func (f *dirFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
-	fullpath, err := f.sanitizePath(path)
-	if err != nil {
-		return err
-	}
-	if err := os.Chtimes(fullpath, atime, mtime); err != nil {
+	if err := f.root.Chtimes(f.relPath(path), atime, mtime); err != nil {
 		return fmt.Errorf("unable to change times: %w", err)
 	}
 	return f.overrides.Chtimes(path, atime, mtime)
 }
 
+// Mknod stores device metadata in the memFS overrides (the authoritative
+// layer) and best-effort materializes the node on disk so other operations
+// that consult disk first still find an entry.
+//
+// os.Root has no Mknod of its own; the disk side is platform-specific and
+// implemented in rwosfs_mknod_{linux,other}.go via mknodOnDisk.
 func (f *dirFS) Mknod(name string, mode uint32, dev int) error {
 	if f.caseSensitiveOnDisk(name) {
-		fullpath, err := f.sanitizePath(name)
-		if err != nil {
+		if err := f.mknodOnDisk(f.relPath(name), mode, dev); err != nil {
 			return err
-		}
-		// what if we could not create it? Just create a regular file there, and memory will override
-		if err := unix.Mknod(fullpath, mode, dev); err != nil {
-			fullpath, err = f.sanitizePath(name)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(fullpath, nil, 0); err != nil {
-				return err
-			}
 		}
 	}
 	return f.overrides.Mknod(name, mode, dev)
+}
+
+// placeholderOnDisk creates an empty file through the root so that later
+// Stat/Open calls that consult disk first find something. Device metadata is
+// tracked in the in-memory overrides; this entry is a visibility stub only.
+func (f *dirFS) placeholderOnDisk(rel string) error {
+	if err := f.root.WriteFile(rel, nil, 0); err != nil {
+		return fmt.Errorf("unable to create placeholder on disk: %w", err)
+	}
+	return nil
 }
 
 func (f *dirFS) SetXattr(path string, attr string, data []byte) error {
@@ -629,33 +694,24 @@ func (f *dirFS) Sub(path string) (FullFS, error) {
 
 const pathSeparator = string(os.PathSeparator)
 
-// sanitizePath joins base and p safely, preventing path traversal outside base.
-// It allows ".." components in the path as long as the resolved path stays within base.
-func (f *dirFS) sanitizePath(p string) (string, error) {
-	if f.base == "" {
-		return "", fmt.Errorf("empty base")
-	}
-
+// relPath normalizes a caller-supplied path into a clean, root-relative form
+// suitable for use with *os.Root operations.
+//
+// It handles two things that *os.Root does not handle gracefully on its own:
+//   - empty / "/" / absolute-looking inputs, which *os.Root rejects as "path
+//     escapes from parent" — here we strip to a root-relative form.
+//   - intermediate ".." components, which *os.Root walks against the real
+//     filesystem (so "a/c/../b" fails if "c" doesn't exist). filepath.Clean
+//     collapses them lexically before we hand the path to the root.
+//
+// Null-byte paths and ".." components that escape the root are left to
+// *os.Root to reject; both yield clear errors from the stdlib.
+func (f *dirFS) relPath(p string) string {
 	clean := strings.TrimSuffix(strings.TrimPrefix(p, pathSeparator), pathSeparator)
 	if clean == "" {
-		return f.base, nil
+		return "."
 	}
-
-	if strings.Contains(clean, "\x00") {
-		return "", fmt.Errorf("path contains null byte")
-	}
-
-	// Resolve the path and check if it escapes base using filepath.Rel
-	resolved := filepath.Clean(filepath.Join(f.base, clean))
-	rel, err := filepath.Rel(filepath.Clean(f.base), resolved)
-	if err != nil || strings.HasPrefix(rel, ".."+pathSeparator) || rel == ".." {
-		return "", fmt.Errorf("%s: %s", "content filepath is tainted", p)
-	}
-
-	if os.IsPathSeparator(f.base[len(f.base)-1]) {
-		return f.base + clean, nil
-	}
-	return f.base + pathSeparator + clean, nil
+	return filepath.Clean(clean)
 }
 
 func (f *dirFS) caseSensitiveOnDisk(p string) bool {
@@ -711,18 +767,20 @@ func (f *dirFS) removeOnDisk(p string) (removeOnDisk bool) {
 type file File
 type fileImpl struct {
 	file
-	name     string
-	fullpath string
-	perms    *os.FileMode
+	name string
+	// root and rel are populated when the underlying file lives on disk so
+	// permission restoration in Close() goes through the sandboxed root.
+	root  *os.Root
+	rel   string
+	perms *os.FileMode
 }
 
 func (f fileImpl) Close() error {
 	if err := f.file.Close(); err != nil {
 		return err
 	}
-	if f.perms != nil {
-		// f.name is the basename of the path, use the f.file.name here
-		return os.Chmod(f.fullpath, *f.perms)
+	if f.perms != nil && f.root != nil {
+		return f.root.Chmod(f.rel, *f.perms)
 	}
 	return nil
 }

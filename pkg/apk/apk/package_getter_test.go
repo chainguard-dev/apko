@@ -2,14 +2,19 @@ package apk
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -262,4 +267,228 @@ func TestAuth_bad(t *testing.T) {
 	_, err := getter.GetPackage(ctx, pkg)
 	require.Error(t, err, "unable to expand package")
 	require.True(t, called, "did not make request")
+}
+
+// TestGetPackage_ChecksumMismatch confirms that a package served by a repository
+// that does not match the checksum recorded in the (signed) APKINDEX is rejected
+// rather than silently installed. This guards against compromised mirrors or
+// poisoned caches substituting package contents.
+func TestGetPackage_ChecksumMismatch(t *testing.T) {
+	tampered := testPkg
+	// Flip one byte of the recorded checksum so the downloaded content's
+	// real control-section SHA-1 will not match.
+	tampered.Checksum = append([]byte(nil), testPkg.Checksum...)
+	tampered.Checksum[0] ^= 0xff
+
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&tampered}})
+	pkg := NewRepositoryPackage(&tampered, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	_, err := a.GetPackage(ctx, pkg)
+	require.Error(t, err, "expected checksum mismatch to be detected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+// TestCachedPackage_TamperedControl confirms that a cache entry whose
+// on-disk control file no longer matches its content-addressable filename
+// is rejected rather than served. This protects against cache corruption
+// or tampering after an entry was originally written.
+func TestCachedPackage_TamperedControl(t *testing.T) {
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{
+		dir:     tmpDir,
+		offline: false,
+		shared:  NewCache(false),
+	}, auth.DefaultAuthenticators)
+
+	// Populate the cache.
+	exp, err := a.GetPackage(ctx, pkg)
+	require.NoError(t, err, "populating cache")
+	ctlPath := exp.ControlFile
+	require.FileExists(t, ctlPath)
+
+	cacheDir := filepath.Dir(ctlPath)
+
+	// Tamper with the cached control file. Overwrite with different bytes
+	// so its SHA-1 no longer matches the content-addressable filename.
+	require.NoError(t, os.WriteFile(ctlPath, []byte("tampered"), 0o644))
+
+	_, err = a.cachedPackage(ctx, pkg, cacheDir)
+	require.Error(t, err, "expected tampered cache entry to be rejected")
+	require.Contains(t, err.Error(), "control hash mismatch")
+}
+
+// TestGetPackage_HashVerification confirms that GetPackage checks both the
+// control hash and the data hash and that each failure path returns a
+// distinguishable error. A synthetic APK is used so the test is fully
+// self-contained and will regress if either check is removed.
+func TestGetPackage_HashVerification(t *testing.T) {
+	ctx := context.Background()
+	getter := newDefaultPackageGetter(http.DefaultClient, nil, auth.DefaultAuthenticators)
+
+	entries := []testDirEntry{
+		{path: "usr/", dir: true, perms: 0o755},
+		{path: "usr/bin/hello", perms: 0o755, content: []byte("hello")},
+	}
+
+	t.Run("success", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		exp, err := getter.GetPackage(ctx, ip)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+		_ = exp.Close()
+	})
+
+	t.Run("control hash mismatch", func(t *testing.T) {
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, "")
+		ip.checksum = "Q1" + base64.StdEncoding.EncodeToString(make([]byte, 20)) // all-zero SHA-1
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "control hash mismatch")
+	})
+
+	t.Run("data hash mismatch", func(t *testing.T) {
+		wrongHash := fmt.Sprintf("%x", make([]byte, 32)) // 32 zero bytes, hex-encoded
+		ip := fakePackage(t, &Package{Name: "testpkg", Version: "1.0.0-r0"}, entries, wrongHash)
+		_, err := getter.GetPackage(ctx, ip)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "data hash mismatch")
+	})
+}
+
+func TestIsRetryableError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"context canceled", context.Canceled, false},
+		{"context deadline", context.DeadlineExceeded, false},
+		{"unexpected EOF", io.ErrUnexpectedEOF, true},
+		{"wrapped unexpected EOF", fmt.Errorf("expanding foo: %w", io.ErrUnexpectedEOF), true},
+		{"connection reset", syscall.ECONNRESET, true},
+		{"connection aborted", syscall.ECONNABORTED, true},
+		{"net.OpError", &net.OpError{Op: "read", Err: errors.New("reset")}, true},
+		{"string unexpected EOF", errors.New("something unexpected EOF happened"), true},
+		{"string connection reset", errors.New("connection reset by peer"), true},
+		{"string broken pipe", errors.New("write: broken pipe"), true},
+		{"http 500", &httpStatusError{statusCode: 500, status: "500 Internal Server Error", url: "https://example.com/pkg.apk"}, true},
+		{"http 502", &httpStatusError{statusCode: 502, status: "502 Bad Gateway", url: "https://example.com/pkg.apk"}, true},
+		{"http 429", &httpStatusError{statusCode: 429, status: "429 Too Many Requests", url: "https://example.com/pkg.apk"}, true},
+		{"http 404", &httpStatusError{statusCode: 404, status: "404 Not Found", url: "https://example.com/pkg.apk"}, false},
+		{"wrapped http 503", fmt.Errorf("fetching package: %w", &httpStatusError{statusCode: 503, status: "503 Service Unavailable", url: "https://example.com/pkg.apk"}), true},
+		{"checksum mismatch", errors.New("control hash mismatch: expected abc, got def"), false},
+		{"generic error", errors.New("some other error"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRetryableError(tt.err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// truncatingTransport serves a valid APK file but truncates the response on the first N requests.
+type truncatingTransport struct {
+	root      string
+	failCount int32 // number of remaining requests to truncate
+	attempts  atomic.Int32
+}
+
+func (t *truncatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	attempt := t.attempts.Add(1)
+
+	filename := filepath.Base(req.URL.Path)
+	data, err := os.ReadFile(filepath.Join(t.root, filename))
+	if err != nil {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("not found")),
+		}, nil
+	}
+
+	if attempt <= atomic.LoadInt32(&t.failCount) {
+		// Return a truncated response to simulate unexpected EOF during decompression.
+		truncated := data[:len(data)/2]
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(string(truncated))),
+		}, nil
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(string(data))),
+	}, nil
+}
+
+func TestGetPackage_RetryOnTransientError(t *testing.T) {
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+	ctx := context.Background()
+
+	tr := &truncatingTransport{
+		root:      testPrimaryPkgDir,
+		failCount: 1, // fail once, then succeed
+	}
+
+	getter := newDefaultPackageGetter(
+		&http.Client{Transport: tr},
+		nil,
+		auth.DefaultAuthenticators,
+	)
+
+	exp, err := getter.GetPackage(ctx, pkg)
+	require.NoError(t, err, "expected retry to succeed")
+	require.NotNil(t, exp)
+	_ = exp.Close()
+
+	// Should have taken 2 attempts (1 failure + 1 success).
+	require.Equal(t, int32(2), tr.attempts.Load(), "expected exactly 2 fetch attempts")
+}
+
+func TestGetPackage_NoRetryOnPermanentError(t *testing.T) {
+	tampered := testPkg
+	tampered.Checksum = make([]byte, len(testPkg.Checksum)) // wrong checksum
+	ctx := context.Background()
+
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&tampered}})
+	pkg := NewRepositoryPackage(&tampered, repoWithIndex)
+
+	// Use a transport that always serves the real APK data so we can count attempts.
+	tr := &truncatingTransport{
+		root:      testPrimaryPkgDir,
+		failCount: 0, // never truncate — always serve valid data
+	}
+
+	getter := newDefaultPackageGetter(
+		&http.Client{Transport: tr},
+		nil,
+		auth.DefaultAuthenticators,
+	)
+
+	_, err := getter.GetPackage(ctx, pkg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "control hash mismatch")
+
+	// Should have attempted exactly once — permanent errors must not be retried.
+	require.Equal(t, int32(1), tr.attempts.Load(), "expected exactly 1 fetch attempt for permanent error")
 }

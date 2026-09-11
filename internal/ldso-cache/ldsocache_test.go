@@ -195,3 +195,30 @@ func Test_GenerateCacheFile(t *testing.T) {
 		require.GreaterOrEqual(t, prev, cur)
 	}
 }
+
+func Test_dlCacheLibcmp_DigitVsNonDigit(t *testing.T) {
+	// A digit outranks a non-digit at the same position (glibc semantics):
+	// "libyaml-0.so.2" > "libyaml-cpp.so.0.8" because '0' > 'c'.
+	require.Greater(t, dlCacheLibcmp("libyaml-0.so.2", "libyaml-cpp.so.0.8"), 0)
+	require.Less(t, dlCacheLibcmp("libyaml-cpp.so.0.8", "libyaml-0.so.2"), 0)
+	// Digit runs compare numerically, not lexically: ".so.9" < ".so.10".
+	require.Less(t, dlCacheLibcmp("libfoo.so.9", "libfoo.so.10"), 0)
+	require.Equal(t, 0, dlCacheLibcmp("libfoo.so.13", "libfoo.so.13"))
+}
+
+func Test_LDSOCacheEntriesForDirs_SortMatchesDlCacheLibcmp(t *testing.T) {
+	getElfInfo = mockGetElfInfo
+	root := os.DirFS("testdata/libroot")
+	libdirs, err := ParseLDSOConf(root, "etc/ld.so.conf")
+	require.NoError(t, err)
+	entries, err := LDSOCacheEntriesForDirs(root, libdirs)
+	require.NoError(t, err)
+	// Entries must be in descending _dl_cache_libcmp order so ld.so's binary
+	// search over the cache succeeds.
+	for i := 1; i < len(entries); i++ {
+		a := filepath.Base(entries[i-1].Name)
+		b := filepath.Base(entries[i].Name)
+		require.GreaterOrEqual(t, dlCacheLibcmp(a, b), 0,
+			"entries not in descending _dl_cache_libcmp order: %q before %q", a, b)
+	}
+}

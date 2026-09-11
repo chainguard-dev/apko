@@ -30,20 +30,21 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chainguard-dev/clog"
 	"github.com/klauspost/compress/gzip"
-	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
 var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
+
+const indexCacheMaxEntries = 64
 
 type Signature struct {
 	KeyID           string
@@ -51,53 +52,24 @@ type Signature struct {
 	DigestAlgorithm crypto.Hash
 }
 
-// This is terrible but simpler than plumbing around a cache for now.
-// We just hold the parsed index in memory rather than re-parsing it every time,
-// which requires gunzipping, which is (somewhat) expensive.
-var globalIndexCache = &indexCache{
-	modtimes:  map[string]time.Time{},
-	urlToEtag: map[string]string{},
-}
+// Parsing an index requires gunzipping and rebuilding its package structures,
+// so keep recently used indexes in memory.
+var globalIndexCache = newIndexCache(indexCacheMaxEntries)
 
-type indexResult struct {
-	idx NamedIndex
-	err error
+type cacheKey struct {
+	url     string
+	etag    string    // Only used for remote indexes.
+	modtime time.Time // Only used for local indexes.
 }
 
 type indexCache struct {
-	// For remote indexes.
-	onces     sync.Map
-	urlToEtag map[string]string
-	etagMu    sync.Mutex // guards urlToEtag
-
-	// For local indexes.
-	sync.Mutex
-	modtimes map[string]time.Time
-
-	// etag|filename -> indexResult
-	indexes sync.Map
+	indexes *flightCache[cacheKey, NamedIndex]
 }
 
-func (i *indexCache) forget(key string) {
-	i.onces.Delete(key)
-	i.indexes.Delete(key)
-}
-
-func (i *indexCache) store(key string, idx NamedIndex, err error) {
-	i.indexes.Store(key, indexResult{
-		idx: idx,
-		err: err,
-	})
-}
-
-func (i *indexCache) load(key string) (NamedIndex, error) {
-	v, ok := i.indexes.Load(key)
-	if !ok {
-		return nil, fmt.Errorf("indexCache did not see key %q after writing it", key)
+func newIndexCache(maxEntries int) *indexCache {
+	return &indexCache{
+		indexes: newFlightCache[cacheKey, NamedIndex](maxEntries),
 	}
-	result := v.(indexResult)
-
-	return result.idx, result.err
 }
 
 func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
@@ -124,10 +96,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		if err != nil {
 			return nil, err
 		}
-		if opts.auth == nil {
-			opts.auth = auth.DefaultAuthenticators
-		}
-		if err := opts.auth.AddAuth(ctx, head); err != nil {
+		if err := opts.authenticator().AddAuth(ctx, head); err != nil {
 			return nil, fmt.Errorf("unable to add auth to request: %w", err)
 		}
 
@@ -156,62 +125,62 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		etag, ok := etagFromResponse(resp)
 		if !ok {
 			// If there's no etag, we can't cache it, so just return the result.
+			apkometrics.RecordIndexCacheAccess(apkometrics.CacheResultBypass)
 			return fetchAndParse(etag)
 		}
 
-		key := fmt.Sprintf("%s@%s", u, etag)
+		key := cacheKey{url: u, etag: etag}
+		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
+			return fetchAndParse(etag)
+		})
+		apkometrics.RecordIndexCacheAccess(cacheResult(hit))
 
-		once, _ := i.onces.LoadOrStore(key, &sync.Once{})
-		once.(*sync.Once).Do(func() {
-			// If we've seen this URL before, delete any references to old indexes so we can GC them.
-			// Lock reads/writes to the map, without blocking the fetchAndParse goroutine.
-			i.etagMu.Lock()
-			prev, ok := i.urlToEtag[u]
-			if ok {
-				prevKey := fmt.Sprintf("%s@%s", u, prev)
-				i.forget(prevKey)
-			}
-			i.etagMu.Unlock()
-
-			idx, err := fetchAndParse(etag)
-			i.store(key, idx, err)
-
-			// Record the current etag for this URL so we can GC it later.
-			i.etagMu.Lock()
-			i.urlToEtag[u] = etag
-			i.etagMu.Unlock()
+		// Remove any stale entries with the same URL but a different etag.
+		// This races with concurrent callers that may have a different etag: a
+		// slower goroutine with an older etag could evict a newer entry. This is
+		// harmless — the next call will see the current etag via HEAD, re-fetch,
+		// and repopulate the cache.
+		i.indexes.ForgetFunc(func(k cacheKey) bool {
+			return k.url == u && k.etag != etag
 		})
 
-		return i.load(key)
+		return idx, err
 	} else {
-		i.Lock()
-		defer i.Unlock()
-
 		// We do expect local indexes to change, so we check modtimes.
 		stat, err := os.Stat(u)
 		if err != nil {
 			return nil, fmt.Errorf("stat: %w", err)
 		}
 
-		mod := stat.ModTime()
-		before, ok := i.modtimes[u]
-		if !ok || mod.After(before) {
+		key := cacheKey{url: u, modtime: stat.ModTime()}
+
+		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			b, err := os.ReadFile(u)
 			if err != nil {
 				return nil, fmt.Errorf("reading file: %w", err)
 			}
-			// If this is the first time or it has changed since the last time...
 			idx, err := parseRepositoryIndex(ctx, u, keys, arch, b, opts)
 			if err != nil {
-				i.store(u, nil, err)
-			} else {
-				i.store(u, NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil)
+				return nil, err
 			}
-			i.modtimes[u] = mod
-		}
+			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
+		})
+		apkometrics.RecordIndexCacheAccess(cacheResult(hit))
 
-		return i.load(u)
+		// Remove cached generations of the same local index.
+		i.indexes.ForgetFunc(func(k cacheKey) bool {
+			return k.url == u && k.modtime != key.modtime
+		})
+
+		return idx, err
 	}
+}
+
+func cacheResult(hit bool) apkometrics.CacheResult {
+	if hit {
+		return apkometrics.CacheResultHit
+	}
+	return apkometrics.CacheResultMiss
 }
 
 // IndexURL returns the full URL to the index file for the given repo and arch.
@@ -313,10 +282,7 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 		req.Header.Set("I-Cant-Believe-Its-Not-If-None-Match", etag)
 	}
 
-	if opts.auth == nil {
-		opts.auth = auth.DefaultAuthenticators
-	}
-	if err := opts.auth.AddAuth(ctx, req); err != nil {
+	if err := opts.authenticator().AddAuth(ctx, req); err != nil {
 		return nil, fmt.Errorf("unable to add auth to request: %w", err)
 	}
 
@@ -466,6 +432,13 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
 	}
 
+	// Share package payloads with other indexes carrying the same packages.
+	// Only the repository-fetch path interns: index manipulation tooling
+	// building on IndexFromArchive directly keeps exclusive ownership.
+	for i, pkg := range index.Packages {
+		index.Packages[i] = internPackage(pkg)
+	}
+
 	return index, err
 }
 
@@ -476,6 +449,18 @@ type indexOpts struct {
 	auth                     auth.Authenticator
 	indexDecompressedMaxSize int64
 }
+
+// authenticator returns the configured authenticator, defaulting to the
+// ambient set when none was supplied. It deliberately does not memoize into o:
+// GetRepositoryIndexes shares one indexOpts across a goroutine per repository,
+// so writing the default back would be a data race.
+func (o *indexOpts) authenticator() auth.Authenticator {
+	if o.auth == nil {
+		return auth.DefaultAuthenticators
+	}
+	return o.auth
+}
+
 type IndexOption func(*indexOpts)
 
 func WithIgnoreSignatures(ignoreSignatures bool) IndexOption {
@@ -513,7 +498,7 @@ func redact(in string) string {
 	if err != nil {
 		// Attempt to parse non-https elements into URI's so they are translated into
 		// file:// URLs allowing them to parse into a url.URL{}
-		asURL, err := url.Parse(string(uri.New(in)))
+		asURL, err := url.Parse(string(fileURI(in)))
 		if err != nil {
 			return in
 		}

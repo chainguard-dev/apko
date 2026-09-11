@@ -18,7 +18,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -40,14 +40,16 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
             uploads.github.com:443
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Check if any changes since last release
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch --tags
+          git fetch --tags  # no creds needed: repo is public; if this ever goes private, pass token explicitly here
           TAG=$(git tag --points-at HEAD)
           if [ -z "$TAG" ]; then
             echo "No tag points at HEAD, checking if changes warrant a release."
@@ -66,25 +68,25 @@ jobs:
 
               if [ -z "$RELEASE_WORTHY_CHANGES" ]; then
                 echo "No Go source files, go.mod, go.sum, or LICENSE changed since last release. Skipping release."
-                echo "need_release=no" >> $GITHUB_OUTPUT
+                echo "need_release=no" >> "$GITHUB_OUTPUT"
               else
                 echo "Found release-worthy changes since last release:"
                 echo "$RELEASE_WORTHY_CHANGES"
-                echo "need_release=yes" >> $GITHUB_OUTPUT
+                echo "need_release=yes" >> "$GITHUB_OUTPUT"
               fi
             else
               echo "No previous tags found. Creating first release."
-              echo "need_release=yes" >> $GITHUB_OUTPUT
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
             fi
           else
             RELEASE=$(gh release view "$TAG" --json tagName --jq '.tagName' || echo "none")
             if [ "$RELEASE" == "$TAG" ]; then
               echo "A release exists for tag $TAG, which has the latest changes, so no need for a new tag or release."
-              echo "need_release=no" >> $GITHUB_OUTPUT
+              echo "need_release=no" >> "$GITHUB_OUTPUT"
             else
               echo "Tag $TAG exists, but no release is associated. Need a new release."
-              echo "need_release=yes" >> $GITHUB_OUTPUT
-              echo "existing_tag=$TAG" >> $GITHUB_OUTPUT
+              echo "need_release=yes" >> "$GITHUB_OUTPUT"
+              echo "existing_tag=$TAG" >> "$GITHUB_OUTPUT"
             fi
           fi
 
@@ -95,25 +97,29 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.check.outputs.need_release == 'yes'
         with:
+          persist-credentials: false
           ref: ${{ steps.check.outputs.existing_tag || steps.create_tag.outputs.new_tag }}
+          fetch-depth: 0
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.check.outputs.need_release == 'yes'
         with:
           go-version-file: './go.mod'
           check-latest: true
+          # Disable caching to avoid cache poisoning of release artifacts.
+          cache: false
 
       # Cosign is used by goreleaser to sign release artifacts.
-      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         if: steps.check.outputs.need_release == 'yes'
         with:
           # https://github.com/goreleaser/goreleaser/issues/6195
           cosign-release: "v2.6.1"
 
-      - uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         if: steps.check.outputs.need_release == 'yes'
         with:
           version: latest

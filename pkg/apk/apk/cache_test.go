@@ -15,6 +15,7 @@
 package apk
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,16 +26,16 @@ import (
 )
 
 func TestFlightCache(t *testing.T) {
-	s := newFlightCache[string, int]()
+	s := newFlightCache[string, int](2)
 	var called int
-	r1, err := s.Do("test", func() (int, error) {
+	r1, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 42, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 42, r1)
 
-	r2, err := s.Do("test", func() (int, error) {
+	r2, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
@@ -44,7 +45,7 @@ func TestFlightCache(t *testing.T) {
 
 	s.Forget("test")
 
-	r3, err := s.Do("test", func() (int, error) {
+	r3, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
@@ -52,7 +53,7 @@ func TestFlightCache(t *testing.T) {
 	require.Equal(t, 1337, r3)
 	require.Equal(t, 2, called, "Function should be called twice, once before and once after Forget")
 
-	differentKey, err := s.Do("test2", func() (int, error) {
+	differentKey, _, err := s.Do("test2", func() (int, error) {
 		return 7, nil
 	})
 	require.NoError(t, err)
@@ -60,15 +61,15 @@ func TestFlightCache(t *testing.T) {
 }
 
 func TestFlightCacheCachesNoErrors(t *testing.T) {
-	s := newFlightCache[string, int]()
+	s := newFlightCache[string, int](1)
 	var called int
-	_, err := s.Do("test", func() (int, error) {
+	_, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 42, assert.AnError
 	})
 	require.ErrorIs(t, assert.AnError, err)
 
-	r2, err := s.Do("test", func() (int, error) {
+	r2, _, err := s.Do("test", func() (int, error) {
 		called++
 		return 1337, nil
 	})
@@ -77,8 +78,26 @@ func TestFlightCacheCachesNoErrors(t *testing.T) {
 	require.Equal(t, 2, called, "Function should be called twice, once for the error and once for the success")
 }
 
+func TestFlightCacheReportsHits(t *testing.T) {
+	s := newFlightCache[string, int](1)
+
+	value, hit, err := s.Do("test", func() (int, error) {
+		return 42, nil
+	})
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Equal(t, 42, value)
+
+	value, hit, err = s.Do("test", func() (int, error) {
+		return 1337, nil
+	})
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Equal(t, 42, value)
+}
+
 func TestFlightCacheCoalescesCalls(t *testing.T) {
-	s := newFlightCache[string, int]()
+	s := newFlightCache[string, int](1)
 
 	var called atomic.Int32
 	var mux sync.Mutex
@@ -87,7 +106,7 @@ func TestFlightCacheCoalescesCalls(t *testing.T) {
 	var eg errgroup.Group
 	for range 10 {
 		eg.Go(func() error {
-			_, err := s.Do("test", func() (int, error) {
+			_, _, err := s.Do("test", func() (int, error) {
 				mux.Lock() // Hangs until the unlock below.
 				called.Add(1)
 				return 42, nil
@@ -99,4 +118,56 @@ func TestFlightCacheCoalescesCalls(t *testing.T) {
 	require.NoError(t, eg.Wait())
 
 	require.EqualValues(t, 1, called.Load(), "Function should only be called once")
+}
+
+func TestFlightCacheForgetFunc(t *testing.T) {
+	s := newFlightCache[string, int](3)
+
+	for k, v := range map[string]int{"a-1": 1, "a-2": 2, "b-1": 3} {
+		_, _, err := s.Do(k, func() (int, error) { return v, nil })
+		require.NoError(t, err)
+	}
+
+	// Forget all keys starting with "a-".
+	s.ForgetFunc(func(k string) bool {
+		return strings.HasPrefix(k, "a-")
+	})
+
+	// "a-*" keys should be evicted, so new values are computed.
+	r, _, err := s.Do("a-1", func() (int, error) { return 100, nil })
+	require.NoError(t, err)
+	require.Equal(t, 100, r)
+
+	r, _, err = s.Do("a-2", func() (int, error) { return 200, nil })
+	require.NoError(t, err)
+	require.Equal(t, 200, r)
+
+	// "b-1" should still be cached.
+	r, _, err = s.Do("b-1", func() (int, error) { return 999, nil })
+	require.NoError(t, err)
+	require.Equal(t, 3, r, "b-1 should still return the cached value")
+}
+
+func TestFlightCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	s := newFlightCache[string, int](2)
+
+	for _, item := range []struct {
+		key   string
+		value int
+	}{{"a", 1}, {"b", 2}} {
+		_, _, err := s.Do(item.key, func() (int, error) { return item.value, nil })
+		require.NoError(t, err)
+	}
+
+	_, hit, err := s.Do("a", func() (int, error) { return 10, nil })
+	require.NoError(t, err)
+	require.True(t, hit)
+
+	_, _, err = s.Do("c", func() (int, error) { return 3, nil })
+	require.NoError(t, err)
+
+	value, hit, err := s.Do("b", func() (int, error) { return 20, nil })
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Equal(t, 20, value)
 }

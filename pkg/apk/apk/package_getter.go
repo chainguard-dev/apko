@@ -20,12 +20,16 @@ import (
 	"crypto/sha1" //nolint:gosec // this is what apk tools is using
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -39,17 +43,69 @@ import (
 	"github.com/chainguard-dev/clog"
 )
 
+const (
+	// maxFetchRetries is the number of additional attempts after the first failure.
+	maxFetchRetries = 2
+	// retryBaseDelay is the base delay between retry attempts (scaled linearly by attempt number).
+	retryBaseDelay = 1 * time.Second
+)
+
+// isRetryableError reports whether err is a transient error that warrants retrying
+// the fetch+expand pipeline from scratch.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) {
+		return true
+	}
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return true
+	}
+	if httpErr, ok := errors.AsType[*httpStatusError](err); ok {
+		return httpErr.statusCode >= 500 || httpErr.statusCode == http.StatusTooManyRequests
+	}
+	msg := err.Error()
+	for _, substr := range []string{
+		"unexpected EOF",
+		"connection reset",
+		"broken pipe",
+	} {
+		if strings.Contains(msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// httpStatusError represents a non-OK HTTP response status.
+type httpStatusError struct {
+	statusCode int
+	status     string
+	url        string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("unable to get package apk at %s: %s", e.url, e.status)
+}
+
 // PackageGetter abstracts how packages are fetched and expanded.
 type PackageGetter interface {
 	// GetPackage fetches and returns an expanded package.
 	GetPackage(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error)
 }
 
+const packageCacheMaxEntries = 4096
+
 // globalApkCache is the shared in-memory singleflight cache used by DefaultPackageGetter.
 // This ensures deduplication of concurrent requests across all APK instances in a process.
-// NOTE: This is used only to retain backwards compatibility with existing behavior, which
-// also uses a global cache.
-var globalApkCache = newFlightCache[string, *expandapk.APKExpanded]()
+var globalApkCache = newFlightCache[string, *expandapk.APKExpanded](packageCacheMaxEntries)
 
 // defaultPackageGetter implements the standard disk-caching behavior
 // with in-memory singleflight deduplication using a global cache.
@@ -103,9 +159,7 @@ func (d *defaultPackageGetter) GetPackage(ctx context.Context, pkg InstallablePa
 		return d.getPackageImpl(ctx, pkg)
 	}
 
-	cached := true
-	val, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
-		cached = false
+	val, cached, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
 		return d.getPackageImpl(ctx, pkg)
 	})
 	if !cached {
@@ -152,12 +206,6 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 		}
 	}
 
-	rc, err := d.fetchPackage(ctx, pkg)
-	if err != nil {
-		return nil, fmt.Errorf("fetching package %q: %w", pkg.PackageName(), err)
-	}
-	defer rc.Close()
-
 	var expandOpts []expandapk.Option
 	if d.apkControlMaxSize != 0 {
 		expandOpts = append(expandOpts, expandapk.WithMaxControlSize(d.apkControlMaxSize))
@@ -165,9 +213,10 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 	if d.apkDataMaxSize != 0 {
 		expandOpts = append(expandOpts, expandapk.WithMaxDataSize(d.apkDataMaxSize))
 	}
-	exp, err := expandapk.ExpandApkWithOptions(ctx, rc, cacheDir, expandOpts...)
+
+	exp, err := d.fetchExpandAndVerify(ctx, pkg, cacheDir, expandOpts)
 	if err != nil {
-		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
+		return nil, err
 	}
 
 	// If we don't have a cache, we're done.
@@ -176,6 +225,92 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 	}
 
 	return d.cachePackage(ctx, pkg, exp, cacheDir)
+}
+
+// fetchExpandAndVerify fetches, expands, and verifies a package, retrying on transient errors.
+func (d *defaultPackageGetter) fetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
+	var lastErr error
+	for attempt := range maxFetchRetries + 1 {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * retryBaseDelay
+			clog.FromContext(ctx).Warnf("retrying fetch of %s (attempt %d/%d) after error: %v", pkg.PackageName(), attempt+1, maxFetchRetries+1, lastErr)
+			select {
+			case <-ctx.Done():
+				return nil, context.Cause(ctx)
+			case <-time.After(delay):
+			}
+		}
+
+		exp, err := d.doFetchExpandAndVerify(ctx, pkg, cacheDir, expandOpts)
+		if err == nil {
+			return exp, nil
+		}
+		if !isRetryableError(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("after %d attempts: %w", maxFetchRetries+1, lastErr)
+}
+
+// doFetchExpandAndVerify performs a single fetch+expand+verify cycle for a package.
+func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg InstallablePackage, cacheDir string, expandOpts []expandapk.Option) (*expandapk.APKExpanded, error) {
+	rc, err := d.fetchPackage(ctx, pkg)
+	if err != nil {
+		return nil, fmt.Errorf("fetching package %q: %w", pkg.PackageName(), err)
+	}
+	defer rc.Close()
+
+	exp, err := expandapk.ExpandApkWithOptions(ctx, rc, cacheDir, expandOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
+	}
+
+	chk := pkg.ChecksumString()
+	if !strings.HasPrefix(chk, "Q1") {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
+	}
+	expectedControlHash, err := base64.StdEncoding.DecodeString(chk[2:])
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
+	}
+	if !bytes.Equal(expectedControlHash, exp.ControlHash) {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash)
+	}
+
+	pkgInfo, err := exp.PkgInfo()
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("reading pkginfo for %s: %w", pkg.PackageName(), err)
+	}
+	expectedDataHash, err := hex.DecodeString(pkgInfo.DataHash)
+	if err != nil {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q has malformed datahash %q: %w", pkg.PackageName(), pkgInfo.DataHash, err)
+	}
+	if !bytes.Equal(expectedDataHash, exp.PackageHash) {
+		_ = exp.Close()
+		return nil, fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash)
+	}
+
+	return exp, nil
+}
+
+// sha1File returns the SHA-1 of the file at path.
+func sha1File(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	h := sha1.New() //nolint:gosec // this is what apk tools is using
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
 }
 
 // fetchPackage fetches a package from the network or local filesystem.
@@ -224,7 +359,7 @@ func (d *defaultPackageGetter) fetchPackage(ctx context.Context, pkg FetchablePa
 		}
 		if res.StatusCode != http.StatusOK {
 			res.Body.Close()
-			return nil, fmt.Errorf("unable to get package apk at %s: %v", u, res.Status)
+			return nil, &httpStatusError{statusCode: res.StatusCode, status: res.Status, url: u}
 		}
 		return res.Body, nil
 	default:
@@ -322,8 +457,18 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	if err != nil {
 		return nil, err
 	}
+
+	// Recompute rather than trust the content-addressable filename; a tampered cache entry must not bypass fetch-path verification.
+	ctlHash, err := sha1File(ctl)
+	if err != nil {
+		return nil, fmt.Errorf("hashing cached control %q: %w", ctl, err)
+	}
+	if !bytes.Equal(checksum, ctlHash) {
+		return nil, fmt.Errorf("cached %q: control hash mismatch: expected %x, got %x", ctl, checksum, ctlHash)
+	}
+
 	exp.ControlFile = ctl
-	exp.ControlHash = checksum
+	exp.ControlHash = ctlHash
 	exp.ControlSize = cf.Size()
 
 	control, err := exp.ControlData()

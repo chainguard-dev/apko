@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,6 +42,7 @@ import (
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/baseimg"
 	"chainguard.dev/apko/pkg/build/types"
+	apkometrics "chainguard.dev/apko/pkg/metrics"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/paths"
 	"chainguard.dev/apko/pkg/s6"
@@ -59,6 +61,13 @@ type Context struct {
 	// ImageConfiguration instructions to use for the build, normally from an apko.yaml file, but can be set directly.
 	ic types.ImageConfiguration
 	o  options.Options
+
+	// formatOverride and annotationOverrides are what the field-level Options
+	// asked for. They are held here rather than written straight to ic, and
+	// resolved onto ic by resolveImageConfiguration once every Option has been
+	// applied.
+	formatOverride      types.LayerFormat
+	annotationOverrides map[string]string
 
 	s6      *s6.Context
 	fs      apkfs.FullFS
@@ -179,14 +188,35 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 	if bc.o.TarballPath != "" {
 		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
-		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.TarballFileName()))
+		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
 	}
 	bc.o.TarballPath = outfile.Name()
-	defer outfile.Close()
 
+	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
+		// The EROFS path does not defer Close: it hashes the finished file, so
+		// the close has to happen first and its error has to be reported
+		// rather than swallowed by a defer. No Sync is needed either —
+		// *os.File does no userspace buffering, so once Close returns, a fresh
+		// Open sees every byte.
+		outName := outfile.Name()
+		if err := writeErofs(ctx, outfile, bc.fs, bc.o.TempDir(), bc.o.SourceDateEpoch); err != nil {
+			_ = outfile.Close()
+			return "", nil, fmt.Errorf("generating erofs image: %w", err)
+		}
+		if err := outfile.Close(); err != nil {
+			return "", nil, fmt.Errorf("closing erofs image: %w", err)
+		}
+		l, err := buildErofsLayerFromFile(outName, nil)
+		if err != nil {
+			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
+		}
+		return outName, l, nil
+	}
+
+	defer outfile.Close()
 	lw := newLayerWriter(outfile)
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
@@ -218,6 +248,25 @@ func (bc *Context) checkPaths(ctx context.Context) error {
 	return nil
 }
 
+// resolveImageConfiguration applies the overrides recorded by the field-level
+// Options onto ic. It runs after every Option has been applied, so that an
+// Option which replaces ic wholesale -- WithImageConfiguration, WithConfig --
+// cannot discard them by appearing later in the slice.
+func (bc *Context) resolveImageConfiguration() {
+	if bc.formatOverride != "" {
+		bc.ic.Format = bc.formatOverride
+	}
+	if len(bc.annotationOverrides) > 0 {
+		// Merge onto the configured annotations, overrides winning per key. A
+		// new map rather than a write in place: bc.ic.Annotations may still be
+		// the map the caller passed to WithImageConfiguration.
+		merged := make(map[string]string, len(bc.ic.Annotations)+len(bc.annotationOverrides))
+		maps.Copy(merged, bc.ic.Annotations)
+		maps.Copy(merged, bc.annotationOverrides)
+		bc.ic.Annotations = merged
+	}
+}
+
 // NewOptions evaluates the build.Options in the same way as New().
 func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, error) {
 	bc := Context{
@@ -229,6 +278,7 @@ func NewOptions(opts ...Option) (*options.Options, *types.ImageConfiguration, er
 			return nil, nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	return &bc.o, &bc.ic, nil
 }
@@ -252,6 +302,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			return nil, err
 		}
 	}
+	bc.resolveImageConfiguration()
 
 	// SOURCE_DATE_EPOCH will always overwrite the build flag
 	if v, ok := os.LookupEnv("SOURCE_DATE_EPOCH"); ok && len(strings.TrimSpace(v)) != 0 {
@@ -289,22 +340,18 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 			HTTPResponseMaxSize:         bc.o.SizeLimits.HTTPResponseMaxSize,
 		}),
 	}
-	// only try to pass the cache dir if one of the following is true:
-	// - the user has explicitly set a cache dir
-	// - the user's system-determined cachedir, as set by os.UserCacheDir(), can be found
-	// if neither of these are true, then we don't want to pass a cache dir, because
-	// go-apk will try to set it to os.UserCacheDir() which returns an error if $HOME
-	// is not set.
-
-	// note that this is not easy to do in a switch statement, because of the second
-	// condition, if err := ...; err == nil {}
-	if bc.o.CacheDir != "" {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
-	} else if _, err := os.UserCacheDir(); err == nil {
-		apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
-	} else {
-		log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+	// WithCache resolves an empty directory through os.UserCacheDir. Check it
+	// here so builds can run in environments without a system cache directory.
+	if bc.o.DiskCacheEnabled {
+		if bc.o.CacheDir != "" {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else if _, err := os.UserCacheDir(); err == nil {
+			apkOpts = append(apkOpts, apk.WithCache(bc.o.CacheDir, bc.o.Offline, bc.o.SharedCache))
+		} else {
+			log.Warnf("cache disabled because cache dir was not set, and cannot determine system default: %v", err)
+		}
 	}
+	apkOpts = append(apkOpts, apk.WithOffline(bc.o.Offline))
 
 	if bc.ic.Contents.BaseImage != nil {
 		imgPath, err := paths.ResolvePath(bc.ic.Contents.BaseImage.Image, bc.o.IncludePaths)
@@ -367,9 +414,23 @@ type layer struct {
 	compressed   string
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
+	cacheCounted bool // first compression-cache lookup already recorded
 }
 
-func (l *layer) compress() error {
+// recordCacheAccess reports this layer's first compression-cache outcome.
+// Only the first lookup counts: once a layer has been compressed, compress()
+// short-circuits, so a later lookup saves nothing whether it hits or not.
+func (l *layer) recordCacheAccess(result apkometrics.CacheResult) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cacheCounted {
+		return
+	}
+	l.cacheCounted = true
+	apkometrics.RecordCompressionCacheAccess(result)
+}
+
+func (l *layer) compress() (rerr error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -387,6 +448,11 @@ func (l *layer) compress() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := out.Close(); err != nil && rerr == nil {
+			rerr = err
+		}
+	}()
 
 	buf := pooledBufioWriter(out)
 	defer bufioPool.Put(buf)
@@ -426,7 +492,7 @@ func (l *layer) compress() error {
 
 	l.compressed = l.uncompressed + ".gz"
 
-	return out.Close()
+	return nil
 }
 
 func (l *layer) DiffID() (v1.Hash, error) {
@@ -436,11 +502,13 @@ func (l *layer) DiffID() (v1.Hash, error) {
 func (l *layer) Digest() (v1.Hash, error) {
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
 		l.desc.Size = cachedDesc.Size
 		return l.desc.Digest, nil
 	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
 	if err := l.compress(); err != nil {
 		return v1.Hash{}, err
@@ -469,11 +537,13 @@ func (l *layer) Uncompressed() (io.ReadCloser, error) {
 func (l *layer) Size() (int64, error) {
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
 		l.desc.Size = cachedDesc.Size
 		return l.desc.Size, nil
 	}
+	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
 	if err := l.compress(); err != nil {
 		return 0, err

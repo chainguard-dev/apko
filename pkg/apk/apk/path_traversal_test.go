@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -86,6 +87,342 @@ func TestPathTraversalHardlink(t *testing.T) {
 	if _, statErr := os.Lstat(outsideHardlink); statErr == nil {
 		t.Fatalf("expected %s to not exist after fix", outsideHardlink)
 	}
+}
+
+// TestSymlinkEscape_FileThroughAbsoluteSymlink covers the classic symlink-escape
+// shape: a malicious APK plants a symlink inside the image whose target is an
+// absolute path pointing outside the rootfs, then a regular file whose tar
+// header name traverses that symlink. The install must fail and the outside
+// path must remain untouched.
+func TestSymlinkEscape_FileThroughAbsoluteSymlink(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outsideDir := filepath.Join(sandbox, "outside")
+	outsideFile := filepath.Join(outsideDir, "pwned")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	r, err := makeSymlinkThenFileTar("evil", outsideDir, "evil/pwned", []byte("malicious"))
+	if err != nil {
+		t.Fatalf("makeSymlinkThenFileTar: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err == nil {
+		t.Fatalf("expected installAPKFiles to fail, but it succeeded")
+	}
+
+	if _, statErr := os.Stat(outsideFile); statErr == nil {
+		t.Fatalf("expected %s to not exist after fix", outsideFile)
+	}
+}
+
+// TestSymlinkEscape_FileThroughRelativeSymlink is the ../outside variant.
+func TestSymlinkEscape_FileThroughRelativeSymlink(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outsideDir := filepath.Join(sandbox, "outside")
+	outsideFile := filepath.Join(outsideDir, "pwned")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	r, err := makeSymlinkThenFileTar("evil", "../outside", "evil/pwned", []byte("malicious"))
+	if err != nil {
+		t.Fatalf("makeSymlinkThenFileTar: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err == nil {
+		t.Fatalf("expected installAPKFiles to fail, but it succeeded")
+	}
+
+	if _, statErr := os.Stat(outsideFile); statErr == nil {
+		t.Fatalf("expected %s to not exist after fix", outsideFile)
+	}
+}
+
+// TestSymlinkEscape_MkdirAllThroughSymlink plants a symlink whose target is an
+// outside directory, then a TypeDir entry traversing the symlink. MkdirAll
+// must not merge new dirs into the outside location.
+func TestSymlinkEscape_MkdirAllThroughSymlink(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outsideDir := filepath.Join(sandbox, "outside")
+	outsideSub := filepath.Join(outsideDir, "sub")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	r, err := makeSymlinkThenDirTar("evil", outsideDir, "evil/sub")
+	if err != nil {
+		t.Fatalf("makeSymlinkThenDirTar: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err == nil {
+		t.Fatalf("expected installAPKFiles to fail, but it succeeded")
+	}
+
+	if _, statErr := os.Stat(outsideSub); statErr == nil {
+		t.Fatalf("expected %s to not exist after fix", outsideSub)
+	}
+}
+
+// TestSymlinkEscape_HardlinkThroughSymlink validates the hardlink path: the
+// prior GHSA guarded target-side escapes, but the newname side could still be
+// redirected through an attacker-planted symlink.
+func TestSymlinkEscape_HardlinkThroughSymlink(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	outsideDir := filepath.Join(sandbox, "outside")
+	outsideLinked := filepath.Join(outsideDir, "linked")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	r, err := makeHardlinkThroughSymlinkTar("legit", "evil", outsideDir, "evil/linked")
+	if err != nil {
+		t.Fatalf("makeHardlinkThroughSymlinkTar: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err == nil {
+		t.Fatalf("expected installAPKFiles to fail, but it succeeded")
+	}
+
+	if _, statErr := os.Lstat(outsideLinked); statErr == nil {
+		t.Fatalf("expected %s to not exist after fix", outsideLinked)
+	}
+}
+
+// TestInstallSetuidBinary exercises the end-to-end install of a setuid regular
+// file — the mount-binary shape that triggered "unsupported file mode" on
+// melange qemu runners. *os.Root rejects non-permission bits in OpenFile, so
+// dirFS.OpenFile silently strips them; the full mode survives via the memFS
+// overlay and is what downstream layer/tar/cpio emitters consume through
+// dirFS.Stat().Mode() and DirEntry.Info().Mode().
+func TestInstallSetuidBinary(t *testing.T) {
+	ctx := t.Context()
+
+	sandbox := t.TempDir()
+	base := filepath.Join(sandbox, "base")
+	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())
+	if fsys == nil {
+		t.Fatalf("failed to create dirfs for base %s", base)
+	}
+
+	a, err := New(ctx, WithFS(fsys))
+	if err != nil {
+		t.Fatalf("apk.New: %v", err)
+	}
+
+	content := []byte("setuid binary payload")
+	// 0o4755 = S_ISUID | rwxr-xr-x — the shape in the mount APK's tar header.
+	r, err := makeTestTarWithRegFile("usr/bin/mount", content, 0o4755)
+	if err != nil {
+		t.Fatalf("makeTestTarWithRegFile: %v", err)
+	}
+
+	if _, err := a.installAPKFiles(ctx, r, &Package{}); err != nil {
+		t.Fatalf("installAPKFiles failed: %v", err)
+	}
+
+	// fsys.Stat is the authoritative mode for downstream emission.
+	fi, err := fsys.Stat("usr/bin/mount")
+	if err != nil {
+		t.Fatalf("fsys.Stat: %v", err)
+	}
+	if fi.Mode()&os.ModeSetuid == 0 {
+		t.Fatalf("expected setuid bit via fsys.Stat, got %s", fi.Mode())
+	}
+	if fi.Mode().Perm() != 0o755 {
+		t.Fatalf("expected perm 0o755, got %o", fi.Mode().Perm())
+	}
+
+	got, err := os.ReadFile(filepath.Join(base, "usr/bin/mount"))
+	if err != nil {
+		t.Fatalf("reading installed file: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("content mismatch")
+	}
+}
+
+func makeTestTarWithRegFile(name string, content []byte, mode int64) (*bytes.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	// Emit a TypeDir entry for each parent so installAPKFiles can MkdirAll
+	// before the regular-file entry lands.
+	parts := strings.Split(filepath.ToSlash(name), "/")
+	for i := 1; i < len(parts); i++ {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     strings.Join(parts[:i], "/") + "/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Typeflag: tar.TypeReg,
+		Mode:     mode,
+		Size:     int64(len(content)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(content); err != nil {
+		return nil, err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(buf.Bytes()), nil
+}
+
+func makeSymlinkThenFileTar(symlinkName, symlinkTarget, fileName string, content []byte) (*bytes.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     symlinkName,
+		Linkname: symlinkTarget,
+		Typeflag: tar.TypeSymlink,
+		Mode:     0o777,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     fileName,
+		Typeflag: tar.TypeReg,
+		Mode:     0o644,
+		Size:     int64(len(content)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(content); err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(buf.Bytes()), nil
+}
+
+func makeSymlinkThenDirTar(symlinkName, symlinkTarget, dirName string) (*bytes.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     symlinkName,
+		Linkname: symlinkTarget,
+		Typeflag: tar.TypeSymlink,
+		Mode:     0o777,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     dirName,
+		Typeflag: tar.TypeDir,
+		Mode:     0o755,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(buf.Bytes()), nil
+}
+
+func makeHardlinkThroughSymlinkTar(regularName, symlinkName, symlinkTarget, hardlinkName string) (*bytes.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	content := []byte("legitimate")
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     regularName,
+		Typeflag: tar.TypeReg,
+		Mode:     0o644,
+		Size:     int64(len(content)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(content); err != nil {
+		return nil, err
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     symlinkName,
+		Linkname: symlinkTarget,
+		Typeflag: tar.TypeSymlink,
+		Mode:     0o777,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     hardlinkName,
+		Linkname: regularName,
+		Typeflag: tar.TypeLink,
+		Mode:     0o644,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(buf.Bytes()), nil
 }
 
 func makeTestTar(dirName, symlinkName, symlinkTarget string) (*bytes.Reader, error) {

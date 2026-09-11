@@ -16,6 +16,11 @@ package apk
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -29,6 +34,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.step.sm/crypto/jose"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -103,6 +109,48 @@ func TestInitDB(t *testing.T) {
 	ent, err := fs.ReadDir(src, "etc/apk/keys")
 	require.NoError(t, err)
 	require.Len(t, ent, 0) // No keys discovered
+}
+
+func TestInitDBWithoutCacheReturnsAlpineKeyFetchError(t *testing.T) {
+	const repository = "https://example.invalid/alpine/v3.22/main"
+
+	src := apkfs.NewMemFS()
+	a, err := New(t.Context(),
+		WithFS(src),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithTransport(&testLocalTransport{fail: true}),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err = a.InitDB(ctx, repository)
+	var got *AlpineKeyFetchError
+	require.ErrorAs(t, err, &got)
+	require.Equal(t, &AlpineKeyFetchError{
+		Repository: repository,
+		Version:    "v3.22",
+		Err:        got.Err,
+	}, got)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestInitDBOfflineWithoutCacheIgnoresMissingAlpineKeys(t *testing.T) {
+	src := apkfs.NewMemFS()
+	a, err := New(t.Context(),
+		WithFS(src),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithOffline(true),
+	)
+	require.NoError(t, err)
+
+	err = a.InitDB(t.Context(), "https://example.invalid/alpine/v3.22/main")
+	require.NoError(t, err)
+
+	ent, err := fs.ReadDir(src, "etc/apk/keys")
+	require.NoError(t, err)
+	require.Empty(t, ent)
 }
 
 func TestInitDB_ChainguardDiscovery(t *testing.T) {
@@ -929,4 +977,81 @@ func TestAuth_bad_original(t *testing.T) {
 	_, err = a.FetchPackage(ctx, pkg)
 	require.Error(t, err, "should fail with bad auth")
 	require.True(t, called, "did not make request")
+}
+
+func TestDiscoverKeysNonRSA(t *testing.T) {
+	ctx := context.Background()
+
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	var jwksURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apk-configuration":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"jwks_uri":%q}`, jwksURL)
+		case "/jwks":
+			jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &ecKey.PublicKey, KeyID: "ec-test"}}}
+			require.NoError(t, json.NewEncoder(w).Encode(jwks))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	jwksURL = srv.URL + "/jwks"
+
+	_, err = DiscoverKeys(ctx, srv.Client(), auth.StaticAuth("", "", ""), srv.URL)
+	require.Error(t, err, "expected typed error, not a panic")
+	require.Contains(t, err.Error(), "unsupported JWKS key type")
+}
+
+func TestDiscoverKeysRSA(t *testing.T) {
+	ctx := context.Background()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	var jwksURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apk-configuration":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"jwks_uri":%q}`, jwksURL)
+		case "/jwks":
+			jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &rsaKey.PublicKey, KeyID: "rsa-test"}}}
+			require.NoError(t, json.NewEncoder(w).Encode(jwks))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	jwksURL = srv.URL + "/jwks"
+
+	keys, err := DiscoverKeys(ctx, srv.Client(), auth.StaticAuth("", "", ""), srv.URL)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.Equal(t, "rsa-test.rsa.pub", keys[0].ID)
+}
+
+// TestInitDBBaseDirectoryPerms covers the base-directory permission check
+// against a filesystem where the directories already exist, which is the only
+// case that reaches the comparison.
+func TestInitDBBaseDirectoryPerms(t *testing.T) {
+	t.Run("sticky tmp accepted", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		require.NoError(t, src.Mkdir("/tmp", fs.ModeSticky|0o777))
+		apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		require.NoError(t, apk.InitDB(t.Context()))
+	})
+
+	t.Run("non-sticky tmp rejected", func(t *testing.T) {
+		src := apkfs.NewMemFS()
+		require.NoError(t, src.Mkdir("/tmp", 0o777))
+		apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
+		require.NoError(t, err)
+		err = apk.InitDB(t.Context())
+		require.ErrorContains(t, err, "base directory /tmp has incorrect permissions")
+	})
 }

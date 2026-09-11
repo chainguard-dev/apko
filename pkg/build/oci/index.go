@@ -22,6 +22,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -97,14 +98,31 @@ func generateIndexWithMediaType(mediaType ggcrtypes.MediaType, ic types.ImageCon
 			return name.Digest{}, nil, fmt.Errorf("failed to compute size: %w", err)
 		}
 
+		platform := arch.ToOCIPlatform()
+		// Carry the config's os.features onto the index platform descriptor.
+		// A consumer that filters on the index -- selecting a manifest before
+		// fetching any config -- can only see the signal if it is here. For
+		// EROFS images this is half of a MUST: erofs/erofs-image-spec §5.4
+		// requires the feature in both the config and the index platform
+		// descriptor, and §8.2 item 1 has consumers refuse an image whose
+		// os.features they do not implement.
+		//
+		// os.features is optional, so an image whose config is not reachable
+		// is not a failure: some callers pass a manifest-only v1.Image that
+		// deliberately serves no config or layer content. Index generation
+		// proceeds without the feature rather than aborting. Images apko
+		// itself builds always carry a readable config, so the §5.4 MUST
+		// still holds for every EROFS image apko produces.
+		if cfg, err := img.ConfigFile(); err == nil && cfg != nil && len(cfg.OSFeatures) > 0 {
+			platform.OSFeatures = slices.Clone(cfg.OSFeatures)
+		}
+
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
-			Add: img,
-			Descriptor: v1.Descriptor{
-				MediaType: mt,
-				Digest:    h,
-				Size:      size,
-				Platform:  arch.ToOCIPlatform(),
-			},
+			Add:       img,
+			MediaType: mt,
+			Digest:    h,
+			Size:      size,
+			Platform:  platform,
 		})
 	}
 	h, err := idx.Digest()

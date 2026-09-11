@@ -8,7 +8,8 @@
     "keyring": [
       {
         "name": "./testdata/melange.rsa.pub",
-        "url": "./testdata/melange.rsa.pub"
+        "url": "./testdata/melange.rsa.pub",
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAuE9aHvpBoe7HNnWxhp2p\nx+HGjbPhzP0CyQYMNMcHjd76UcaPwWNTVqJI8JMT2u72mPsEXpC+J6KqjIggJoOa\nQYg87oYEdthoJZjyDaKzezNZKndzVQkg4RfQPiCPQkm4r9v6So0MCDa4rwRYnqrf\ns3Je9/wi8B/wG1sz7P4wOG23djxpORDsMI9CyZhnAKfNg/uqmF/sxEwOL4FaDZMg\n0oo7Kx3FjtqqKTV8uFbCDsTxV3CR0pm3WJdX9TNfjXLXfp2a6QDYk1JoYl++UUHK\n+7izMXro6xgY7OPT+F48/YNYxS/ciH90DmN7ysJnQ2otZHSqhOkJV4UrYCKBHY55\nXjpDe7+nmwXaqVyAlCS6pDqHeYUUpYTpnv4b9bbst9NtYPRY8W00Oc5Cs3KdHeV6\nLqvHAGwNTZziv91UTpi0hMf27I+MLaXx+jNWm5j40a+ZyswLAQSLI+u3LxfPlHda\nlhpaQw+CoM3ucX9rcnJaBgowXclDAAvRNIj7EJNW5sk+3SbpmKKDkrD7Cl0rMSrd\n1dixDZZPzA8UtwheNTmV+I+0r1kQMcNYcB8iUKsoWIpaur0CBCww02WTHpOMcMGw\n+rVr/wzPP3Iqo1+EVrzVI5kSnZ7VLRtO5VdMLw0PlIK4ShJ+X5OtVtWnJ9jIiLaI\nse0tr8lpqU40eV862X+jKz0CAwEAAQ==\n-----END PUBLIC KEY-----\n"
       }
     ],
     "build_repositories": [],

@@ -257,6 +257,59 @@ accounts:
 	}
 }
 
+// Test_YAML_PathMutation_UID_GID locks the wire semantics the recursive
+// permissions feature depends on: an omitted uid/gid must unmarshal to nil
+// (leave ownership untouched), distinct from an explicit 0.
+func Test_YAML_PathMutation_UID_GID(t *testing.T) {
+	const raw = `
+paths:
+  - path: /omitted
+    type: permissions
+    permissions: 0o755
+  - path: /explicit-zero
+    type: permissions
+    permissions: 0o750
+    uid: 0
+    gid: 0
+  - path: /values
+    type: permissions
+    permissions: 0o750
+    uid: 1000
+    gid: 1001
+`
+	var ic ImageConfiguration
+	require.NoError(t, yaml.Unmarshal([]byte(raw), &ic))
+	require.Len(t, ic.Paths, 3)
+
+	// omitted → nil on both
+	require.Nil(t, ic.Paths[0].UID, "omitted uid should be nil")
+	require.Nil(t, ic.Paths[0].GID, "omitted gid should be nil")
+
+	// explicit 0 → non-nil pointer to 0 (distinct from omitted)
+	require.NotNil(t, ic.Paths[1].UID)
+	require.Equal(t, uint32(0), *ic.Paths[1].UID)
+	require.NotNil(t, ic.Paths[1].GID)
+	require.Equal(t, uint32(0), *ic.Paths[1].GID)
+
+	// explicit values round-trip
+	require.NotNil(t, ic.Paths[2].UID)
+	require.Equal(t, uint32(1000), *ic.Paths[2].UID)
+	require.NotNil(t, ic.Paths[2].GID)
+	require.Equal(t, uint32(1001), *ic.Paths[2].GID)
+
+	// Round-trip through marshal/unmarshal must preserve nil vs explicit-0.
+	out, err := yaml.Marshal(&ic)
+	require.NoError(t, err)
+	var rt ImageConfiguration
+	require.NoError(t, yaml.Unmarshal(out, &rt))
+	require.Nil(t, rt.Paths[0].UID, "nil uid must survive round-trip")
+	require.Nil(t, rt.Paths[0].GID, "nil gid must survive round-trip")
+	require.NotNil(t, rt.Paths[1].UID, "explicit 0 uid must survive round-trip")
+	require.Equal(t, uint32(0), *rt.Paths[1].UID)
+	require.NotNil(t, rt.Paths[1].GID, "explicit 0 gid must survive round-trip")
+	require.Equal(t, uint32(0), *rt.Paths[1].GID)
+}
+
 // Ensure marshalling YAML from a User
 // does not result in unexpected GID=0
 func Test_YAML_Marshalling_UID_GID_mapping(t *testing.T) {

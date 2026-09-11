@@ -166,15 +166,24 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 		},
 	}
 
+	explicitClient := &http.Client{}
 	for _, keyring := range ic.Contents.Keyring {
+		b, err := loadKeyringBytes(ctx, explicitClient, keyring)
+		if err != nil {
+			return fmt.Errorf("failed to load keyring %s: %w", keyring, err)
+		}
 		lock.Contents.Keyrings = append(lock.Contents.Keyrings, pkglock.LockKeyring{
-			Name: stripURLScheme(keyring),
-			URL:  keyring,
+			Name:    stripURLScheme(keyring),
+			URL:     keyring,
+			Content: string(b),
 		})
 	}
 
 	// Discover and add auto-discovered keys from repositories
-	discoveredKeys := discoverKeysForLock(ctx, ic, archs)
+	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
+	if err != nil {
+		return fmt.Errorf("failed to discover keys: %w", err)
+	}
 	lock.Contents.Keyrings = append(lock.Contents.Keyrings, discoveredKeys...)
 
 	// TODO: If the archs can't agree on package versions (e.g., arm builds are ahead of x86) then we should fail instead of producing inconsistent locks.
@@ -277,8 +286,19 @@ func stripURLScheme(url string) string {
 	)
 }
 
+// loadKeyringBytes returns the raw bytes of a keyring referenced by a URL or
+// a local file path. It is used to embed keyring content into the lock file so
+// downstream consumers don't need to re-fetch a URL that may 404 after key
+// rotation.
+func loadKeyringBytes(ctx context.Context, client *http.Client, keyring string) ([]byte, error) {
+	if strings.HasPrefix(keyring, "https://") || strings.HasPrefix(keyring, "http://") {
+		return apk.FetchKeyBytes(ctx, client, auth.DefaultAuthenticators, keyring)
+	}
+	return os.ReadFile(keyring)
+}
+
 // discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
-func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) []pkglock.LockKeyring {
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
 	log := clog.FromContext(ctx)
 
 	// Collect all unique repositories
@@ -308,8 +328,7 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 			if alpineReleases == nil {
 				releases, err := apk.FetchAlpineReleases(ctx, client)
 				if err != nil {
-					log.Warnf("Failed to fetch Alpine releases: %v", err)
-					continue
+					return nil, fmt.Errorf("failed to fetch alpine releases: %w", err)
 				}
 				alpineReleases = releases
 			}
@@ -329,11 +348,19 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 					continue
 				}
 
-				// Add discovered key URLs to the map
+				// Fetch and embed each key's bytes.
 				for _, u := range urls {
+					if _, ok := discoveredKeyMap[u]; ok {
+						continue
+					}
+					b, err := apk.FetchKeyBytes(ctx, client, nil, u)
+					if err != nil {
+						return nil, fmt.Errorf("failed to fetch alpine key %s: %w", u, err)
+					}
 					discoveredKeyMap[u] = pkglock.LockKeyring{
-						Name: stripURLScheme(u),
-						URL:  u,
+						Name:    stripURLScheme(u),
+						URL:     u,
+						Content: string(b),
 					}
 				}
 			}
@@ -351,8 +378,9 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 			for _, key := range keys {
 				keyURL := repoBase + "/" + key.ID
 				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
-					Name: stripURLScheme(keyURL),
-					URL:  keyURL,
+					Name:    stripURLScheme(keyURL),
+					URL:     keyURL,
+					Content: string(key.Bytes),
 				}
 			}
 		}
@@ -365,5 +393,5 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 	}
 
 	log.Infof("Discovered %d auto-discovered keys", len(discoveredKeys))
-	return discoveredKeys
+	return discoveredKeys, nil
 }

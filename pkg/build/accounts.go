@@ -60,6 +60,15 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	}
 }
 
+// shadowEntryForUser builds a locked (!) shadow entry — these are
+// service accounts, not accounts meant to log in with a password.
+func shadowEntryForUser(userName string) passwd.ShadowEntry {
+	return passwd.ShadowEntry{
+		UserName: userName,
+		Password: "!",
+	}
+}
+
 func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 	var eg errgroup.Group
 
@@ -135,6 +144,23 @@ func mutateAccounts(fsys apkfs.FullFS, ic *types.ImageConfiguration) error {
 
 		if err := uf.WriteFile(path); err != nil {
 			return err
+		}
+
+		// shadowEntryForUser builds a locked (!) shadow entry — these are
+		// service accounts, not accounts meant to log in with a password.
+		if len(ic.Accounts.Users) != 0 {
+			shadowPath := filepath.Join("etc", "shadow")
+
+			sf, err := passwd.ReadOrCreateShadowFile(fsys, shadowPath)
+			if err != nil {
+				return err
+			}
+			for _, u := range ic.Accounts.Users {
+				sf.Entries = append(sf.Entries, shadowEntryForUser(u.UserName))
+			}
+			if err := sf.WriteFile(shadowPath); err != nil {
+				return err
+			}
 		}
 
 		// Resolve run-as user if requested.
