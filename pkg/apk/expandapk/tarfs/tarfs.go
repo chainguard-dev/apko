@@ -52,6 +52,9 @@ const paxChecksumKey = "APK-TOOLS.checksum.SHA1"
 // and a boxed FileInfo; an index over a large package multiplies that by
 // thousands of files and lives as long as the package cache retains it. The
 // header is reconstructed on demand via Header().
+//
+// Entry implements fs.FileInfo and fs.DirEntry with the same results as
+// archive/tar's Header.FileInfo, so Stat and ReadDir never build a header.
 type Entry struct {
 	Offset int64
 
@@ -62,12 +65,15 @@ type Entry struct {
 	size int64
 	// mtime is unix nanoseconds; mtimeZero marks a zero time.Time, which is
 	// distinct from a genuine epoch timestamp.
-	mtime              int64
-	mode               int64
-	uid, gid           int32
-	devmajor, devminor int32
+	mtime     int64
+	mtimeZero bool
+	mode      int64
+	// fileMode is Header.FileInfo().Mode(), computed once at index time so
+	// the FileInfo view cannot drift from archive/tar.
+	fileMode           fs.FileMode
+	uid, gid           int
+	devmajor, devminor int64
 	typeflag           byte
-	mtimeZero          bool
 	format             tar.Format
 	uname, gname       string
 	checksum           [20]byte // decoded paxChecksumKey record
@@ -84,13 +90,14 @@ func newEntry(hdr *tar.Header, offset int64) *Entry {
 		linkname:  hdr.Linkname,
 		dir:       path.Dir(hdr.Name),
 		size:      hdr.Size,
-		mode:      hdr.Mode,
-		uid:       int32(hdr.Uid),      //nolint:gosec // uids fit in int32
-		gid:       int32(hdr.Gid),      //nolint:gosec // gids fit in int32
-		devmajor:  int32(hdr.Devmajor), //nolint:gosec // device numbers fit in int32
-		devminor:  int32(hdr.Devminor), //nolint:gosec // device numbers fit in int32
-		typeflag:  hdr.Typeflag,
 		mtimeZero: hdr.ModTime.IsZero(),
+		mode:      hdr.Mode,
+		fileMode:  hdr.FileInfo().Mode(),
+		uid:       hdr.Uid,
+		gid:       hdr.Gid,
+		devmajor:  hdr.Devmajor,
+		devminor:  hdr.Devminor,
+		typeflag:  hdr.Typeflag,
 		format:    hdr.Format,
 		uname:     hdr.Uname,
 		gname:     hdr.Gname,
@@ -113,7 +120,11 @@ func newEntry(hdr *tar.Header, offset int64) *Entry {
 	return e
 }
 
-// Header reconstructs the tar.Header this entry was built from.
+// Header reconstructs the tar.Header this entry was built from. AccessTime
+// and ChangeTime are not retained: apk-tools never writes them, and keeping
+// them would cost two time.Times per entry. The checksum record is re-encoded
+// only when it was the lowercase hex form that apk-tools writes; any other
+// spelling is kept verbatim.
 func (e *Entry) Header() tar.Header {
 	hdr := tar.Header{
 		Typeflag: e.typeflag,
@@ -121,12 +132,12 @@ func (e *Entry) Header() tar.Header {
 		Linkname: e.linkname,
 		Size:     e.size,
 		Mode:     e.mode,
-		Uid:      int(e.uid),
-		Gid:      int(e.gid),
+		Uid:      e.uid,
+		Gid:      e.gid,
 		Uname:    e.uname,
 		Gname:    e.gname,
-		Devmajor: int64(e.devmajor),
-		Devminor: int64(e.devminor),
+		Devmajor: e.devmajor,
+		Devminor: e.devminor,
 		Format:   e.format,
 	}
 	if !e.mtimeZero {
@@ -151,6 +162,11 @@ func (e *Entry) Checksum() ([]byte, bool) {
 }
 
 func (e *Entry) Name() string {
+	// Mirror archive/tar, which cleans directory names before taking the base
+	// so a trailing slash does not yield an empty name.
+	if e.IsDir() {
+		return path.Base(path.Clean(e.name))
+	}
 	return path.Base(e.name)
 }
 
@@ -159,37 +175,11 @@ func (e *Entry) Size() int64 {
 }
 
 func (e *Entry) Mode() fs.FileMode {
-	mode := fs.FileMode(e.mode).Perm()
-
-	// Interpret the same tar mode bits and type flags headerFileInfo.Mode does.
-	if e.mode&0o4000 != 0 { // c_ISUID
-		mode |= fs.ModeSetuid
-	}
-	if e.mode&0o2000 != 0 { // c_ISGID
-		mode |= fs.ModeSetgid
-	}
-	if e.mode&0o1000 != 0 { // c_ISVTX
-		mode |= fs.ModeSticky
-	}
-
-	switch e.typeflag {
-	case tar.TypeDir:
-		mode |= fs.ModeDir
-	case tar.TypeSymlink:
-		mode |= fs.ModeSymlink
-	case tar.TypeChar:
-		mode |= fs.ModeDevice | fs.ModeCharDevice
-	case tar.TypeBlock:
-		mode |= fs.ModeDevice
-	case tar.TypeFifo:
-		mode |= fs.ModeNamedPipe
-	}
-
-	return mode
+	return e.fileMode
 }
 
 func (e *Entry) Type() fs.FileMode {
-	return e.Mode().Type()
+	return e.fileMode.Type()
 }
 
 func (e *Entry) ModTime() time.Time {
@@ -200,15 +190,18 @@ func (e *Entry) ModTime() time.Time {
 }
 
 func (e *Entry) IsDir() bool {
-	return e.typeflag == tar.TypeDir
+	return e.fileMode.IsDir()
 }
 
 func (e *Entry) Info() (fs.FileInfo, error) {
 	return e, nil
 }
 
+// Sys returns a *tar.Header, as archive/tar's FileInfo does. The header is
+// built per call, so callers needing it repeatedly should hold the result.
 func (e *Entry) Sys() any {
-	return e
+	hdr := e.Header()
+	return &hdr
 }
 
 var (
