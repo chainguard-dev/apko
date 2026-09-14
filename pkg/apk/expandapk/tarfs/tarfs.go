@@ -26,6 +26,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -106,7 +107,10 @@ func newEntry(hdr *tar.Header, offset int64) *Entry {
 		e.mtime = hdr.ModTime.UnixNano()
 	}
 	for k, v := range hdr.PAXRecords {
-		if k == paxChecksumKey && len(v) == hex.EncodedLen(len(e.checksum)) {
+		// Only the lowercase form apk-tools writes is stored decoded, so that
+		// hex.EncodeToString reproduces it exactly. hex.Decode would also
+		// accept uppercase, which Header() could then not round-trip.
+		if k == paxChecksumKey && len(v) == hex.EncodedLen(len(e.checksum)) && !strings.ContainsAny(v, "ABCDEF") {
 			if _, err := hex.Decode(e.checksum[:], []byte(v)); err == nil {
 				e.hasChecksum = true
 				continue
