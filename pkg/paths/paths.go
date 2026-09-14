@@ -19,21 +19,57 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 func ResolvePath(p string, includePaths []string) (string, error) {
+	// First, check if p contains any path traversal attempts
+	if containsPathTraversal(p) {
+		return "", fmt.Errorf("path contains traversal sequence: %s", p)
+	}
+
 	_, err := os.Stat(p)
 	if err == nil {
-		return p, nil
+		// Validate that the absolute path doesn't escape current directory
+		absPath, err := filepath.Abs(p)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+		return absPath, nil
 	}
+
 	for _, pathPrefix := range includePaths {
-		resolvedPath := path.Join(pathPrefix, p)
-		_, err := os.Stat(resolvedPath)
+		resolvedPath := filepath.Join(pathPrefix, p)
+
+		// Validate that resolved path is within the pathPrefix
+		cleanPrefix := filepath.Clean(pathPrefix)
+		cleanResolved := filepath.Clean(resolvedPath)
+
+		rel, err := filepath.Rel(cleanPrefix, cleanResolved)
+		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+			// Skip this path as it attempts to escape the include directory
+			continue
+		}
+
+		_, err = os.Stat(resolvedPath)
 		if err == nil {
 			return resolvedPath, nil
 		}
 	}
 	return "", os.ErrNotExist
+}
+
+// containsPathTraversal checks if a path contains obvious traversal sequences
+func containsPathTraversal(p string) bool {
+	// Check for explicit .. sequences
+	if strings.Contains(p, "..") {
+		return true
+	}
+	// Check for encoded path traversal attempts
+	if strings.Contains(p, "%2e%2e") || strings.Contains(p, "%2E%2E") {
+		return true
+	}
+	return false
 }
 
 // AdvertisedCachedFile will create a symlink at `dst` pointing to `src`.

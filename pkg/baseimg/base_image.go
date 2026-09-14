@@ -20,7 +20,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
@@ -98,7 +98,7 @@ func New(imgPath string, apkIndexPath string, arch types.Architecture, materizal
 	if err != nil {
 		return nil, err
 	}
-	contents, err := os.ReadFile(path.Join(apkIndexPath, arch.ToAPK(), "APKINDEX"))
+	contents, err := os.ReadFile(filepath.Join(apkIndexPath, arch.ToAPK(), "APKINDEX"))
 	if err != nil {
 		return nil, err
 	}
@@ -130,15 +130,15 @@ func (baseImg *BaseImage) InstalledPackages() []*apk.InstalledPackage {
 }
 
 func (baseImg *BaseImage) APKIndexPath() string {
-	return path.Join(baseImg.materizalizedApkIndexPath, "base_image_apkindex")
+	return filepath.Join(baseImg.materizalizedApkIndexPath, "base_image_apkindex")
 }
 
 func (baseImg *BaseImage) createAPKIndexArchive(apkIndexTargetPath string) error {
-	archDir := path.Join(apkIndexTargetPath, baseImg.arch.ToAPK())
-	if err := os.MkdirAll(archDir, 0777); err != nil {
+	archDir := filepath.Join(apkIndexTargetPath, baseImg.arch.ToAPK())
+	if err := os.MkdirAll(archDir, 0755); err != nil {
 		return err
 	}
-	tarFile, err := os.OpenFile(path.Join(archDir, "APKINDEX.tar.gz"), os.O_CREATE|os.O_WRONLY, 0777)
+	tarFile, err := os.OpenFile(filepath.Join(archDir, "APKINDEX.tar.gz"), os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func (baseImg *BaseImage) createAPKIndexArchive(apkIndexTargetPath string) error
 	defer gzipWriter.Close()
 	tarWriter := tar.NewWriter(gzipWriter)
 	defer tarWriter.Close()
-	header := tar.Header{Name: "APKINDEX", Size: int64(len(baseImg.apkIndex)), Mode: 0777}
+	header := tar.Header{Name: "APKINDEX", Size: int64(len(baseImg.apkIndex)), Mode: 0644}
 	if err := tarWriter.WriteHeader(&header); err != nil {
 		return err
 	}
