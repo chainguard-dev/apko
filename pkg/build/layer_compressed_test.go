@@ -251,11 +251,14 @@ func TestImageLayoutToLayer_CompressedLayerFile(t *testing.T) {
 		return path
 	}
 
-	if got := isGzip(t, build(WithCompressedLayerFile())); !got {
-		t.Error("with the option: layer file is not gzip")
+	if got := isGzip(t, build(WithCompressedLayerFile(true))); !got {
+		t.Error("enabled: layer file is not gzip")
+	}
+	if got := isGzip(t, build(WithCompressedLayerFile(false))); got {
+		t.Error("disabled: layer file is gzip, want plain tar")
 	}
 	if got := isGzip(t, build()); got {
-		t.Error("without the option: layer file is gzip, want plain tar")
+		t.Error("option absent: layer file is gzip, want plain tar")
 	}
 }
 
