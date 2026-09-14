@@ -59,29 +59,27 @@ const paxChecksumKey = "APK-TOOLS.checksum.SHA1"
 type Entry struct {
 	Offset int64
 
-	name     string
-	linkname string
-	// dir is path.Dir(name).
-	dir  string
-	size int64
-	// mtime is unix nanoseconds; mtimeZero marks a zero time.Time, which is
-	// distinct from a genuine epoch timestamp.
-	mtime     int64
-	mtimeZero bool
-	mode      int64
-	// fileMode is Header.FileInfo().Mode(), computed once at index time so
-	// the FileInfo view cannot drift from archive/tar.
-	fileMode           fs.FileMode
+	// Fields are ordered by size so the record packs without padding.
+	name, linkname     string
+	uname, gname       string
+	size               int64
+	mode               int64
 	uid, gid           int
 	devmajor, devminor int64
-	typeflag           byte
-	format             tar.Format
-	uname, gname       string
-	checksum           [20]byte // decoded paxChecksumKey record
-	hasChecksum        bool
+	// mtime is unix nanoseconds; mtimeZero marks a zero time.Time, which is
+	// distinct from a genuine epoch timestamp.
+	mtime int64
 	// pax holds PAX records other than paxChecksumKey (xattrs, mostly).
 	// It is nil for the vast majority of entries.
 	pax map[string]string
+	// fileMode is Header.FileInfo().Mode(), computed once at index time so
+	// the FileInfo view cannot drift from archive/tar.
+	fileMode    fs.FileMode
+	format      tar.Format
+	checksum    [20]byte // decoded paxChecksumKey record
+	typeflag    byte
+	mtimeZero   bool
+	hasChecksum bool
 }
 
 func newEntry(hdr *tar.Header, offset int64) *Entry {
@@ -89,7 +87,6 @@ func newEntry(hdr *tar.Header, offset int64) *Entry {
 		Offset:    offset,
 		name:      hdr.Name,
 		linkname:  hdr.Linkname,
-		dir:       path.Dir(hdr.Name),
 		size:      hdr.Size,
 		mtimeZero: hdr.ModTime.IsZero(),
 		mode:      hdr.Mode,
@@ -122,6 +119,12 @@ func newEntry(hdr *tar.Header, offset int64) *Entry {
 		e.pax[k] = v
 	}
 	return e
+}
+
+// dir is the directory the member lives in. path.Dir returns a prefix of
+// name here, so this does not allocate.
+func (e *Entry) dir() string {
+	return path.Dir(e.name)
 }
 
 // Header reconstructs the tar.Header this entry was built from. AccessTime
@@ -284,7 +287,7 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 			return fsys.open(link, hops+1)
 		}
 
-		return fsys.open(path.Join(e.dir, link), hops+1)
+		return fsys.open(path.Join(e.dir(), link), hops+1)
 	}
 
 	f := &File{
@@ -380,7 +383,7 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		fsys.index[hdr.Name] = len(fsys.files)
 		fsys.files = append(fsys.files, e)
 
-		dirCount[e.dir]++
+		dirCount[e.dir()]++
 	}
 
 	// Pre-generate the results of ReadDir so we don't allocate a ton if fs.WalkDir calls us.
@@ -390,7 +393,8 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 	}
 
 	for _, f := range fsys.files {
-		fsys.dirs[f.dir] = append(fsys.dirs[f.dir], f)
+		d := f.dir()
+		fsys.dirs[d] = append(fsys.dirs[d], f)
 	}
 
 	for _, files := range fsys.dirs {
