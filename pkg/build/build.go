@@ -15,6 +15,7 @@
 package build
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -216,16 +217,32 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return outName, l, nil
 	}
 
-	defer outfile.Close()
-	lw := newLayerWriter(outfile)
+	// A single layer writer has the machine to itself, so it gets the full
+	// worker fan-out.
+	lw, err := newLayerWriter(outfile, bc.o.CompressedLayerFile, pgzipThreads)
+	if err != nil {
+		_ = outfile.Close()
+		return "", nil, fmt.Errorf("creating layer writer: %w", err)
+	}
 
 	if err := writeTar(ctx, lw.w, bc.fs); err != nil {
+		// finalize tears the writer chain down; the layer it reports is not
+		// usable once the tar is incomplete.
+		_, _ = lw.finalize()
+		_ = outfile.Close()
 		return "", nil, fmt.Errorf("generating tarball: %w", err)
 	}
 
 	l, err := lw.finalize()
 	if err != nil {
+		_ = outfile.Close()
 		return "", nil, fmt.Errorf("finalizing layer: %w", err)
+	}
+
+	// The descriptor is already committed, so nothing re-reads the file
+	// afterwards to notice a write that only failed at close.
+	if err := outfile.Close(); err != nil {
+		return "", nil, fmt.Errorf("closing %s: %w", outfile.Name(), err)
 	}
 
 	return outfile.Name(), l, nil
@@ -408,6 +425,11 @@ func (f *notAFile) Close() error {
 
 // layer implements v1.Layer from go-containerregistry to avoid re-computing
 // digests and diffids.
+//
+// A layer is written in one of two modes. Two-pass layers have uncompressed
+// set and are gzipped on demand by compress(). Single-pass layers were gzipped
+// as they were written, so only compressed is set and desc is already
+// complete; see singlePass.
 type layer struct {
 	mu           sync.Mutex
 	uncompressed string
@@ -415,6 +437,12 @@ type layer struct {
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
 	cacheCounted bool // first compression-cache lookup already recorded
+}
+
+// singlePass reports whether this layer was gzipped as it was written, in
+// which case there is no plain tar on disk and nothing left to compute.
+func (l *layer) singlePass() bool {
+	return l.uncompressed == ""
 }
 
 // recordCacheAccess reports this layer's first compression-cache outcome.
@@ -500,6 +528,10 @@ func (l *layer) DiffID() (v1.Hash, error) {
 }
 
 func (l *layer) Digest() (v1.Hash, error) {
+	if l.singlePass() {
+		return l.desc.Digest, nil
+	}
+
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
@@ -531,10 +563,46 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layer) Uncompressed() (io.ReadCloser, error) {
-	return os.Open(l.uncompressed)
+	if !l.singlePass() {
+		return os.Open(l.uncompressed)
+	}
+
+	// Only the gzip file exists, so give the caller tar bytes back out of it.
+	f, err := os.Open(l.compressed)
+	if err != nil {
+		return nil, err
+	}
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return &gunzipReadCloser{zr: zr, f: f}, nil
+}
+
+// gunzipReadCloser decompresses a compressed-backed layer on demand. Close
+// has to release both the gzip reader and the underlying file, because
+// gzip.Reader.Close does not close its source.
+type gunzipReadCloser struct {
+	zr *gzip.Reader
+	f  *os.File
+}
+
+func (g *gunzipReadCloser) Read(p []byte) (int, error) { return g.zr.Read(p) }
+
+func (g *gunzipReadCloser) Close() error {
+	zerr := g.zr.Close()
+	if ferr := g.f.Close(); zerr == nil {
+		return ferr
+	}
+	return zerr
 }
 
 func (l *layer) Size() (int64, error) {
+	if l.singlePass() {
+		return l.desc.Size, nil
+	}
+
 	// Check if we've already compressed a layer with this diffID
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)

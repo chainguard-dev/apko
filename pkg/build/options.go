@@ -76,6 +76,17 @@ func WithTarball(path string) Option {
 	}
 }
 
+// WithCompressedLayerFile writes each tar layer gzipped in a single pass, so
+// peak scratch space is the compressed size and the returned layer file path
+// holds gzip bytes rather than plain tar. Consumers that read tar bytes back
+// through Uncompressed() pay a gunzip they did not pay before.
+func WithCompressedLayerFile() Option {
+	return func(bc *Context) error {
+		bc.o.CompressedLayerFile = true
+		return nil
+	}
+}
+
 // WithFormat sets the layer payload format ("tar" or "erofs"). The value
 // overrides any format declared in the image configuration, wherever this
 // Option appears in the slice relative to WithImageConfiguration or

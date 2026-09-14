@@ -89,7 +89,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
 		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
 	}
-	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir())
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.CompressedLayerFile)
 }
 
 func replacesGroup(rep string, g *group) (bool, error) {
@@ -257,21 +257,60 @@ func merge(groups ...*group) *group {
 	return merged
 }
 
-func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string) ([]v1.Layer, error) {
+func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, compressed bool) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
+
+	// On failure, shut down every writer while its file is still open (closing a
+	// writer flushes trailer bytes), then close and remove the partials so a
+	// retried build in the same directory does not accumulate leftovers.
+	type openLayer struct {
+		w *layerWriter
+		f *os.File
+	}
+	var open []openLayer
+	finished := false
+	defer func() {
+		if finished {
+			return
+		}
+		for _, o := range open {
+			// finalize is the teardown; an already-finalized writer reports an
+			// error here and there is nothing to do with it.
+			_, _ = o.w.finalize()
+		}
+		for _, o := range open {
+			_ = o.f.Close()
+			_ = os.Remove(o.f.Name())
+		}
+	}()
+
+	// Every writer stays open through the whole filesystem walk, so compressed
+	// mode gets one pgzip worker each: bound compressor memory by layer count
+	// rather than multiplying it by the per-writer fan-out.
+	newOpenWriter := func() (*layerWriter, error) {
+		f, err := os.CreateTemp(tmpdir, "layer-*.tar.gz")
+		if err != nil {
+			return nil, err
+		}
+		w, err := newLayerWriter(f, compressed, 1)
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+			return nil, err
+		}
+		open = append(open, openLayer{w: w, f: f})
+		return w, nil
+	}
 
 	// We'll create a writer for each layer and a map to quickly access the writer given a package or group.
 	packageToWriter := map[string]*layerWriter{}
 	groupToWriter := map[*group]*layerWriter{}
 
 	for _, g := range groups {
-		f, err := os.CreateTemp(tmpdir, "layer-*.tar.gz")
+		w, err := newOpenWriter()
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
-
-		w := newLayerWriter(f)
 		groupToWriter[g] = w
 
 		for _, pkg := range g.pkgs {
@@ -280,13 +319,10 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 	}
 
 	// The top layer holds anything that doesn't belong to a package.
-	f, err := os.CreateTemp(tmpdir, "layer-*.tar.gz")
+	top, err := newOpenWriter()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	top := newLayerWriter(f)
 
 	// In a tar file, it is customary to include directories before files in those directories.
 	// In order to know which directories we need to include, we maintain a directory stack for each layer.
@@ -438,6 +474,13 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 
 	layers = append(layers, topLayer)
 
+	for _, o := range open {
+		if err := o.f.Close(); err != nil {
+			return nil, fmt.Errorf("closing %s: %w", o.f.Name(), err)
+		}
+	}
+
+	finished = true
 	return layers, nil
 }
 
