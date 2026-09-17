@@ -1351,11 +1351,11 @@ func (a *APK) installPackage(ctx context.Context, pkg *Package, contents Package
 	} else {
 		// The non-WriteHeaderer path streams the whole data section as a
 		// tar, which not every contents carrier can produce.
-		pd, ok := contents.(interface{ PackageData() (*os.File, error) })
+		ds, ok := contents.(PackageDataStreamer)
 		if !ok {
 			return nil, fmt.Errorf("installing %s: filesystem does not implement WriteHeaderer and the package contents carry no data stream", pkg.Name)
 		}
-		packageData, err := pd.PackageData()
+		packageData, err := ds.PackageData()
 		if err != nil {
 			return nil, fmt.Errorf("opening package data for %s: %w", pkg.Name, err)
 		}

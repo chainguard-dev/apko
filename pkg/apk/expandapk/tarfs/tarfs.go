@@ -96,9 +96,18 @@ func (f *File) Close() error {
 
 type FS struct {
 	ra    io.ReaderAt
+	size  int64
 	files []*Entry
 	index map[string]int
 	dirs  map[string][]fs.DirEntry
+}
+
+// Size is the length of the indexed tar, as passed to New. Callers that need to
+// re-read the whole archive use it with UnderlyingReader to do so without
+// reopening by path, which would reintroduce the trust question the indexed
+// bytes already answered.
+func (fsys *FS) Size() int64 {
+	return fsys.size
 }
 
 func (fsys *FS) Readlink(name string) (string, error) {
@@ -207,6 +216,7 @@ func (cr *countReader) Read(p []byte) (int, error) {
 func New(ra io.ReaderAt, size int64) (*FS, error) {
 	fsys := &FS{
 		ra:    ra,
+		size:  size,
 		files: []*Entry{},
 		index: map[string]int{},
 		dirs:  map[string][]fs.DirEntry{},
