@@ -77,6 +77,11 @@ type APK struct {
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
 
+	// installAbortedErr is the first install failure seen by this APK, if any.
+	// Once set, further installs and record writes are refused: see
+	// abortInstalls for why continuing is unsafe.
+	installAbortedErr error
+
 	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
 	// It's stuffed here to avoid plumbing it across every method, but it's optional.
 	ByArch map[string]*APK
