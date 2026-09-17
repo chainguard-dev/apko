@@ -31,3 +31,28 @@ func sanitizeArchivePath(d, t string) (v string, err error) {
 
 	return "", fmt.Errorf("%s: %s", "content filepath is tainted", t)
 }
+
+// containsControlCharacter reports whether s contains a byte below 0x20 or the
+// DEL byte 0x7f.
+//
+// Such bytes are rejected in archive entry names because the apk installed
+// database is a newline-delimited "<token>:<value>" format written from those
+// names verbatim (see AddInstalledPackage). A newline in an entry name lets a
+// package terminate the current record and forge additional package entries,
+// which then propagate into the generated SBOM.
+//
+// This mirrors contains_control_character() in apk-tools src/database.c
+// (c1594f60, corrected in ab7b8e3 to compare unsigned bytes). Go's byte is
+// unsigned, so the comparison below is right by construction, and multi-byte
+// UTF-8 is safe: no byte of a multi-byte sequence falls in either range.
+//
+// unicode.IsControl is deliberately not used: it also reports the C1 range
+// U+0080-U+009F, which apk-tools permits, so it would diverge from upstream.
+func containsControlCharacter(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
+}

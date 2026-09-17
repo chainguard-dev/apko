@@ -2,7 +2,7 @@ package apk
 
 import (
 	"archive/tar"
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -31,8 +31,19 @@ func TestAddInstalledPackageRejectsEmptyPackageName(t *testing.T) {
 	if err == nil {
 		t.Fatal("AddInstalledPackage accepted a package with an empty name, want rejection")
 	}
-	if !strings.Contains(err.Error(), "empty name") {
-		t.Errorf("error = %q, want it to mention the empty name", err.Error())
+	// The reason must be recoverable without parsing the message. MalformedPackageError's
+	// doc offers ErrEmptyName as one of its two reasons and "name" as a Field value;
+	// this is the only site that produces them, so without this assertion that
+	// contract is prose a caller cannot rely on.
+	var mpe MalformedPackageError
+	if !errors.As(err, &mpe) {
+		t.Fatalf("error = %v (%T), want a MalformedPackageError", err, err)
+	}
+	if !errors.Is(err, ErrEmptyName) {
+		t.Errorf("errors.Is(err, ErrEmptyName) = false, want true; err = %v", err)
+	}
+	if mpe.Field != "name" {
+		t.Errorf("Field = %q, want %q; err = %v", mpe.Field, "name", err)
 	}
 
 	after, err := a.GetInstalled()
