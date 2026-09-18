@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -571,16 +572,32 @@ func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
 	}
 }
 
-// idsAsIntOrSkip narrows a row's uid/gid to int, skipping the test where the
-// value does not fit: on a 32-bit platform archive/tar rejects it before this
-// code sees it.
+// idsAsIntOrSkip narrows a row's uid/gid to an int for a tar.Header field.
+// Where an int cannot hold every uint32 there is nothing here to test:
+// archive/tar truncated the declared value long before this code saw it, so
+// checkOwner refuses outright instead of range-checking, which
+// TestCheckOwnerRequires64BitInt covers. That also takes care of the rows whose
+// value has no int form on such a platform.
 func idsAsIntOrSkip(t *testing.T, uid, gid int64) (int, int) {
 	t.Helper()
-	u, g := int(uid), int(gid)
-	if int64(u) != uid || int64(g) != gid {
-		t.Skipf("uid %d/gid %d are not representable in an int on this platform", uid, gid)
+	if math.MaxInt < math.MaxUint32 {
+		t.Skip("checkOwner refuses to validate owners without a 64-bit int")
 	}
-	return u, g
+	return int(uid), int(gid)
+}
+
+// TestCheckOwnerRequires64BitInt pins the guard itself. archive/tar narrows
+// uid/gid to an int on the way in ("Integer overflow possible" in mergePAX and
+// readHeader), so where an int is 32 bits a declared uid of 2^32 reaches
+// checkOwner as 0 and is indistinguishable from a package that really declared
+// root. An unvalidatable owner has to be an error, not a pass.
+func TestCheckOwnerRequires64BitInt(t *testing.T) {
+	err := checkOwner(&tar.Header{Name: "usr/bin/ok", Uid: 1000, Gid: 1000})
+	if math.MaxInt < math.MaxUint32 {
+		require.ErrorContains(t, err, "requires a 64-bit build")
+	} else {
+		require.NoError(t, err)
+	}
 }
 
 // TestInstallAPKFilesRejectsOutOfRangeOwner: archive/tar reads PAX uid/gid

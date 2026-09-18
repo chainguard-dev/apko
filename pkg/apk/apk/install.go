@@ -183,13 +183,24 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 // 4294967295 and 0 -- a root-owned file the package never declared, and with
 // setuid set, a root shell.
 //
-// The int64 casts are what let this compile where int is 32 bits (goreleaser
-// builds linux/386): math.MaxUint32 is an untyped constant that overflows such
-// an int. On those platforms the upper bound is unreachable anyway, since
-// tar.Header.Uid cannot hold more than MaxInt32 and archive/tar's own Atoi
-// rejects the larger value first; the cast is not an enforced guarantee that
-// every uint32 owner round-trips there.
+// None of that can be enforced unless an int holds every uint32. On a 32-bit
+// platform archive/tar does not reject an over-large owner, it truncates one:
+// mergePAX does hdr.Uid = int(id64) and readHeader does
+// int(p.parseNumeric(...)), both marked "Integer overflow possible" in the
+// stdlib. A declared uid of 2^32 therefore arrives here as 0 and would satisfy
+// every bound below, and what it was narrowed from is unrecoverable -- a GNU
+// base-256 owner carries no PAX record to re-read, and an expanded APK keeps
+// the narrowed value. Refuse outright rather than vouch for an owner that was
+// never checked. goreleaser ships linux/386, so this is a reachable build.
+//
+// The int64 casts below are only what lets the comparison compile there;
+// math.MaxUint32 is an untyped constant that overflows a 32-bit int.
 func checkOwner(h *tar.Header) error {
+	if math.MaxInt < math.MaxUint32 {
+		return fmt.Errorf("cannot validate the owner of %s: archive/tar truncates uid/gid to an int, "+
+			"so on this platform a declared value above %d is silently narrowed and an out-of-range "+
+			"owner cannot be detected; validating package ownership requires a 64-bit build", h.Name, math.MaxInt)
+	}
 	if h.Uid < 0 || int64(h.Uid) > math.MaxUint32 {
 		return fmt.Errorf("invalid uid %d for %s: must be between 0 and %d", h.Uid, h.Name, uint32(math.MaxUint32))
 	}
