@@ -1078,3 +1078,137 @@ func TestGetPackage_NoRetryOnPermanentError(t *testing.T) {
 	// Should have attempted exactly once — permanent errors must not be retried.
 	require.Equal(t, int32(1), tr.attempts.Load(), "expected exactly 1 fetch attempt for permanent error")
 }
+
+// TestGetPackage_PrePlantedEntryLosesToVerifiedDownload covers the write side of
+// cache trust: what cachePackage does when it finds something already sitting at
+// a destination it is about to publish.
+//
+// The cache being cold is not a defence. An attacker who can write the cache
+// directory pre-plants <datahash>.dat.tar -- the name is derivable from the
+// package's public .PKGINFO -- and the victim's build then misses the cache and
+// runs the whole verifying fetch path: checkSums, the control SHA-1 against the
+// signed index and the data SHA-256 against .PKGINFO all pass, on genuine bytes,
+// because the attacker never touched the bytes being verified. Only afterwards
+// does cachePackage reach the plant.
+//
+// AdvertiseCachedFile treated a resolvable destination as "another process got
+// here first", deleted the freshly verified file, and left the plant as the
+// published entry. Two independent changes close that, at different scopes, and
+// the assertions below fail separately because of it:
+//
+//   - VerifiedPackageData inflates from the verified .gz and never reads
+//     TarFile, so a planted tar cannot be *served* whatever it holds.
+//   - ReplaceCachedFile wins the collision rather than deferring to it, so the
+//     plant cannot be *adopted*. Without this the entry survives on disk with
+//     the verified download deleted, which still matters: another apko sharing
+//     the cache and reading the tar by name would serve it.
+//
+// The rows beyond the first cover the write side only, and it is worth being
+// precise about why. On a cold cache, cachedPackage bails on the absent control
+// file long before it would consult the planted .dat.tar, so nothing here
+// exercises how the *read* path treats a plant -- that is
+// TestCachedPackage_TamperedData's job. What these rows check is that a
+// destination which is not a resolvable file can still be republished when the
+// fetch completes: ENOENT (dangling), ELOOP (self-referential), and a directory,
+// which rename(2) refuses to replace and so needs clearing explicitly or that
+// entry is wedged for good. TestReplaceCachedFile covers the same shapes as
+// units; these reach them through a real fetch.
+func TestGetPackage_PrePlantedEntryLosesToVerifiedDownload(t *testing.T) {
+	ctx := context.Background()
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+
+	newGetter := func(t *testing.T, dir string) *defaultPackageGetter {
+		t.Helper()
+		globalApkCache.Forget(pkg.URL())
+		t.Cleanup(func() { globalApkCache.Forget(pkg.URL()) })
+		return newDefaultPackageGetter(
+			&http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}},
+			&cache{dir: dir, offline: false, shared: NewCache(false)},
+			auth.DefaultAuthenticators)
+	}
+
+	// The layout is content-addressed, so learn it from a throwaway fetch rather
+	// than restating the naming scheme here and letting it drift.
+	scoutDir := t.TempDir()
+	scout, err := newGetter(t, scoutDir).GetPackage(ctx, pkg)
+	require.NoError(t, err, "scouting the cache layout")
+	relTar, err := filepath.Rel(scoutDir, scout.TarFile)
+	require.NoError(t, err)
+	wantNames := fsNames(t, scout.TarFS)
+
+	for _, tc := range []struct {
+		name string
+		// plant creates the obstruction at dst and returns the path that must
+		// not still be what the entry points at, or "" when there is none.
+		plant func(t *testing.T, dst string) string
+	}{
+		{
+			// The exploitable shape: Lstat and Stat both succeed, which is what
+			// the old code read as "somebody already published this".
+			name: "a resolvable symlink to an attacker tar is replaced, not adopted",
+			plant: func(t *testing.T, dst string) string {
+				evil := filepath.Join(t.TempDir(), "evil.tar")
+				require.NoError(t, os.WriteFile(evil, attackerTar(t), 0o644))
+				require.NoError(t, os.Symlink(evil, dst))
+				_, err := os.Stat(dst)
+				require.NoError(t, err, "test setup: this row needs the plant to resolve")
+				return evil
+			},
+		},
+		{
+			// Lstat succeeds, Stat fails with ENOENT.
+			name: "a dangling symlink is replaced",
+			plant: func(t *testing.T, dst string) string {
+				require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "gone"), dst))
+				return ""
+			},
+		},
+		{
+			// Lstat succeeds, Stat fails with ELOOP. A distinct errno class from
+			// the dangling case, and the one most likely to be mishandled as a
+			// hard error rather than a miss.
+			name: "a self-referential symlink is replaced rather than wedging the entry",
+			plant: func(t *testing.T, dst string) string {
+				require.NoError(t, os.Symlink(filepath.Base(dst), dst))
+				_, err := os.Stat(dst)
+				require.Error(t, err, "test setup: this row needs the link to loop")
+				return ""
+			},
+		},
+		{
+			// rename(2) will not replace a directory, so without explicit
+			// handling this entry can never be republished.
+			name: "a planted directory is cleared rather than wedging the entry",
+			plant: func(t *testing.T, dst string) string {
+				require.NoError(t, os.Mkdir(dst, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(dst, "junk"), []byte("junk"), 0o644))
+				return ""
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			coldDir := t.TempDir()
+			plantAt := filepath.Join(coldDir, relTar)
+			require.NoError(t, os.MkdirAll(filepath.Dir(plantAt), 0o755))
+			victim := tc.plant(t, plantAt)
+
+			exp, err := newGetter(t, coldDir).GetPackage(ctx, pkg)
+			require.NoError(t, err, "a cold fetch must succeed with an entry planted")
+
+			got := fsNames(t, exp.TarFS)
+			require.NotContains(t, got, "bin/pwned", "the planted entry was served")
+			require.Equal(t, wantNames, got, "served contents are not the legitimate package")
+
+			// The entry must be usable afterwards, or the next run repeats this.
+			require.FileExists(t, exp.PackageFile, "the published .dat.tar.gz does not resolve")
+
+			if victim != "" {
+				if target, err := os.Readlink(plantAt); err == nil {
+					require.NotEqual(t, victim, target, "the entry still points at the attacker's file")
+				}
+			}
+		})
+	}
+}
