@@ -183,24 +183,13 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 // 4294967295 and 0 -- a root-owned file the package never declared, and with
 // setuid set, a root shell.
 //
-// None of that can be enforced unless an int holds every uint32. On a 32-bit
-// platform archive/tar does not reject an over-large owner, it truncates one:
-// mergePAX does hdr.Uid = int(id64) and readHeader does
-// int(p.parseNumeric(...)), both marked "Integer overflow possible" in the
-// stdlib. A declared uid of 2^32 therefore arrives here as 0 and would satisfy
-// every bound below, and what it was narrowed from is unrecoverable -- a GNU
-// base-256 owner carries no PAX record to re-read, and an expanded APK keeps
-// the narrowed value. Refuse outright rather than vouch for an owner that was
-// never checked. goreleaser ships linux/386, so this is a reachable build.
+// This is the range check on its own, for a header whose fields the caller
+// supplied. A header that archive/tar decoded has to go through
+// checkArchiveOwner instead.
 //
-// The int64 casts below are only what lets the comparison compile there;
-// math.MaxUint32 is an untyped constant that overflows a 32-bit int.
+// The int64 casts are only what lets the comparison compile where int is 32
+// bits; math.MaxUint32 is an untyped constant that overflows such an int.
 func checkOwner(h *tar.Header) error {
-	if math.MaxInt < math.MaxUint32 {
-		return fmt.Errorf("cannot validate the owner of %s: archive/tar truncates uid/gid to an int, "+
-			"so on this platform a declared value above %d is silently narrowed and an out-of-range "+
-			"owner cannot be detected; validating package ownership requires a 64-bit build", h.Name, math.MaxInt)
-	}
 	if h.Uid < 0 || int64(h.Uid) > math.MaxUint32 {
 		return fmt.Errorf("invalid uid %d for %s: must be between 0 and %d", h.Uid, h.Name, uint32(math.MaxUint32))
 	}
@@ -208,6 +197,34 @@ func checkOwner(h *tar.Header) error {
 		return fmt.Errorf("invalid gid %d for %s: must be between 0 and %d", h.Gid, h.Name, uint32(math.MaxUint32))
 	}
 	return nil
+}
+
+// checkArchiveOwner is checkOwner for a header that came out of archive/tar,
+// where the range check alone cannot be trusted.
+//
+// None of it can be enforced unless an int holds every uint32. On a 32-bit
+// platform archive/tar does not reject an over-large owner, it truncates one:
+// mergePAX does hdr.Uid = int(id64) and readHeader does
+// int(p.parseNumeric(...)), both marked "Integer overflow possible" in the
+// stdlib. A declared uid of 2^32 therefore arrives as 0 and would satisfy every
+// bound in checkOwner, and what it was narrowed from is unrecoverable -- a GNU
+// base-256 owner carries no PAX record to re-read, and an expanded APK keeps
+// the narrowed value. Refuse outright rather than vouch for an owner that was
+// never checked. goreleaser ships linux/386, so this is a reachable build.
+//
+// The guard belongs here and not in checkOwner because AddInstalledPackage
+// range-checks headers a caller handed it, which need not have come from a tar
+// at all. Refusing those on a 32-bit build would reject ownership the decoder
+// never touched -- and it would catch nothing extra, because on such a build
+// the install paths below already refuse, so no decoded header ever reaches the
+// installed-database writer.
+func checkArchiveOwner(h *tar.Header) error {
+	if math.MaxInt < math.MaxUint32 {
+		return fmt.Errorf("cannot validate the owner of %s: archive/tar truncates uid/gid to an int, "+
+			"so on this platform a declared value above %d is silently narrowed and an out-of-range "+
+			"owner cannot be detected; validating package ownership requires a 64-bit build", h.Name, math.MaxInt)
+	}
+	return checkOwner(h)
 }
 
 // installAPKFiles install the files from the APK and return the list of installed files
@@ -266,7 +283,7 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 		// whatever it is now, it is in the data section
 		startedDataSection = true
 
-		if err := checkOwner(header); err != nil {
+		if err := checkArchiveOwner(header); err != nil {
 			return nil, err
 		}
 
@@ -480,7 +497,7 @@ func (a *APK) doLazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, ent
 		// here go straight to AddInstalledPackage, which writes them into the
 		// installed database, and anything that wires ownership through -- the
 		// natural completion of the mode/ownership work -- lands on a uint32.
-		if err := checkOwner(&hdr); err != nil {
+		if err := checkArchiveOwner(&hdr); err != nil {
 			return nil, err
 		}
 

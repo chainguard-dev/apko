@@ -50,6 +50,7 @@ type testDirEntry struct {
 }
 
 func TestInstallAPKFiles(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	t.Run("basic", func(t *testing.T) {
 		apk, src, err := testGetTestAPK()
 		require.NoErrorf(t, err, "failed to get test APK")
@@ -492,6 +493,7 @@ datahash = {{.DataHash}}
 // install path has to carry over from the tar headers: the mode bits outside
 // of Perm(), and the ownership.
 func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	type entry struct {
 		name    string
 		mode    int64 // POSIX mode bits, as they appear in a tar header
@@ -572,32 +574,53 @@ func TestInstallAPKFilesModesAndOwnership(t *testing.T) {
 	}
 }
 
-// idsAsIntOrSkip narrows a row's uid/gid to an int for a tar.Header field.
-// Where an int cannot hold every uint32 there is nothing here to test:
-// archive/tar truncated the declared value long before this code saw it, so
-// checkOwner refuses outright instead of range-checking, which
-// TestCheckOwnerRequires64BitInt covers. That also takes care of the rows whose
-// value has no int form on such a platform.
-func idsAsIntOrSkip(t *testing.T, uid, gid int64) (int, int) {
+// skipWithoutOwnerValidation skips a test that installs package contents on a
+// platform where checkArchiveOwner refuses every decoded header. Installing is
+// deliberately impossible there -- archive/tar has already narrowed the owner
+// and apko will not vouch for it -- so these tests have nothing to assert
+// rather than something that broke. TestCheckArchiveOwnerRequires64BitInt
+// covers the refusal itself.
+func skipWithoutOwnerValidation(t *testing.T) {
 	t.Helper()
 	if math.MaxInt < math.MaxUint32 {
-		t.Skip("checkOwner refuses to validate owners without a 64-bit int")
+		t.Skip("installing requires owner validation, which requires a 64-bit int")
 	}
-	return int(uid), int(gid)
 }
 
-// TestCheckOwnerRequires64BitInt pins the guard itself. archive/tar narrows
-// uid/gid to an int on the way in ("Integer overflow possible" in mergePAX and
-// readHeader), so where an int is 32 bits a declared uid of 2^32 reaches
-// checkOwner as 0 and is indistinguishable from a package that really declared
+// idsAsIntOrSkip narrows a row's uid/gid to an int for a tar.Header field,
+// skipping the row where the value has no int form on this platform. Rows that
+// do fit still run: a negative owner is representable everywhere, and it is
+// checkOwner's other bound.
+func idsAsIntOrSkip(t *testing.T, uid, gid int64) (int, int) {
+	t.Helper()
+	u, g := int(uid), int(gid)
+	if int64(u) != uid || int64(g) != gid {
+		t.Skipf("uid %d/gid %d are not representable in an int on this platform", uid, gid)
+	}
+	return u, g
+}
+
+// TestCheckArchiveOwnerRequires64BitInt pins the guard itself. archive/tar
+// narrows uid/gid to an int on the way in ("Integer overflow possible" in
+// mergePAX and readHeader), so where an int is 32 bits a declared uid of 2^32
+// arrives as 0 and is indistinguishable from a package that really declared
 // root. An unvalidatable owner has to be an error, not a pass.
-func TestCheckOwnerRequires64BitInt(t *testing.T) {
-	err := checkOwner(&tar.Header{Name: "usr/bin/ok", Uid: 1000, Gid: 1000})
+//
+// The guard is on checkArchiveOwner rather than checkOwner because only a
+// decoded header is suspect; see the comment there.
+func TestCheckArchiveOwnerRequires64BitInt(t *testing.T) {
+	h := &tar.Header{Name: "usr/bin/ok", Uid: 1000, Gid: 1000}
+
+	err := checkArchiveOwner(h)
 	if math.MaxInt < math.MaxUint32 {
 		require.ErrorContains(t, err, "requires a 64-bit build")
 	} else {
 		require.NoError(t, err)
 	}
+
+	// checkOwner itself must stay usable on every platform: AddInstalledPackage
+	// calls it with headers a caller built, which archive/tar never touched.
+	require.NoError(t, checkOwner(h), "checkOwner must not inherit the archive guard")
 }
 
 // TestInstallAPKFilesRejectsOutOfRangeOwner: archive/tar reads PAX uid/gid
@@ -606,6 +629,7 @@ func TestCheckOwnerRequires64BitInt(t *testing.T) {
 // 04755 file with uid 2^32 would come out setuid root. Such a header must fail
 // the install rather than reach any Chown.
 func TestInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	// uid/gid are int64 here, not int: 1<<32 is an untyped constant that does
 	// not fit an int where int is 32 bits, and goreleaser builds linux/386. The
 	// rows that overflow are skipped there rather than made to compile, because
@@ -678,6 +702,7 @@ func TestInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
 // is not asserted: Chown needs privileges the test does not have, and the
 // filesystem tolerates the EPERM.
 func TestInstallAPKFilesModesOnDisk(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	dir := t.TempDir()
 	src := apkfs.DirFS(t.Context(), dir)
 	require.NotNil(t, src)
@@ -760,6 +785,7 @@ func (o *orderRecordingFS) Chown(path string, uid, gid int) error {
 // tolerates the EPERM from the disk chown and never reaches the kernel
 // behavior, so the call order is pinned here instead.
 func TestInstallAPKFilesMetadataOrder(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	rec := newOrderRecordingFS(apkfs.NewMemFS())
 	apk, err := New(t.Context(), WithFS(rec), WithIgnoreMknodErrors(ignoreMknodErrors))
 	require.NoError(t, err)
@@ -793,6 +819,7 @@ func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 // has to be refused before the entry is written rather than recorded and
 // rejected later by the read side.
 func TestLazilyInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	cases := []struct {
 		name     string
 		uid, gid int64
