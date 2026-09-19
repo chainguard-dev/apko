@@ -114,6 +114,37 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 	return ics, missing, resolvedPkgs, nil
 }
 
+// PrefetchIndexes fetches the repository indexes once for each architecture of
+// ic and returns them keyed by APK arch (e.g. "x86_64"). Pass the result to
+// WithPrefetchedIndexes on every subsequent resolve so they all share one index
+// generation instead of each re-fetching and revalidating. Do not pass
+// WithPrefetchedIndexes to this call itself.
+func PrefetchIndexes(ctx context.Context, ic types.ImageConfiguration, opts ...Option) (map[types.Architecture][]apk.NamedIndex, error) {
+	o, input, err := NewOptions(append(slices.Clone(opts), WithImageConfiguration(ic))...)
+	if err != nil {
+		return nil, err
+	}
+
+	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
+	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
+	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
+
+	mc, err := NewMultiArch(ctx, input.Archs, append(slices.Clone(opts), WithImageConfiguration(*input))...)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot := make(map[types.Architecture][]apk.NamedIndex, len(mc.Contexts))
+	for arch, bc := range mc.Contexts {
+		idxs, err := bc.APK().GetRepositoryIndexes(ctx, o.IgnoreSignatures)
+		if err != nil {
+			return nil, fmt.Errorf("prefetching indexes for %s: %w", arch, err)
+		}
+		snapshot[arch] = idxs
+	}
+	return snapshot, nil
+}
+
 func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, map[types.Architecture][]*apk.RepositoryPackage, error) {
 	archs := make([]resolved, 0, len(mc.Contexts))
 

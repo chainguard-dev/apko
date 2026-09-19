@@ -142,6 +142,13 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetRepositoryIndexes")
 	defer span.End()
 
+	// A caller-supplied snapshot short-circuits fetching entirely: no HEAD, no
+	// revalidation, no disk cache. Every resolve using the same snapshot sees
+	// one consistent index generation.
+	if a.prefetchedIndexes != nil {
+		return a.prefetchedIndexes, nil
+	}
+
 	// get the repository URLs
 	repos, err := a.GetRepositories()
 	if err != nil {
