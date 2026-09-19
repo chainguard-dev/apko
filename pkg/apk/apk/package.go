@@ -45,6 +45,9 @@ func PackageToInstalled(pkg *Package) (out []string) {
 	if len(pkg.Replaces) != 0 {
 		out = append(out, fmt.Sprintf("r:%s", strings.Join(pkg.Replaces, " ")))
 	}
+	if pkg.ReplacesPriority != 0 {
+		out = append(out, fmt.Sprintf("q:%d", pkg.ReplacesPriority))
+	}
 	out = append(out, fmt.Sprintf("c:%s", pkg.RepoCommit))
 	out = append(out, fmt.Sprintf("i:%s", pkg.InstallIf))
 	out = append(out, fmt.Sprintf("t:%d", pkg.BuildTime.Unix()))
@@ -133,6 +136,7 @@ func ParsePackage(ctx context.Context, apkPackage io.Reader, size uint64) (*Pack
 		BuildDate:        pkginfo.BuildDate,
 		RepoCommit:       pkginfo.RepoCommit,
 		Replaces:         pkginfo.Replaces,
+		ReplacesPriority: pkginfo.ReplacesPriority,
 		DataHash:         pkginfo.DataHash,
 	}, nil
 }
