@@ -198,10 +198,12 @@ func privateFile(dir string) (*os.File, error) {
 // *different* uid -- the shared-CI case this threat model is about -- cannot open
 // it, and where /proc/sys/fs/protected_hardlinks is enabled they cannot hardlink
 // a file they neither own nor can read either. That sysctl is not a kernel
-// default: the kernel ships it off and systemd turns it on, so a minimal
-// container or a non-systemd distro may not have it, leaving the link check
-// above as the only thing standing between a different-uid attacker and a second
-// reference. Against a *same-uid*
+// default: the kernel ships it off and distribution sysctl defaults turn it on,
+// so a minimal container may not have it at all, leaving the link check above as
+// the only thing standing between a different-uid attacker and a second
+// reference. Note also that hardlinking needs write access to the containing
+// directory rather than read access to the file, so 0600 alone does not prevent
+// it. Against a *same-uid*
 // attacker none of that holds: they can open it, and if it were created mode
 // 0000 instead they own it and can chmod it back. No DAC arrangement helps,
 // because they already have every privilege this process has -- they can ptrace
