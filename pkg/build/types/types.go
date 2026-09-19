@@ -143,6 +143,14 @@ type ImageContents struct {
 func (i ImageContents) MarshalYAML() (any, error) {
 	type redactedImageContents ImageContents
 	ri := redactedImageContents(i)
+	// Clone slice fields before redacting. redactedImageContents(i) is a
+	// shallow copy, so the []string headers still share backing arrays with
+	// the caller; processRepositoryURLs / Keyring updates would otherwise
+	// mutate the live configuration (issue #2496).
+	ri.BuildRepositories = slices.Clone(ri.BuildRepositories)
+	ri.RuntimeOnlyRepositories = slices.Clone(ri.RuntimeOnlyRepositories)
+	ri.Repositories = slices.Clone(ri.Repositories)
+	ri.Keyring = slices.Clone(ri.Keyring)
 
 	if err := processRepositoryURLs(ri.BuildRepositories); err != nil {
 		return nil, err
