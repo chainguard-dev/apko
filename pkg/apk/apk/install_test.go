@@ -682,3 +682,71 @@ func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 			"metadata calls for %s must be chown then chmod", name)
 	}
 }
+
+// mkdirRecordingFS records the paths MkdirAll is asked for. Whether the
+// symlink survives is not enough on its own to pin the behavior: MkdirAll over
+// a path that already resolves to a directory is a no-op on an in-memory
+// filesystem, so the symlink is still there either way. What the tar.TypeDir
+// branch decides is whether MkdirAll is reached at all.
+type mkdirRecordingFS struct {
+	apkfs.FullFS
+
+	mu    sync.Mutex
+	paths []string
+}
+
+func (m *mkdirRecordingFS) MkdirAll(path string, perm fs.FileMode) error {
+	m.mu.Lock()
+	m.paths = append(m.paths, path)
+	m.mu.Unlock()
+	return m.FullFS.MkdirAll(path, perm)
+}
+
+func (m *mkdirRecordingFS) made() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.paths)
+}
+
+// TestInstallAPKFilesKeepsSymlinkToDirectory covers the case the tar.TypeDir
+// branch already meant to handle: a package ships a directory header for a
+// path the image carries as a symlink to a directory, and the symlink has to
+// be accepted as is. The check reached for that through Stat, which resolves
+// the final component and so never reports ModeSymlink, leaving the branch
+// unreachable and sending every such path to MkdirAll instead.
+//
+// The layout is the merged-usr one apko creates for itself in InitDB: usr/lib
+// is the directory, lib is a symlink to it.
+func TestInstallAPKFilesKeepsSymlinkToDirectory(t *testing.T) {
+	mem := apkfs.NewMemFS()
+	require.NoError(t, mem.MkdirAll("usr/lib", 0o755))
+	require.NoError(t, mem.Symlink("usr/lib", "lib"))
+
+	before, err := mem.Lstat("lib")
+	require.NoError(t, err)
+	require.NotZero(t, before.Mode()&fs.ModeSymlink, "setup: lib has to start out as a symlink")
+
+	rec := &mkdirRecordingFS{FullFS: mem}
+	apk, err := New(t.Context(), WithFS(rec), WithIgnoreMknodErrors(ignoreMknodErrors))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "lib", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.Close())
+
+	_, err = apk.installAPKFiles(t.Context(), bytes.NewReader(buf.Bytes()), &Package{Origin: ""})
+	require.NoError(t, err)
+
+	assert.NotContains(t, rec.made(), "lib",
+		"an existing symlink to a directory has to be accepted as is, without reaching MkdirAll")
+
+	after, err := mem.Lstat("lib")
+	require.NoError(t, err)
+	assert.NotZero(t, after.Mode()&fs.ModeSymlink,
+		"lib must still be a symlink after a directory header is installed over it")
+
+	target, err := mem.Readlink("lib")
+	require.NoError(t, err)
+	assert.Equal(t, "usr/lib", target, "lib must still point at the directory it did before")
+}

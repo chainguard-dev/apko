@@ -237,8 +237,13 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 			// otherwise, we need to create the directory.
 			// Whether it already exists also decides if we get to set its
 			// metadata below, so keep the error from this one Stat.
-			existing, statErr := a.fs.Stat(header.Name)
-			if statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
+			_, statErr := a.fs.Stat(header.Name)
+			// Stat resolves symlinks, so it never reports ModeSymlink and this
+			// case could not be reached through it. Lstat describes the entry
+			// itself, which is what decides whether an existing symlink may
+			// stay; Readlink and the target Stat below still resolve, since it
+			// is the target that has to be a directory.
+			if link, linkErr := a.fs.Lstat(header.Name); linkErr == nil && link.Mode()&os.ModeSymlink != 0 {
 				if target, err := a.fs.Readlink(header.Name); err == nil {
 					if fi, err := a.fs.Stat(target); err == nil && fi.IsDir() {
 						// "break" rather than "continue", so that any handling outside of this switch statement is processed
