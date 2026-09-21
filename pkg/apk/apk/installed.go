@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,6 +89,17 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 	// file lines
 	topDirNeeded := true
 	for _, f := range sortedFiles {
+		// Same invariant as the empty-name refusal above: don't write a record
+		// we cannot read back. parseInstalledPerms range-checks the owner on an
+		// "M:"/"a:" line, so an out-of-range uid here would not merely be wrong,
+		// it would abort the read of the whole database -- and
+		// hasUsrMergeBaseImage swallows that error and picks the wrong layout.
+		if err := checkOwner(&f); err != nil {
+			return nil, fmt.Errorf("refusing to record ownership for package %q: %w: "+
+				"the installed database cannot express it and the resulting record "+
+				"would make the whole database unreadable", pkg.Name, err)
+		}
+
 		perm := f.Mode & 0o7777
 		user := f.Uid
 		group := f.Gid
@@ -505,9 +517,17 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("invalid permission string uid was not an integer %s", permString)
 	}
+	// int64 cast: see checkOwner. uid is an int because it lands in
+	// tar.Header.Uid, and math.MaxUint32 overflows an int where int is 32 bits.
+	if uid < 0 || int64(uid) > math.MaxUint32 {
+		return 0, 0, 0, fmt.Errorf("invalid permission string uid out of range %s", permString)
+	}
 	gid, err = strconv.Atoi(permParts[1])
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("invalid permission string gid was not an integer %s", permString)
+	}
+	if gid < 0 || int64(gid) > math.MaxUint32 {
+		return 0, 0, 0, fmt.Errorf("invalid permission string gid out of range %s", permString)
 	}
 	perms, err = strconv.ParseInt(permParts[2], 8, 64)
 	if err != nil {

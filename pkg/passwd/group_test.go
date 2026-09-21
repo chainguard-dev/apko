@@ -65,6 +65,35 @@ func TestGroupParser(t *testing.T) {
 	assert.True(t, found_nobody, "group file should contain the nobody group")
 }
 
+// TestGroupParseGIDRange is the /etc/group side of TestParseIDRange: a gid of
+// 2^32 must not become the root group.
+func TestGroupParseGIDRange(t *testing.T) {
+	cases := []struct {
+		name     string
+		line     string
+		gid      uint32
+		errMatch string
+	}{
+		{"control", "nginx:x:101:nginx", 101, ""},
+		{"max gid", "big:x:4294967295:", 4294967295, ""},
+		{"gid 2^32", "backdoor:x:4294967296:", 0, `GID "4294967296"`},
+		{"negative gid", "backdoor:x:-1:", 0, `GID "-1"`},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			ge := GroupEntry{}
+			err := ge.Parse(tt.line)
+			if tt.errMatch != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMatch)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.gid, ge.GID)
+		})
+	}
+}
+
 func TestGroupWriter(t *testing.T) {
 	fsys := apkfs.DirFS(t.Context(), "testdata")
 	gf, err := ReadOrCreateGroupFile(fsys, "group")

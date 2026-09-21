@@ -17,6 +17,7 @@ package build
 import (
 	"testing"
 
+	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
 
@@ -76,5 +77,47 @@ func Test_userToUserEntry_UID_GID_mapping(t *testing.T) {
 		if userEntry.GID != test.expectedGID {
 			t.Errorf("%s: expected GID %d got GID %d", test.desc, test.expectedGID, userEntry.GID)
 		}
+	}
+}
+
+// mutateAccounts reads /etc/passwd, appends the configured users and writes the
+// whole file back. Before parseID, a package-shipped line with an out-of-range
+// uid parsed cleanly, truncated to 0 and was written back out as a root entry —
+// the read-modify-write is what turned a bad parse into a persisted root
+// account. The parse error has to propagate out of mutateAccounts instead.
+func Test_mutateAccounts_rejectsOutOfRangeUID(t *testing.T) {
+	for _, test := range []struct {
+		desc   string
+		passwd string
+	}{
+		{"uid 2^32", "backdoor:x:4294967296:0:backdoor:/dev/null:/sbin/nologin\n"},
+		{"negative uid", "backdoor:x:-1:0:backdoor:/dev/null:/sbin/nologin\n"},
+		{"gid 2^32", "backdoor:x:1000:4294967296:backdoor:/dev/null:/sbin/nologin\n"},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			fsys := apkfs.NewMemFS()
+			if err := fsys.MkdirAll("etc", 0o755); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+			if err := fsys.WriteFile("etc/passwd", []byte(test.passwd), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			ic := &types.ImageConfiguration{}
+			ic.Accounts.Users = []types.User{{UserName: "nonroot", UID: 65532, GID: id0T}}
+
+			if err := mutateAccounts(fsys, ic); err == nil {
+				t.Fatal("mutateAccounts accepted an out-of-range id, want rejection")
+			}
+
+			// The bad line must not have been rewritten as a root entry.
+			got, err := fsys.ReadFile("etc/passwd")
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if string(got) != test.passwd {
+				t.Errorf("etc/passwd was rewritten:\n got %q\nwant %q", got, test.passwd)
+			}
+		})
 	}
 }
