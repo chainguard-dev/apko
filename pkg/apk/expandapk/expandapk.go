@@ -99,6 +99,11 @@ type APKExpanded struct {
 	sync.Mutex
 	parsedPkgInfo *types.PackageInfo
 	controlData   []byte
+
+	// privateData records that TarFS is backed by the unlinked, process-private
+	// copy VerifiedPackageData produces, rather than by the cache entry named by
+	// TarFile. That copy has no path, so IsValid must not look for one.
+	privateData bool
 }
 
 // PkgInfo parses and returns the .PKGINFO file.
@@ -153,6 +158,14 @@ func (a *APKExpanded) ControlData() ([]byte, error) {
 	return a.controlData, nil
 }
 
+// PackageData opens the uncompressed data tar, decompressing PackageFile into
+// place first if TarFile is absent.
+//
+// It performs no integrity checking of any kind: it returns whatever is at
+// TarFile, and TarFile carries no authenticated digest anywhere in the apk
+// format. That is only safe where the files were produced by this process from
+// a stream it already verified. Anything reading a cache directory it did not
+// just write wants VerifiedPackageData instead.
 func (a *APKExpanded) PackageData() (*os.File, error) {
 	uf, err := os.Open(a.TarFile)
 	if err == nil {
@@ -168,24 +181,15 @@ func (a *APKExpanded) PackageData() (*os.File, error) {
 	}
 	defer f.Close()
 
-	br := pooledBufioReader(f)
-	defer readerPool.Put(br)
-
-	zr, err := gzip.NewReader(br)
+	data, closer, err := a.dataReader(f)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %q: %w", a.PackageFile, err)
+		return nil, err
 	}
-
-	// Wrap the gzip reader with a limit to protect against decompression bombs
-	var maxSize int64
-	if a.opts != nil {
-		maxSize = a.opts.MaxDataSize
-	}
-	limitedZr := limitio.NewLimitedReaderWithDefault(zr, maxSize, DefaultMaxDataSize)
+	defer closer.Close()
 
 	// Write the decompressed tar file atomically to avoid a concurrent
 	// reader of the cache seeing an empty or truncated file.
-	if err := writeFileAtomic(a.TarFile, limitedZr); err != nil {
+	if err := writeFileAtomic(a.TarFile, data); err != nil {
 		return nil, fmt.Errorf("decompressing %q: %w", a.PackageFile, err)
 	}
 
@@ -235,25 +239,42 @@ func (m *multiReadCloser) Close() error {
 // Since this structure is heavily cached, this is useful to verify that the
 // cached data is still valid.
 func (a *APKExpanded) IsValid() bool {
-	if f, ok := a.TarFS.UnderlyingReader().(*os.File); ok {
-		// Verify that the file descriptor matches the expected file on disk.
-		fdInfo, err := f.Stat()
-		if err != nil {
-			return false
-		}
+	a.Lock()
+	private := a.privateData
+	a.Unlock()
 
-		pathInfo, err := os.Stat(f.Name())
-		if err != nil {
-			return false
-		}
+	// Only the identity check is skipped for a private copy: it is unlinked by
+	// construction, so there is no name to stat and nothing that could have
+	// replaced it. Its descriptor stays valid for as long as it is open, which is
+	// exactly the lifetime of this APKExpanded.
+	if !private {
+		if f, ok := a.TarFS.UnderlyingReader().(*os.File); ok {
+			// Verify that the file descriptor matches the expected file on disk.
+			fdInfo, err := f.Stat()
+			if err != nil {
+				return false
+			}
 
-		if !os.SameFile(fdInfo, pathInfo) {
-			return false
+			pathInfo, err := os.Stat(f.Name())
+			if err != nil {
+				return false
+			}
+
+			if !os.SameFile(fdInfo, pathInfo) {
+				return false
+			}
 		}
 	}
 
 	// Check that all the expected files exist.
-	files := []string{a.ControlFile, a.PackageFile, a.TarFile}
+	files := []string{a.ControlFile, a.PackageFile}
+	if !private {
+		// Only when the served data came from it. The cache-read path neither
+		// reads nor refreshes the uncompressed tar, so requiring it here would
+		// invalidate a perfectly good entry over a file nothing depends on, and
+		// nothing would recreate it.
+		files = append(files, a.TarFile)
+	}
 	if a.SignatureFile != "" {
 		files = append(files, a.SignatureFile)
 	}

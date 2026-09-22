@@ -22,12 +22,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"chainguard.dev/apko/pkg/apk/types"
 )
 
 type InstalledPackage struct {
@@ -54,17 +57,30 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 	// absent from the generated SBOM. Refuse to write a record we cannot read
 	// back: at best it vanishes silently, and nothing downstream can tell that
 	// from a package that was never installed.
-	if pkg.Name == "" {
-		return nil, fmt.Errorf("refusing to add a package with an empty name: the record " +
-			"would be silently discarded when the installed database is read back")
+	// A record written after a failed install would be built from an ownership
+	// map that still credits files to a package with no record of its own, so it
+	// could omit files that are really present. See abortInstalls.
+	if err := a.installAborted(); err != nil {
+		return nil, err
 	}
 
-	// be sure to open the file in append mode so we add to the end
-	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
+	if pkg.Name == "" {
+		return nil, MalformedPackageError{Field: "name", Err: ErrEmptyName}
 	}
-	defer installedFile.Close()
+
+	// Validate before opening the file, so a rejected package cannot leave a
+	// partially written record behind. Entry names are written into the database
+	// verbatim as F: and R: lines, so a newline would let the package forge
+	// additional records. This guards the sink itself, since AddInstalledPackage
+	// is exported and is consumed as a library.
+	//
+	// Index rather than value range: a tar.Header is around 250 bytes, which is
+	// more to copy per entry than reading one field off it costs.
+	for i := range files {
+		if err := validateRecordedEntryName(pkg.Name, files[i].Name); err != nil {
+			return nil, err
+		}
+	}
 
 	// sort the files by directory
 	sortedFiles := cleanTarHeaders(files)
@@ -73,6 +89,17 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 	// file lines
 	topDirNeeded := true
 	for _, f := range sortedFiles {
+		// Same invariant as the empty-name refusal above: don't write a record
+		// we cannot read back. parseInstalledPerms range-checks the owner on an
+		// "M:"/"a:" line, so an out-of-range uid here would not merely be wrong,
+		// it would abort the read of the whole database -- and
+		// hasUsrMergeBaseImage swallows that error and picks the wrong layout.
+		if err := checkOwner(&f); err != nil {
+			return nil, fmt.Errorf("refusing to record ownership for package %q: %w: "+
+				"the installed database cannot express it and the resulting record "+
+				"would make the whole database unreadable", pkg.Name, err)
+		}
+
 		perm := f.Mode & 0o7777
 		user := f.Uid
 		group := f.Gid
@@ -126,6 +153,34 @@ func (a *APK) AddInstalledPackage(pkg *Package, files []tar.Header) ([]byte, err
 			}
 		}
 	}
+	// Final backstop on the record itself. Entry names are validated above, but
+	// they are not the only attacker-influenced data rendered into these lines:
+	// PackageToInstalled writes package metadata verbatim, and the Z: checksum
+	// line passes a PAX record through unchanged for entry types whose checksum
+	// is not recomputed. Rather than enumerate every field, assert the invariant
+	// the format actually depends on -- one record per line, records separated by
+	// a blank line -- so that any present or future field which acquires an
+	// embedded newline fails here instead of silently forging a record.
+	for _, line := range pkgLines {
+		if types.ContainsNewline(line) {
+			return nil, MalformedPackageError{
+				Package: pkg.Name,
+				Field:   recordToken(line),
+				Value:   line,
+				Err:     ErrEmbeddedNewline,
+			}
+		}
+	}
+
+	// Only now that the whole record is built and validated do we open the file,
+	// so that no failure above can leave a created-but-empty database or a torn
+	// record behind. Be sure to open in append mode so we add to the end.
+	installedFile, err := a.fs.OpenFile(installedFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("could not open installed file at %s: %w", installedFilePath, err)
+	}
+	defer installedFile.Close()
+
 	// write to installed file
 	b := []byte(strings.Join(pkgLines, "\n") + "\n\n")
 	if _, err := installedFile.Write(b); err != nil {
@@ -191,7 +246,20 @@ func (a *APK) updateScriptsTar(pkg *Package, controlData io.Reader, sourceDateEp
 			continue
 		}
 
+		// Control-section names come out of the package archive just as the data
+		// section's do, and this one is spliced into a name written into
+		// usr/lib/apk/db/scripts.tar in the produced image, which apk-tools reads
+		// and dispatches on by suffix. The install paths validate the data
+		// section; the same check belongs here, and applies for the same reason:
+		// nothing legitimate puts a control character in a script name.
+		//
+		// Rejecting here also fails earlier than tar.WriteHeader would. A name
+		// containing a NUL is refused by the writer anyway, but only after the
+		// package's data files have been installed and recorded.
 		origName := header.Name
+		if err := validateEntryName(pkg.Name, origName); err != nil {
+			return err
+		}
 		header.Name = fmt.Sprintf("%s-%s.Q1%s%s", pkg.Name, pkg.Version, base64.StdEncoding.EncodeToString(pkg.Checksum), origName)
 
 		// zero out timestamps for reproducibility
@@ -220,6 +288,15 @@ func (a *APK) readScriptsTar() (io.ReadCloser, error) {
 }
 
 // updateTriggers insert the triggers into the triggers file
+//
+// The triggers database is line-oriented like the installed database, but it
+// has no sink-side newline guard of its own. That is sound only because of the
+// call graph: this function is unexported, its sole caller passes
+// pkgInfo.Triggers straight from types.ParsePackageInfo, and that parser
+// rejects an embedded newline in any field. Package carries no Triggers field,
+// so a library consumer constructing one cannot reach here with unvalidated
+// values. An exported wrapper, or a caller sourcing values from anywhere else,
+// would need to validate them first.
 func (a *APK) updateTriggers(pkg *Package, values []string) error {
 	triggers, err := a.fs.OpenFile(triggersFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
@@ -241,6 +318,15 @@ func (a *APK) readTriggers() (io.ReadCloser, error) {
 	return a.fs.Open(triggersFilePath)
 }
 
+// maxInstalledLineLen bounds a single line of the installed database.
+//
+// bufio.Scanner defaults to 64KiB, which a legitimate record can exceed: a
+// package with a few thousand dependencies renders one very long D: line. The
+// bound still has to exist, because the reader is fed an attacker-influenced
+// file and an unbounded line is an unbounded allocation. 1MiB is far above any
+// plausible record and far below anything that matters for memory.
+const maxInstalledLineLen = 1 << 20
+
 // parseInstalled parses an installed file. It returns the installed packages.
 func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint:gocyclo
 	if closer, ok := installed.(io.Closer); ok {
@@ -250,6 +336,7 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 	packages := []*InstalledPackage{}
 
 	indexScanner := bufio.NewScanner(installed)
+	indexScanner.Buffer(nil, maxInstalledLineLen)
 
 	pkg := &InstalledPackage{}
 	linenr := 1
@@ -368,7 +455,18 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 		case "R":
 			fullpath := val
 			if lastDir != nil {
-				fullpath, _ = sanitizeArchivePath(lastDir.Name, val)
+				// Do not discard this error. sanitizeArchivePath returns ("", err)
+				// when the joined path escapes its F: directory, so ignoring it
+				// stored a file header with an empty Name -- which pkg/build then
+				// fed back into AddInstalledPackage when building on this image as
+				// a base. A traversal is not a legacy byte to be tolerated the way
+				// a tab in a name is: apk-tools refuses ".." in an entry name
+				// outright, and nothing legitimate produces one.
+				var err error
+				fullpath, err = sanitizeArchivePath(lastDir.Name, val)
+				if err != nil {
+					return nil, fmt.Errorf("cannot parse line %d: %w", linenr, err)
+				}
 			}
 			lastFile = &tar.Header{
 				Name: fullpath,
@@ -394,6 +492,19 @@ func ParseInstalled(installed io.Reader) ([]*InstalledPackage, error) { //nolint
 		linenr++
 	}
 
+	// bufio.Scanner reports a line longer than its buffer by stopping, not by
+	// returning what it has. Without this check ParseInstalled returned the
+	// packages accumulated so far and a nil error, so one over-long line quietly
+	// erased every record after it -- and the SBOM built from this list said the
+	// image contained fewer packages than it does.
+	if err := indexScanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, fmt.Errorf("cannot parse line %d: line exceeds the maximum of %d bytes: %w",
+				linenr, maxInstalledLineLen, err)
+		}
+		return nil, fmt.Errorf("reading the installed database: %w", err)
+	}
+
 	return packages, nil
 }
 
@@ -406,9 +517,17 @@ func parseInstalledPerms(permString string) (uid, gid int, perms int64, err erro
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("invalid permission string uid was not an integer %s", permString)
 	}
+	// int64 cast: see checkOwner. uid is an int because it lands in
+	// tar.Header.Uid, and math.MaxUint32 overflows an int where int is 32 bits.
+	if uid < 0 || int64(uid) > math.MaxUint32 {
+		return 0, 0, 0, fmt.Errorf("invalid permission string uid out of range %s", permString)
+	}
 	gid, err = strconv.Atoi(permParts[1])
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("invalid permission string gid was not an integer %s", permString)
+	}
+	if gid < 0 || int64(gid) > math.MaxUint32 {
+		return 0, 0, 0, fmt.Errorf("invalid permission string gid out of range %s", permString)
 	}
 	perms, err = strconv.ParseInt(permParts[2], 8, 64)
 	if err != nil {

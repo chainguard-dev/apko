@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"slices"
 	"strings"
@@ -175,10 +176,73 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 	return true, nil
 }
 
+// checkOwner rejects a header whose uid or gid does not fit a uint32.
+// archive/tar decodes PAX and GNU base-256 numbers into an int, so a crafted
+// APK can carry -1 or 2^32 in these fields. Everything downstream that stores
+// an owner, EROFS inodes included, holds a uint32, where those become
+// 4294967295 and 0 -- a root-owned file the package never declared, and with
+// setuid set, a root shell.
+//
+// This is the range check on its own, for a header whose fields the caller
+// supplied. A header that archive/tar decoded has to go through
+// checkArchiveOwner instead.
+//
+// The int64 casts are only what lets the comparison compile where int is 32
+// bits; math.MaxUint32 is an untyped constant that overflows such an int.
+func checkOwner(h *tar.Header) error {
+	if h.Uid < 0 || int64(h.Uid) > math.MaxUint32 {
+		return fmt.Errorf("invalid uid %d for %s: must be between 0 and %d", h.Uid, h.Name, uint32(math.MaxUint32))
+	}
+	if h.Gid < 0 || int64(h.Gid) > math.MaxUint32 {
+		return fmt.Errorf("invalid gid %d for %s: must be between 0 and %d", h.Gid, h.Name, uint32(math.MaxUint32))
+	}
+	return nil
+}
+
+// checkArchiveOwner is checkOwner for a header that came out of archive/tar,
+// where the range check alone cannot be trusted.
+//
+// None of it can be enforced unless an int holds every uint32. On a 32-bit
+// platform archive/tar does not reject an over-large owner, it truncates one:
+// mergePAX does hdr.Uid = int(id64) and readHeader does
+// int(p.parseNumeric(...)), both marked "Integer overflow possible" in the
+// stdlib. A declared uid of 2^32 therefore arrives as 0 and would satisfy every
+// bound in checkOwner, and what it was narrowed from is unrecoverable -- a GNU
+// base-256 owner carries no PAX record to re-read, and an expanded APK keeps
+// the narrowed value. Refuse outright rather than vouch for an owner that was
+// never checked. goreleaser ships linux/386, so this is a reachable build.
+//
+// The guard belongs here and not in checkOwner because AddInstalledPackage
+// range-checks headers a caller handed it, which need not have come from a tar
+// at all. Refusing those on a 32-bit build would reject ownership the decoder
+// never touched -- and it would catch nothing extra, because on such a build
+// the install paths below already refuse, so no decoded header ever reaches the
+// installed-database writer.
+func checkArchiveOwner(h *tar.Header) error {
+	if math.MaxInt < math.MaxUint32 {
+		return fmt.Errorf("cannot validate the owner of %s: archive/tar truncates uid/gid to an int, "+
+			"so on this platform a declared value above %d is silently narrowed and an out-of-range "+
+			"owner cannot be detected; validating package ownership requires a 64-bit build", h.Name, math.MaxInt)
+	}
+	return checkOwner(h)
+}
+
 // installAPKFiles install the files from the APK and return the list of installed files
 // and their permissions. Returns a tar.Header because it is a convenient existing
 // struct that has all of the fields we need.
 func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) ([]tar.Header, error) {
+	if err := a.installAborted(); err != nil {
+		return nil, err
+	}
+	files, err := a.doInstallAPKFiles(ctx, in, pkg)
+	if err != nil {
+		a.abortInstalls(err)
+		return nil, err
+	}
+	return files, nil
+}
+
+func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package) ([]tar.Header, error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "installAPKFiles")
 	defer span.End()
 
@@ -204,6 +268,13 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 		if err != nil {
 			return nil, err
 		}
+		// Validate before anything else in the loop: this must precede the
+		// hidden-file skip below, every a.fs mutation, and the header.Name[0]
+		// index on the next line. installAPKFiles streams the archive, so unlike
+		// lazilyInstallAPKFiles it cannot validate every entry up front.
+		if err := validateEntryName(pkg.Name, header.Name); err != nil {
+			return nil, err
+		}
 		// if it was a hidden file and not a directory and we have not yet started the data section,
 		// so skip this file
 		if !startedDataSection && header.Name[0] == '.' && !strings.Contains(header.Name, "/") {
@@ -211,6 +282,10 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 		}
 		// whatever it is now, it is in the data section
 		startedDataSection = true
+
+		if err := checkArchiveOwner(header); err != nil {
+			return nil, err
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -307,6 +382,23 @@ func (a *APK) installAPKFiles(ctx context.Context, in io.Reader, pkg *Package) (
 			}
 
 		case tar.TypeSymlink:
+			// header.Linkname is deliberately not passed through
+			// validateEntryName, even though header.Name above is.
+			//
+			// The check exists to stop a name reaching the installed database,
+			// which is written from Name only: a link target never becomes an F:
+			// or R: value, so it cannot forge a record. apk-tools draws the same
+			// line -- contains_control_character has exactly one call site,
+			// database.c:2518, and it is on ae->name. Rejecting link targets
+			// would therefore refuse packages that "apk add" installs, which is
+			// the divergence this check was written to avoid, in the other
+			// direction.
+			//
+			// The bytes do survive into the produced image's tar Linkname field.
+			// That is a separate question from record forging and is tracked
+			// separately rather than settled here by inventing a rule upstream
+			// does not have.
+			//
 			// some underlying filesystems and some memfs that we use in tests do not support symlinks.
 			// attempt it, and if it fails, just copy it.
 			// if it already exists, pointing to the same target, we can ignore it
@@ -365,8 +457,30 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 //
 // This is an optimizing fastpath for when a.fs is a specific implementation that supports it.
 func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, entries []tar.Header, src fs.FS, pkg *Package) ([]tar.Header, error) {
+	if err := a.installAborted(); err != nil {
+		return nil, err
+	}
+	files, err := a.doLazilyInstallAPKFiles(ctx, wh, entries, src, pkg)
+	if err != nil {
+		a.abortInstalls(err)
+		return nil, err
+	}
+	return files, nil
+}
+
+func (a *APK) doLazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, entries []tar.Header, src fs.FS, pkg *Package) ([]tar.Header, error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "lazilyInstallAPKFiles")
 	defer span.End()
+
+	// Validate every entry before writing any of them. Unlike installAPKFiles,
+	// which streams the archive, the whole entry list is already materialised
+	// here, so a package with a bad name anywhere in it can be rejected without
+	// having written part of it first.
+	for i := range entries {
+		if err := validateEntryName(pkg.Name, entries[i].Name); err != nil {
+			return nil, err
+		}
+	}
 
 	files := make([]tar.Header, 0, len(entries))
 
@@ -383,6 +497,15 @@ func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, entri
 		// whatever it is now, it is in the data section
 		startedDataSection = true
 
+		// Same check as the streaming path. memFS.WriteHeader happens not to
+		// copy the header's owner onto the node today, but the headers returned
+		// here go straight to AddInstalledPackage, which writes them into the
+		// installed database, and anything that wires ownership through -- the
+		// natural completion of the mode/ownership work -- lands on a uint32.
+		if err := checkArchiveOwner(&hdr); err != nil {
+			return nil, err
+		}
+
 		installed, err := wh.WriteHeader(hdr, src, pkg)
 		if err != nil {
 			return nil, err
@@ -396,4 +519,45 @@ func (a *APK) lazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, entri
 	}
 
 	return files, nil
+}
+
+// abortInstalls records that an install failed, so that no further install or
+// record write happens against this APK.
+//
+// A failed installAPKFiles has already written the entries preceding the bad one
+// to a.fs and claimed them in a.installedFiles, and those writes cannot be
+// safely unwound -- some of the directories it "created" were already there.
+// The instance is therefore left claiming ownership on behalf of a package that
+// has no installed-database record.
+//
+// Leaving that in place is what makes it dangerous, because two later readers
+// trust it: installRegularFile's conflict branch, and the owner filter in
+// InstallPackages that decides which files go into each package's record. A
+// subsequent package shipping one of the same paths can have its R: line
+// dropped, leaving a file that is physically present recorded against no
+// package and absent from the SBOM.
+//
+// apko itself aborts the build on any install error, so this only changes
+// behaviour for a library consumer that catches the error and carries on --
+// which InvalidEntryNameError's own documentation invites. Refusing is the
+// honest answer: the instance's view of the filesystem is no longer accurate,
+// and continuing produces a wrong image rather than a failed one.
+//
+// Installs run sequentially (see InstallPackages, which fetches concurrently but
+// installs from a single goroutine), so this needs no more synchronisation than
+// a.installedFiles already has.
+func (a *APK) abortInstalls(cause error) {
+	if a.installAbortedErr == nil {
+		a.installAbortedErr = cause
+	}
+}
+
+// installAborted returns a non-nil error if a previous install failed. The
+// result wraps both ErrInstallAborted and the original cause, so a caller can
+// match either.
+func (a *APK) installAborted() error {
+	if a.installAbortedErr == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrInstallAborted, a.installAbortedErr)
 }

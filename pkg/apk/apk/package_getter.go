@@ -147,6 +147,20 @@ func newDefaultPackageGetter(client *http.Client, cache *cache, authenticator au
 	return d
 }
 
+// expandOptions returns the configured section size limits. Both the fetch and
+// the cache-read path need these; the latter is easy to miss because it builds
+// its APKExpanded by hand instead of going through ExpandApkWithOptions.
+func (d *defaultPackageGetter) expandOptions() []expandapk.Option {
+	var opts []expandapk.Option
+	if d.apkControlMaxSize != 0 {
+		opts = append(opts, expandapk.WithMaxControlSize(d.apkControlMaxSize))
+	}
+	if d.apkDataMaxSize != 0 {
+		opts = append(opts, expandapk.WithMaxDataSize(d.apkDataMaxSize))
+	}
+	return opts
+}
+
 // GetPackage fetches and returns an expanded package.
 // If a disk cache is configured, it uses a global singleflight cache to deduplicate
 // concurrent requests across all APK instances in the process.
@@ -206,15 +220,7 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 		}
 	}
 
-	var expandOpts []expandapk.Option
-	if d.apkControlMaxSize != 0 {
-		expandOpts = append(expandOpts, expandapk.WithMaxControlSize(d.apkControlMaxSize))
-	}
-	if d.apkDataMaxSize != 0 {
-		expandOpts = append(expandOpts, expandapk.WithMaxDataSize(d.apkDataMaxSize))
-	}
-
-	exp, err := d.fetchExpandAndVerify(ctx, pkg, cacheDir, expandOpts)
+	exp, err := d.fetchExpandAndVerify(ctx, pkg, cacheDir, d.expandOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -373,11 +379,18 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	defer span.End()
 
 	// Rename exp's temp files to content-addressable identifiers in the cache.
+	//
+	// These use ReplaceCachedFile rather than AdvertiseCachedFile: everything here
+	// has just been fetched and verified by doFetchExpandAndVerify, so it must win
+	// over whatever is already sitting at the destination. Deferring to an existing
+	// entry would let a poisoned cache survive its own rejection -- cachedPackage
+	// refuses it, the refetch lands here, and adopting the planted file would serve
+	// exactly the content the refetch was supposed to replace.
 
 	ctlHex := hex.EncodeToString(exp.ControlHash)
 	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
 
-	if err := paths.AdvertiseCachedFile(exp.ControlFile, ctlDst); err != nil {
+	if err := paths.ReplaceCachedFile(exp.ControlFile, ctlDst); err != nil {
 		return nil, err
 	}
 
@@ -386,7 +399,7 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	if exp.SignatureFile != "" {
 		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
 
-		if err := paths.AdvertiseCachedFile(exp.SignatureFile, sigDst); err != nil {
+		if err := paths.ReplaceCachedFile(exp.SignatureFile, sigDst); err != nil {
 			return nil, err
 		}
 
@@ -396,7 +409,7 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	datHex := hex.EncodeToString(exp.PackageHash)
 	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
 
-	if err := paths.AdvertiseCachedFile(exp.PackageFile, datDst); err != nil {
+	if err := paths.ReplaceCachedFile(exp.PackageFile, datDst); err != nil {
 		return nil, err
 	}
 
@@ -408,25 +421,32 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 
 	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
 
-	if err := paths.AdvertiseCachedFile(exp.TarFile, tarDst); err != nil {
+	if err := paths.ReplaceCachedFile(exp.TarFile, tarDst); err != nil {
 		return nil, err
 	}
 
 	exp.TarFile = tarDst
 
 	// Re-initialize the tarfs with the renamed file.
+	//
+	// Measured rather than merely reopened: the files above were installed
+	// atomically, but nothing stops another writer replacing them between the
+	// rename and this read, and the whole point of the cache path is that its
+	// contents are not trusted.
 	// TODO: Split out the tarfs Index creation from the FS.
 	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	data, err := exp.PackageData()
+	data, err := exp.VerifiedPackageData(exp.PackageHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("caching %q: %w", exp.PackageFile, err)
 	}
 	info, err := data.Stat()
 	if err != nil {
+		data.Close()
 		return nil, err
 	}
 	exp.TarFS, err = tarfs.New(data, info.Size())
 	if err != nil {
+		data.Close()
 		return nil, err
 	}
 
@@ -451,6 +471,9 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	pkgHexSum := hex.EncodeToString(checksum)
 
 	exp := expandapk.APKExpanded{}
+	if err := exp.ApplyOptions(d.expandOptions()...); err != nil {
+		return nil, err
+	}
 
 	ctl := filepath.Join(cacheDir, pkgHexSum+".ctl.tar.gz")
 	cf, err := os.Stat(ctl)
@@ -518,16 +541,23 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	}
 
 	exp.TarFile = strings.TrimSuffix(exp.PackageFile, ".gz")
-	data, err := exp.PackageData()
+
+	// As with the control section above, recompute rather than trust the
+	// content-addressable filename. datahash is usable as the anchor here
+	// precisely because it came from the control section the Q1 checksum just
+	// vouched for.
+	data, err := exp.VerifiedPackageData(exp.PackageHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cached %q: %w", exp.PackageFile, err)
 	}
 	info, err := data.Stat()
 	if err != nil {
+		data.Close()
 		return nil, err
 	}
 	exp.TarFS, err = tarfs.New(data, info.Size())
 	if err != nil {
+		data.Close()
 		return nil, err
 	}
 

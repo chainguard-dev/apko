@@ -177,6 +177,7 @@ func TestAddInstalledPackageAcceptsOrdinaryDirectoryEntries(t *testing.T) {
 // AddInstalledPackage, and it is that composition -- not a synthetic header
 // list -- that hung before the parent-walk fix.
 func TestInstallPathRejectsUnrepresentableRootPermissions(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	ctx := t.Context()
 	base := filepath.Join(t.TempDir(), "base")
 	fsys := apkfs.DirFS(ctx, base, apkfs.WithCreateDir())

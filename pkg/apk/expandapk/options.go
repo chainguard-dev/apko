@@ -14,6 +14,8 @@
 
 package expandapk
 
+import "fmt"
+
 // DefaultMaxControlSize is the default maximum decompressed size for control sections (10 MB).
 const DefaultMaxControlSize int64 = 10 << 20
 
@@ -56,4 +58,23 @@ func DefaultOptions() *Options {
 		MaxControlSize: DefaultMaxControlSize,
 		MaxDataSize:    DefaultMaxDataSize,
 	}
+}
+
+// ApplyOptions configures size limits on an APKExpanded that was assembled
+// directly rather than returned by ExpandApk.
+//
+// The cache-read path reconstructs APKExpanded from files already on disk, so it
+// never passes through ExpandApkWithOptions and would otherwise be stuck on the
+// defaults. That silently drops an operator's limit in both directions: a smaller
+// bomb guard stops applying to cache reads, and a larger one (or -1) makes a
+// package that fetches fine fail on every subsequent read of the same cache.
+func (a *APKExpanded) ApplyOptions(opts ...Option) error {
+	options := DefaultOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return fmt.Errorf("applying option: %w", err)
+		}
+	}
+	a.opts = options
+	return nil
 }

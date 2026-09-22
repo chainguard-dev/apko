@@ -16,6 +16,8 @@ package apk
 
 import (
 	"archive/tar"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 
@@ -75,6 +77,45 @@ func (e expandedContents) Entries() ([]tar.Header, error) {
 	return headers, nil
 }
 
+// PackageDataStreamer is the optional half of the [PackageContents] contract,
+// for carriers that can hand over the whole data section as a single tar
+// stream. The non-WriteHeaderer install path consumes that; a carrier holding
+// only a pre-built index cannot produce it, which is why this is separate.
+//
+// The stream is an [io.ReadCloser] rather than an *os.File on purpose. An
+// *os.File is a name plus a file offset shared with every descriptor dup'd from
+// it, and the only copy of a data section worth trusting has neither: it is
+// unlinked, and it is read concurrently by the index that was built over it.
+// Requiring a file would force a carrier to publish one.
+type PackageDataStreamer interface {
+	PackageData() (io.ReadCloser, error)
+}
+
+// Asserted rather than left to the type switch in installPackage: without this,
+// a signature drift on the method below still compiles and instead surfaces as
+// every install failing at runtime on the default filesystem.
+var _ PackageDataStreamer = expandedContents{}
+
 // PackageData exposes the whole data section as a tar stream, which the
 // non-WriteHeaderer install path consumes.
-func (e expandedContents) PackageData() (*os.File, error) { return e.exp.PackageData() }
+//
+// It reads the descriptor TarFS was indexed over, and deliberately not
+// expandapk.APKExpanded.PackageData, which resolves the TarFile path afresh.
+// Nothing in the apk format authenticates the uncompressed tar, so a copy of it
+// is trustworthy only as the derivative of a compressed section that verified
+// against datahash -- which is exactly what the getter already inflated into the
+// unnamed file behind TarFS. Reopening the cache entry by name instead would
+// re-admit whatever is at that name now, long after it was checked, which is the
+// substitution GHSA-3fqg-8hpf-5682 was filed for.
+//
+// ReadAt is position-independent, so serving the section here cannot disturb
+// TarFS's own lazy reads of the same descriptor.
+func (e expandedContents) PackageData() (io.ReadCloser, error) {
+	// Not a fallback to the on-disk tar: that is the untrusted read this exists
+	// to avoid, and a nil TarFS would already have panicked in Entries or
+	// IsValid, so there is no working caller to preserve.
+	if e.exp.TarFS == nil {
+		return nil, fmt.Errorf("expanded package %q has no indexed data section", e.exp.PackageFile)
+	}
+	return io.NopCloser(io.NewSectionReader(e.exp.TarFS.UnderlyingReader(), 0, e.exp.TarFS.Size())), nil
+}

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -133,23 +134,36 @@ func (ue *UserEntry) Parse(line string) error {
 	ue.UserName = parts[0]
 	ue.Password = parts[1]
 
-	uid, err := strconv.Atoi(parts[2])
+	uid, err := parseID("UID", parts[2])
 	if err != nil {
-		return fmt.Errorf("failed to parse UID %s", parts[2])
+		return err
 	}
-	ue.UID = uint32(uid)
+	ue.UID = uid
 
-	gid, err := strconv.Atoi(parts[3])
+	gid, err := parseID("GID", parts[3])
 	if err != nil {
-		return fmt.Errorf("failed to parse GID %s", parts[3])
+		return err
 	}
-	ue.GID = uint32(gid)
+	ue.GID = gid
 
 	ue.Info = parts[4]
 	ue.HomeDir = parts[5]
 	ue.Shell = parts[6]
 
 	return nil
+}
+
+// parseID parses a uid or gid field. Only values that fit a uint32 are
+// accepted: a bare int conversion would turn -1 into 4294967295 and 2^32 into
+// 0, so an entry that never claimed to be root would be written back out as
+// root. The entries come from the packages being installed, so that has to be
+// an error rather than a wrap.
+func parseID(field, s string) (uint32, error) {
+	id, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s %q: must be an integer between 0 and %d", field, s, uint32(math.MaxUint32))
+	}
+	return uint32(id), nil
 }
 
 // Write writes an /etc/passwd line into an io.Writer.
