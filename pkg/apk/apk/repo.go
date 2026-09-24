@@ -161,23 +161,8 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	// trim the newline
 	arch := strings.TrimSuffix(string(archB), "\n")
 
-	// create the list of keys
-	keys := make(map[string][]byte)
-	dir, err := a.fs.ReadDir(keysDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("could not read keys directory in %s at %s: %w", a.fs, keysDirPath, err)
-	}
-	for _, d := range dir {
-		if d.IsDir() {
-			continue
-		}
-		fullPath := filepath.Join(keysDirPath, d.Name())
-		b, err := a.fs.ReadFile(fullPath)
-		if err != nil {
-			return nil, fmt.Errorf("could not read key file at %s: %w", fullPath, err)
-		}
-		keys[d.Name()] = b
-	}
+	// GetRepositoryIndexes now gets the keys from the in-memory keyring
+	keys := maps.Clone(a.keys)
 	httpClient := a.client
 	if a.cache != nil {
 		httpClient = a.cache.client(httpClient, true)
