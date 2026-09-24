@@ -27,6 +27,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1236,34 +1237,49 @@ func TestParseInstalledFiles(t *testing.T) {
 }
 
 func TestParseInstalledPerms(t *testing.T) {
+	// uid/gid are int64 rather than int because 4294967295 does not fit an int
+	// where int is 32 bits, and goreleaser builds linux/386. needs64Bit marks
+	// the rows whose permStr carries a value above MaxInt32: parseInstalledPerms
+	// reads it with Atoi into an int, so on those platforms Atoi rejects it
+	// first and the row describes a scenario that cannot arise. The negative
+	// rows are portable and run everywhere.
 	cases := []struct {
-		name     string
-		permStr  string
-		uid      int
-		gid      int
-		perms    int64
-		errMatch string
+		name       string
+		permStr    string
+		uid        int64
+		gid        int64
+		perms      int64
+		errMatch   string
+		needs64Bit bool
 	}{
-		{"executable file", "0:0:755", 0, 0, 0755, ""},
-		{"setuid executable file", "0:0:4755", 0, 0, 04755, ""},
-		{"non-root owner", "1001:0:644", 1001, 0, 0644, ""},
-		{"non-root group", "0:1001:644", 0, 1001, 0644, ""},
-		{"other-write perm", "0:0:777", 0, 0, 0777, ""},
-		{"too many tokens", "0:0:0:0", 0, 0, 0, "3 parts"},
-		{"bad uid token", "a:0:777", 0, 0, 0, "invalid.*uid"},
-		{"bad gid token", "0:b:7770", 0, 0, 0, "invalid.*gid"},
-		{"bad perm token", "0:0:cat", 0, 0, 0, "invalid.*perms"},
+		{name: "executable file", permStr: "0:0:755", perms: 0755},
+		{name: "setuid executable file", permStr: "0:0:4755", perms: 04755},
+		{name: "non-root owner", permStr: "1001:0:644", uid: 1001, perms: 0644},
+		{name: "non-root group", permStr: "0:1001:644", gid: 1001, perms: 0644},
+		{name: "other-write perm", permStr: "0:0:777", perms: 0777},
+		{name: "too many tokens", permStr: "0:0:0:0", errMatch: "3 parts"},
+		{name: "bad uid token", permStr: "a:0:777", errMatch: "invalid.*uid"},
+		{name: "bad gid token", permStr: "0:b:7770", errMatch: "invalid.*gid"},
+		{name: "max uid and gid", permStr: "4294967295:4294967295:644", uid: 4294967295, gid: 4294967295, perms: 0644, needs64Bit: true},
+		{name: "uid 2^32", permStr: "4294967296:0:644", errMatch: "uid out of range", needs64Bit: true},
+		{name: "negative uid", permStr: "-1:0:644", errMatch: "uid out of range"},
+		{name: "gid 2^32", permStr: "0:4294967296:644", errMatch: "gid out of range", needs64Bit: true},
+		{name: "negative gid", permStr: "0:-1:644", errMatch: "gid out of range"},
+		{name: "bad perm token", permStr: "0:0:cat", errMatch: "invalid.*perms"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.needs64Bit && strconv.IntSize < 64 {
+				t.Skip("permission string carries a uid/gid above MaxInt32, unrepresentable in an int here")
+			}
 			uid, gid, perms, err := parseInstalledPerms(tt.permStr)
 			if tt.errMatch != "" {
 				require.Error(t, err, "expected error found none")
 				assert.Regexp(t, tt.errMatch, err.Error(), "Error message should match the regex")
 				return
 			}
-			assert.Equal(t, tt.uid, uid, "unexpected uid")
-			assert.Equal(t, tt.gid, gid, "unexpected gid")
+			assert.Equal(t, tt.uid, int64(uid), "unexpected uid")
+			assert.Equal(t, tt.gid, int64(gid), "unexpected gid")
 			assert.Equal(t, tt.perms, perms, "unexpected perms")
 		})
 	}

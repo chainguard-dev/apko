@@ -248,6 +248,7 @@ func TestSymlinkEscape_HardlinkThroughSymlink(t *testing.T) {
 // overlay and is what downstream layer/tar/cpio emitters consume through
 // dirFS.Stat().Mode() and DirEntry.Info().Mode().
 func TestInstallSetuidBinary(t *testing.T) {
+	skipWithoutOwnerValidation(t)
 	ctx := t.Context()
 
 	sandbox := t.TempDir()
