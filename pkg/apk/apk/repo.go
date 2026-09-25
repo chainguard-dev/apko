@@ -237,45 +237,65 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		numPackages += index.Count()
 	}
 
-	var (
-		pkgNameMap   = make(map[string][]*repositoryPackage, numPackages)
-		installIfMap = map[string][]*repositoryPackage{}
-	)
+	// Count how many entries each name will hold: the packages carrying the
+	// name plus the packages providing it.
+	counts := make(map[string]int, numPackages)
+	total := 0
+	for _, index := range indexes {
+		for _, pkg := range index.Packages() {
+			counts[pkg.Name]++
+			total++
+			for _, provide := range pkg.Provides {
+				counts[cachedResolvePackageNameVersionPin(provide).Name]++
+				total++
+			}
+		}
+	}
+
+	// Carve one backing array into an exactly sized bucket per name. Filling
+	// goes through the bucket pointer so it never writes to the map.
+	type bucket struct{ pkgs []*repositoryPackage }
+	backing := make([]*repositoryPackage, total)
+	buckets := make([]bucket, 0, len(counts))
+	byName := make(map[string]*bucket, len(counts))
+	for name, n := range counts {
+		buckets = append(buckets, bucket{pkgs: backing[:0:n]})
+		byName[name] = &buckets[len(buckets)-1]
+		backing = backing[n:]
+	}
+
+	// Allocate every wrapper in one slab rather than one heap object per
+	// package. The wrappers live exactly as long as the resolver anyway.
+	wrappers := make([]repositoryPackage, 0, numPackages)
+	installIfMap := map[string][]*repositoryPackage{}
 	p := &PkgResolver{
 		indexes:  indexes,
 		selected: map[string]*RepositoryPackage{},
 	}
 
-	// create a map of every package by name and version to its RepositoryPackage
+	// Packages carrying a name come first, providers of it are appended after.
 	for _, index := range indexes {
 		for _, pkg := range index.Packages() {
-			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
-				RepositoryPackage: pkg,
-				pinnedName:        index.Name(),
-			})
+			wrappers = append(wrappers, repositoryPackage{RepositoryPackage: pkg, pinnedName: index.Name()})
+			rp := &wrappers[len(wrappers)-1]
+			b := byName[pkg.Name]
+			b.pkgs = append(b.pkgs, rp)
 			for _, dep := range pkg.InstallIf {
-				if _, ok := installIfMap[dep]; !ok {
-					installIfMap[dep] = []*repositoryPackage{}
-				}
-				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
-					RepositoryPackage: pkg,
-					pinnedName:        index.Name(),
-				})
+				installIfMap[dep] = append(installIfMap[dep], rp)
 			}
 		}
 	}
-	// create a map of every provided file to its package
-	allPkgs := make([][]*repositoryPackage, 0, len(pkgNameMap))
-	for _, pkgVersions := range pkgNameMap {
-		allPkgs = append(allPkgs, pkgVersions)
-	}
-	for _, pkgVersions := range allPkgs {
-		for _, pkg := range pkgVersions {
-			for _, provide := range pkg.Provides {
-				name := cachedResolvePackageNameVersionPin(provide).Name
-				pkgNameMap[name] = append(pkgNameMap[name], pkg)
-			}
+	for i := range wrappers {
+		rp := &wrappers[i]
+		for _, provide := range rp.Provides {
+			b := byName[cachedResolvePackageNameVersionPin(provide).Name]
+			b.pkgs = append(b.pkgs, rp)
 		}
+	}
+
+	pkgNameMap := make(map[string][]*repositoryPackage, len(byName))
+	for name, b := range byName {
+		pkgNameMap[name] = b.pkgs
 	}
 	p.nameMap = pkgNameMap
 	p.installIfMap = installIfMap
