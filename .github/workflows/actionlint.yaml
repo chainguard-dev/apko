@@ -48,7 +48,7 @@ jobs:
           echo "files=${yamls[*]}" >> "${GITHUB_OUTPUT}"
 
       - name: Action lint
-        uses: step-security/action-actionlint@b90a9ddb65b752bc6b6888a2f30a4941d9ff62e5 # v1.73.1
+        uses: step-security/action-actionlint@b2b21b6e020989da8beae86d6c3a1291c46d45d5 # v1.76.0
         env:
           SHELLCHECK_OPTS: "--exclude=SC2129"
         with:
