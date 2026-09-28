@@ -252,15 +252,12 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		}
 	}
 
-	// Carve one backing array into an exactly sized bucket per name. Filling
-	// goes through the bucket pointer so it never writes to the map.
-	type bucket struct{ pkgs []*repositoryPackage }
+	// Carve one backing array into an exactly sized slice per name, so the
+	// appends below never grow anything.
 	backing := make([]*repositoryPackage, total)
-	buckets := make([]bucket, 0, len(counts))
-	byName := make(map[string]*bucket, len(counts))
+	pkgNameMap := make(map[string][]*repositoryPackage, len(counts))
 	for name, n := range counts {
-		buckets = append(buckets, bucket{pkgs: backing[:0:n]})
-		byName[name] = &buckets[len(buckets)-1]
+		pkgNameMap[name] = backing[:0:n]
 		backing = backing[n:]
 	}
 
@@ -278,8 +275,7 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		for _, pkg := range index.Packages() {
 			wrappers = append(wrappers, repositoryPackage{RepositoryPackage: pkg, pinnedName: index.Name()})
 			rp := &wrappers[len(wrappers)-1]
-			b := byName[pkg.Name]
-			b.pkgs = append(b.pkgs, rp)
+			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], rp)
 			for _, dep := range pkg.InstallIf {
 				installIfMap[dep] = append(installIfMap[dep], rp)
 			}
@@ -288,14 +284,9 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	for i := range wrappers {
 		rp := &wrappers[i]
 		for _, provide := range rp.Provides {
-			b := byName[cachedResolvePackageNameVersionPin(provide).Name]
-			b.pkgs = append(b.pkgs, rp)
+			name := cachedResolvePackageNameVersionPin(provide).Name
+			pkgNameMap[name] = append(pkgNameMap[name], rp)
 		}
-	}
-
-	pkgNameMap := make(map[string][]*repositoryPackage, len(byName))
-	for name, b := range byName {
-		pkgNameMap[name] = b.pkgs
 	}
 	p.nameMap = pkgNameMap
 	p.installIfMap = installIfMap
