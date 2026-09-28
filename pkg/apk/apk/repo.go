@@ -232,65 +232,72 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
-	numPackages := 0
-	for _, index := range indexes {
-		numPackages += index.Count()
-	}
-
-	// Count how many entries each name will hold: the packages carrying the
-	// name plus the packages providing it.
-	counts := make(map[string]int, numPackages)
-	total := 0
-	for _, index := range indexes {
-		for _, pkg := range index.Packages() {
-			counts[pkg.Name]++
-			total++
-			for _, provide := range pkg.Provides {
-				counts[cachedResolvePackageNameVersionPin(provide).Name]++
-				total++
-			}
-		}
-	}
-
-	// Carve one backing array into an exactly sized slice per name, so the
-	// appends below never grow anything.
-	backing := make([]*repositoryPackage, total)
-	pkgNameMap := make(map[string][]*repositoryPackage, len(counts))
-	for name, n := range counts {
-		pkgNameMap[name] = backing[:0:n]
-		backing = backing[n:]
-	}
-
-	// Allocate every wrapper in one slab rather than one heap object per
-	// package. The wrappers live exactly as long as the resolver anyway.
-	wrappers := make([]repositoryPackage, 0, numPackages)
+	pkgs := wrapPackages(indexes)
+	nameMap := presizedNameMap(pkgs)
 	installIfMap := map[string][]*repositoryPackage{}
-	p := &PkgResolver{
-		indexes:  indexes,
-		selected: map[string]*RepositoryPackage{},
-	}
 
 	// Packages carrying a name come first, providers of it are appended after.
+	for i := range pkgs {
+		pkg := &pkgs[i]
+		nameMap[pkg.Name] = append(nameMap[pkg.Name], pkg)
+		for _, dep := range pkg.InstallIf {
+			installIfMap[dep] = append(installIfMap[dep], pkg)
+		}
+	}
+	for i := range pkgs {
+		pkg := &pkgs[i]
+		for _, provide := range pkg.Provides {
+			name := cachedResolvePackageNameVersionPin(provide).Name
+			nameMap[name] = append(nameMap[name], pkg)
+		}
+	}
+
+	return &PkgResolver{
+		indexes:      indexes,
+		nameMap:      nameMap,
+		installIfMap: installIfMap,
+		selected:     map[string]*RepositoryPackage{},
+	}
+}
+
+// wrapPackages pairs every package with the name of the index it came from,
+// in one slab rather than one heap object per package. The wrappers live as
+// long as the resolver anyway.
+func wrapPackages(indexes []NamedIndex) []repositoryPackage {
+	n := 0
+	for _, index := range indexes {
+		n += index.Count()
+	}
+	pkgs := make([]repositoryPackage, 0, n)
 	for _, index := range indexes {
 		for _, pkg := range index.Packages() {
-			wrappers = append(wrappers, repositoryPackage{RepositoryPackage: pkg, pinnedName: index.Name()})
-			rp := &wrappers[len(wrappers)-1]
-			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], rp)
-			for _, dep := range pkg.InstallIf {
-				installIfMap[dep] = append(installIfMap[dep], rp)
-			}
+			pkgs = append(pkgs, repositoryPackage{RepositoryPackage: pkg, pinnedName: index.Name()})
 		}
 	}
-	for i := range wrappers {
-		rp := &wrappers[i]
-		for _, provide := range rp.Provides {
-			name := cachedResolvePackageNameVersionPin(provide).Name
-			pkgNameMap[name] = append(pkgNameMap[name], rp)
+	return pkgs
+}
+
+// presizedNameMap returns an empty slice per name with exactly the capacity
+// the fill needs, the packages carrying the name plus the packages providing
+// it, all carved from one backing array so that appending never grows anything.
+func presizedNameMap(pkgs []repositoryPackage) map[string][]*repositoryPackage {
+	counts := make(map[string]int, len(pkgs))
+	total := 0
+	for i := range pkgs {
+		counts[pkgs[i].Name]++
+		for _, provide := range pkgs[i].Provides {
+			counts[cachedResolvePackageNameVersionPin(provide).Name]++
 		}
+		total += 1 + len(pkgs[i].Provides)
 	}
-	p.nameMap = pkgNameMap
-	p.installIfMap = installIfMap
-	return p
+
+	backing := make([]*repositoryPackage, total)
+	nameMap := make(map[string][]*repositoryPackage, len(counts))
+	for name, n := range counts {
+		nameMap[name] = backing[:0:n]
+		backing = backing[n:]
+	}
+	return nameMap
 }
 
 // We select the next package based on the smallest number of candidate packages.
