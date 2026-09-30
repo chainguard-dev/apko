@@ -7,6 +7,7 @@ require (
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/charmbracelet/log v1.0.0
 	github.com/erofs/go-erofs v0.3.2-0.20260804074615-52cc42c5291c
+	github.com/github/go-spdx/v2 v2.7.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.22.1

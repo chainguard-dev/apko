@@ -15,13 +15,17 @@
 package spdx
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
+	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +33,7 @@ import (
 	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	purl "github.com/package-url/packageurl-go"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/release-utils/version"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -154,21 +159,38 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 		}
 	}
 
+	reserved := reservedIDs(opts.Packages)
 	for _, pkg := range opts.Packages {
-		// Check to see if the apk contains an sbom describing itself
-		if err := sx.ProcessInternalApkSBOM(ctx, opts, doc, pkg); err != nil {
-			return fmt.Errorf("parsing internal apk SBOM: %w", err)
+		if err := sx.processInternalApkSBOM(ctx, opts, doc, pkg, reserved); err != nil {
+			return fmt.Errorf("describing package %q: %w", pkg.Name+"-"+pkg.Version, err)
 		}
 	}
 
+	// Packages built from the same origin or upstream source share records, so
+	// keep one copy. Two records under one ID that identify different components
+	// would let one package's SBOM displace another's, so refuse them. Builds of
+	// one source can still disagree on metadata such as its license; keep the
+	// first record then.
 	dedupedPackages := make([]Package, 0, len(doc.Packages))
-	seenIDs := make(map[string]struct{})
-	for i := range doc.Packages {
-		if _, ok := seenIDs[doc.Packages[i].ID]; !ok {
-			seenIDs[doc.Packages[i].ID] = struct{}{}
-			dedupedPackages = append(dedupedPackages, doc.Packages[i])
-		} else {
-			clog.FromContext(ctx).Debug("duplicate package ID found in SBOM, deduplicating package...", "ID", doc.Packages[i].ID)
+	seen := make(map[string]int, len(doc.Packages))
+	for _, p := range doc.Packages {
+		j, ok := seen[p.ID]
+		if !ok {
+			seen[p.ID] = len(dedupedPackages)
+			dedupedPackages = append(dedupedPackages, p)
+			continue
+		}
+		prev := dedupedPackages[j]
+		switch {
+		case !sameIdentity(prev, p):
+			return fmt.Errorf("SPDX ID %q names two packages that differ in name, version, "+
+				"external references, or checksums: %q and %q",
+				p.ID, prev.Name+"@"+prev.Version, p.Name+"@"+p.Version)
+		case !sameMetadata(prev, p):
+			clog.WarnContext(ctx, "records sharing an SPDX ID disagree on metadata; keeping the first",
+				"ID", p.ID, "package", p.Name+"@"+p.Version)
+		default:
+			clog.DebugContext(ctx, "duplicate package ID found in SBOM, deduplicating package...", "ID", p.ID)
 		}
 	}
 	doc.Packages = dedupedPackages
@@ -180,25 +202,53 @@ func (sx *SPDX) Generate(ctx context.Context, opts *options.Options, path string
 	return nil
 }
 
-// locateApkSBOM returns the path to the SBOM in the given filesystem, using the
-// given Package's name and version. It returns an empty string if the SBOM is
-// not found.
+// sameIdentity reports whether a and b identify one component to a scanner:
+// the same name, version, external references, and digests, in any order.
+func sameIdentity(a, b Package) bool {
+	return a.Name == b.Name && a.Version == b.Version &&
+		sets.New(a.ExternalRefs...).Equal(sets.New(b.ExternalRefs...)) &&
+		sets.New(a.Checksums...).Equal(sets.New(b.Checksums...)) &&
+		reflect.DeepEqual(a.VerificationCode, b.VerificationCode)
+}
+
+// sameMetadata reports whether a and b, which share an identity, also agree on
+// every other field.
+func sameMetadata(a, b Package) bool {
+	a.ExternalRefs, a.Checksums = b.ExternalRefs, b.Checksums
+	return reflect.DeepEqual(a, b)
+}
+
+// epochRe matches the -rN epoch that ends an apk version.
+var epochRe = regexp.MustCompile(`-r\d+$`)
+
+// locateApkSBOM returns the path of the SBOM that ipkg ships, or "" if it ships
+// none. Only paths the installed database lists for ipkg count, so an SBOM that
+// another package installs under ipkg's name is ignored.
 func locateApkSBOM(fsys apkfs.ReaderFS, ipkg *apk.InstalledPackage) (string, error) {
-	re := regexp.MustCompile(`-r\d+$`)
+	owned := map[string]struct{}{}
+	for _, f := range ipkg.Files {
+		if p := path.Clean("/" + f.Name); path.Dir(p) == apkSBOMdir {
+			owned[p] = struct{}{}
+		}
+	}
+
 	for _, s := range []string{
 		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, ipkg.Version),
-		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, re.ReplaceAllString(ipkg.Version, "")),
+		fmt.Sprintf("%s/%s-%s.spdx.json", apkSBOMdir, ipkg.Name, epochRe.ReplaceAllString(ipkg.Version, "")),
 		fmt.Sprintf("%s/%s.spdx.json", apkSBOMdir, ipkg.Name),
 	} {
-		info, err := fsys.Stat(s)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
+		if _, ok := owned[s]; !ok {
+			continue
 		}
-
+		info, err := fsys.Stat(s)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("inspecting %q: %w", s, err)
+		}
 		if info.IsDir() {
-			return "", fmt.Errorf("directory found at SBOM path %s", s)
+			return "", fmt.Errorf("directory found at SBOM path %q", s)
 		}
 		return s, nil
 	}
@@ -206,104 +256,233 @@ func locateApkSBOM(fsys apkfs.ReaderFS, ipkg *apk.InstalledPackage) (string, err
 	return "", nil
 }
 
+// ProcessInternalApkSBOM adds to doc the packages that ipkg's own SBOM
+// describes and everything they reach, or a record built from the apk database
+// when ipkg ships no SBOM. It fails when the SBOM does not parse or describes
+// anything other than ipkg.
 func (sx *SPDX) ProcessInternalApkSBOM(ctx context.Context, opts *options.Options, doc *Document, ipkg *apk.InstalledPackage) error {
-	// Check if apk installed an SBOM
-	path, err := locateApkSBOM(opts.FS, ipkg)
+	return sx.processInternalApkSBOM(ctx, opts, doc, ipkg, reservedIDs(opts.Packages))
+}
+
+func (sx *SPDX) processInternalApkSBOM(ctx context.Context, opts *options.Options, doc *Document, ipkg *apk.InstalledPackage, reserved map[string]struct{}) error {
+	sbomPath, err := locateApkSBOM(opts.FS, ipkg)
 	if err != nil {
 		return fmt.Errorf("inspecting FS for internal apk SBOM: %w", err)
 	}
-	if path == "" {
-		// The SBOM does not exist.
-		// (So just ignore that the package was specified to the SPDX Generate method?)
+	if sbomPath == "" {
+		clog.WarnContext(ctx, "package ships no SBOM; describing it from the apk database",
+			"package", ipkg.Name, "version", ipkg.Version)
+		p, licenses := installedPackage(opts, ipkg)
+		doc.Packages = append(doc.Packages, p)
+		mergeLicensingInfos(ctx, &Document{LicensingInfos: licenses}, doc)
+		addContains(doc, []string{p.ID})
 		return nil
 	}
 
-	apkSBOMDoc, err := sx.ParseInternalSBOM(opts, path)
+	apkSBOMDoc, err := sx.ParseInternalSBOM(opts, sbomPath)
 	if err != nil {
-		// TODO: Log error parsing apk SBOM
-		return nil
+		return err
 	}
 
-	// Cycle the top level elements...
-	// Find elements described by the document - check both documentDescribes array
-	// and DESCRIBES relationships (from SPDXRef-DOCUMENT)
-	idsDescribedByAPKSBOM := map[string]struct{}{}
-
-	// First check documentDescribes array
-	for _, elementID := range apkSBOMDoc.DocumentDescribes {
-		idsDescribedByAPKSBOM[elementID] = struct{}{}
+	described := describedIDs(apkSBOMDoc)
+	if len(described) == 0 {
+		return fmt.Errorf("%q describes no package", sbomPath)
 	}
-
-	// Also check for DESCRIBES relationships from SPDXRef-DOCUMENT
-	for _, rel := range apkSBOMDoc.Relationships {
-		if rel.Element == "SPDXRef-DOCUMENT" && rel.Type == "DESCRIBES" {
-			idsDescribedByAPKSBOM[rel.Related] = struct{}{}
-		}
+	todo := reachableIDs(apkSBOMDoc, described)
+	if err := checkIdentity(apkSBOMDoc, ipkg, described, todo, reserved); err != nil {
+		return fmt.Errorf("checking %q: %w", sbomPath, err)
 	}
-
-	// ... searching for a 1st level package
-	targetElementIDs := map[string]struct{}{}
-	for _, pkg := range apkSBOMDoc.Packages {
-		if _, ok := idsDescribedByAPKSBOM[pkg.ID]; !ok {
-			continue
-		}
-
-		targetElementIDs[pkg.ID] = struct{}{}
-		if len(targetElementIDs) == len(idsDescribedByAPKSBOM) {
-			// Exit early if we found them all.
-			break
-		}
-	}
-
-	sortedTargetElementIDs := make([]string, 0, len(targetElementIDs))
-	for id := range targetElementIDs {
-		sortedTargetElementIDs = append(sortedTargetElementIDs, id)
-	}
-	// Sort the element IDs so repeated builds produce the same relationship order.
-	sort.Strings(sortedTargetElementIDs)
-
-	todo := make(map[string]struct{}, len(apkSBOMDoc.Relationships))
-	for _, id := range sortedTargetElementIDs {
-		todo[id] = struct{}{}
-	}
-
 	if err := copySBOMElements(apkSBOMDoc, doc, todo); err != nil {
 		return fmt.Errorf("copying element: %w", err)
 	}
 
 	mergeLicensingInfos(ctx, apkSBOMDoc, doc)
+	addContains(doc, described)
 
-	// Add CONTAINS relationships from the document root package to all top-level elements from the internal SBOM.
-	// This ensures they are reachable from the document root for tools that traverse the SBOM graph.
-	if len(doc.DocumentDescribes) > 0 {
-		rootPkgID := doc.DocumentDescribes[0]
-		for _, elementID := range sortedTargetElementIDs {
-			doc.Relationships = append(doc.Relationships, Relationship{
-				Element: rootPkgID,
-				Type:    "CONTAINS",
-				Related: elementID,
-			})
+	return nil
+}
+
+// packageID is the SPDX ID melange gives an apk's own record.
+func packageID(ipkg *apk.InstalledPackage) string {
+	return stringToIdentifier(fmt.Sprintf("SPDXRef-Package-%s-%s", ipkg.Name, ipkg.Version))
+}
+
+// reservedIDs returns the SPDX ID of each installed package's own record.
+func reservedIDs(pkgs []*apk.InstalledPackage) map[string]struct{} {
+	ids := make(map[string]struct{}, len(pkgs))
+	for _, p := range pkgs {
+		ids[packageID(p)] = struct{}{}
+	}
+	return ids
+}
+
+// describedIDs returns, sorted, the elements a document names through
+// documentDescribes or a DESCRIBES relationship from the document itself.
+func describedIDs(d *Document) []string {
+	ids := slices.Clone(d.DocumentDescribes)
+	for _, r := range d.Relationships {
+		if r.Element == "SPDXRef-DOCUMENT" && r.Type == "DESCRIBES" {
+			ids = append(ids, r.Related)
+		}
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// reachableIDs returns roots and every element they reach through
+// relationships, other than files.
+func reachableIDs(d *Document, roots []string) map[string]struct{} {
+	edges := make(map[string][]string, len(d.Relationships))
+	for _, r := range d.Relationships {
+		if !strings.HasPrefix(r.Related, "SPDXRef-File-") {
+			edges[r.Element] = append(edges[r.Element], r.Related)
+		}
+	}
+
+	seen := make(map[string]struct{}, len(roots))
+	queue := slices.Clone(roots)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		queue = append(queue, edges[id]...)
+	}
+	return seen
+}
+
+// checkIdentity confirms that d describes ipkg alone: every described package
+// and every package with an apk PURL names ipkg at its version, and nothing it
+// reaches claims the SPDX ID of an installed package.
+func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, reach, reserved map[string]struct{}) error {
+	own := packageID(ipkg)
+	byID := make(map[string]*Package, len(d.Packages))
+	for i := range d.Packages {
+		byID[d.Packages[i].ID] = &d.Packages[i]
+	}
+
+	for _, id := range described {
+		p, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("described element %q is not a package", id)
+		}
+		if !namesPackage(p.Name, p.Version, ipkg) {
+			return fmt.Errorf("describes %q at %q rather than %q at %q", p.Name, p.Version, ipkg.Name, ipkg.Version)
+		}
+		purls, err := apkPURLs(p)
+		if err != nil {
+			return err
+		}
+		for _, u := range purls {
+			if !namesPackage(u.Name, u.Version, ipkg) {
+				return fmt.Errorf("package %q carries PURL %q", id, u.String())
+			}
+		}
+		if _, ok := reserved[id]; ok && id != own {
+			return fmt.Errorf("package %q uses the SPDX ID of another installed package", id)
+		}
+	}
+
+	for i := range d.Packages {
+		p := &d.Packages[i]
+		if _, ok := reach[p.ID]; !ok || slices.Contains(described, p.ID) {
+			continue
+		}
+		if _, ok := reserved[p.ID]; ok || p.ID == own {
+			return fmt.Errorf("reachable package %q uses the SPDX ID of an installed package", p.ID)
+		}
+		purls, err := apkPURLs(p)
+		if err != nil {
+			return err
+		}
+		// Some generators catalog the package's own apk entry as a reachable package.
+		for _, u := range purls {
+			if !namesPackage(p.Name, p.Version, ipkg) || !namesPackage(u.Name, u.Version, ipkg) {
+				return fmt.Errorf("reachable package %q carries apk PURL %q", p.ID, u.String())
+			}
 		}
 	}
 
 	return nil
 }
 
-func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
-	// Walk the graph looking for things to copy.
-	// Loop until we don't find any new todos.
-	for prev, next := 0, len(todo); next != prev; prev, next = next, len(todo) {
-		for _, r := range sourceDoc.Relationships {
-			if strings.HasPrefix(r.Related, "SPDXRef-File-") {
-				continue
+// namesPackage reports whether name and version identify ipkg, with or without
+// its epoch.
+func namesPackage(name, version string, ipkg *apk.InstalledPackage) bool {
+	return name == ipkg.Name &&
+		(version == ipkg.Version || version == epochRe.ReplaceAllString(ipkg.Version, ""))
+}
+
+// apkPURLs returns the pkg:apk PURLs among p's external references.
+func apkPURLs(p *Package) ([]purl.PackageURL, error) {
+	var out []purl.PackageURL
+	for _, ref := range p.ExternalRefs {
+		if ref.Type != ExtRefTypePurl {
+			continue
+		}
+		u, err := purl.FromString(ref.Locator)
+		if err != nil {
+			if strings.HasPrefix(ref.Locator, "pkg:apk/") {
+				return nil, fmt.Errorf("package %q carries malformed PURL %q: %w", p.ID, ref.Locator, err)
 			}
-			if _, ok := todo[r.Element]; ok {
-				todo[r.Related] = struct{}{}
-			}
+			continue
+		}
+		if u.Type == "apk" {
+			out = append(out, u)
 		}
 	}
+	return out, nil
+}
 
-	// Now copy everything over.
+// installedPackage describes ipkg from its apk database entry, returning the
+// extracted licenses its license expression references.
+func installedPackage(opts *options.Options, ipkg *apk.InstalledPackage) (Package, []LicensingInfo) {
+	qualifiers := map[string]string{}
+	if arch := cmp.Or(ipkg.Arch, opts.ImageInfo.Arch.ToAPK()); arch != "" {
+		qualifiers["arch"] = arch
+	}
+	license, refs := licenseExpression(ipkg.License)
+	return Package{
+		ID:               packageID(ipkg),
+		Name:             ipkg.Name,
+		Version:          ipkg.Version,
+		LicenseConcluded: NOASSERTION,
+		LicenseDeclared:  license,
+		Description:      ipkg.Description,
+		DownloadLocation: NOASSERTION,
+		Originator:       supplier(opts),
+		Supplier:         supplier(opts),
+		SourceInfo:       "Package info from apk database",
+		CopyrightText:    NOASSERTION,
+		ExternalRefs: []ExternalRef{{
+			Category: ExtRefPackageManager,
+			Type:     ExtRefTypePurl,
+			Locator: purl.NewPackageURL("apk", opts.OS.ID, ipkg.Name, ipkg.Version,
+				purl.QualifiersFromMap(qualifiers), "").String(),
+		}},
+	}, refs
+}
+
+// addContains links the document root to each of ids, so tools that walk the
+// graph from the root reach them.
+func addContains(doc *Document, ids []string) {
+	if len(doc.DocumentDescribes) == 0 {
+		return
+	}
+	for _, id := range ids {
+		doc.Relationships = append(doc.Relationships, Relationship{
+			Element: doc.DocumentDescribes[0],
+			Type:    "CONTAINS",
+			Related: id,
+		})
+	}
+}
+
+// copySBOMElements copies the packages in todo, and the relationships from
+// them other than to files, from sourceDoc to targetDoc.
+func copySBOMElements(sourceDoc, targetDoc *Document, todo map[string]struct{}) error {
 	done := make(map[string]struct{}, len(todo))
 
 	for _, p := range sourceDoc.Packages {
@@ -365,7 +544,7 @@ func (sx *SPDX) ParseInternalSBOM(opts *options.Options, path string) (*Document
 	}
 
 	if err := json.Unmarshal(data, internalSBOM); err != nil {
-		return nil, fmt.Errorf("parsing internal apk sbom: %w", err)
+		return nil, fmt.Errorf("parsing internal apk sbom %q: %w", path, err)
 	}
 
 	// Fix up missing data, checkers require Originator &
