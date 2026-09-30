@@ -31,7 +31,7 @@ import (
 )
 
 var readerPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewReaderSize(nil, 1<<20)
 	},
 }
@@ -43,7 +43,7 @@ func pooledBufioReader(r io.Reader) *bufio.Reader {
 }
 
 var writerPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bufio.NewWriterSize(nil, 1<<20)
 	},
 }
