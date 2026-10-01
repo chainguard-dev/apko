@@ -438,7 +438,7 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	var data *os.File
 	var err error
 	for range 3 {
-		data, err = exp.VerifiedPackageData(exp.PackageHash)
+		data, err = verifiedPackageData(exp, exp.PackageHash)
 		if err == nil || !isVanishedCacheEntry(err) {
 			break
 		}
@@ -459,6 +459,13 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 
 	return exp, nil
 }
+
+// verifiedPackageData is called where cachePackage would call
+// exp.VerifiedPackageData, as a seam for tests: the retry in cachePackage
+// exists for an unlink landing inside a concurrent open()'s path walk, which no
+// test can force deterministically from outside, so tests inject the transient
+// failure here instead.
+var verifiedPackageData = (*expandapk.APKExpanded).VerifiedPackageData
 
 // isVanishedCacheEntry reports whether err is the spurious open failure a
 // concurrent cachePackage for the same package inflicts on this one. The
