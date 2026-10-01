@@ -435,7 +435,14 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	// contents are not trusted.
 	// TODO: Split out the tarfs Index creation from the FS.
 	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	data, err := exp.VerifiedPackageData(exp.PackageHash)
+	var data *os.File
+	var err error
+	for range 3 {
+		data, err = exp.VerifiedPackageData(exp.PackageHash)
+		if err == nil || !isVanishedCacheEntry(err) {
+			break
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("caching %q: %w", exp.PackageFile, err)
 	}
@@ -451,6 +458,20 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	}
 
 	return exp, nil
+}
+
+// isVanishedCacheEntry reports whether err is the spurious open failure a
+// concurrent cachePackage for the same package inflicts on this one. The
+// colliding ReplaceCachedFile re-points the entry's symlink atomically, but
+// then unlinks the target the symlink previously addressed, and an open() that
+// resolved the symlink just before the swap lands on the unlinked file and
+// fails, with ENOENT on Linux and EINVAL on darwin, on a path that resolves
+// fine again immediately. By then the entry addresses the winner's copy of the
+// same content-addressed data, and the retried read measures what it opens like
+// any other, so retrying costs nothing in trust. A genuinely absent entry stays
+// absent across retries and still fails.
+func isVanishedCacheEntry(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.EINVAL)
 }
 
 // cachedPackage attempts to load a package from the disk cache.
