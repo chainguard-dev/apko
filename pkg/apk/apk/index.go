@@ -44,7 +44,10 @@ import (
 
 var signatureFileRegex = regexp.MustCompile(`^\.SIGN\.(DSA|RSA|RSA256|RSA512)\.(.*\.rsa\.pub)$`)
 
-const indexCacheMaxEntries = 64
+// indexCacheMaxEntries bounds how many parsed index generations stay in
+// memory. The default of 64 can be overridden with IndexCacheEntriesEnv; the
+// value is read once at process start.
+var indexCacheMaxEntries = cacheEntriesFromEnv(IndexCacheEntriesEnv, defaultCacheEntries)
 
 type Signature struct {
 	KeyID           string

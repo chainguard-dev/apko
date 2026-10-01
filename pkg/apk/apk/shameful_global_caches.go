@@ -30,7 +30,10 @@ import (
 // generations that in-flight resolutions still request stay cached and age
 // out once enough newer combinations have been inserted. Every entry pins a
 // whole index generation, so raising this trades memory for hit rate.
-const maxResolverCacheEntries = 64
+//
+// The default of 64 can be overridden with ResolverCacheEntriesEnv; the value
+// is read once at process start.
+var maxResolverCacheEntries = cacheEntriesFromEnv(ResolverCacheEntriesEnv, defaultCacheEntries)
 
 // lruCache is a tiny mutex-guarded LRU keyed by the exact []NamedIndex. Index
 // objects are immutable and remote generations are deduplicated by (url, etag)
