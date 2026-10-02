@@ -133,6 +133,12 @@ func TestInternalSBOMIdentity(t *testing.T) {
 		files:   map[string][]byte{sbomAt("foo-1.0.0-r0"): internalSBOM(t, record("foo", "1.0.0"))},
 		present: []string{"foo@1.0.0"},
 	}, {
+		name: "PURL with the lowercased name of a mixed-case package is accepted",
+		pkgs: []*apk.InstalledPackage{installed("libLLVM-19", "19.1.7-r28", sbomAt("libLLVM-19-19.1.7-r28"))},
+		files: map[string][]byte{sbomAt("libLLVM-19-19.1.7-r28"): internalSBOM(t,
+			record("libLLVM-19", "19.1.7-r28", apkRef("libllvm-19", "19.1.7-r28")))},
+		present: []string{"libLLVM-19@19.1.7-r28"},
+	}, {
 		name: "SBOM cataloging the package's own apk entry is accepted",
 		pkgs: []*apk.InstalledPackage{
 			installed("wolfi-baselayout", "20230201-r30", sbomAt("wolfi-baselayout-20230201-r30")),
