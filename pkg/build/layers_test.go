@@ -46,12 +46,32 @@ func TestGroupByOriginAndSize(t *testing.T) {
 	glibc := &apk.Package{Name: "glibc", Origin: "glibc", InstalledSize: 6113087}
 	posix := &apk.Package{Name: "glibc-locale-posix", Origin: "glibc", InstalledSize: 417444}
 
-	libcrypt1 := &apk.Package{Name: "libcrypt1", Origin: "glibc", Version: "2.38-r14", InstalledSize: 23508}
-	libxcrypt := &apk.Package{Name: "libxcrypt", Origin: "libxcrypt", InstalledSize: 235761, Replaces: []string{"libcrypt1<2.38-r15"}}
+	libcrypt1 := &apk.Package{
+		Name:          "libcrypt1",
+		Origin:        "glibc",
+		Version:       "2.38-r14",
+		InstalledSize: 23508,
+	}
+	libxcrypt := &apk.Package{
+		Name:          "libxcrypt",
+		Origin:        "libxcrypt",
+		InstalledSize: 235761,
+		Replaces:      []string{"libcrypt1<2.38-r15"},
+	}
 
-	newcrypt1 := &apk.Package{Name: "libcrypt1", Origin: "glibc", Version: "2.38-r16", InstalledSize: 23508}
+	newcrypt1 := &apk.Package{
+		Name:          "libcrypt1",
+		Origin:        "glibc",
+		Version:       "2.38-r16",
+		InstalledSize: 23508,
+	}
 
-	repxcrypt := &apk.Package{Name: "libxcrypt", Origin: "libxcrypt", InstalledSize: 235761, Replaces: []string{"libcrypt1"}}
+	repxcrypt := &apk.Package{
+		Name:          "libxcrypt",
+		Origin:        "libxcrypt",
+		InstalledSize: 235761,
+		Replaces:      []string{"libcrypt1"},
+	}
 	for _, tc := range []struct {
 		pkgs   []*apk.Package
 		budget int
@@ -140,12 +160,26 @@ func compareGroups(a, b []*group) error {
 	for i := range a {
 		aa, bb := a[i], b[i]
 		if len(aa.pkgs) != len(bb.pkgs) {
-			return fmt.Errorf("len(a[%d].pkgs) = %d; len(b[%d].pkgs) = %d", i, len(aa.pkgs), i, len(bb.pkgs))
+			return fmt.Errorf(
+				"len(a[%d].pkgs) = %d; len(b[%d].pkgs) = %d",
+				i,
+				len(aa.pkgs),
+				i,
+				len(bb.pkgs),
+			)
 		}
 
 		for j := range aa.pkgs {
 			if aa.pkgs[j].Name != bb.pkgs[j].Name {
-				return fmt.Errorf("a[%d].pkgs[%d] = %s; b[%d].pkgs[%d] = %s", i, j, aa.pkgs[j].Name, i, j, bb.pkgs[j].Name)
+				return fmt.Errorf(
+					"a[%d].pkgs[%d] = %s; b[%d].pkgs[%d] = %s",
+					i,
+					j,
+					aa.pkgs[j].Name,
+					i,
+					j,
+					bb.pkgs[j].Name,
+				)
 			}
 		}
 
@@ -153,7 +187,13 @@ func compareGroups(a, b []*group) error {
 			return fmt.Errorf("a[%d].size = %d; b[%d].size = %d", i, aa.size, i, bb.size)
 		}
 		if aa.tiebreaker != bb.tiebreaker {
-			return fmt.Errorf("a[%d].tiebreaker = %s; b[%d].tiebreaker = %s", i, aa.tiebreaker, i, bb.tiebreaker)
+			return fmt.Errorf(
+				"a[%d].tiebreaker = %s; b[%d].tiebreaker = %s",
+				i,
+				aa.tiebreaker,
+				i,
+				bb.tiebreaker,
+			)
 		}
 	}
 
@@ -310,10 +350,9 @@ func testSplitLayersDirectoryCreation(t *testing.T, compressed bool) {
 		"usr/lib/apk/db": {},
 	}
 
-	foundDirs := map[string]struct{}{}
-
 	// Check each of the first 2 layers (package layers) for directory and file
 	for i := range 2 {
+		foundDirs := map[string]struct{}{}
 		layer := layers[i]
 
 		// Get layer content as tar reader
@@ -356,7 +395,11 @@ func testSplitLayersDirectoryCreation(t *testing.T, compressed bool) {
 		// Verify both directory and file were found
 		for dir := range wantDirs {
 			if _, ok := foundDirs[dir]; !ok {
-				t.Errorf("layer %d missing parent directory %q - this indicates the directory creation fix is not working", i, dir)
+				t.Errorf(
+					"layer %d missing parent directory %q - this indicates the directory creation fix is not working",
+					i,
+					dir,
+				)
 			}
 		}
 	}
@@ -385,7 +428,11 @@ func TestSplitLayersFailureCleanup(t *testing.T) {
 			if err := fsys.MkdirAll("usr/lib/apk/db", 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := fsys.WriteFile("usr/lib/apk/db/installed", []byte("test db content"), 0o644); err != nil {
+			if err := fsys.WriteFile(
+				"usr/lib/apk/db/installed",
+				[]byte("test db content"),
+				0o644,
+			); err != nil {
 				t.Fatal(err)
 			}
 			// Sorts after the installed db, so layer content has been written
@@ -394,12 +441,24 @@ func TestSplitLayersFailureCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			pkg1 := &apk.Package{Name: "pkg1", Origin: "pkg1", Version: "1.0.0", InstalledSize: 1000}
+			pkg1 := &apk.Package{
+				Name:          "pkg1",
+				Origin:        "pkg1",
+				Version:       "1.0.0",
+				InstalledSize: 1000,
+			}
 			groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
 			pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
 
 			tmpDir := t.TempDir()
-			layers, err := splitLayers(t.Context(), &failOpenFS{FullFS: fsys, failPath: "usr/zfail"}, groups, pkgToDiff, tmpDir, compressed)
+			layers, err := splitLayers(
+				t.Context(),
+				&failOpenFS{FullFS: fsys, failPath: "usr/zfail"},
+				groups,
+				pkgToDiff,
+				tmpDir,
+				compressed,
+			)
 			if err == nil {
 				t.Fatalf("splitLayers: got %d layers, want injected error", len(layers))
 			}
@@ -423,7 +482,11 @@ func TestSplitLayersFailureCleanup(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 			if got := pgzipGoroutines(); got > before {
-				t.Errorf("pgzip goroutines: got = %d, want <= %d (compression goroutines still running)", got, before)
+				t.Errorf(
+					"pgzip goroutines: got = %d, want <= %d (compression goroutines still running)",
+					got,
+					before,
+				)
 			}
 		})
 	}
