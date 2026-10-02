@@ -376,7 +376,10 @@ func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, 
 			return err
 		}
 		for _, u := range purls {
-			if !namesPackage(u.Name, u.Version, ipkg) {
+			// The PURL spec lowercases apk package names (pkg:apk/wolfi/libllvm-19
+			// for the package libLLVM-19), so the PURL's name is compared
+			// case-insensitively; the SPDX name above stays an exact match.
+			if !namesPackageFold(u.Name, u.Version, ipkg) {
 				return fmt.Errorf("package %q carries PURL %q", id, u.String())
 			}
 		}
@@ -398,8 +401,9 @@ func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, 
 			return err
 		}
 		// Some generators catalog the package's own apk entry as a reachable package.
+		// The PURL name is lowercased by the spec: compare it case-insensitively.
 		for _, u := range purls {
-			if !namesPackage(p.Name, p.Version, ipkg) || !namesPackage(u.Name, u.Version, ipkg) {
+			if !namesPackage(p.Name, p.Version, ipkg) || !namesPackageFold(u.Name, u.Version, ipkg) {
 				return fmt.Errorf("reachable package %q carries apk PURL %q", p.ID, u.String())
 			}
 		}
@@ -412,6 +416,13 @@ func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, 
 // its epoch.
 func namesPackage(name, version string, ipkg *apk.InstalledPackage) bool {
 	return name == ipkg.Name &&
+		(version == ipkg.Version || version == epochRe.ReplaceAllString(ipkg.Version, ""))
+}
+
+// namesPackageFold is namesPackage with a case-insensitive name comparison,
+// for PURLs, whose apk names are lowercased by the spec.
+func namesPackageFold(name, version string, ipkg *apk.InstalledPackage) bool {
+	return strings.EqualFold(name, ipkg.Name) &&
 		(version == ipkg.Version || version == epochRe.ReplaceAllString(ipkg.Version, ""))
 }
 
