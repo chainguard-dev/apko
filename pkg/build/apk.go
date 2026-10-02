@@ -37,6 +37,14 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
 		return fmt.Errorf("failed to set apk repositories: %w", err)
 	}
+
+	if err := bc.apk.InitRuntimeKeys(ctx, runtimeRepos...); err != nil {
+		return fmt.Errorf("failed to initialize runtime repository keys: %w", err)
+	}
+
+	if err := bc.apk.WriteRuntimeKeys(); err != nil {
+		return fmt.Errorf("failed to write runtime repository keys: %w", err)
+	}
 	// TODO(sfc-gh-mhazy) Handle the rest of apk files (scripts, triggers)
 	return nil
 }

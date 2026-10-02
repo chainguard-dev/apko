@@ -186,9 +186,7 @@ func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	}
 
 	// Confirm that we find at least one discovered key.
-	ent, err := fs.ReadDir(src, "etc/apk/keys")
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(ent), 1) // We should discover at least one key
+	require.GreaterOrEqual(t, len(apk.keys), 1) // We should discover at least one key
 }
 
 func TestResolveApkDB(t *testing.T) {
@@ -554,12 +552,8 @@ func TestInitKeyring(t *testing.T) {
 	}
 
 	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
-	// InitKeyring should have copied the local key and remote key to the right place
-	fi, err := src.ReadDir(DefaultKeyRingPath)
-	// should be no error reading them
-	require.NoError(t, err)
-	// should be 2 keys
-	require.Len(t, fi, 2)
+	// InitKeyring should have copied the local key and remote key to the build-time keyring
+	require.Len(t, a.keys, 2)
 
 	// Add an invalid file
 	keyfiles = []string{
