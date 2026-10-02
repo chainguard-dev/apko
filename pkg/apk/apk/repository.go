@@ -2,6 +2,7 @@ package apk
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -85,7 +86,7 @@ func NewRepositoryPackage(pkg *Package, repo *RepositoryWithIndex) *RepositoryPa
 }
 
 func (rp *RepositoryPackage) URL() string {
-	return fmt.Sprintf("%s/%s", rp.repository.URI, rp.Filename())
+	return fmt.Sprintf("%s/%s", rp.repository.URI, url.QueryEscape(rp.Filename()))
 }
 
 func (rp *RepositoryPackage) Repository() *RepositoryWithIndex {
