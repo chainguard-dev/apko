@@ -43,6 +43,11 @@ func TestLayerCompressionCache(t *testing.T) {
 		Algorithm: "sha256",
 		Hex:       hex.EncodeToString(h[:]),
 	}
+	// compressionCache is process-global. Without deleting this diffID, a
+	// repeat run (-count>1) takes the cache-hit path and never creates the .gz
+	// file.
+	compressionCache.Delete(diffID.String())
+	t.Cleanup(func() { compressionCache.Delete(diffID.String()) })
 
 	// Create first layer with test content
 	file1 := filepath.Join(tmpDir, "layer1.tar")
@@ -111,9 +116,9 @@ func TestLayerCompressionCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, size1, size2, "Cached size should match")
 
-	// Verify that layer2's descriptor was populated from cache
-	require.Equal(t, layer1.desc.Digest, layer2.desc.Digest)
-	require.Equal(t, layer1.desc.Size, layer2.desc.Size)
+	// A cache hit returns the cached digest and size without writing layer2.desc.
+	require.Zero(t, layer2.desc.Digest)
+	require.Zero(t, layer2.desc.Size)
 
 	// The compressed file for layer2 should NOT exist yet since we only used cached values
 	require.NoFileExists(t, file2+".gz")
@@ -133,6 +138,8 @@ func TestLayerCompressionCache(t *testing.T) {
 		Algorithm: "sha256",
 		Hex:       hex.EncodeToString(h3[:]),
 	}
+	compressionCache.Delete(diffID3.String())
+	t.Cleanup(func() { compressionCache.Delete(diffID3.String()) })
 
 	file3 := filepath.Join(tmpDir, "layer3.tar")
 	err = os.WriteFile(file3, differentContent, 0644)
@@ -166,6 +173,10 @@ func TestLayerCompressionCacheConsistency(t *testing.T) {
 		Algorithm: "sha256",
 		Hex:       hex.EncodeToString(h[:]),
 	}
+	// compressionCache is process-global; drop any leftover entry for this
+	// diffID so a repeat run exercises compress() rather than a stale hit.
+	compressionCache.Delete(diffID.String())
+	t.Cleanup(func() { compressionCache.Delete(diffID.String()) })
 
 	// Create and compress first layer
 	file1 := filepath.Join(tmpDir, "consistent1.tar")

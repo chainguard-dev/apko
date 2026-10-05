@@ -532,13 +532,13 @@ func (l *layer) Digest() (v1.Hash, error) {
 		return l.desc.Digest, nil
 	}
 
-	// Check if we've already compressed a layer with this diffID
+	// Check if we've already compressed a layer with this diffID.
+	// Return the cached digest directly. Copying it into l.desc races with
+	// compress(), which writes those fields under l.mu.
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
-		l.desc.Digest = cachedDesc.Digest
-		l.desc.Size = cachedDesc.Size
-		return l.desc.Digest, nil
+		return cachedDesc.Digest, nil
 	}
 	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
@@ -603,13 +603,13 @@ func (l *layer) Size() (int64, error) {
 		return l.desc.Size, nil
 	}
 
-	// Check if we've already compressed a layer with this diffID
+	// Check if we've already compressed a layer with this diffID.
+	// Return the cached size directly. Copying it into l.desc races with
+	// compress(), which writes those fields under l.mu.
 	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
-		l.desc.Digest = cachedDesc.Digest
-		l.desc.Size = cachedDesc.Size
-		return l.desc.Size, nil
+		return cachedDesc.Size, nil
 	}
 	l.recordCacheAccess(apkometrics.CacheResultMiss)
 
