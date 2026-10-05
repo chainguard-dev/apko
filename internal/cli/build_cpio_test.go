@@ -34,7 +34,7 @@ func TestBuildCPIOCmd(t *testing.T) {
 	t.Run("gz suffix produces gzip-compressed output", func(t *testing.T) {
 		dest := filepath.Join(t.TempDir(), "out.cpio.gz")
 
-		err := cli.BuildCPIOCmd(ctx, dest, build.WithConfig("testdata/apko.yaml", []string{}))
+		err := cli.BuildCPIOCmd(ctx, dest, withIsolatedDirs(t, build.WithConfig("testdata/apko.yaml", []string{}))...)
 		require.NoError(t, err)
 
 		f, err := os.Open(dest)
@@ -49,7 +49,7 @@ func TestBuildCPIOCmd(t *testing.T) {
 	t.Run("non-gz suffix produces plain cpio output", func(t *testing.T) {
 		dest := filepath.Join(t.TempDir(), "out.cpio")
 
-		err := cli.BuildCPIOCmd(ctx, dest, build.WithConfig("testdata/apko.yaml", []string{}))
+		err := cli.BuildCPIOCmd(ctx, dest, withIsolatedDirs(t, build.WithConfig("testdata/apko.yaml", []string{}))...)
 		require.NoError(t, err)
 
 		f, err := os.Open(dest)

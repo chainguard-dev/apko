@@ -51,7 +51,7 @@ func TestLock(t *testing.T) {
 			opts := []build.Option{build.WithConfig(config, []string{"testdata"})}
 			outputPath := filepath.Join(tmp, tt.basename+".lock.json")
 
-			err := cli.LockCmd(ctx, outputPath, archs, opts)
+			err := cli.LockCmd(ctx, outputPath, archs, withIsolatedDirs(t, opts...))
 			require.NoError(t, err)
 
 			want, err := os.ReadFile(golden)
@@ -79,7 +79,7 @@ func TestLockWithBaseImage(t *testing.T) {
 	opts := []build.Option{build.WithConfig(config, []string{})}
 	outputPath := filepath.Join(tmp, "apko.lock.json")
 
-	err := cli.LockCmd(ctx, outputPath, archs, opts)
+	err := cli.LockCmd(ctx, outputPath, archs, withIsolatedDirs(t, opts...))
 	require.NoError(t, err)
 
 	want, err := os.ReadFile(golden)

@@ -36,6 +36,10 @@ func TestTarFS(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []build.Option{
+		// Keep the disk cache and scratch files out of the user's cache
+		// directory and $TMPDIR.
+		build.WithCache(t.TempDir(), false, apk.NewCache(false)),
+		build.WithTempDir(t.TempDir()),
 		build.WithConfig(filepath.Join("testdata", "apko.yaml"), []string{}),
 	}
 

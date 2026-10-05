@@ -57,7 +57,7 @@ func TestBuild(t *testing.T) {
 	err := os.MkdirAll(sbomPath, 0o750)
 	require.NoError(t, err)
 
-	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, opts...)
+	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, withIsolatedDirs(t, opts...)...)
 	require.NoError(t, err)
 
 	root, err := layout.ImageIndexFromPath(tmp)
@@ -136,7 +136,7 @@ func TestBuildWithBase(t *testing.T) {
 	err := os.MkdirAll(sbomPath, 0o750)
 	require.NoError(t, err)
 
-	err = cli.BuildCmd(ctx, "golden_top:latest", tmp, archs, []string{}, true, sbomPath, opts...)
+	err = cli.BuildCmd(ctx, "golden_top:latest", tmp, archs, []string{}, true, sbomPath, withIsolatedDirs(t, opts...)...)
 	require.NoError(t, err)
 
 	root, err := layout.ImageIndexFromPath(tmp)

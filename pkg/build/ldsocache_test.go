@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/fs"
 )
 
@@ -11,6 +12,10 @@ func TestLdsoCache(t *testing.T) {
 	ctx := context.Background()
 
 	opts := []Option{
+		// Keep the disk cache and scratch files out of the user's cache
+		// directory and $TMPDIR.
+		WithCache(t.TempDir(), false, apk.NewCache(false)),
+		WithTempDir(t.TempDir()),
 		WithConfig("apko.yaml", []string{"testdata"}),
 	}
 
