@@ -18,7 +18,6 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,25 +62,23 @@ A1hMnP+VoKz2eguQTP5HfHT9F6IZyP9WEKd/tSBV3Qf6sy6Y/7OGmP5mLf2Jkuj5nzGujNOfQRw8
 204y/X/aMH50/Af9P0uI6V+hqlWmTQAkpT8b1Z/DPOhvBTH9RU0IShXEnCpwF+N/hobxPwAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0y3+2xnPfAHgAAA==`
 
-	tarFile, err := os.CreateTemp("", "repo-*.tar.gz")
-	require.NoError(t, err)
-	defer os.Remove(tarFile.Name())
+	tarPath := filepath.Join(t.TempDir(), "repo.tar.gz")
 
 	tarData, err := base64.StdEncoding.DecodeString(repoContents)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(tarFile.Name(), tarData, os.FileMode(0o644)))
+	require.NoError(t, os.WriteFile(tarPath, tarData, os.FileMode(0o644)))
 
-	/// Create the directory
-	tmpdir, err := os.MkdirTemp("", "testrepo-")
-	require.NoError(t, os.RemoveAll(tmpdir))
-	require.NoError(t, err)
-
-	require.NoError(t, tar.Extract(tarFile.Name(), tmpdir))
+	tmpdir := t.TempDir()
+	require.NoError(t, tar.Extract(tarPath, tmpdir))
 
 	return tmpdir
 }
 
 func TestOpenRepository(t *testing.T) {
+	// Everything the cases create lives under base, so nothing is written
+	// to the shared temp directory itself and nothing outlives the test.
+	base := t.TempDir()
+
 	for _, tc := range []struct {
 		shouldErr bool
 		topDir    string
@@ -101,11 +98,8 @@ func TestOpenRepository(t *testing.T) {
 			// Directory is not a directory
 			shouldErr: true,
 			prepare: func() (string, error) {
-				f, err := os.CreateTemp("", "vcs-test-")
-				if err != nil {
-					return "", err
-				}
-				return f.Name(), nil
+				p := filepath.Join(base, "not-a-dir")
+				return p, os.WriteFile(p, nil, os.FileMode(0o644))
 			},
 		},
 		{
@@ -113,41 +107,33 @@ func TestOpenRepository(t *testing.T) {
 			shouldErr: true,
 			topDir:    "/usr/",
 			prepare: func() (string, error) {
-				dir, err := os.MkdirTemp("", "vcs-test-")
-				if err != nil {
-					return "", err
-				}
-				return dir, nil
+				p := filepath.Join(base, "outside-top")
+				return p, os.Mkdir(p, os.FileMode(0o755))
 			},
 		},
 		{
 			// Subdirectory should work
 			shouldErr: false,
-			topDir:    os.TempDir(),
+			topDir:    base,
 			prepare: func() (string, error) {
-				dir := createTestRepo(t)
-				require.NoError(t, os.MkdirAll(filepath.Join(os.TempDir(), "a", "b"), os.FileMode(0o755)))
-				return dir, nil
+				p := filepath.Join(base, "repo")
+				require.NoError(t, os.Rename(createTestRepo(t), p))
+				p = filepath.Join(p, "a", "b")
+				return p, os.MkdirAll(p, os.FileMode(0o755))
 			},
 		},
 		{
 			// No repo until top
 			shouldErr: true,
-			topDir:    os.TempDir(),
+			topDir:    base,
 			prepare: func() (string, error) {
-				p := filepath.Join(os.TempDir(), "a", "b")
-				err := os.MkdirAll(p, os.FileMode(0o755))
-				return p, err
+				p := filepath.Join(base, "a", "b")
+				return p, os.MkdirAll(p, os.FileMode(0o755))
 			},
 		},
 	} {
 		dir, err := tc.prepare()
 		require.NoError(t, err)
-		defer func() {
-			if strings.HasPrefix(dir, os.TempDir()) {
-				require.NoError(t, os.RemoveAll(dir))
-			}
-		}()
 		repo, err := OpenRepository(dir, tc.topDir)
 		if tc.shouldErr {
 			require.Nil(t, repo, "when failing, repo must be nil")
@@ -161,7 +147,6 @@ func TestOpenRepository(t *testing.T) {
 
 func TestResolveGitRevision(t *testing.T) {
 	repoDir := createTestRepo(t)
-	defer os.RemoveAll(repoDir)
 
 	repo, err := OpenRepository(repoDir, "")
 	require.NoError(t, err)
@@ -188,7 +173,6 @@ func TestResolveGitRevision(t *testing.T) {
 
 func TestGetRemoteURL(t *testing.T) {
 	repoDir := createTestRepo(t)
-	defer os.RemoveAll(repoDir)
 
 	repo, err := OpenRepository(repoDir, "")
 	require.NoError(t, err)
