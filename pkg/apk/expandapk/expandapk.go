@@ -459,6 +459,14 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 	if err != nil {
 		return nil, err
 	}
+	// On success the caller owns dir through APKExpanded.Close. On failure
+	// there is nothing to close, so nothing else would ever remove it.
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = os.RemoveAll(dir)
+		}
+	}()
 
 	sw, err := newExpandApkWriter(dir, "stream", "tar.gz")
 	if err != nil {
@@ -629,6 +637,7 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 		return nil, fmt.Errorf("indexing %q: %w", expanded.TarFile, err)
 	}
 
+	succeeded = true
 	return &expanded, nil
 }
 

@@ -19,9 +19,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,6 +34,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
 	"chainguard.dev/apko/pkg/limitio"
+	"chainguard.dev/apko/pkg/paths"
 )
 
 func TestPkgInfo(t *testing.T) {
@@ -204,6 +209,107 @@ func TestExpandApkWithOptions(t *testing.T) {
 		}
 		defer exp.Close()
 	})
+}
+
+// TestExpandApkFailureRemovesTempDir pins that a failed expansion leaves
+// cacheDir exactly as it found it. On success the caller owns the temp
+// directory through APKExpanded.Close; on failure there is no APKExpanded to
+// close, so anything left there is unreachable. In a disk cache that is an
+// orphan in the shared cache directory, and with an empty cacheDir it is a
+// leak in $TMPDIR.
+//
+// The cleanup must remove only what the failed call created. Each case runs
+// in a cacheDir that already holds a published entry, a content-addressed
+// symlink into an earlier expansion's temp directory, as the package getter
+// leaves it, and checks that the entry still resolves to the same data.
+func TestExpandApkFailureRemovesTempDir(t *testing.T) {
+	apk, err := os.ReadFile("testdata/hello-wolfi-2.12.1-r0.apk")
+	require.NoError(t, err)
+
+	// A single gzip stream holding a control tar: well formed, but an apk
+	// needs at least a control and a data stream.
+	var oneStream bytes.Buffer
+	gz := gzip.NewWriter(&oneStream)
+	tw := tar.NewWriter(gz)
+	pkginfo := []byte("pkgname = test\npkgver = 1.0.0-r0\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: ".PKGINFO", Mode: 0o644, Size: int64(len(pkginfo))}))
+	_, err = tw.Write(pkginfo)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	for _, tc := range []struct {
+		name    string
+		input   []byte
+		opts    []Option
+		wantErr string
+	}{{
+		name:    "input is not gzip",
+		input:   []byte("this is not an apk"),
+		wantErr: "creating gzip reader",
+	}, {
+		name:    "control section exceeds size limit",
+		input:   apk,
+		opts:    []Option{WithMaxControlSize(1)},
+		wantErr: "expandApk error 3",
+	}, {
+		name:    "data section exceeds size limit",
+		input:   apk,
+		opts:    []Option{WithMaxDataSize(1)},
+		wantErr: "checking sums",
+	}, {
+		name:    "input truncated in the data section",
+		input:   apk[:len(apk)-64],
+		wantErr: "unexpected EOF",
+	}, {
+		name:    "only one gzip stream",
+		input:   oneStream.Bytes(),
+		wantErr: "invalid number of tar streams: 1",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+
+			// Publish a live entry the way the package getter does.
+			live, err := ExpandApkWithOptions(t.Context(), bytes.NewReader(apk), cacheDir)
+			require.NoError(t, err)
+			require.NoError(t, live.TarFS.Close())
+			liveLink := filepath.Join(cacheDir, hex.EncodeToString(live.PackageHash)+".dat.tar.gz")
+			require.NoError(t, paths.ReplaceCachedFile(live.PackageFile, liveLink))
+			liveData, err := os.ReadFile(liveLink)
+			require.NoError(t, err)
+			before := dirNames(t, cacheDir)
+
+			exp, err := ExpandApkWithOptions(t.Context(), bytes.NewReader(tc.input), cacheDir, tc.opts...)
+			if err == nil {
+				_ = exp.Close()
+				t.Fatalf("ExpandApkWithOptions(%d bytes, %d opts): want error containing %q, got success", len(tc.input), len(tc.opts), tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ExpandApkWithOptions(%d bytes, %d opts): want error containing %q, got %v", len(tc.input), len(tc.opts), tc.wantErr, err)
+			}
+
+			if after := dirNames(t, cacheDir); !slices.Equal(after, before) {
+				t.Errorf("after failed expansion, cacheDir should hold only what it held before\n got: %v\nwant: %v", after, before)
+			}
+			got, err := os.ReadFile(liveLink)
+			if err != nil || !bytes.Equal(got, liveData) {
+				t.Errorf("published entry %s after failed expansion: read %d bytes, err=%v; want the %d bytes it held before", liveLink, len(got), err, len(liveData))
+			}
+		})
+	}
+}
+
+// dirNames returns the sorted names of dir's entries.
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 func TestSplitWithOptions(t *testing.T) {
