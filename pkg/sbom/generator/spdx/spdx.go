@@ -376,7 +376,7 @@ func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, 
 			return err
 		}
 		for _, u := range purls {
-			if !namesPackage(u.Name, u.Version, ipkg) {
+			if !namesPURL(u, ipkg) {
 				return fmt.Errorf("package %q carries PURL %q", id, u.String())
 			}
 		}
@@ -399,7 +399,7 @@ func checkIdentity(d *Document, ipkg *apk.InstalledPackage, described []string, 
 		}
 		// Some generators catalog the package's own apk entry as a reachable package.
 		for _, u := range purls {
-			if !namesPackage(p.Name, p.Version, ipkg) || !namesPackage(u.Name, u.Version, ipkg) {
+			if !namesPackage(p.Name, p.Version, ipkg) || !namesPURL(u, ipkg) {
 				return fmt.Errorf("reachable package %q carries apk PURL %q", p.ID, u.String())
 			}
 		}
@@ -923,4 +923,9 @@ func addSourcePackage(vcsURL string, doc *Document, parent *Package, opts *optio
 		Type:    "GENERATED_FROM",
 		Related: sourcePackage.ID,
 	})
+}
+
+// namesPURL reports whether u identifies ipkg; PURL apk names are lowercase, so the name compares case-insensitively.
+func namesPURL(u purl.PackageURL, ipkg *apk.InstalledPackage) bool {
+	return strings.EqualFold(u.Name, ipkg.Name) && namesPackage(ipkg.Name, u.Version, ipkg)
 }
