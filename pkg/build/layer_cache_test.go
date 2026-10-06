@@ -261,3 +261,56 @@ func TestLayerUncompressedAccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, diffID, gotDiffID)
 }
+
+func TestLayerCompressionCacheConcurrentHits(t *testing.T) {
+	// Concurrent cache hits on one layer share no lock, so -race reports any
+	// write they make to the layer regardless of how the goroutines are
+	// scheduled. TestLayerCompressionCache's goroutines usually both miss and
+	// serialize on l.mu, so they rarely reach the hit path together.
+	tmpDir := t.TempDir()
+
+	testContent := []byte("concurrent cache hit test content")
+	h := sha256.Sum256(testContent)
+	diffID := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(h[:]),
+	}
+	compressionCache.Delete(diffID.String())
+	t.Cleanup(func() { compressionCache.Delete(diffID.String()) })
+
+	file := filepath.Join(tmpDir, "concurrent.tar")
+	require.NoError(t, os.WriteFile(file, testContent, 0644))
+
+	l := &layer{
+		uncompressed: file,
+		diffid:       &diffID,
+		desc: &v1.Descriptor{
+			MediaType: v1types.OCILayer,
+		},
+	}
+
+	// Seed compressionCache so every call below takes the hit path.
+	require.NoError(t, l.compress())
+	want := *l.desc
+
+	const callers = 4
+	digests := make([]v1.Hash, callers)
+	sizes := make([]int64, callers)
+	var g errgroup.Group
+	for i := range callers {
+		g.Go(func() (err error) {
+			digests[i], err = l.Digest()
+			return err
+		})
+		g.Go(func() (err error) {
+			sizes[i], err = l.Size()
+			return err
+		})
+	}
+	require.NoError(t, g.Wait())
+
+	for i := range callers {
+		require.Equal(t, want.Digest, digests[i], "caller %d: cached digest", i)
+		require.Equal(t, want.Size, sizes[i], "caller %d: cached size", i)
+	}
+}
