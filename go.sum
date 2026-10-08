@@ -1,7 +1,7 @@
 chainguard.dev/go-grpc-kit v0.20.0 h1:MDwZtTlUlMSMEPcoi9m8tnu4g+M88T1toUZ3Th/+0Gc=
 chainguard.dev/go-grpc-kit v0.20.0/go.mod h1:ocuwyRX9tqRRvJkS3/ZkDYGMnl+6FLC4bvF0cm6DGsk=
-chainguard.dev/sdk v0.1.331 h1:CXQ5r/Xjveu+9+kkp4d8aDlWMauJKZCODiAZ/+vhUvU=
-chainguard.dev/sdk v0.1.331/go.mod h1:E+WggSGnjgNwO2FbWQoJ15SooAvgHlCF+GNf2FrIb2c=
+chainguard.dev/sdk v0.1.335 h1:bpNOWpQX3baRVUn1Dv++z7/dX+EI3041W7L8V8VmJTM=
+chainguard.dev/sdk v0.1.335/go.mod h1:8Z3dQCZB2AVsOn2GDT9I0O5EYPSwQtyOjvGb9Bm/uxY=
 cloud.google.com/go/auth v0.24.0 h1:UYMbF8otPZnLAkNJ5/LYQYOq0ARcJS1P4JqTeMKbCYU=
 cloud.google.com/go/auth v0.24.0/go.mod h1:IFG/AMA1VWfuTrdbieEsB2GcpJyJV/phGAvogkOoPR4=
 cloud.google.com/go/auth/oauth2adapt v0.3.0 h1:FY8oSZpCYoUNv6QxVODuMjQz4IlSOVeiQtZ08vLPz88=
