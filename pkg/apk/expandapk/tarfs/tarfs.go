@@ -18,12 +18,15 @@ import (
 	"archive/tar"
 	"bufio"
 	"cmp"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,33 +43,178 @@ func pooledBufioReader(r io.Reader) *bufio.Reader {
 	return br
 }
 
+// paxChecksumKey is the PAX record apk-tools uses for per-file checksums. It
+// is present on essentially every entry, so it is stored decoded in a fixed
+// field rather than in a per-entry map.
+const paxChecksumKey = "APK-TOOLS.checksum.SHA1"
+
+// Entry is a compact index of one tar header. A tar.Header stored by value
+// costs ~1KB per file across three time.Times, an always-allocated PAX map,
+// and a boxed FileInfo; an index over a large package multiplies that by
+// thousands of files and lives as long as the package cache retains it. The
+// header is reconstructed on demand via Header().
+//
+// Entry implements fs.FileInfo and fs.DirEntry with the same results as
+// archive/tar's Header.FileInfo, so Stat and ReadDir never build a header.
 type Entry struct {
-	Header tar.Header
 	Offset int64
 
-	dir string
-	fi  fs.FileInfo
+	// Fields are ordered by size so the record packs without padding.
+	name, linkname     string
+	uname, gname       string
+	size               int64
+	mode               int64
+	uid, gid           int
+	devmajor, devminor int64
+	// mtime is unix nanoseconds; mtimeZero marks a zero time.Time, which is
+	// distinct from a genuine epoch timestamp.
+	mtime int64
+	// pax holds PAX records other than paxChecksumKey (xattrs, mostly).
+	// It is nil for the vast majority of entries.
+	pax map[string]string
+	// fileMode is Header.FileInfo().Mode(), computed once at index time so
+	// the FileInfo view cannot drift from archive/tar.
+	fileMode    fs.FileMode
+	format      tar.Format
+	checksum    [20]byte // decoded paxChecksumKey record
+	typeflag    byte
+	mtimeZero   bool
+	hasChecksum bool
 }
 
-func (e Entry) Name() string {
-	return e.fi.Name()
+func newEntry(hdr *tar.Header, offset int64) *Entry {
+	e := &Entry{
+		Offset:    offset,
+		name:      hdr.Name,
+		linkname:  hdr.Linkname,
+		size:      hdr.Size,
+		mtimeZero: hdr.ModTime.IsZero(),
+		mode:      hdr.Mode,
+		fileMode:  hdr.FileInfo().Mode(),
+		uid:       hdr.Uid,
+		gid:       hdr.Gid,
+		devmajor:  hdr.Devmajor,
+		devminor:  hdr.Devminor,
+		typeflag:  hdr.Typeflag,
+		format:    hdr.Format,
+		uname:     hdr.Uname,
+		gname:     hdr.Gname,
+	}
+	if !e.mtimeZero {
+		e.mtime = hdr.ModTime.UnixNano()
+	}
+	for k, v := range hdr.PAXRecords {
+		// Only the lowercase form apk-tools writes is stored decoded, so that
+		// hex.EncodeToString reproduces it exactly. hex.Decode would also
+		// accept uppercase, which Header() could then not round-trip.
+		if k == paxChecksumKey && len(v) == hex.EncodedLen(len(e.checksum)) && !strings.ContainsAny(v, "ABCDEF") {
+			if _, err := hex.Decode(e.checksum[:], []byte(v)); err == nil {
+				e.hasChecksum = true
+				continue
+			}
+		}
+		if e.pax == nil {
+			e.pax = make(map[string]string, 1)
+		}
+		e.pax[k] = v
+	}
+	return e
 }
 
-func (e Entry) Size() int64 {
-	return e.Header.Size
+// dir is the directory the member lives in. path.Dir returns a prefix of
+// name here, so this does not allocate.
+func (e *Entry) dir() string {
+	return path.Dir(e.name)
 }
 
-func (e Entry) Type() fs.FileMode {
-	return e.fi.Mode()
+// Header reconstructs the tar.Header this entry was built from. AccessTime
+// and ChangeTime are not retained: apk-tools never writes them, and keeping
+// them would cost two time.Times per entry. The checksum record is re-encoded
+// only when it was the lowercase hex form that apk-tools writes; any other
+// spelling is kept verbatim.
+func (e *Entry) Header() tar.Header {
+	hdr := tar.Header{
+		Typeflag: e.typeflag,
+		Name:     e.name,
+		Linkname: e.linkname,
+		Size:     e.size,
+		Mode:     e.mode,
+		Uid:      e.uid,
+		Gid:      e.gid,
+		Uname:    e.uname,
+		Gname:    e.gname,
+		Devmajor: e.devmajor,
+		Devminor: e.devminor,
+		Format:   e.format,
+	}
+	if !e.mtimeZero {
+		hdr.ModTime = time.Unix(0, e.mtime)
+	}
+	if e.hasChecksum || e.pax != nil {
+		hdr.PAXRecords = make(map[string]string, len(e.pax)+1)
+		if e.hasChecksum {
+			hdr.PAXRecords[paxChecksumKey] = hex.EncodeToString(e.checksum[:])
+		}
+		maps.Copy(hdr.PAXRecords, e.pax)
+	}
+	return hdr
 }
 
-func (e Entry) Info() (fs.FileInfo, error) {
-	return e.fi, nil
+// Checksum returns the decoded apk-tools per-file checksum, if present.
+func (e *Entry) Checksum() ([]byte, bool) {
+	if !e.hasChecksum {
+		return nil, false
+	}
+	return e.checksum[:], true
 }
 
-func (e Entry) IsDir() bool {
-	return e.fi.IsDir()
+func (e *Entry) Name() string {
+	// Mirror archive/tar, which cleans directory names before taking the base
+	// so a trailing slash does not yield an empty name.
+	if e.IsDir() {
+		return path.Base(path.Clean(e.name))
+	}
+	return path.Base(e.name)
 }
+
+func (e *Entry) Size() int64 {
+	return e.size
+}
+
+func (e *Entry) Mode() fs.FileMode {
+	return e.fileMode
+}
+
+func (e *Entry) Type() fs.FileMode {
+	return e.fileMode.Type()
+}
+
+func (e *Entry) ModTime() time.Time {
+	if e.mtimeZero {
+		return time.Time{}
+	}
+	return time.Unix(0, e.mtime)
+}
+
+func (e *Entry) IsDir() bool {
+	return e.fileMode.IsDir()
+}
+
+func (e *Entry) Info() (fs.FileInfo, error) {
+	return e, nil
+}
+
+// Sys returns a *tar.Header, as archive/tar's FileInfo does. The header is
+// built per call, so callers needing it repeatedly should hold the result.
+func (e *Entry) Sys() any {
+	hdr := e.Header()
+	return &hdr
+}
+
+var (
+	_ fs.FileInfo = (*Entry)(nil)
+	_ fs.DirEntry = (*Entry)(nil)
+)
 
 type File struct {
 	fsys  *FS
@@ -75,7 +223,7 @@ type File struct {
 }
 
 func (f *File) Stat() (fs.FileInfo, error) {
-	return f.Entry.fi, nil
+	return f.Entry, nil
 }
 
 func (f *File) Read(p []byte) (int, error) {
@@ -118,9 +266,9 @@ func (fsys *FS) Readlink(name string) (string, error) {
 
 	e := fsys.files[i]
 
-	switch e.Header.Typeflag {
+	switch e.typeflag {
 	case tar.TypeSymlink, tar.TypeLink:
-		return e.Header.Linkname, nil
+		return e.linkname, nil
 	}
 
 	return "", fmt.Errorf("Readlink(%q): file is not a link", name)
@@ -141,14 +289,14 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 
 	e := fsys.files[i]
 
-	switch e.Header.Typeflag {
+	switch e.typeflag {
 	case tar.TypeSymlink, tar.TypeLink:
-		link := e.Header.Linkname
+		link := e.linkname
 		if path.IsAbs(link) {
 			return fsys.open(link, hops+1)
 		}
 
-		return fsys.open(path.Join(e.dir, link), hops+1)
+		return fsys.open(path.Join(e.dir(), link), hops+1)
 	}
 
 	f := &File{
@@ -156,7 +304,7 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 		Entry: e,
 	}
 
-	f.sr = io.NewSectionReader(fsys.ra, e.Offset, e.Header.Size)
+	f.sr = io.NewSectionReader(fsys.ra, e.Offset, e.size)
 
 	return f, nil
 }
@@ -181,7 +329,7 @@ func (r root) Sys() any           { return nil }
 
 func (fsys *FS) Stat(name string) (fs.FileInfo, error) {
 	if i, ok := fsys.index[name]; ok {
-		return fsys.files[i].fi, nil
+		return fsys.files[i], nil
 	}
 
 	// fs.WalkDir expects "." to return a root entry to bootstrap the walk.
@@ -241,16 +389,11 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		if err != nil {
 			return nil, err
 		}
-		dir := path.Dir(hdr.Name)
+		e := newEntry(hdr, cr.n)
 		fsys.index[hdr.Name] = len(fsys.files)
-		fsys.files = append(fsys.files, &Entry{
-			Header: *hdr,
-			Offset: cr.n,
-			dir:    dir,
-			fi:     hdr.FileInfo(),
-		})
+		fsys.files = append(fsys.files, e)
 
-		dirCount[dir]++
+		dirCount[e.dir()]++
 	}
 
 	// Pre-generate the results of ReadDir so we don't allocate a ton if fs.WalkDir calls us.
@@ -260,7 +403,8 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 	}
 
 	for _, f := range fsys.files {
-		fsys.dirs[f.dir] = append(fsys.dirs[f.dir], f)
+		d := f.dir()
+		fsys.dirs[d] = append(fsys.dirs[d], f)
 	}
 
 	for _, files := range fsys.dirs {
