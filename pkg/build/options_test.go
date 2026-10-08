@@ -137,4 +137,3 @@ func TestNewOptionsValidatesImageConfiguration(t *testing.T) {
 		t.Error("NewOptions(WithImageConfiguration(invalid)) = nil error, want an error")
 	}
 }
-
