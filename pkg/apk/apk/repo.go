@@ -201,16 +201,33 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 // the required upstream dependencies.
 // If provided multiple indexes, it will look for dependencies in all of the
 // indexes. If you need to look only in a certain set, you should create a new
-// PkgResolver with only those indexes.
+// PkgResolver with only those indexes, or narrow an existing one with Filtered.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
 	indexes      []NamedIndex
 	nameMap      map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 
+	// keep, when set, hides every package it rejects from resolution, and
+	// rank, when set, orders the packages a lookup returns. The kept* maps
+	// memoize both over nameMap and installIfMap lookups; like selected,
+	// they make a PkgResolver unsafe for concurrent use.
+	keep          PackageFilter
+	rank          PackageRank
+	keptNames     map[string][]*repositoryPackage
+	keptInstallIf map[string][]*repositoryPackage
+
 	// Short-circuit providers we have already selected.
 	selected map[string]*RepositoryPackage
 }
+
+// PackageFilter reports whether a package may be considered during
+// resolution. See PkgResolver.Filtered.
+type PackageFilter func(*RepositoryPackage) bool
+
+// PackageRank places a package among the others a resolver considers for the
+// same name. See PkgResolver.Ranked.
+type PackageRank func(*RepositoryPackage) uint64
 
 // Clone returns a copy of PkgResolver.
 func (p *PkgResolver) Clone() *PkgResolver {
@@ -218,45 +235,153 @@ func (p *PkgResolver) Clone() *PkgResolver {
 		indexes:      p.indexes,
 		nameMap:      p.nameMap,
 		installIfMap: p.installIfMap,
+		keep:         p.keep,
+		rank:         p.rank,
 		selected:     map[string]*RepositoryPackage{},
 	}
 }
 
+// Filtered returns a copy of p that only considers the packages keep accepts.
+// It resolves as a PkgResolver built from just those packages would: version
+// selection, provides, install-if, conflicts and "nothing provides" errors
+// all ignore the rejected packages. The copy shares p's package maps, so it
+// is cheap to create one per resolution over a large resolver.
+//
+// Where resolution breaks a tie by position, the kept packages keep p's
+// order, which need not be the order of the index they came from; Ranked
+// restores it.
+//
+// keep must give the same answer for a package for the lifetime of the
+// returned resolver. Filtering an already filtered resolver keeps only the
+// packages both filters accept; a nil keep adds no filter.
+//
+// For a multi-arch build, resolve with GetPackagesWithDependenciesByArch:
+// GetPackagesWithDependencies checks the other arches against their whole
+// indexes. The returned resolver memoizes lookups, even in ResolvePackage, so
+// it must not be used from more than one goroutine; give each goroutine its
+// own Filtered or Clone.
+func (p *PkgResolver) Filtered(keep PackageFilter) *PkgResolver {
+	c := p.Clone()
+	switch {
+	case keep == nil:
+	case c.keep == nil:
+		c.keep = keep
+	default:
+		outer := c.keep
+		c.keep = func(pkg *RepositoryPackage) bool { return outer(pkg) && keep(pkg) }
+	}
+	return c
+}
+
+// Ranked returns a copy of p that considers the candidates for a name, and
+// the install-if packages for a trigger, in ascending rank, packages of equal
+// rank keeping p's order. A nil rank keeps p's order; a rank replaces any
+// earlier one.
+//
+// Resolution breaks some ties by position: between packages of the same
+// name and version, and among install-if packages of one name, the first
+// wins. A resolver built from indexes considers packages in index order, so
+// a filtered resolver over packages gathered from many indexes resolves as
+// one built from a single index only when ranked by that index's order. Only
+// the order among packages of one name matters.
+//
+// rank must give the same answer for a package for the lifetime of the
+// returned resolver. Like Filtered, the returned resolver memoizes lookups
+// and must not be used from more than one goroutine.
+func (p *PkgResolver) Ranked(rank PackageRank) *PkgResolver {
+	c := p.Clone()
+	if rank != nil {
+		c.rank = rank
+	}
+	return c
+}
+
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
 // The indexes are anything that implements NamedIndex.
+//
+// Resolvers are cached process-wide, keyed by the indexes. Use
+// BuildPkgResolver to own a resolver's lifetime instead.
 func NewPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	return globalResolverCache.Get(ctx, indexes)
+}
+
+// BuildPkgResolver creates a new PkgResolver from a list of indexes, like
+// NewPkgResolver, but without the process-wide resolver cache: the resolver
+// and the indexes it references are retained only for as long as the caller
+// holds them. That holds only for resolutions that leave allArchs nil or use
+// GetPackagesWithDependenciesByArch, as the multi-arch check of
+// GetPackagesWithDependencies caches its indexes process-wide.
+func BuildPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	return newPkgResolver(ctx, indexes)
 }
 
 func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
+	nameMap, installIfMap := mapPackages(indexes)
+	return &PkgResolver{
+		indexes:      indexes,
+		nameMap:      nameMap,
+		installIfMap: installIfMap,
+		selected:     map[string]*RepositoryPackage{},
+	}
+}
+
+// Extend returns a new PkgResolver that resolves over p's packages plus the
+// packages of indexes, as if built from both sets of indexes; any filter and
+// rank on p carry over, so a rank must place the added packages too. p itself is not modified, so resolutions already using p, or
+// other resolvers extended from it, are unaffected.
+//
+// Extending copies p's top-level maps, so it costs time proportional to the
+// number of names p knows about; batch additions where possible. Packages
+// already in p are not deduplicated.
+func (p *PkgResolver) Extend(ctx context.Context, indexes ...NamedIndex) *PkgResolver {
+	_, span := otel.Tracer("go-apk").Start(ctx, "PkgResolver.Extend")
+	defer span.End()
+
+	addNames, addInstallIf := mapPackages(indexes)
+
+	nameMap := maps.Clone(p.nameMap)
+	for name, pkgs := range addNames {
+		// Concat rather than append: the existing slices are shared with p
+		// and may have spare capacity.
+		nameMap[name] = slices.Concat(nameMap[name], pkgs)
+	}
+	installIfMap := maps.Clone(p.installIfMap)
+	for dep, pkgs := range addInstallIf {
+		installIfMap[dep] = slices.Concat(installIfMap[dep], pkgs)
+	}
+
+	return &PkgResolver{
+		indexes:      slices.Concat(p.indexes, indexes),
+		nameMap:      nameMap,
+		installIfMap: installIfMap,
+		keep:         p.keep,
+		rank:         p.rank,
+		selected:     map[string]*RepositoryPackage{},
+	}
+}
+
+// mapPackages indexes the packages of indexes by name and provided name, and
+// by each of their install-if triggers.
+func mapPackages(indexes []NamedIndex) (nameMap, installIfMap map[string][]*repositoryPackage) {
 	numPackages := 0
 	for _, index := range indexes {
 		numPackages += index.Count()
 	}
 
-	var (
-		pkgNameMap   = make(map[string][]*repositoryPackage, numPackages)
-		installIfMap = map[string][]*repositoryPackage{}
-	)
-	p := &PkgResolver{
-		indexes:  indexes,
-		selected: map[string]*RepositoryPackage{},
-	}
+	nameMap = make(map[string][]*repositoryPackage, numPackages)
+	installIfMap = map[string][]*repositoryPackage{}
 
 	// create a map of every package by name and version to its RepositoryPackage
 	for _, index := range indexes {
 		for _, pkg := range index.Packages() {
-			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
+			nameMap[pkg.Name] = append(nameMap[pkg.Name], &repositoryPackage{
 				RepositoryPackage: pkg,
 				pinnedName:        index.Name(),
 			})
 			for _, dep := range pkg.InstallIf {
-				if _, ok := installIfMap[dep]; !ok {
-					installIfMap[dep] = []*repositoryPackage{}
-				}
 				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
 					RepositoryPackage: pkg,
 					pinnedName:        index.Name(),
@@ -265,21 +390,100 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		}
 	}
 	// create a map of every provided file to its package
-	allPkgs := make([][]*repositoryPackage, 0, len(pkgNameMap))
-	for _, pkgVersions := range pkgNameMap {
+	allPkgs := make([][]*repositoryPackage, 0, len(nameMap))
+	for _, pkgVersions := range nameMap {
 		allPkgs = append(allPkgs, pkgVersions)
 	}
 	for _, pkgVersions := range allPkgs {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
 				name := cachedResolvePackageNameVersionPin(provide).Name
-				pkgNameMap[name] = append(pkgNameMap[name], pkg)
+				nameMap[name] = append(nameMap[name], pkg)
 			}
 		}
 	}
-	p.nameMap = pkgNameMap
-	p.installIfMap = installIfMap
-	return p
+	return nameMap, installIfMap
+}
+
+// candidates returns the packages named or providing name that the filter
+// keeps. ok is false when there are none.
+func (p *PkgResolver) candidates(name string) (pkgs []*repositoryPackage, ok bool) {
+	return p.lookup(p.nameMap, &p.keptNames, name)
+}
+
+// installIf returns the packages with the install-if trigger dep that the
+// filter keeps. ok is false when there are none.
+func (p *PkgResolver) installIf(dep string) (pkgs []*repositoryPackage, ok bool) {
+	return p.lookup(p.installIfMap, &p.keptInstallIf, dep)
+}
+
+func (p *PkgResolver) lookup(m map[string][]*repositoryPackage, memo *map[string][]*repositoryPackage, key string) ([]*repositoryPackage, bool) {
+	all, ok := m[key]
+	if !ok || (p.keep == nil && p.rank == nil) {
+		return all, ok
+	}
+	if kept, done := (*memo)[key]; done {
+		return kept, len(kept) != 0
+	}
+
+	kept := p.filter(all)
+	if p.rank != nil {
+		kept = p.order(kept, len(kept) != len(all))
+	}
+
+	if *memo == nil {
+		*memo = map[string][]*repositoryPackage{}
+	}
+	(*memo)[key] = kept
+	return kept, len(kept) != 0
+}
+
+// filter returns the packages of all that keep accepts, in order. It returns
+// all itself when keep accepts every one (or there is no keep), so the result
+// must not be modified.
+func (p *PkgResolver) filter(all []*repositoryPackage) []*repositoryPackage {
+	if p.keep == nil {
+		return all
+	}
+	for i, pkg := range all {
+		if p.keep(pkg.RepositoryPackage) {
+			continue
+		}
+		// Copy only once something is rejected; the map's slices are shared.
+		kept := slices.Clone(all[:i])
+		for _, pkg := range all[i+1:] {
+			if p.keep(pkg.RepositoryPackage) {
+				kept = append(kept, pkg)
+			}
+		}
+		return kept
+	}
+	return all
+}
+
+// order returns pkgs stably sorted by rank. It sorts pkgs in place when owned
+// is true, and a copy otherwise.
+func (p *PkgResolver) order(pkgs []*repositoryPackage, owned bool) []*repositoryPackage {
+	type ranked struct {
+		pkg  *repositoryPackage
+		rank uint64
+	}
+	rs := make([]ranked, len(pkgs))
+	for i, pkg := range pkgs {
+		rs[i] = ranked{pkg, p.rank(pkg.RepositoryPackage)}
+	}
+	byRank := func(a, b ranked) int { return cmp.Compare(a.rank, b.rank) }
+	if slices.IsSortedFunc(rs, byRank) {
+		return pkgs
+	}
+	slices.SortStableFunc(rs, byRank)
+	if !owned {
+		pkgs = make([]*repositoryPackage, len(rs))
+	}
+	for i, r := range rs {
+		pkgs[i] = r.pkg
+	}
+	return pkgs
 }
 
 // We select the next package based on the smallest number of candidate packages.
@@ -315,7 +519,7 @@ func (p *PkgResolver) nextPackage(packages []string, dq map[*RepositoryPackage]s
 // Disqualify anything that provides "constraint". This is used for !foo style constraints.
 func (p *PkgResolver) disqualifyProviders(constraint string, dq map[*RepositoryPackage]string) {
 	parsed := cachedResolvePackageNameVersionPin(constraint)
-	providers, ok := p.nameMap[parsed.Name]
+	providers, ok := p.candidates(parsed.Name)
 	if !ok {
 		return
 	}
@@ -367,7 +571,7 @@ func (p *PkgResolver) conflictingVersion(constraint ParsedConstraint, conflict *
 func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*RepositoryPackage]string) {
 	for _, prov := range pkg.Provides {
 		constraint := cachedResolvePackageNameVersionPin(prov)
-		providers, ok := p.nameMap[constraint.Name]
+		providers, ok := p.candidates(constraint.Name)
 		if !ok {
 			continue
 		}
@@ -441,7 +645,7 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 			continue
 		}
 
-		providers, ok := p.nameMap[parsed.Name]
+		providers, ok := p.candidates(parsed.Name)
 		if !ok {
 			continue
 		}
@@ -494,13 +698,44 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
+//
+// allArchs holds the indexes of every arch being built, and a package not
+// available on all of them is disqualified. That check reads the indexes
+// whole, ignoring any filter on p, and caches resolvers for them
+// process-wide; use GetPackagesWithDependenciesByArch with Filtered or
+// BuildPkgResolver resolvers.
 func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, allArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
 	defer span.End()
 
-	// Tracks all the packages we have disqualified and the reason we disqualified them.
-	dq := globalDisqualifyCache.Get(ctx, allArchs)
+	return p.getPackagesWithDependencies(ctx, packages, globalDisqualifyCache.Get(ctx, allArchs))
+}
 
+// GetPackagesWithDependenciesByArch is GetPackagesWithDependencies with the
+// cross-arch check made over resolvers instead of indexes: byArch holds a
+// resolver for every arch being built, p's included, and a package is
+// disqualified unless each of them considers a package of the same name and
+// version. Their filters apply, and nothing is cached.
+//
+// Unlike GetPackagesWithDependencies, which builds its cross-arch set once
+// per set of indexes and caches it, every call walks each resolver in byArch
+// whole and calls its filter on every package, so a call costs time and
+// memory proportional to the resolvers, not to the packages resolved. A
+// single-arch resolution can pass a nil byArch to skip the walk.
+//
+// The resolvers in byArch are only read, so one byArch may serve concurrent
+// resolutions of each of its arches provided their filters are safe for
+// concurrent use.
+func (p *PkgResolver) GetPackagesWithDependenciesByArch(ctx context.Context, packages []string, byArch map[string]*PkgResolver) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependenciesByArch")
+	defer span.End()
+
+	return p.getPackagesWithDependencies(ctx, packages, disqualifyResolverDifference(byArch))
+}
+
+// getPackagesWithDependencies resolves packages, starting from the
+// disqualifications in dq, which it takes ownership of.
+func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages []string, dq map[*RepositoryPackage]string) (toInstall []*RepositoryPackage, conflicts []string, err error) {
 	// We're going to mutate this as our set of input packages to install, so make a copy.
 	constraints := slices.Clone(packages)
 
@@ -604,9 +839,9 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 	}
 	// are there any installIf dependencies?
 	for dep, depPkg := range added {
-		depPkgList, ok := p.installIfMap[dep]
+		depPkgList, ok := p.installIf(dep)
 		if !ok {
-			depPkgList, ok = p.installIfMap[fmt.Sprintf("%s=%s", dep, depPkg.Version)]
+			depPkgList, ok = p.installIf(fmt.Sprintf("%s=%s", dep, depPkg.Version))
 		}
 		if !ok {
 			continue
@@ -648,7 +883,7 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]string) ([]*RepositoryPackage, error) {
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
-	pkgsWithVersions, ok := p.nameMap[name]
+	pkgsWithVersions, ok := p.candidates(name)
 	if !ok {
 		return nil, fmt.Errorf("nothing provides %q", name)
 	}
@@ -675,7 +910,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 
-	pkgsWithVersions, ok := p.nameMap[name]
+	pkgsWithVersions, ok := p.candidates(name)
 	if !ok {
 		return nil, fmt.Errorf("nothing provides %q", name)
 	}
@@ -833,7 +1068,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 			}
 
 			// first see if it is a name of a package
-			depPkgWithVersions, ok := p.nameMap[name]
+			depPkgWithVersions, ok := p.candidates(name)
 			if !ok {
 				return nil, nil, &ConstraintError{dep, fmt.Errorf("nothing provides %q", name)}
 			}
@@ -1179,6 +1414,62 @@ func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) e
 	}
 
 	return errors.New("not in indexes")
+}
+
+// disqualifyResolverDifference is disqualifyDifference over the packages each
+// resolver's filter keeps. It does not touch the resolvers' memo maps.
+//
+// It calls each resolver's filter once per package, walking each nameMap
+// once, so its cost is proportional to the size of the resolvers, not to the
+// size of the resolution.
+func disqualifyResolverDifference(byArch map[string]*PkgResolver) map[*RepositoryPackage]string {
+	dq := map[*RepositoryPackage]string{}
+	if len(byArch) <= 1 {
+		return dq
+	}
+
+	type archPackages struct {
+		kept []*repositoryPackage
+		// name -> set[version]
+		allowed map[string]map[string]struct{}
+	}
+	perArch := make(map[string]archPackages, len(byArch))
+	for arch, r := range byArch {
+		ap := archPackages{allowed: map[string]map[string]struct{}{}}
+		for name, pkgs := range r.nameMap {
+			for _, pkg := range pkgs {
+				// Every package is listed under its own name; skip the
+				// entries for the names it provides.
+				if pkg.Name != name || (r.keep != nil && !r.keep(pkg.RepositoryPackage)) {
+					continue
+				}
+				ap.kept = append(ap.kept, pkg)
+				versions, ok := ap.allowed[pkg.Name]
+				if !ok {
+					versions = map[string]struct{}{}
+					ap.allowed[pkg.Name] = versions
+				}
+				versions[pkg.Version] = struct{}{}
+			}
+		}
+		perArch[arch] = ap
+	}
+
+	for arch, ap := range perArch {
+		for _, pkg := range ap.kept {
+			for otherArch, other := range perArch {
+				if otherArch == arch {
+					continue
+				}
+				if _, ok := other.allowed[pkg.Name][pkg.Version]; !ok {
+					dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+					break
+				}
+			}
+		}
+	}
+
+	return dq
 }
 
 func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
