@@ -355,6 +355,20 @@ func TestScanIndexRecordsMatchesParsePackageIndex(t *testing.T) {
 	}
 }
 
+func TestScanIndexRecordsBoundsRecord(t *testing.T) {
+	record := "P:a\nV:1\n\n"
+	got := 0
+	count := func([]byte) error { got++; return nil }
+
+	require.NoError(t, scanIndexRecordsMax(strings.NewReader(record+record), len(record), count))
+	require.Equal(t, 2, got)
+
+	got = 0
+	err := scanIndexRecordsMax(strings.NewReader(record+"P:b\nV:1\nx:y\n\n"), len(record), count)
+	require.ErrorContains(t, err, "record exceeds")
+	require.Equal(t, 1, got)
+}
+
 func TestScanRepositoryIndexRejectsSecondIndexMember(t *testing.T) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)

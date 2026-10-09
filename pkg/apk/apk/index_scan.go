@@ -38,7 +38,8 @@ import (
 // No fn call happens unless the signature verifies.
 //
 // Unlike GetRepositoryIndexes, it neither builds Packages nor caches anything,
-// so its memory use is bounded by the size of the compressed index. A record
+// so its memory use is bounded by the size of the compressed index plus one
+// record; a record larger than maxIndexRecordSize fails the scan. A record
 // is the raw text of one package stanza, each line terminated by "\n" and the
 // whole followed by the blank separator line, so ParsePackageIndex parses it
 // into a single Package, or into none when the stanza names no package (a
@@ -132,9 +133,18 @@ func scanIndexArchive(r io.Reader, maxSize int64, fn func(record []byte) error) 
 	}
 }
 
+// maxIndexRecordSize bounds one package stanza of an index being scanned. A
+// line is already bounded by the scanner, but a stanza is not, and without
+// this one could grow to the decompressed size of the whole index.
+const maxIndexRecordSize = 4 << 20
+
 // scanIndexRecords splits a plain APKINDEX into records, reusing one buffer.
 // Its line handling matches ParsePackageIndex.
 func scanIndexRecords(r io.Reader, fn func(record []byte) error) error {
+	return scanIndexRecordsMax(r, maxIndexRecordSize, fn)
+}
+
+func scanIndexRecordsMax(r io.Reader, maxRecord int, fn func(record []byte) error) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 16*1024), 1024*1024)
 
@@ -142,6 +152,10 @@ func scanIndexRecords(r io.Reader, fn func(record []byte) error) error {
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) != 0 {
+			// The +2 counts this line's newline and the closing blank line.
+			if len(record)+len(line)+2 > maxRecord {
+				return fmt.Errorf("APKINDEX record exceeds %d bytes", maxRecord)
+			}
 			record = append(record, line...)
 			record = append(record, '\n')
 			continue
