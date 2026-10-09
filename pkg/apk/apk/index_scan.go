@@ -41,9 +41,11 @@ import (
 // so its memory use is bounded by the size of the compressed index. A record
 // is the raw text of one package stanza, each line terminated by "\n" and the
 // whole followed by the blank separator line, so ParsePackageIndex parses it
-// into a single Package. The record is only valid until fn returns. As with
-// ParsePackageIndex, a trailing stanza that is not terminated by a blank line
-// is ignored; records are not otherwise validated.
+// into a single Package, or into none when the stanza names no package (a
+// stanza a whole-index parse drops too). The record is only valid until fn
+// returns. As with ParsePackageIndex, a trailing stanza that is not
+// terminated by a blank line is ignored; records are not otherwise
+// validated. An archive with more than one APKINDEX member is rejected.
 //
 // repoURL is a plain repository URL or local path; "@tag" repository lines are
 // not accepted. A non-nil error from fn stops the scan and is returned wrapped.
@@ -87,6 +89,11 @@ func ScanRepositoryIndex(ctx context.Context, repoURL string, keys map[string][]
 
 // scanIndexArchive calls fn with each record of the APKINDEX member of the
 // gzipped tar archive r, accepting the same members IndexFromArchive does.
+//
+// An archive with more than one APKINDEX member is rejected, though
+// IndexFromArchive keeps the last: fn has seen the earlier members' records
+// by the time a later one turns up, and holding them back would cost the
+// memory bound the scan exists for.
 func scanIndexArchive(r io.Reader, maxSize int64, fn func(record []byte) error) error {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
@@ -95,6 +102,7 @@ func scanIndexArchive(r io.Reader, maxSize int64, fn func(record []byte) error) 
 	defer gzipReader.Close()
 
 	tarReader := tar.NewReader(limitio.NewLimitedReaderWithDefault(gzipReader, maxSize, DefaultMaxAPKIndexDecompressedSize))
+	seenIndex := false
 	for {
 		hdr, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
@@ -106,6 +114,10 @@ func scanIndexArchive(r io.Reader, maxSize int64, fn func(record []byte) error) 
 
 		switch {
 		case hdr.Name == apkIndexFilename:
+			if seenIndex {
+				return fmt.Errorf("more than one %s found in APKINDEX", apkIndexFilename)
+			}
+			seenIndex = true
 			if err := scanIndexRecords(tarReader, fn); err != nil {
 				return err
 			}

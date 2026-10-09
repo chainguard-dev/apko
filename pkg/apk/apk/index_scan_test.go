@@ -306,8 +306,9 @@ func TestScanRepositoryIndexLocal(t *testing.T) {
 
 func TestScanIndexRecordsMatchesParsePackageIndex(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		index string
+		name    string
+		index   string
+		unnamed int
 	}{{
 		name:  "terminated",
 		index: "C:Q1YWFhYQ==\nP:a\nV:1\n\nC:Q1YmJiYg==\nP:b\nV:2\no:b\np:x=1 y\n\n",
@@ -321,21 +322,55 @@ func TestScanIndexRecordsMatchesParsePackageIndex(t *testing.T) {
 	}, {
 		name:  "empty",
 		index: "",
+	}, {
+		// ParsePackageIndex drops a stanza that names no package; its
+		// record parses into nothing.
+		name:    "nameless stanza",
+		index:   "P:a\nV:1\n\nV:9\nT:no name\n\nP:b\nV:2\n\n",
+		unnamed: 1,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			want, err := ParsePackageIndex(strings.NewReader(tc.index))
 			require.NoError(t, err)
 
 			got := []*Package{}
+			unnamed := 0
 			require.NoError(t, scanIndexRecords(strings.NewReader(tc.index), func(record []byte) error {
 				require.True(t, bytes.HasSuffix(record, []byte("\n\n")), "record %q", record)
 				pkgs, err := ParsePackageIndex(bytes.NewReader(record))
 				require.NoError(t, err)
-				require.Len(t, pkgs, 1)
+				if len(pkgs) == 0 {
+					unnamed++
+				}
+				require.LessOrEqual(t, len(pkgs), 1)
 				got = append(got, pkgs...)
 				return nil
 			}))
 			require.Equal(t, want, got)
+			require.Equal(t, tc.unnamed, unnamed)
 		})
 	}
+}
+
+func TestScanRepositoryIndexRejectsSecondIndexMember(t *testing.T) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	for _, body := range []string{"P:a\nV:1\n\n", "P:b\nV:2\n\n"} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: apkIndexFilename, Mode: 0o644, Size: int64(len(body))}))
+		_, err := tw.Write([]byte(body))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gw.Close())
+
+	// IndexFromArchive reads such an archive as its last member.
+	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(buf.Bytes())))
+	require.NoError(t, err)
+	require.Len(t, index.Packages, 1)
+	require.Equal(t, "b", index.Packages[0].Name)
+
+	srv, _ := serveIndex(t, buf.Bytes(), "", "", "")
+	_, _, err = scanAll(t, srv.URL, nil, WithHTTPClient(srv.Client()), WithIgnoreSignatures(true))
+	require.ErrorContains(t, err, "more than one APKINDEX")
 }
