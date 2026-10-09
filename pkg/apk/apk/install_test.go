@@ -742,8 +742,8 @@ func TestInstallAPKFilesModesOnDisk(t *testing.T) {
 	}
 }
 
-// orderRecordingFS records the order in which Chmod and Chown reach each path.
-// It only records — every call still runs against the wrapped filesystem, so
+// orderRecordingFS records the order in which Chmod, Chown and SetXattr reach
+// each path. It only records — every call still runs against the wrapped filesystem, so
 // there is no emulated behavior here to drift out of sync with the real thing.
 type orderRecordingFS struct {
 	apkfs.FullFS
@@ -778,12 +778,19 @@ func (o *orderRecordingFS) Chown(path string, uid, gid int) error {
 	return o.FullFS.Chown(path, uid, gid)
 }
 
-// TestInstallAPKFilesMetadataOrder pins Chown before Chmod. chown(2) on a
-// regular file clears setuid/setgid — for root too — so chowning after the
-// Chmod that restores those bits drops them again on any filesystem that
-// writes through to disk. No unprivileged test can observe that: dirFS
-// tolerates the EPERM from the disk chown and never reaches the kernel
-// behavior, so the call order is pinned here instead.
+func (o *orderRecordingFS) SetXattr(path, attr string, data []byte) error {
+	o.record(path, "setxattr")
+	return o.FullFS.SetXattr(path, attr, data)
+}
+
+// TestInstallAPKFilesMetadataOrder pins Chown, then Chmod, then SetXattr.
+// chown(2) on a regular file clears setuid/setgid and security.capability —
+// for root too — so chowning after the Chmod or SetXattr that restores them
+// drops them again on any filesystem that writes through to disk. No
+// unprivileged test can observe that: dirFS tolerates the EPERM from the disk
+// chown and never reaches the kernel behavior, so the call order is pinned
+// here instead. TestInstallAPKFilesCapabilitySurvivesChown checks the
+// capability case on disk when run as root.
 func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 	skipWithoutOwnerValidation(t)
 	rec := newOrderRecordingFS(apkfs.NewMemFS())
@@ -793,8 +800,9 @@ func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var", Typeflag: tar.TypeDir, Mode: 0o755}))
-	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777}))
-	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Gid: 101, Size: 8}))
+	xattrs := map[string]string{xattrTarPAXRecordsPrefix + "user.test": "v"}
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "var/spool", Typeflag: tar.TypeDir, Mode: 0o1777, PAXRecords: xattrs}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "postdrop", Typeflag: tar.TypeReg, Mode: 0o2755, Gid: 101, Size: 8, PAXRecords: xattrs}))
 	_, err = tw.Write([]byte("postdrop"))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
@@ -805,8 +813,8 @@ func TestInstallAPKFilesMetadataOrder(t *testing.T) {
 	// The setgid file is the case the kernel would bite; the sticky directory
 	// is here so the two paths cannot drift apart unnoticed.
 	for _, name := range []string{"postdrop", "var/spool"} {
-		assert.Equal(t, []string{"chown", "chmod"}, rec.ops(name),
-			"metadata calls for %s must be chown then chmod", name)
+		assert.Equal(t, []string{"chown", "chmod", "setxattr"}, rec.ops(name),
+			"metadata calls for %s must be chown, chmod, then setxattr", name)
 	}
 }
 
