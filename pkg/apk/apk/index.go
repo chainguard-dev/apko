@@ -114,7 +114,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		}
 
 		fetchAndParse := func(etag string) (NamedIndex, error) {
-			b, err := fetchRepositoryIndex(ctx, u, etag, opts)
+			b, _, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
 				return nil, fmt.Errorf("fetching %s: %w", asURL.Redacted(), err)
 			}
@@ -269,11 +269,13 @@ func shouldCheckSignatureForIndex(index string, arch string, opts *indexOpts) bo
 	return true
 }
 
-func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *indexOpts) ([]byte, error) { //nolint:gocyclo
+// fetchRepositoryIndex GETs the index at u, returning its body and the
+// response's ETag in etagFromResponse's encoding, or "" if it has none.
+func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *indexOpts) ([]byte, string, error) { //nolint:gocyclo
 	client := opts.httpClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if etag != "" {
@@ -286,46 +288,48 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 	}
 
 	if err := opts.authenticator().AddAuth(ctx, req); err != nil {
-		return nil, fmt.Errorf("unable to add auth to request: %w", err)
+		return nil, "", fmt.Errorf("unable to add auth to request: %w", err)
 	}
 
 	// This will return a body that retries requests using Range requests if Read() hits an error.
 	rrt := NewRangeRetryTransport(client.Transport)
 	res, err := rrt.RoundTrip(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d", res.StatusCode)
+		return nil, "", fmt.Errorf("unexpected status code %d", res.StatusCode)
 	}
 	defer res.Body.Close()
 
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading body: %w", err)
+		return nil, "", fmt.Errorf("reading body: %w", err)
 	}
 
-	return b, nil
+	respETag, _ := etagFromResponse(res)
+	return b, respETag, nil
 }
 
-func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
-	_, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
-	defer span.End()
+// verifyIndexSignature checks that b, the raw bytes of the index at u, carries
+// a valid signature from one of keys, unless opts exempt the index from
+// signature checks.
+func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) error { //nolint:gocyclo
 	// validate the signature
 	if shouldCheckSignatureForIndex(u, arch, opts) {
 		if len(keys) == 0 {
-			return nil, fmt.Errorf("no keys provided to verify signature")
+			return fmt.Errorf("no keys provided to verify signature")
 		}
 		// check that they key name aren't paths or URLs
 		for keyName := range keys {
 			if strings.Contains(keyName, "/") {
-				return nil, fmt.Errorf("invalid keyname %q", keyName)
+				return fmt.Errorf("invalid keyname %q", keyName)
 			}
 		}
 		buf := bytes.NewReader(b)
 		gzipReader, err := gzip.NewReader(buf)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create gzip reader for repository index: %w", err)
+			return fmt.Errorf("unable to create gzip reader for repository index: %w", err)
 		}
 		// set multistream to false, so we can read each part separately;
 		// the first part is the signature, the second is the index, which should be
@@ -346,11 +350,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			}
 			// oops something went wrong
 			if err != nil {
-				return nil, fmt.Errorf("unexpected error reading from tgz: %w", err)
+				return fmt.Errorf("unexpected error reading from tgz: %w", err)
 			}
 			matches := signatureFileRegex.FindStringSubmatch(signatureFile.Name)
 			if len(matches) != 3 {
-				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
+				return fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
 			}
 			keyfile := matches[2]
 
@@ -382,11 +386,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 				// Too big, too slow, not compiled in
 				continue
 			default:
-				return nil, fmt.Errorf("unknown signature format: %s", signatureType)
+				return fmt.Errorf("unknown signature format: %s", signatureType)
 			}
 			signature, err := io.ReadAll(tarReader)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
+				return fmt.Errorf("failed to read signature from repository index: %w", err)
 			}
 			sigs = append(sigs, Signature{
 				KeyID:           keyfile,
@@ -395,7 +399,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			})
 		}
 		if len(sigs) == 0 {
-			return nil, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
+			return fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
@@ -410,7 +414,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
 				h := sig.DigestAlgorithm.New()
 				if n, err := h.Write(indexData); err != nil || n != len(indexData) {
-					return nil, fmt.Errorf("unable to hash data: %w", err)
+					return fmt.Errorf("unable to hash data: %w", err)
 				}
 				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
 			}
@@ -422,8 +426,17 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			}
 		}
 		if !verified {
-			return nil, errors.New("signature verification failed for repository index, for all provided keys")
+			return errors.New("signature verification failed for repository index, for all provided keys")
 		}
+	}
+	return nil
+}
+
+func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
+	defer span.End()
+	if err := verifyIndexSignature(ctx, u, keys, arch, b, opts); err != nil {
+		return nil, err
 	}
 	// with a valid signature, convert it to an ApkIndex
 	var archiveOpts []IndexFromArchiveOption
