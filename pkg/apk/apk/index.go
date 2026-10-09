@@ -39,6 +39,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
+	"chainguard.dev/apko/pkg/limitio"
 	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
@@ -311,6 +312,11 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 	return b, respETag, nil
 }
 
+// maxIndexSignatureSize bounds one signature member of an index. An RSA
+// signature is the size of its key's modulus, so this leaves room for keys
+// far larger than any in use.
+const maxIndexSignatureSize = 64 << 10
+
 // verifyIndexSignature checks that b, the raw bytes of the index at u, carries
 // a valid signature from one of keys, unless opts exempt the index from
 // signature checks.
@@ -337,7 +343,9 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 		gzipReader.Multistream(false)
 		defer gzipReader.Close()
 
-		tarReader := tar.NewReader(gzipReader)
+		// The signature segment is not covered by the signature, so bound
+		// what it may decompress to before trusting any of it.
+		tarReader := tar.NewReader(limitio.NewLimitedReaderWithDefault(gzipReader, opts.indexDecompressedMaxSize, DefaultMaxAPKIndexDecompressedSize))
 
 		sigs := make([]Signature, 0, len(keys))
 
@@ -387,6 +395,9 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 				continue
 			default:
 				return fmt.Errorf("unknown signature format: %s", signatureType)
+			}
+			if signatureFile.Size > maxIndexSignatureSize {
+				return fmt.Errorf("signature %s is %d bytes, more than the %d allowed", signatureFile.Name, signatureFile.Size, maxIndexSignatureSize)
 			}
 			signature, err := io.ReadAll(tarReader)
 			if err != nil {

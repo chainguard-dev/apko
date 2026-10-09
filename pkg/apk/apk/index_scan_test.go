@@ -374,3 +374,51 @@ func TestScanRepositoryIndexRejectsSecondIndexMember(t *testing.T) {
 	_, _, err = scanAll(t, srv.URL, nil, WithHTTPClient(srv.Client()), WithIgnoreSignatures(true))
 	require.ErrorContains(t, err, "more than one APKINDEX")
 }
+
+// TestScanRepositoryIndexBoundsSignatureSegment checks that the unsigned
+// signature segment cannot make verification decompress without bound.
+func TestScanRepositoryIndexBoundsSignatureSegment(t *testing.T) {
+	key := newTestIndexKey(t, "scan-test.rsa.pub")
+	index := unsignedTestIndex(t, scanTestPackages(5))
+
+	// segment prepends to index a signature segment whose one member is
+	// size zero bytes, which compress to almost nothing.
+	segment := func(name string, size int) []byte {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(size)}))
+		_, err := tw.Write(make([]byte, size))
+		require.NoError(t, err)
+		require.NoError(t, tw.Flush())
+		require.NoError(t, gw.Close())
+		return append(buf.Bytes(), index...)
+	}
+
+	for _, tc := range []struct {
+		name string
+		body []byte
+		opts []IndexOption
+		want string
+	}{{
+		name: "oversized signature from a trusted key",
+		body: segment(".SIGN.RSA256."+key.name, 1<<20),
+		want: "more than the 65536 allowed",
+	}, {
+		name: "skipped signature past the decompressed limit",
+		body: segment(".SIGN.RSA256.someone-else.rsa.pub", 1<<20),
+		opts: []IndexOption{WithIndexDecompressedMaxSize(1 << 16)},
+		want: "size limit exceeded",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := serveIndex(t, tc.body, "", "", "")
+			calls := 0
+			_, err := ScanRepositoryIndex(t.Context(), srv.URL, map[string][]byte{key.name: key.pub}, "x86_64", func([]byte) error {
+				calls++
+				return nil
+			}, append(tc.opts, WithHTTPClient(srv.Client()))...)
+			require.ErrorContains(t, err, tc.want)
+			require.Zero(t, calls)
+		})
+	}
+}
