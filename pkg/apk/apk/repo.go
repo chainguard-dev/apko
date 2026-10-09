@@ -717,6 +717,12 @@ func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages 
 // disqualified unless each of them considers a package of the same name and
 // version. Their filters apply, and nothing is cached.
 //
+// Unlike GetPackagesWithDependencies, which builds its cross-arch set once
+// per set of indexes and caches it, every call walks each resolver in byArch
+// whole and calls its filter on every package, so a call costs time and
+// memory proportional to the resolvers, not to the packages resolved. A
+// single-arch resolution can pass a nil byArch to skip the walk.
+//
 // The resolvers in byArch are only read, so one byArch may serve concurrent
 // resolutions of each of its arches provided their filters are safe for
 // concurrent use.
@@ -1412,46 +1418,54 @@ func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) e
 
 // disqualifyResolverDifference is disqualifyDifference over the packages each
 // resolver's filter keeps. It does not touch the resolvers' memo maps.
+//
+// It calls each resolver's filter once per package, walking each nameMap
+// once, so its cost is proportional to the size of the resolvers, not to the
+// size of the resolution.
 func disqualifyResolverDifference(byArch map[string]*PkgResolver) map[*RepositoryPackage]string {
 	dq := map[*RepositoryPackage]string{}
 	if len(byArch) <= 1 {
 		return dq
 	}
 
-	// kept walks every package r considers, once per name it is known by.
-	kept := func(r *PkgResolver, fn func(*repositoryPackage)) {
-		for _, pkgs := range r.nameMap {
-			for _, pkg := range r.filter(pkgs) {
-				fn(pkg)
+	type archPackages struct {
+		kept []*repositoryPackage
+		// name -> set[version]
+		allowed map[string]map[string]struct{}
+	}
+	perArch := make(map[string]archPackages, len(byArch))
+	for arch, r := range byArch {
+		ap := archPackages{allowed: map[string]map[string]struct{}{}}
+		for name, pkgs := range r.nameMap {
+			for _, pkg := range pkgs {
+				// Every package is listed under its own name; skip the
+				// entries for the names it provides.
+				if pkg.Name != name || (r.keep != nil && !r.keep(pkg.RepositoryPackage)) {
+					continue
+				}
+				ap.kept = append(ap.kept, pkg)
+				versions, ok := ap.allowed[pkg.Name]
+				if !ok {
+					versions = map[string]struct{}{}
+					ap.allowed[pkg.Name] = versions
+				}
+				versions[pkg.Version] = struct{}{}
 			}
 		}
+		perArch[arch] = ap
 	}
 
-	// arch -> name -> set[version]
-	allowablePackages := make(map[string]map[string]map[string]struct{}, len(byArch))
-	for arch, r := range byArch {
-		allowed := map[string]map[string]struct{}{}
-		kept(r, func(pkg *repositoryPackage) {
-			versions, ok := allowed[pkg.Name]
-			if !ok {
-				versions = map[string]struct{}{}
-				allowed[pkg.Name] = versions
-			}
-			versions[pkg.Version] = struct{}{}
-		})
-		allowablePackages[arch] = allowed
-	}
-
-	for arch, r := range byArch {
-		for otherArch, allowed := range allowablePackages {
-			if otherArch == arch {
-				continue
-			}
-			kept(r, func(pkg *repositoryPackage) {
-				if _, ok := allowed[pkg.Name][pkg.Version]; !ok {
-					dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+	for arch, ap := range perArch {
+		for _, pkg := range ap.kept {
+			for otherArch, other := range perArch {
+				if otherArch == arch {
+					continue
 				}
-			})
+				if _, ok := other.allowed[pkg.Name][pkg.Version]; !ok {
+					dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+					break
+				}
+			}
 		}
 	}
 

@@ -650,6 +650,44 @@ func TestFilteredByArchMatchesPerTenant(t *testing.T) {
 	}
 }
 
+// TestDisqualifyResolverDifferenceFiltersOnce checks that the cross-arch check
+// asks each resolver's filter about each package once, however many arches
+// there are and however many names a package provides.
+func TestDisqualifyResolverDifferenceFiltersOnce(t *testing.T) {
+	ctx := t.Context()
+	arches := []string{"x86_64", "aarch64", "riscv64"}
+	byArch := map[string]*PkgResolver{}
+	calls := map[string]map[string]int{}
+	for _, arch := range arches {
+		pkgs := []*Package{
+			{Name: "foo", Version: "1-r0", Provides: []string{"so:libfoo.so.1", "cmd:foo"}},
+			{Name: "bar", Version: "1-r0", Provides: []string{"cmd:bar"}},
+			{Name: "hidden", Version: "1-r0"},
+		}
+		if arch == "x86_64" {
+			pkgs = append(pkgs, &Package{Name: "foo", Version: "2-r0", Provides: []string{"so:libfoo.so.1"}})
+		}
+		calls[arch] = map[string]int{}
+		byArch[arch] = BuildPkgResolver(ctx, []NamedIndex{filterTestIndex(pkgs)}).Filtered(func(rp *RepositoryPackage) bool {
+			calls[arch][pkgKey(rp.Package)]++
+			return rp.Name != "hidden"
+		})
+	}
+
+	dq := disqualifyResolverDifference(byArch)
+
+	for _, arch := range arches {
+		for key, n := range calls[arch] {
+			require.Equalf(t, 1, n, "%s on %s", key, arch)
+		}
+	}
+	got := make([]string, 0, len(dq))
+	for pkg := range dq {
+		got = append(got, pkgKey(pkg.Package))
+	}
+	require.Equal(t, []string{"foo-2-r0"}, got)
+}
+
 // requireNotCached checks that no entry of c is keyed by any of indexes.
 func requireNotCached[V any](t *testing.T, c *lruCache[V], indexes map[string]NamedIndex) {
 	t.Helper()
