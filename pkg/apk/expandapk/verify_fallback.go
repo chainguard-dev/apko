@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build unix && !linux
+//go:build !unix && !windows
 
 package expandapk
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"runtime"
+)
 
-// anonymousFile creates a file in dir that has no name.
-//
-// O_TMPFILE is a Linux extension with no portable equivalent -- darwin, the
-// other platform apko releases for, has nothing that creates an unlinked inode
-// in one step -- so this is always the create-then-unlink fallback, and it is
-// the weaker guarantee. See unlinkedTempFile for what that window admits and
-// what actually contains it.
-func anonymousFile(dir string) (*os.File, error) {
-	return unlinkedTempFile(dir)
+func openNonblocking(path string) (*os.File, error) {
+	return os.Open(path)
+}
+
+func clearNonblock(*os.File) error { return nil }
+
+// anonymousFile refuses: this platform has neither a way to create a file that
+// has no name nor a way to stop other processes opening one that does, so a
+// private copy cannot be made and verified package data is not served.
+func anonymousFile(string) (*os.File, error) {
+	return nil, fmt.Errorf("private data files are not supported on %s", runtime.GOOS)
 }
