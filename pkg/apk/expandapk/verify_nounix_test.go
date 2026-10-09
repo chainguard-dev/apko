@@ -12,19 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build unix && !linux
+//go:build !unix
 
 package expandapk
 
-import "os"
+import "errors"
 
-// anonymousFile creates a file in dir that has no name.
-//
-// O_TMPFILE is a Linux extension with no portable equivalent -- darwin, the
-// other platform apko releases for, has nothing that creates an unlinked inode
-// in one step -- so this is always the create-then-unlink fallback, and it is
-// the weaker guarantee. See unlinkedTempFile for what that window admits and
-// what actually contains it.
-func anonymousFile(dir string) (*os.File, error) {
-	return unlinkedTempFile(dir)
+func mkfifo(string) error {
+	return errors.ErrUnsupported
 }
