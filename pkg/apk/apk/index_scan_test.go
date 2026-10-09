@@ -72,14 +72,14 @@ type testIndexKey struct {
 	pub  []byte
 }
 
-func newTestIndexKey(t *testing.T, name string) testIndexKey {
+func newTestIndexKey(t *testing.T) testIndexKey {
 	t.Helper()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
 	require.NoError(t, err)
 	return testIndexKey{
-		name: name,
+		name: "scan-test.rsa.pub",
 		priv: priv,
 		pub:  pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}),
 	}
@@ -162,7 +162,7 @@ func serveIndex(t *testing.T, body []byte, etag string, user, pass string) (*htt
 }
 
 func TestScanRepositoryIndexVerified(t *testing.T) {
-	key := newTestIndexKey(t, "scan-test.rsa.pub")
+	key := newTestIndexKey(t)
 	index := unsignedTestIndex(t, scanTestPackages(50))
 	signed := signTestIndex(t, key, index)
 	srv, requests := serveIndex(t, signed, "v1", "", "")
@@ -189,8 +189,8 @@ func TestScanRepositoryIndexNoETag(t *testing.T) {
 }
 
 func TestScanRepositoryIndexRejectsBeforeYielding(t *testing.T) {
-	key := newTestIndexKey(t, "scan-test.rsa.pub")
-	other := newTestIndexKey(t, "scan-test.rsa.pub")
+	key := newTestIndexKey(t)
+	other := newTestIndexKey(t)
 	index := unsignedTestIndex(t, scanTestPackages(5))
 	tampered := unsignedTestIndex(t, append(scanTestPackages(5), &Package{Name: "evil", Version: "1-r0"}))
 
@@ -381,7 +381,7 @@ func TestScanRepositoryIndexRejectsSecondIndexMember(t *testing.T) {
 // TestScanRepositoryIndexBoundsSignatureSegment checks that the unsigned
 // signature segment cannot make verification decompress without bound.
 func TestScanRepositoryIndexBoundsSignatureSegment(t *testing.T) {
-	key := newTestIndexKey(t, "scan-test.rsa.pub")
+	key := newTestIndexKey(t)
 	index := unsignedTestIndex(t, scanTestPackages(5))
 
 	// segment prepends to index a signature segment whose one member is
