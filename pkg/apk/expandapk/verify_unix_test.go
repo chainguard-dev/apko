@@ -17,6 +17,7 @@
 package expandapk
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -127,16 +128,12 @@ func TestPrivateFile(t *testing.T) {
 					return
 				default:
 				}
-				entries, err := os.ReadDir(dir)
-				if err != nil {
-					continue
-				}
-				for _, e := range entries {
-					if !strings.HasPrefix(e.Name(), ".apko-data-") {
-						continue
-					}
-					_ = os.Link(filepath.Join(dir, e.Name()),
-						filepath.Join(dir, fmt.Sprintf("stolen-%d", i)))
+				// The file lives in a private 0700 directory, which a different-uid
+				// attacker cannot search. This test runs as the same uid, so it can,
+				// and the link check is what has to catch it.
+				names, _ := filepath.Glob(filepath.Join(dir, ".apko-private-*", ".apko-data-*"))
+				for _, name := range names {
+					_ = os.Link(name, filepath.Join(dir, fmt.Sprintf("stolen-%d", i)))
 				}
 			}
 		})
@@ -186,6 +183,168 @@ func TestPrivateFile(t *testing.T) {
 		defer f.Close()
 		if _, err := os.Lstat(f.Name()); !os.IsNotExist(err) {
 			t.Errorf("fallback file %q is still reachable by name", f.Name())
+		}
+	})
+}
+
+// fakeFstat replaces fstatIdentity for the duration of the test. hook is
+// called with the file and the number of times it has been statted before, and
+// returns the identity to report.
+func fakeFstat(t *testing.T, hook func(t *testing.T, f *os.File, call int, real fileIdentity) fileIdentity) {
+	t.Helper()
+	orig := fstatIdentity
+	t.Cleanup(func() { fstatIdentity = orig })
+
+	calls := map[string]int{}
+	fstatIdentity = func(f *os.File) (fileIdentity, error) {
+		real, err := orig(f)
+		if err != nil {
+			return real, err
+		}
+		n := calls[f.Name()]
+		calls[f.Name()]++
+		return hook(t, f, n, real), nil
+	}
+}
+
+// gvisorNlink reports what gVisor does for an open file that has been unlinked:
+// a link count of 1 instead of 0.
+func gvisorNlink(id fileIdentity) fileIdentity {
+	if id.nlink == 0 {
+		id.nlink = 1
+	}
+	return id
+}
+
+func isData(f *os.File) bool {
+	return strings.HasPrefix(filepath.Base(f.Name()), ".apko-data-")
+}
+
+// TestUnlinkedTempFileLinkCounts covers how unlinkedTempFile reads link counts
+// on filesystems that do not report them the way a native kernel does.
+func TestUnlinkedTempFileLinkCounts(t *testing.T) {
+	t.Run("an unlinked file still reporting one link is served under gVisor", func(t *testing.T) {
+		// gVisor (runsc, GKE Sandbox) reports st_nlink == 1 for every unlinked
+		// open file. Refusing on that made every package expansion fail there.
+		fakeFstat(t, func(_ *testing.T, _ *os.File, _ int, real fileIdentity) fileIdentity {
+			return gvisorNlink(real)
+		})
+
+		dir := t.TempDir()
+		f, err := unlinkedTempFile(dir)
+		if err != nil {
+			t.Fatalf("unlinkedTempFile: %v", err)
+		}
+		defer f.Close()
+
+		if _, err := os.Lstat(f.Name()); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%q is still reachable by name (stat err = %v)", f.Name(), err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("unlinkedTempFile left %d entries behind in %s: %v", len(entries), dir, entries)
+		}
+		if _, err := f.Write([]byte("payload")); err != nil {
+			t.Fatalf("writing to the private file: %v", err)
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		if got := readAllFrom(t, f); string(got) != "payload" {
+			t.Errorf("private file round-trip: got %q", got)
+		}
+	})
+
+	t.Run("a real second link is refused under gVisor", func(t *testing.T) {
+		// Tolerating gVisor's count must not tolerate an actual second name.
+		dir := t.TempDir()
+		stolen := filepath.Join(dir, "stolen")
+		fakeFstat(t, func(t *testing.T, f *os.File, call int, real fileIdentity) fileIdentity {
+			if isData(f) && call == 0 {
+				if err := os.Link(f.Name(), stolen); err != nil {
+					t.Fatalf("linking: %v", err)
+				}
+				real.nlink++
+			}
+			return gvisorNlink(real)
+		})
+
+		f, err := unlinkedTempFile(dir)
+		if err == nil {
+			f.Close()
+			t.Fatal("unlinkedTempFile served a file with a second name")
+		}
+		if !strings.Contains(err.Error(), "links before being unlinked") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("a link made after the first stat is refused where counts are honest", func(t *testing.T) {
+		// The race the link check exists for: the second name appears after the
+		// count was first read but before the unlink, so only the count after
+		// the unlink shows it. On a native kernel the probe reads 0, so the 1 on
+		// our file cannot be blamed on the filesystem.
+		dir := t.TempDir()
+		stolen := filepath.Join(dir, "stolen")
+		fakeFstat(t, func(t *testing.T, f *os.File, call int, real fileIdentity) fileIdentity {
+			if isData(f) && call == 0 {
+				if err := os.Link(f.Name(), stolen); err != nil {
+					t.Fatalf("linking: %v", err)
+				}
+			}
+			return real
+		})
+
+		f, err := unlinkedTempFile(dir)
+		if err == nil {
+			f.Close()
+			t.Fatal("unlinkedTempFile served a file with a second name")
+		}
+		if !strings.Contains(err.Error(), "still has 1 link(s) after being unlinked") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("a descriptor whose identity changes across the unlink is refused", func(t *testing.T) {
+		fakeFstat(t, func(_ *testing.T, f *os.File, call int, real fileIdentity) fileIdentity {
+			if isData(f) && call == 1 {
+				real.ino++
+			}
+			return gvisorNlink(real)
+		})
+
+		f, err := unlinkedTempFile(t.TempDir())
+		if err == nil {
+			f.Close()
+			t.Fatal("unlinkedTempFile served a descriptor that changed identity")
+		}
+		if !strings.Contains(err.Error(), "changed identity") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("anything left in the private directory is refused", func(t *testing.T) {
+		// rmdir of the private directory is what proves nothing else was created
+		// in it during the window.
+		fakeFstat(t, func(t *testing.T, f *os.File, call int, real fileIdentity) fileIdentity {
+			if isData(f) && call == 0 {
+				if err := os.WriteFile(filepath.Join(filepath.Dir(f.Name()), "planted"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return real
+		})
+
+		f, err := unlinkedTempFile(t.TempDir())
+		if err == nil {
+			f.Close()
+			t.Fatal("unlinkedTempFile served a file whose private directory was not empty")
+		}
+		if !strings.Contains(err.Error(), "removing private directory") {
+			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }
