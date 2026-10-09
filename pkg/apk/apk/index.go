@@ -319,23 +319,28 @@ const maxIndexSignatureSize = 64 << 10
 
 // verifyIndexSignature checks that b, the raw bytes of the index at u, carries
 // a valid signature from one of keys, unless opts exempt the index from
-// signature checks.
-func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) error { //nolint:gocyclo
+// signature checks. It returns the offset in b where the signed data begins,
+// or 0 when no signature was checked.
+//
+// Callers must parse only b[signedOffset:]. The signature segment is unsigned,
+// and a tar meta header (pax or GNU long name) left at its end would otherwise
+// apply to the first header of the signed data, renaming or resizing it.
+func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (signedOffset int, err error) { //nolint:gocyclo
 	// validate the signature
 	if shouldCheckSignatureForIndex(u, arch, opts) {
 		if len(keys) == 0 {
-			return fmt.Errorf("no keys provided to verify signature")
+			return 0, fmt.Errorf("no keys provided to verify signature")
 		}
 		// check that they key name aren't paths or URLs
 		for keyName := range keys {
 			if strings.Contains(keyName, "/") {
-				return fmt.Errorf("invalid keyname %q", keyName)
+				return 0, fmt.Errorf("invalid keyname %q", keyName)
 			}
 		}
 		buf := bytes.NewReader(b)
 		gzipReader, err := gzip.NewReader(buf)
 		if err != nil {
-			return fmt.Errorf("unable to create gzip reader for repository index: %w", err)
+			return 0, fmt.Errorf("unable to create gzip reader for repository index: %w", err)
 		}
 		// set multistream to false, so we can read each part separately;
 		// the first part is the signature, the second is the index, which should be
@@ -358,11 +363,11 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 			}
 			// oops something went wrong
 			if err != nil {
-				return fmt.Errorf("unexpected error reading from tgz: %w", err)
+				return 0, fmt.Errorf("unexpected error reading from tgz: %w", err)
 			}
 			matches := signatureFileRegex.FindStringSubmatch(signatureFile.Name)
 			if len(matches) != 3 {
-				return fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
+				return 0, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
 			}
 			keyfile := matches[2]
 
@@ -394,14 +399,14 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 				// Too big, too slow, not compiled in
 				continue
 			default:
-				return fmt.Errorf("unknown signature format: %s", signatureType)
+				return 0, fmt.Errorf("unknown signature format: %s", signatureType)
 			}
 			if signatureFile.Size > maxIndexSignatureSize {
-				return fmt.Errorf("signature %s is %d bytes, more than the %d allowed", signatureFile.Name, signatureFile.Size, maxIndexSignatureSize)
+				return 0, fmt.Errorf("signature %s is %d bytes, more than the %d allowed", signatureFile.Name, signatureFile.Size, maxIndexSignatureSize)
 			}
 			signature, err := io.ReadAll(tarReader)
 			if err != nil {
-				return fmt.Errorf("failed to read signature from repository index: %w", err)
+				return 0, fmt.Errorf("failed to read signature from repository index: %w", err)
 			}
 			sigs = append(sigs, Signature{
 				KeyID:           keyfile,
@@ -410,7 +415,7 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 			})
 		}
 		if len(sigs) == 0 {
-			return fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
+			return 0, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
@@ -425,7 +430,7 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
 				h := sig.DigestAlgorithm.New()
 				if n, err := h.Write(indexData); err != nil || n != len(indexData) {
-					return fmt.Errorf("unable to hash data: %w", err)
+					return 0, fmt.Errorf("unable to hash data: %w", err)
 				}
 				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
 			}
@@ -437,26 +442,36 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 			}
 		}
 		if !verified {
-			return errors.New("signature verification failed for repository index, for all provided keys")
+			return 0, errors.New("signature verification failed for repository index, for all provided keys")
 		}
+		return readBytes, nil
 	}
-	return nil
+	return 0, nil
 }
 
 func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
 	defer span.End()
-	if err := verifyIndexSignature(ctx, u, keys, arch, b, opts); err != nil {
+	signedOffset, err := verifyIndexSignature(ctx, u, keys, arch, b, opts)
+	if err != nil {
 		return nil, err
 	}
-	// with a valid signature, convert it to an ApkIndex
+	// with a valid signature, convert the signed data to an ApkIndex
 	var archiveOpts []IndexFromArchiveOption
 	if opts.indexDecompressedMaxSize != 0 {
 		archiveOpts = append(archiveOpts, WithDecompressedMaxSize(opts.indexDecompressedMaxSize))
 	}
-	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b)), archiveOpts...)
+	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b[signedOffset:])), archiveOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
+	}
+	if signedOffset > 0 {
+		// Read the signature segment on its own to keep index.Signature.
+		sigs, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b[:signedOffset])), archiveOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read signature segment of repository index: %w", err)
+		}
+		index.Signature = sigs.Signature
 	}
 
 	// Share package payloads with other indexes carrying the same packages.

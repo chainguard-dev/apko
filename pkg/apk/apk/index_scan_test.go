@@ -439,3 +439,94 @@ func TestScanRepositoryIndexBoundsSignatureSegment(t *testing.T) {
 		})
 	}
 }
+
+// signWithTrailingPAX signs index like signTestIndex, but ends the unsigned
+// signature segment with a lone pax header carrying records. Such a header
+// describes nothing in the signature segment, so it verifies, and it would
+// apply to the first header of the signed data if parsing ran on from it.
+func signWithTrailingPAX(t *testing.T, key testIndexKey, index []byte, records string) []byte {
+	t.Helper()
+	signed := signTestIndex(t, key, index)
+	sigSegment := signed[:len(signed)-len(index)]
+
+	gr, err := gzip.NewReader(bytes.NewReader(sigSegment))
+	require.NoError(t, err)
+	sigTar, err := io.ReadAll(gr)
+	require.NoError(t, err)
+
+	// archive/tar will not write a bare pax header, so write a regular one
+	// and retype it.
+	var paxBuf bytes.Buffer
+	tw := tar.NewWriter(&paxBuf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "PaxHeaders/x", Mode: 0o644, Size: int64(len(records)), Format: tar.FormatUSTAR}))
+	_, err = tw.Write([]byte(records))
+	require.NoError(t, err)
+	require.NoError(t, tw.Flush())
+	pax := paxBuf.Bytes()
+	pax[156] = tar.TypeXHeader
+	copy(pax[148:156], "        ")
+	sum := 0
+	for _, c := range pax[:512] {
+		sum += int(c)
+	}
+	copy(pax[148:156], fmt.Sprintf("%06o\x00 ", sum))
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	_, err = gw.Write(append(sigTar, pax...))
+	require.NoError(t, err)
+	require.NoError(t, gw.Close())
+	return append(buf.Bytes(), index...)
+}
+
+// paxRecord formats one pax record, whose length prefix counts itself.
+func paxRecord(key, value string) string {
+	rest := " " + key + "=" + value + "\n"
+	n := len(rest) + 1
+	for len(fmt.Sprint(n))+len(rest) != n {
+		n++
+	}
+	return fmt.Sprint(n) + rest
+}
+
+// TestIndexSignatureSegmentCannotRewriteSignedHeaders checks that only the
+// signed data is parsed after verification, so a meta header ending the
+// unsigned signature segment cannot rename or resize the signed members.
+func TestIndexSignatureSegmentCannotRewriteSignedHeaders(t *testing.T) {
+	key := newTestIndexKey(t)
+	keys := map[string][]byte{key.name: key.pub}
+	index := unsignedTestIndex(t, scanTestPackages(2))
+
+	// The size that makes the first signed member, APKINDEX, swallow the
+	// rest of the archive.
+	gr, err := gzip.NewReader(bytes.NewReader(index))
+	require.NoError(t, err)
+	indexTar, err := io.ReadAll(gr)
+	require.NoError(t, err)
+	swallow := fmt.Sprint(len(indexTar) - 3*512)
+
+	for _, tc := range []struct {
+		name    string
+		records string
+	}{{
+		name:    "size swallows the rest of the archive",
+		records: paxRecord("size", swallow),
+	}, {
+		name:    "path hides the signed index",
+		records: paxRecord("path", descriptionFilename),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := signWithTrailingPAX(t, key, index, tc.records)
+			srv, _ := serveIndex(t, body, "", "", "")
+
+			records, _, err := scanAll(t, srv.URL, keys, WithHTTPClient(srv.Client()))
+			require.NoError(t, err)
+			requireRecordsMatchIndex(t, records, index)
+
+			parsed, err := parseRepositoryIndex(t.Context(), srv.URL, keys, "x86_64", body, &indexOpts{})
+			require.NoError(t, err)
+			require.Len(t, parsed.Packages, 2)
+			require.NotEmpty(t, parsed.Signature)
+		})
+	}
+}

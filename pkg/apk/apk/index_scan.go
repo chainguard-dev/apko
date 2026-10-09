@@ -82,10 +82,11 @@ func ScanRepositoryIndex(ctx context.Context, repoURL string, keys map[string][]
 		return "", fmt.Errorf("fetching %s: %w", redact(u), err)
 	}
 
-	if err := verifyIndexSignature(ctx, u, keys, arch, b, opts); err != nil {
+	signedOffset, err := verifyIndexSignature(ctx, u, keys, arch, b, opts)
+	if err != nil {
 		return "", fmt.Errorf("verifying %s: %w", redact(u), err)
 	}
-	if err := scanIndexArchive(bytes.NewReader(b), opts.indexDecompressedMaxSize, fn); err != nil {
+	if err := scanIndexArchive(bytes.NewReader(b[signedOffset:]), opts.indexDecompressedMaxSize, fn); err != nil {
 		return "", fmt.Errorf("scanning %s: %w", redact(u), err)
 	}
 	return etag, nil
