@@ -39,6 +39,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	sign "chainguard.dev/apko/pkg/apk/signature"
+	"chainguard.dev/apko/pkg/limitio"
 	apkometrics "chainguard.dev/apko/pkg/metrics"
 )
 
@@ -114,7 +115,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		}
 
 		fetchAndParse := func(etag string) (NamedIndex, error) {
-			b, err := fetchRepositoryIndex(ctx, u, etag, opts)
+			b, _, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
 				return nil, fmt.Errorf("fetching %s: %w", asURL.Redacted(), err)
 			}
@@ -269,11 +270,13 @@ func shouldCheckSignatureForIndex(index string, arch string, opts *indexOpts) bo
 	return true
 }
 
-func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *indexOpts) ([]byte, error) { //nolint:gocyclo
+// fetchRepositoryIndex GETs the index at u, returning its body and the
+// response's ETag in etagFromResponse's encoding, or "" if it has none.
+func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *indexOpts) ([]byte, string, error) { //nolint:gocyclo
 	client := opts.httpClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if etag != "" {
@@ -286,46 +289,58 @@ func fetchRepositoryIndex(ctx context.Context, u string, etag string, opts *inde
 	}
 
 	if err := opts.authenticator().AddAuth(ctx, req); err != nil {
-		return nil, fmt.Errorf("unable to add auth to request: %w", err)
+		return nil, "", fmt.Errorf("unable to add auth to request: %w", err)
 	}
 
 	// This will return a body that retries requests using Range requests if Read() hits an error.
 	rrt := NewRangeRetryTransport(client.Transport)
 	res, err := rrt.RoundTrip(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d", res.StatusCode)
+		return nil, "", fmt.Errorf("unexpected status code %d", res.StatusCode)
 	}
 	defer res.Body.Close()
 
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading body: %w", err)
+		return nil, "", fmt.Errorf("reading body: %w", err)
 	}
 
-	return b, nil
+	respETag, _ := etagFromResponse(res)
+	return b, respETag, nil
 }
 
-func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) { //nolint:gocyclo
-	_, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
-	defer span.End()
+// maxIndexSignatureSize bounds one signature member of an index. An RSA
+// signature is the size of its key's modulus, so this leaves room for keys
+// far larger than any in use.
+const maxIndexSignatureSize = 64 << 10
+
+// verifyIndexSignature checks that b, the raw bytes of the index at u, carries
+// a valid signature from one of keys, unless opts exempt the index from
+// signature checks. It returns the offset in b where the signed data begins,
+// or 0 when no signature was checked.
+//
+// Callers must parse only b[signedOffset:]. The signature segment is unsigned,
+// and a tar meta header (pax or GNU long name) left at its end would otherwise
+// apply to the first header of the signed data, renaming or resizing it.
+func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (signedOffset int, err error) { //nolint:gocyclo
 	// validate the signature
 	if shouldCheckSignatureForIndex(u, arch, opts) {
 		if len(keys) == 0 {
-			return nil, fmt.Errorf("no keys provided to verify signature")
+			return 0, fmt.Errorf("no keys provided to verify signature")
 		}
 		// check that they key name aren't paths or URLs
 		for keyName := range keys {
 			if strings.Contains(keyName, "/") {
-				return nil, fmt.Errorf("invalid keyname %q", keyName)
+				return 0, fmt.Errorf("invalid keyname %q", keyName)
 			}
 		}
 		buf := bytes.NewReader(b)
 		gzipReader, err := gzip.NewReader(buf)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create gzip reader for repository index: %w", err)
+			return 0, fmt.Errorf("unable to create gzip reader for repository index: %w", err)
 		}
 		// set multistream to false, so we can read each part separately;
 		// the first part is the signature, the second is the index, which should be
@@ -333,7 +348,9 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 		gzipReader.Multistream(false)
 		defer gzipReader.Close()
 
-		tarReader := tar.NewReader(gzipReader)
+		// The signature segment is not covered by the signature, so bound
+		// what it may decompress to before trusting any of it.
+		tarReader := tar.NewReader(limitio.NewLimitedReaderWithDefault(gzipReader, opts.indexDecompressedMaxSize, DefaultMaxAPKIndexDecompressedSize))
 
 		sigs := make([]Signature, 0, len(keys))
 
@@ -346,11 +363,11 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			}
 			// oops something went wrong
 			if err != nil {
-				return nil, fmt.Errorf("unexpected error reading from tgz: %w", err)
+				return 0, fmt.Errorf("unexpected error reading from tgz: %w", err)
 			}
 			matches := signatureFileRegex.FindStringSubmatch(signatureFile.Name)
 			if len(matches) != 3 {
-				return nil, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
+				return 0, fmt.Errorf("failed to find key name in signature file name: %s", signatureFile.Name)
 			}
 			keyfile := matches[2]
 
@@ -382,11 +399,14 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 				// Too big, too slow, not compiled in
 				continue
 			default:
-				return nil, fmt.Errorf("unknown signature format: %s", signatureType)
+				return 0, fmt.Errorf("unknown signature format: %s", signatureType)
+			}
+			if signatureFile.Size > maxIndexSignatureSize {
+				return 0, fmt.Errorf("signature %s is %d bytes, more than the %d allowed", signatureFile.Name, signatureFile.Size, maxIndexSignatureSize)
 			}
 			signature, err := io.ReadAll(tarReader)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read signature from repository index: %w", err)
+				return 0, fmt.Errorf("failed to read signature from repository index: %w", err)
 			}
 			sigs = append(sigs, Signature{
 				KeyID:           keyfile,
@@ -395,7 +415,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			})
 		}
 		if len(sigs) == 0 {
-			return nil, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
+			return 0, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
 		}
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
@@ -410,7 +430,7 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			if _, hasDigest := indexDigest[sig.DigestAlgorithm]; !hasDigest {
 				h := sig.DigestAlgorithm.New()
 				if n, err := h.Write(indexData); err != nil || n != len(indexData) {
-					return nil, fmt.Errorf("unable to hash data: %w", err)
+					return 0, fmt.Errorf("unable to hash data: %w", err)
 				}
 				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
 			}
@@ -422,17 +442,36 @@ func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte,
 			}
 		}
 		if !verified {
-			return nil, errors.New("signature verification failed for repository index, for all provided keys")
+			return 0, errors.New("signature verification failed for repository index, for all provided keys")
 		}
+		return readBytes, nil
 	}
-	// with a valid signature, convert it to an ApkIndex
+	return 0, nil
+}
+
+func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "parseRepositoryIndex")
+	defer span.End()
+	signedOffset, err := verifyIndexSignature(ctx, u, keys, arch, b, opts)
+	if err != nil {
+		return nil, err
+	}
+	// with a valid signature, convert the signed data to an ApkIndex
 	var archiveOpts []IndexFromArchiveOption
 	if opts.indexDecompressedMaxSize != 0 {
 		archiveOpts = append(archiveOpts, WithDecompressedMaxSize(opts.indexDecompressedMaxSize))
 	}
-	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b)), archiveOpts...)
+	index, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b[signedOffset:])), archiveOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read convert repository index bytes to index struct: %w", err)
+	}
+	if signedOffset > 0 {
+		// Read the signature segment on its own to keep index.Signature.
+		sigs, err := IndexFromArchive(io.NopCloser(bytes.NewReader(b[:signedOffset])), archiveOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read signature segment of repository index: %w", err)
+		}
+		index.Signature = sigs.Signature
 	}
 
 	// Share package payloads with other indexes carrying the same packages.

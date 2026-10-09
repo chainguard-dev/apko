@@ -107,7 +107,13 @@ func ParsePackageIndex(apkIndexUnpacked io.Reader) ([]*Package, error) {
 	// to 1MB but give it a starting buffer size of 16KB (default is 4KB) because we always
 	// end up having to resize, and 16KB should avoid an extra alloc, whereas the 1MB allows
 	// us to alloc enough to handle alpine (and hopefully we never have to revisit this).
-	buf := make([]byte, 16*1024)
+	bufSize := 16 * 1024
+	// Callers parsing one record at a time, such as from ScanRepositoryIndex,
+	// would otherwise allocate the full starting buffer per record.
+	if sized, ok := apkIndexUnpacked.(interface{ Len() int }); ok && sized.Len() < bufSize {
+		bufSize = sized.Len() + 1
+	}
+	buf := make([]byte, bufSize)
 	meg := 1024 * 1024
 	indexScanner.Buffer(buf, meg)
 
