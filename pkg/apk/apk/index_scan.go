@@ -49,6 +49,9 @@ import (
 //
 // repoURL is a plain repository URL or local path; "@tag" repository lines are
 // not accepted. A non-nil error from fn stops the scan and is returned wrapped.
+// The scan can also fail after fn has seen some records, as when the index
+// exceeds the decompressed size limit or is malformed past them, so on any
+// error the caller must discard every record it was given.
 // The returned etag is an opaque token of the index's ETag, or "" when the
 // server sent none or the repository is local.
 //

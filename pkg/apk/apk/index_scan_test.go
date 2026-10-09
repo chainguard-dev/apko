@@ -265,10 +265,13 @@ func TestScanRepositoryIndexMaxSize(t *testing.T) {
 	index := unsignedTestIndex(t, scanTestPackages(200))
 	srv, _ := serveIndex(t, index, "", "", "")
 
-	_, _, err := scanAll(t, srv.URL, nil, WithHTTPClient(srv.Client()), WithIgnoreSignatures(true),
+	records, _, err := scanAll(t, srv.URL, nil, WithHTTPClient(srv.Client()), WithIgnoreSignatures(true),
 		WithIndexDecompressedMaxSize(1024))
 	var limitErr *limitio.SizeLimitExceededError
 	require.ErrorAs(t, err, &limitErr)
+	// The limit is hit mid-scan, after fn has seen records the caller must
+	// discard.
+	require.NotEmpty(t, records)
 }
 
 func TestScanRepositoryIndexStopsOnError(t *testing.T) {
