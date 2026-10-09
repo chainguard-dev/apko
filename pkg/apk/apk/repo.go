@@ -201,16 +201,27 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 // the required upstream dependencies.
 // If provided multiple indexes, it will look for dependencies in all of the
 // indexes. If you need to look only in a certain set, you should create a new
-// PkgResolver with only those indexes.
+// PkgResolver with only those indexes, or narrow an existing one with Filtered.
 // If the indexes change, you should generate a new pkgResolver.
 type PkgResolver struct {
 	indexes      []NamedIndex
 	nameMap      map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 
+	// keep, when set, hides every package it rejects from resolution. The
+	// kept* maps memoize keep over nameMap and installIfMap lookups; like
+	// selected, they make a PkgResolver unsafe for concurrent use.
+	keep          PackageFilter
+	keptNames     map[string][]*repositoryPackage
+	keptInstallIf map[string][]*repositoryPackage
+
 	// Short-circuit providers we have already selected.
 	selected map[string]*RepositoryPackage
 }
+
+// PackageFilter reports whether a package may be considered during
+// resolution. See PkgResolver.Filtered.
+type PackageFilter func(*RepositoryPackage) bool
 
 // Clone returns a copy of PkgResolver.
 func (p *PkgResolver) Clone() *PkgResolver {
@@ -218,45 +229,116 @@ func (p *PkgResolver) Clone() *PkgResolver {
 		indexes:      p.indexes,
 		nameMap:      p.nameMap,
 		installIfMap: p.installIfMap,
+		keep:         p.keep,
 		selected:     map[string]*RepositoryPackage{},
 	}
 }
 
+// Filtered returns a copy of p that only considers the packages keep accepts.
+// It resolves as a PkgResolver built from just those packages would: version
+// selection, provides, install-if, conflicts and "nothing provides" errors
+// all ignore the rejected packages. The copy shares p's package maps, so it
+// is cheap to create one per resolution over a large resolver.
+//
+// keep must give the same answer for a package for the lifetime of the
+// returned resolver. Filtering an already filtered resolver keeps only the
+// packages both filters accept; a nil keep adds no filter.
+func (p *PkgResolver) Filtered(keep PackageFilter) *PkgResolver {
+	c := p.Clone()
+	switch {
+	case keep == nil:
+	case c.keep == nil:
+		c.keep = keep
+	default:
+		outer := c.keep
+		c.keep = func(pkg *RepositoryPackage) bool { return outer(pkg) && keep(pkg) }
+	}
+	return c
+}
+
 // NewPkgResolver creates a new pkgResolver from a list of indexes.
 // The indexes are anything that implements NamedIndex.
+//
+// Resolvers are cached process-wide, keyed by the indexes. Use
+// BuildPkgResolver to own a resolver's lifetime instead.
 func NewPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	return globalResolverCache.Get(ctx, indexes)
+}
+
+// BuildPkgResolver creates a new PkgResolver from a list of indexes, like
+// NewPkgResolver, but without the process-wide resolver cache: the resolver
+// and the indexes it references are retained only for as long as the caller
+// holds them.
+func BuildPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
+	return newPkgResolver(ctx, indexes)
 }
 
 func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
+	nameMap, installIfMap := mapPackages(indexes)
+	return &PkgResolver{
+		indexes:      indexes,
+		nameMap:      nameMap,
+		installIfMap: installIfMap,
+		selected:     map[string]*RepositoryPackage{},
+	}
+}
+
+// Extend returns a new PkgResolver that resolves over p's packages plus the
+// packages of indexes, as if built from both sets of indexes; any filter on p
+// carries over. p itself is not modified, so resolutions already using p, or
+// other resolvers extended from it, are unaffected.
+//
+// Extending copies p's top-level maps, so it costs time proportional to the
+// number of names p knows about; batch additions where possible. Packages
+// already in p are not deduplicated.
+func (p *PkgResolver) Extend(ctx context.Context, indexes ...NamedIndex) *PkgResolver {
+	_, span := otel.Tracer("go-apk").Start(ctx, "PkgResolver.Extend")
+	defer span.End()
+
+	addNames, addInstallIf := mapPackages(indexes)
+
+	nameMap := maps.Clone(p.nameMap)
+	for name, pkgs := range addNames {
+		// Concat rather than append: the existing slices are shared with p
+		// and may have spare capacity.
+		nameMap[name] = slices.Concat(nameMap[name], pkgs)
+	}
+	installIfMap := maps.Clone(p.installIfMap)
+	for dep, pkgs := range addInstallIf {
+		installIfMap[dep] = slices.Concat(installIfMap[dep], pkgs)
+	}
+
+	return &PkgResolver{
+		indexes:      slices.Concat(p.indexes, indexes),
+		nameMap:      nameMap,
+		installIfMap: installIfMap,
+		keep:         p.keep,
+		selected:     map[string]*RepositoryPackage{},
+	}
+}
+
+// mapPackages indexes the packages of indexes by name and provided name, and
+// by each of their install-if triggers.
+func mapPackages(indexes []NamedIndex) (nameMap, installIfMap map[string][]*repositoryPackage) {
 	numPackages := 0
 	for _, index := range indexes {
 		numPackages += index.Count()
 	}
 
-	var (
-		pkgNameMap   = make(map[string][]*repositoryPackage, numPackages)
-		installIfMap = map[string][]*repositoryPackage{}
-	)
-	p := &PkgResolver{
-		indexes:  indexes,
-		selected: map[string]*RepositoryPackage{},
-	}
+	nameMap = make(map[string][]*repositoryPackage, numPackages)
+	installIfMap = map[string][]*repositoryPackage{}
 
 	// create a map of every package by name and version to its RepositoryPackage
 	for _, index := range indexes {
 		for _, pkg := range index.Packages() {
-			pkgNameMap[pkg.Name] = append(pkgNameMap[pkg.Name], &repositoryPackage{
+			nameMap[pkg.Name] = append(nameMap[pkg.Name], &repositoryPackage{
 				RepositoryPackage: pkg,
 				pinnedName:        index.Name(),
 			})
 			for _, dep := range pkg.InstallIf {
-				if _, ok := installIfMap[dep]; !ok {
-					installIfMap[dep] = []*repositoryPackage{}
-				}
 				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
 					RepositoryPackage: pkg,
 					pinnedName:        index.Name(),
@@ -265,21 +347,62 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 		}
 	}
 	// create a map of every provided file to its package
-	allPkgs := make([][]*repositoryPackage, 0, len(pkgNameMap))
-	for _, pkgVersions := range pkgNameMap {
+	allPkgs := make([][]*repositoryPackage, 0, len(nameMap))
+	for _, pkgVersions := range nameMap {
 		allPkgs = append(allPkgs, pkgVersions)
 	}
 	for _, pkgVersions := range allPkgs {
 		for _, pkg := range pkgVersions {
 			for _, provide := range pkg.Provides {
 				name := cachedResolvePackageNameVersionPin(provide).Name
-				pkgNameMap[name] = append(pkgNameMap[name], pkg)
+				nameMap[name] = append(nameMap[name], pkg)
 			}
 		}
 	}
-	p.nameMap = pkgNameMap
-	p.installIfMap = installIfMap
-	return p
+	return nameMap, installIfMap
+}
+
+// candidates returns the packages named or providing name that the filter
+// keeps. ok is false when there are none.
+func (p *PkgResolver) candidates(name string) (pkgs []*repositoryPackage, ok bool) {
+	return p.lookup(p.nameMap, &p.keptNames, name)
+}
+
+// installIf returns the packages with the install-if trigger dep that the
+// filter keeps. ok is false when there are none.
+func (p *PkgResolver) installIf(dep string) (pkgs []*repositoryPackage, ok bool) {
+	return p.lookup(p.installIfMap, &p.keptInstallIf, dep)
+}
+
+func (p *PkgResolver) lookup(m map[string][]*repositoryPackage, memo *map[string][]*repositoryPackage, key string) ([]*repositoryPackage, bool) {
+	all, ok := m[key]
+	if !ok || p.keep == nil {
+		return all, ok
+	}
+	if kept, done := (*memo)[key]; done {
+		return kept, len(kept) != 0
+	}
+
+	kept := all
+	for i, pkg := range all {
+		if p.keep(pkg.RepositoryPackage) {
+			continue
+		}
+		// Copy only once something is rejected; the map's slices are shared.
+		kept = slices.Clone(all[:i])
+		for _, pkg := range all[i+1:] {
+			if p.keep(pkg.RepositoryPackage) {
+				kept = append(kept, pkg)
+			}
+		}
+		break
+	}
+
+	if *memo == nil {
+		*memo = map[string][]*repositoryPackage{}
+	}
+	(*memo)[key] = kept
+	return kept, len(kept) != 0
 }
 
 // We select the next package based on the smallest number of candidate packages.
@@ -315,7 +438,7 @@ func (p *PkgResolver) nextPackage(packages []string, dq map[*RepositoryPackage]s
 // Disqualify anything that provides "constraint". This is used for !foo style constraints.
 func (p *PkgResolver) disqualifyProviders(constraint string, dq map[*RepositoryPackage]string) {
 	parsed := cachedResolvePackageNameVersionPin(constraint)
-	providers, ok := p.nameMap[parsed.Name]
+	providers, ok := p.candidates(parsed.Name)
 	if !ok {
 		return
 	}
@@ -367,7 +490,7 @@ func (p *PkgResolver) conflictingVersion(constraint ParsedConstraint, conflict *
 func (p *PkgResolver) disqualifyConflicts(pkg *RepositoryPackage, dq map[*RepositoryPackage]string) {
 	for _, prov := range pkg.Provides {
 		constraint := cachedResolvePackageNameVersionPin(prov)
-		providers, ok := p.nameMap[constraint.Name]
+		providers, ok := p.candidates(constraint.Name)
 		if !ok {
 			continue
 		}
@@ -441,7 +564,7 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 			continue
 		}
 
-		providers, ok := p.nameMap[parsed.Name]
+		providers, ok := p.candidates(parsed.Name)
 		if !ok {
 			continue
 		}
@@ -604,9 +727,9 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 	}
 	// are there any installIf dependencies?
 	for dep, depPkg := range added {
-		depPkgList, ok := p.installIfMap[dep]
+		depPkgList, ok := p.installIf(dep)
 		if !ok {
-			depPkgList, ok = p.installIfMap[fmt.Sprintf("%s=%s", dep, depPkg.Version)]
+			depPkgList, ok = p.installIf(fmt.Sprintf("%s=%s", dep, depPkg.Version))
 		}
 		if !ok {
 			continue
@@ -648,7 +771,7 @@ func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName st
 func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]string) ([]*RepositoryPackage, error) {
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
-	pkgsWithVersions, ok := p.nameMap[name]
+	pkgsWithVersions, ok := p.candidates(name)
 	if !ok {
 		return nil, fmt.Errorf("nothing provides %q", name)
 	}
@@ -675,7 +798,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 	constraint := cachedResolvePackageNameVersionPin(pkgName)
 	name, version, compare, pin := constraint.Name, constraint.Version, constraint.dep, constraint.pin
 
-	pkgsWithVersions, ok := p.nameMap[name]
+	pkgsWithVersions, ok := p.candidates(name)
 	if !ok {
 		return nil, fmt.Errorf("nothing provides %q", name)
 	}
@@ -833,7 +956,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 			}
 
 			// first see if it is a name of a package
-			depPkgWithVersions, ok := p.nameMap[name]
+			depPkgWithVersions, ok := p.candidates(name)
 			if !ok {
 				return nil, nil, &ConstraintError{dep, fmt.Errorf("nothing provides %q", name)}
 			}
