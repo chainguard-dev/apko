@@ -560,3 +560,104 @@ func TestRankedKeepsSharedSlices(t *testing.T) {
 	got, _ = reversed.Ranked(nil).candidates("foo")
 	require.Equal(t, "2-r0", got[0].Version)
 }
+
+// TestFilteredByArchMatchesPerTenant checks that resolving filtered catalog
+// resolvers with GetPackagesWithDependenciesByArch disqualifies across arches
+// exactly as resolving each tenant's own indexes does, and caches nothing.
+func TestFilteredByArchMatchesPerTenant(t *testing.T) {
+	ctx := t.Context()
+	newCatalog := func() []*Package {
+		return []*Package{
+			{Name: "app", Version: "1-r0", Dependencies: []string{"lib"}},
+			{Name: "foo", Version: "1-r0"},
+			{Name: "foo", Version: "2-r0"},
+			{Name: "lib", Version: "1-r0"},
+			{Name: "lib", Version: "2-r0"},
+		}
+	}
+	arches := []string{"x86_64", "aarch64"}
+
+	for _, tc := range []struct {
+		name  string
+		world []string
+		// tenant lists, per arch, the name-versions the tenant's repo has.
+		tenant map[string][]string
+		want   []string
+	}{{
+		name:  "newest version missing on one arch",
+		world: []string{"foo"},
+		tenant: map[string][]string{
+			"x86_64":  {"foo-1-r0", "foo-2-r0"},
+			"aarch64": {"foo-1-r0"},
+		},
+		want: []string{"foo-1-r0"},
+	}, {
+		name:  "newest version on every arch",
+		world: []string{"foo"},
+		tenant: map[string][]string{
+			"x86_64":  {"foo-1-r0", "foo-2-r0"},
+			"aarch64": {"foo-1-r0", "foo-2-r0"},
+		},
+		want: []string{"foo-2-r0"},
+	}, {
+		name:  "dependency version missing on one arch",
+		world: []string{"app"},
+		tenant: map[string][]string{
+			"x86_64":  {"app-1-r0", "lib-1-r0", "lib-2-r0"},
+			"aarch64": {"app-1-r0", "lib-1-r0"},
+		},
+		want: []string{"lib-1-r0", "app-1-r0"},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			catalogs := map[string]NamedIndex{}
+			tenants := map[string][]NamedIndex{}
+			filtered := map[string]*PkgResolver{}
+			for _, arch := range arches {
+				catalog := newCatalog()
+				catalogs[arch] = filterTestIndex(catalog)
+				var own []*Package
+				for _, pkg := range catalog {
+					if slices.Contains(tc.tenant[arch], pkgKey(pkg)) {
+						own = append(own, pkg)
+					}
+				}
+				tenants[arch] = []NamedIndex{filterTestIndex(own)}
+				filtered[arch] = BuildPkgResolver(ctx, []NamedIndex{catalogs[arch]}).Filtered(func(rp *RepositoryPackage) bool {
+					return slices.Contains(tc.tenant[arch], pkgKey(rp.Package))
+				})
+			}
+
+			for _, arch := range arches {
+				stock, _, err := NewPkgResolver(ctx, tenants[arch]).GetPackagesWithDependencies(ctx, tc.world, tenants)
+				require.NoError(t, err)
+				got, _, err := filtered[arch].GetPackagesWithDependenciesByArch(ctx, tc.world, filtered)
+				require.NoError(t, err)
+
+				render := func(pkgs []*RepositoryPackage) []string {
+					keys := make([]string, 0, len(pkgs))
+					for _, pkg := range pkgs {
+						keys = append(keys, pkgKey(pkg.Package))
+					}
+					return keys
+				}
+				require.Equal(t, tc.want, render(stock), arch)
+				require.Equal(t, tc.want, render(got), arch)
+			}
+
+			requireNotCached(t, globalResolverCache.lruCache, catalogs)
+			requireNotCached(t, globalDisqualifyCache.lruCache, catalogs)
+		})
+	}
+}
+
+// requireNotCached checks that no entry of c is keyed by any of indexes.
+func requireNotCached[V any](t *testing.T, c *lruCache[V], indexes map[string]NamedIndex) {
+	t.Helper()
+	c.Lock()
+	defer c.Unlock()
+	for _, e := range c.entries {
+		for _, idx := range indexes {
+			require.NotContains(t, e.indexes, idx)
+		}
+	}
+}

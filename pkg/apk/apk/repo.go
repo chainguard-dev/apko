@@ -254,6 +254,12 @@ func (p *PkgResolver) Clone() *PkgResolver {
 // keep must give the same answer for a package for the lifetime of the
 // returned resolver. Filtering an already filtered resolver keeps only the
 // packages both filters accept; a nil keep adds no filter.
+//
+// For a multi-arch build, resolve with GetPackagesWithDependenciesByArch:
+// GetPackagesWithDependencies checks the other arches against their whole
+// indexes. The returned resolver memoizes lookups, even in ResolvePackage, so
+// it must not be used from more than one goroutine; give each goroutine its
+// own Filtered or Clone.
 func (p *PkgResolver) Filtered(keep PackageFilter) *PkgResolver {
 	c := p.Clone()
 	switch {
@@ -280,7 +286,8 @@ func (p *PkgResolver) Filtered(keep PackageFilter) *PkgResolver {
 // the order among packages of one name matters.
 //
 // rank must give the same answer for a package for the lifetime of the
-// returned resolver.
+// returned resolver. Like Filtered, the returned resolver memoizes lookups
+// and must not be used from more than one goroutine.
 func (p *PkgResolver) Ranked(rank PackageRank) *PkgResolver {
 	c := p.Clone()
 	if rank != nil {
@@ -301,7 +308,9 @@ func NewPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 // BuildPkgResolver creates a new PkgResolver from a list of indexes, like
 // NewPkgResolver, but without the process-wide resolver cache: the resolver
 // and the indexes it references are retained only for as long as the caller
-// holds them.
+// holds them. That holds only for resolutions that leave allArchs nil or use
+// GetPackagesWithDependenciesByArch, as the multi-arch check of
+// GetPackagesWithDependencies caches its indexes process-wide.
 func BuildPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	return newPkgResolver(ctx, indexes)
 }
@@ -320,8 +329,8 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 }
 
 // Extend returns a new PkgResolver that resolves over p's packages plus the
-// packages of indexes, as if built from both sets of indexes; any filter on p
-// carries over. p itself is not modified, so resolutions already using p, or
+// packages of indexes, as if built from both sets of indexes; any filter and
+// rank on p carry over, so a rank must place the added packages too. p itself is not modified, so resolutions already using p, or
 // other resolvers extended from it, are unaffected.
 //
 // Extending copies p's top-level maps, so it costs time proportional to the
@@ -689,13 +698,38 @@ func (p *PkgResolver) constrain(constraints []string, dq map[*RepositoryPackage]
 
 // GetPackagesWithDependencies get all of the dependencies for the given packages based on the
 // indexes. Does not filter for installed already or not.
+//
+// allArchs holds the indexes of every arch being built, and a package not
+// available on all of them is disqualified. That check reads the indexes
+// whole, ignoring any filter on p, and caches resolvers for them
+// process-wide; use GetPackagesWithDependenciesByArch with Filtered or
+// BuildPkgResolver resolvers.
 func (p *PkgResolver) GetPackagesWithDependencies(ctx context.Context, packages []string, allArchs map[string][]NamedIndex) (toInstall []*RepositoryPackage, conflicts []string, err error) {
-	_, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependencies")
 	defer span.End()
 
-	// Tracks all the packages we have disqualified and the reason we disqualified them.
-	dq := globalDisqualifyCache.Get(ctx, allArchs)
+	return p.getPackagesWithDependencies(ctx, packages, globalDisqualifyCache.Get(ctx, allArchs))
+}
 
+// GetPackagesWithDependenciesByArch is GetPackagesWithDependencies with the
+// cross-arch check made over resolvers instead of indexes: byArch holds a
+// resolver for every arch being built, p's included, and a package is
+// disqualified unless each of them considers a package of the same name and
+// version. Their filters apply, and nothing is cached.
+//
+// The resolvers in byArch are only read, so one byArch may serve concurrent
+// resolutions of each of its arches provided their filters are safe for
+// concurrent use.
+func (p *PkgResolver) GetPackagesWithDependenciesByArch(ctx context.Context, packages []string, byArch map[string]*PkgResolver) (toInstall []*RepositoryPackage, conflicts []string, err error) {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "GetPackagesWithDependenciesByArch")
+	defer span.End()
+
+	return p.getPackagesWithDependencies(ctx, packages, disqualifyResolverDifference(byArch))
+}
+
+// getPackagesWithDependencies resolves packages, starting from the
+// disqualifications in dq, which it takes ownership of.
+func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages []string, dq map[*RepositoryPackage]string) (toInstall []*RepositoryPackage, conflicts []string, err error) {
 	// We're going to mutate this as our set of input packages to install, so make a copy.
 	constraints := slices.Clone(packages)
 
@@ -1374,6 +1408,54 @@ func maybedqerror(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string) e
 	}
 
 	return errors.New("not in indexes")
+}
+
+// disqualifyResolverDifference is disqualifyDifference over the packages each
+// resolver's filter keeps. It does not touch the resolvers' memo maps.
+func disqualifyResolverDifference(byArch map[string]*PkgResolver) map[*RepositoryPackage]string {
+	dq := map[*RepositoryPackage]string{}
+	if len(byArch) <= 1 {
+		return dq
+	}
+
+	// kept walks every package r considers, once per name it is known by.
+	kept := func(r *PkgResolver, fn func(*repositoryPackage)) {
+		for _, pkgs := range r.nameMap {
+			for _, pkg := range r.filter(pkgs) {
+				fn(pkg)
+			}
+		}
+	}
+
+	// arch -> name -> set[version]
+	allowablePackages := make(map[string]map[string]map[string]struct{}, len(byArch))
+	for arch, r := range byArch {
+		allowed := map[string]map[string]struct{}{}
+		kept(r, func(pkg *repositoryPackage) {
+			versions, ok := allowed[pkg.Name]
+			if !ok {
+				versions = map[string]struct{}{}
+				allowed[pkg.Name] = versions
+			}
+			versions[pkg.Version] = struct{}{}
+		})
+		allowablePackages[arch] = allowed
+	}
+
+	for arch, r := range byArch {
+		for otherArch, allowed := range allowablePackages {
+			if otherArch == arch {
+				continue
+			}
+			kept(r, func(pkg *repositoryPackage) {
+				if _, ok := allowed[pkg.Name][pkg.Version]; !ok {
+					dq[pkg.RepositoryPackage] = fmt.Sprintf("package %q not available for arch %q", pkg.Filename(), otherArch)
+				}
+			})
+		}
+	}
+
+	return dq
 }
 
 func disqualifyDifference(ctx context.Context, byArch map[string][]NamedIndex) map[*RepositoryPackage]string {
