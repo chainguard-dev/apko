@@ -208,10 +208,12 @@ type PkgResolver struct {
 	nameMap      map[string][]*repositoryPackage
 	installIfMap map[string][]*repositoryPackage // contains any package that should be installed if the named package is installed
 
-	// keep, when set, hides every package it rejects from resolution. The
-	// kept* maps memoize keep over nameMap and installIfMap lookups; like
-	// selected, they make a PkgResolver unsafe for concurrent use.
+	// keep, when set, hides every package it rejects from resolution, and
+	// rank, when set, orders the packages a lookup returns. The kept* maps
+	// memoize both over nameMap and installIfMap lookups; like selected,
+	// they make a PkgResolver unsafe for concurrent use.
 	keep          PackageFilter
+	rank          PackageRank
 	keptNames     map[string][]*repositoryPackage
 	keptInstallIf map[string][]*repositoryPackage
 
@@ -223,6 +225,10 @@ type PkgResolver struct {
 // resolution. See PkgResolver.Filtered.
 type PackageFilter func(*RepositoryPackage) bool
 
+// PackageRank places a package among the others a resolver considers for the
+// same name. See PkgResolver.Ranked.
+type PackageRank func(*RepositoryPackage) uint64
+
 // Clone returns a copy of PkgResolver.
 func (p *PkgResolver) Clone() *PkgResolver {
 	return &PkgResolver{
@@ -230,6 +236,7 @@ func (p *PkgResolver) Clone() *PkgResolver {
 		nameMap:      p.nameMap,
 		installIfMap: p.installIfMap,
 		keep:         p.keep,
+		rank:         p.rank,
 		selected:     map[string]*RepositoryPackage{},
 	}
 }
@@ -239,6 +246,10 @@ func (p *PkgResolver) Clone() *PkgResolver {
 // selection, provides, install-if, conflicts and "nothing provides" errors
 // all ignore the rejected packages. The copy shares p's package maps, so it
 // is cheap to create one per resolution over a large resolver.
+//
+// Where resolution breaks a tie by position, the kept packages keep p's
+// order, which need not be the order of the index they came from; Ranked
+// restores it.
 //
 // keep must give the same answer for a package for the lifetime of the
 // returned resolver. Filtering an already filtered resolver keeps only the
@@ -252,6 +263,28 @@ func (p *PkgResolver) Filtered(keep PackageFilter) *PkgResolver {
 	default:
 		outer := c.keep
 		c.keep = func(pkg *RepositoryPackage) bool { return outer(pkg) && keep(pkg) }
+	}
+	return c
+}
+
+// Ranked returns a copy of p that considers the candidates for a name, and
+// the install-if packages for a trigger, in ascending rank, packages of equal
+// rank keeping p's order. A nil rank keeps p's order; a rank replaces any
+// earlier one.
+//
+// Resolution breaks some ties by position: between packages of the same
+// name and version, and among install-if packages of one name, the first
+// wins. A resolver built from indexes considers packages in index order, so
+// a filtered resolver over packages gathered from many indexes resolves as
+// one built from a single index only when ranked by that index's order. Only
+// the order among packages of one name matters.
+//
+// rank must give the same answer for a package for the lifetime of the
+// returned resolver.
+func (p *PkgResolver) Ranked(rank PackageRank) *PkgResolver {
+	c := p.Clone()
+	if rank != nil {
+		c.rank = rank
 	}
 	return c
 }
@@ -316,6 +349,7 @@ func (p *PkgResolver) Extend(ctx context.Context, indexes ...NamedIndex) *PkgRes
 		nameMap:      nameMap,
 		installIfMap: installIfMap,
 		keep:         p.keep,
+		rank:         p.rank,
 		selected:     map[string]*RepositoryPackage{},
 	}
 }
@@ -376,26 +410,16 @@ func (p *PkgResolver) installIf(dep string) (pkgs []*repositoryPackage, ok bool)
 
 func (p *PkgResolver) lookup(m map[string][]*repositoryPackage, memo *map[string][]*repositoryPackage, key string) ([]*repositoryPackage, bool) {
 	all, ok := m[key]
-	if !ok || p.keep == nil {
+	if !ok || (p.keep == nil && p.rank == nil) {
 		return all, ok
 	}
 	if kept, done := (*memo)[key]; done {
 		return kept, len(kept) != 0
 	}
 
-	kept := all
-	for i, pkg := range all {
-		if p.keep(pkg.RepositoryPackage) {
-			continue
-		}
-		// Copy only once something is rejected; the map's slices are shared.
-		kept = slices.Clone(all[:i])
-		for _, pkg := range all[i+1:] {
-			if p.keep(pkg.RepositoryPackage) {
-				kept = append(kept, pkg)
-			}
-		}
-		break
+	kept := p.filter(all)
+	if p.rank != nil {
+		kept = p.order(kept, len(kept) != len(all))
 	}
 
 	if *memo == nil {
@@ -403,6 +427,54 @@ func (p *PkgResolver) lookup(m map[string][]*repositoryPackage, memo *map[string
 	}
 	(*memo)[key] = kept
 	return kept, len(kept) != 0
+}
+
+// filter returns the packages of all that keep accepts, in order. It returns
+// all itself when keep accepts every one (or there is no keep), so the result
+// must not be modified.
+func (p *PkgResolver) filter(all []*repositoryPackage) []*repositoryPackage {
+	if p.keep == nil {
+		return all
+	}
+	for i, pkg := range all {
+		if p.keep(pkg.RepositoryPackage) {
+			continue
+		}
+		// Copy only once something is rejected; the map's slices are shared.
+		kept := slices.Clone(all[:i])
+		for _, pkg := range all[i+1:] {
+			if p.keep(pkg.RepositoryPackage) {
+				kept = append(kept, pkg)
+			}
+		}
+		return kept
+	}
+	return all
+}
+
+// order returns pkgs stably sorted by rank. It sorts pkgs in place when owned
+// is true, and a copy otherwise.
+func (p *PkgResolver) order(pkgs []*repositoryPackage, owned bool) []*repositoryPackage {
+	type ranked struct {
+		pkg  *repositoryPackage
+		rank uint64
+	}
+	rs := make([]ranked, len(pkgs))
+	for i, pkg := range pkgs {
+		rs[i] = ranked{pkg, p.rank(pkg.RepositoryPackage)}
+	}
+	byRank := func(a, b ranked) int { return cmp.Compare(a.rank, b.rank) }
+	if slices.IsSortedFunc(rs, byRank) {
+		return pkgs
+	}
+	slices.SortStableFunc(rs, byRank)
+	if !owned {
+		pkgs = make([]*repositoryPackage, len(rs))
+	}
+	for i, r := range rs {
+		pkgs[i] = r.pkg
+	}
+	return pkgs
 }
 
 // We select the next package based on the smallest number of candidate packages.

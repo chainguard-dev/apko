@@ -19,6 +19,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -459,4 +460,103 @@ func TestBuildPkgResolverBypassesCache(t *testing.T) {
 		require.NotContains(t, e.indexes, idx1)
 		require.NotContains(t, e.indexes, idx2)
 	}
+}
+
+// TestRankedRestoresIndexOrder checks that a filtered resolver over packages
+// one index contributed before another resolves as a resolver built from the
+// other index does, once ranked by that index's order, where resolution
+// breaks ties by position.
+func TestRankedRestoresIndexOrder(t *testing.T) {
+	app := &Package{Name: "app", Version: "1-r0", Dependencies: []string{"foo", "bash"}}
+	foo := &Package{Name: "foo", Version: "1-r0"}
+	bash := &Package{Name: "bash", Version: "5-r0"}
+	completion11 := &Package{Name: "foo-bash-completion", Version: "1.1-r0", InstallIf: []string{"foo", "bash"}}
+	completion10 := &Package{Name: "foo-bash-completion", Version: "1.0-r0", InstallIf: []string{"foo", "bash"}}
+	checksumX := &Package{Name: "dup", Version: "1-r0", Checksum: []byte("x")}
+	checksumY := &Package{Name: "dup", Version: "1-r0", Checksum: []byte("y")}
+
+	for _, tc := range []struct {
+		name string
+		// first is what another index contributed earlier; index is the
+		// tenant's, in its order, sharing packages with first.
+		first, index []*Package
+		world        []string
+		want         string // name-version and checksum of the package that must win
+	}{{
+		name:  "first install-if package of a name",
+		first: []*Package{completion11},
+		index: []*Package{app, foo, bash, completion10, completion11},
+		world: []string{"app"},
+		want:  "foo-bash-completion-1.0-r0 ",
+	}, {
+		name:  "same name and version",
+		first: []*Package{checksumX},
+		index: []*Package{checksumY, checksumX},
+		world: []string{"dup"},
+		want:  fmt.Sprintf("dup-1-r0 %x ", "y"),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			position := make(map[*Package]uint64, len(tc.index))
+			var added []*Package
+			for i, pkg := range tc.index {
+				position[pkg] = uint64(i)
+				if !slices.Contains(tc.first, pkg) {
+					added = append(added, pkg)
+				}
+			}
+			shared := BuildPkgResolver(ctx, []NamedIndex{filterTestIndex(tc.first)}).Extend(ctx, filterTestIndex(added))
+			member := func(rp *RepositoryPackage) bool {
+				_, ok := position[rp.Package]
+				return ok
+			}
+
+			built, _, err := resolveForTest(t, BuildPkgResolver(ctx, []NamedIndex{filterTestIndex(tc.index)}), tc.world)
+			require.NoError(t, err)
+			requireWins(t, built, tc.want)
+
+			ranked, _, err := resolveForTest(t, shared.Filtered(member).Ranked(func(rp *RepositoryPackage) uint64 { return position[rp.Package] }), tc.world)
+			require.NoError(t, err)
+			require.ElementsMatch(t, built, ranked)
+
+			// Unranked, the package the other index contributed comes first.
+			unranked, _, err := resolveForTest(t, shared.Filtered(member), tc.world)
+			require.NoError(t, err)
+			require.NotSubset(t, unranked, built)
+		})
+	}
+}
+
+func requireWins(t *testing.T, resolved []string, want string) {
+	t.Helper()
+	for _, r := range resolved {
+		if strings.HasPrefix(r, want) {
+			return
+		}
+	}
+	require.Failf(t, "package not resolved", "want %q in %v", want, resolved)
+}
+
+func TestRankedKeepsSharedSlices(t *testing.T) {
+	ctx := t.Context()
+	r := BuildPkgResolver(ctx, []NamedIndex{filterTestIndex([]*Package{
+		{Name: "foo", Version: "1-r0"},
+		{Name: "foo", Version: "2-r0"},
+	})})
+	before := slices.Clone(r.nameMap["foo"])
+
+	reversed := r.Ranked(func(rp *RepositoryPackage) uint64 {
+		if rp.Version == "1-r0" {
+			return 1
+		}
+		return 0
+	})
+	got, ok := reversed.candidates("foo")
+	require.True(t, ok)
+	require.Equal(t, "2-r0", got[0].Version)
+	require.Equal(t, before, r.nameMap["foo"], "Ranked reordered the shared map slice")
+
+	// A nil rank keeps the earlier one.
+	got, _ = reversed.Ranked(nil).candidates("foo")
+	require.Equal(t, "2-r0", got[0].Version)
 }
