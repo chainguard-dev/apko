@@ -74,6 +74,8 @@ type APK struct {
 	packageGetter      PackageGetter
 	sizeLimits         *SizeLimits
 
+	keys        map[string][]byte
+	runtimeKeys map[string][]byte
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
 
@@ -154,11 +156,24 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		offline:            opt.offline,
 		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
+		keys:               make(map[string][]byte),
+		runtimeKeys:        make(map[string][]byte),
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
 		packageGetter:      packageGetter,
 		sizeLimits:         opt.sizeLimits,
 	}, nil
+}
+
+func (a *APK) addkey(key Key) {
+	a.keys[key.ID] = key.Bytes
+}
+
+func (a *APK) addRuntimeKey(key Key) {
+	if a.runtimeKeys == nil {
+		a.runtimeKeys = make(map[string][]byte)
+	}
+	a.runtimeKeys[key.ID] = key.Bytes
 }
 
 type directory struct {
@@ -360,7 +375,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	// Perform key discovery for the various build-time repositories.
 	for _, repo := range buildRepos {
 		if ver, ok := ParseAlpineVersion(repo); ok {
-			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
+			if err := a.fetchAlpineKeys(ctx, false, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
 				if !a.offline && !errors.As(err, &nokeysErr) {
 					return &AlpineKeyFetchError{
@@ -373,12 +388,48 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 			}
 		}
 
-		if err := a.fetchChainguardKeys(ctx, repo); err != nil {
+		if err := a.fetchChainguardKeys(ctx, false, repo); err != nil {
 			return fmt.Errorf("fetching chainguard keys for %s: %w", repo, err)
 		}
 	}
 
 	log.Debug("finished initializing apk database")
+	return nil
+}
+
+func (a *APK) InitRuntimeKeys(ctx context.Context, repositories ...string) error {
+	for _, repo := range repositories {
+		if ver, ok := ParseAlpineVersion(repo); ok {
+			if err := a.fetchAlpineKeys(ctx, true, ver); err != nil {
+				var noKeysErr *NoKeysFoundError
+				if !a.cache.offline && !errors.As(err, &noKeysErr) {
+					return fmt.Errorf("failed to fetch alpine runtime keys: %w", err)
+				}
+			}
+			continue
+		}
+		if err := a.fetchChainguardKeys(ctx, true, repo); err != nil {
+			return fmt.Errorf("failed to fetch chainguard runtime keys for %s: %w", repo, err)
+		}
+	}
+	return nil
+}
+
+func (a *APK) WriteRuntimeKeys() error {
+	if len(a.runtimeKeys) == 0 {
+		return nil
+	}
+	if err := a.fs.MkdirAll(keysDirPath, 0o755); err != nil {
+		return fmt.Errorf("failed to create apk keys directory: %w", err)
+	}
+
+	for name, data := range a.runtimeKeys {
+		filename := filepath.Join(keysDirPath, name)
+
+		if err := a.fs.WriteFile(filename, data, 0o644); err != nil {
+			return fmt.Errorf("failed to write runtime keys %s: %w", filename, err)
+		}
+	}
 	return nil
 }
 
@@ -616,11 +667,10 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				return fmt.Errorf("scheme %s not supported", asURL.Scheme)
 			}
 
-			// #nosec G306 -- apk keyring must be publicly readable
-			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", filepath.Base(element)), data,
-				0o644); err != nil {
-				return fmt.Errorf("failed to write apk key: %w", err)
-			}
+			a.addkey(Key{
+				ID:    filepath.Base(element),
+				Bytes: data,
+			})
 
 			return nil
 		})
@@ -1020,7 +1070,7 @@ func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, e
 }
 
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
+func (a *APK) fetchAlpineKeys(ctx context.Context, runtime bool, alpineVersions ...string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
 	defer span.End()
 
@@ -1061,15 +1111,24 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 		if err != nil {
 			return fmt.Errorf("failed to unescape key filename %s: %w", basefilenameEscape, err)
 		}
-		filename := filepath.Join(keysDirPath, basefilename)
-		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
+		data, err := io.ReadAll(res.Body)
 		if err != nil {
-			return fmt.Errorf("failed to open key file %s: %w", filename, err)
+			return fmt.Errorf("failed to read alpine keys %s : %w", u, err)
 		}
-		defer f.Close()
-		if _, err := io.Copy(f, res.Body); err != nil {
-			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		key := Key{
+			ID:    basefilename,
+			Bytes: data,
 		}
+		if runtime {
+			a.addRuntimeKey(key)
+		} else {
+			a.addkey(key)
+		}
+
+		a.addkey(Key{
+			ID:    basefilename,
+			Bytes: data,
+		})
 	}
 	return nil
 }
@@ -1233,7 +1292,7 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
+func (a *APK) fetchChainguardKeys(ctx context.Context, runtime bool, repository string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
 	defer span.End()
 
@@ -1250,9 +1309,10 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	}
 
 	for _, key := range keys {
-		filename := filepath.Join(keysDirPath, key.ID)
-		if err := a.fs.WriteFile(filename, key.Bytes, 0o644); err != nil {
-			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		if runtime {
+			a.addRuntimeKey(key)
+		} else {
+			a.addkey(key)
 		}
 	}
 	return nil
