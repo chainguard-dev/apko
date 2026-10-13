@@ -5,7 +5,7 @@
 
 set -ex
 
-REGISTRY_BASE_IMAGE="index.docker.io/library/registry:2.8.1"
+REGISTRY_BASE_IMAGE="cgr.dev/chainguard/registry:latest"
 REGISTRY_CONTAINER_NAME="ci-testing-registry"
 PORT=${PORT:-${RANDOM}}
 

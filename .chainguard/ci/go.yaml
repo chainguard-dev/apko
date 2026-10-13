@@ -112,14 +112,9 @@ checks:
         - storage.googleapis.com
         - packages.wolfi.dev
         - apk.cgr.dev
-        # hack/ci/01-publish.sh runs index.docker.io/library/registry:2.8.1,
-        # whose layers Docker Hub serves from any of the CDNs below.
-        - index.docker.io
-        - registry-1.docker.io
-        - auth.docker.io
-        - production.cloudflare.docker.com
-        - production.cloudfront.docker.com
-        - docker-images-prod.s3.dualstack.us-east-1.amazonaws.com
+        # hack/ci/01-publish.sh runs cgr.dev/chainguard/registry.
+        - cgr.dev
+        - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
     steps:
       - name: build
         cmd: [sh, -c, "make apko && ./apko version"]
