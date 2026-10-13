@@ -1,0 +1,15 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# An in-memory OCI registry on localhost, in place of the
+# chainguard-dev/actions/setup-registry action the workflows used.
+version: 1
+name: registry
+packages: [busybox, crane]
+cmd: [sh, ./registry.sh]
+timeout: 30s
+inputs:
+  port:
+    type: integer
+    default: "5000"
+    env: REGISTRY_PORT

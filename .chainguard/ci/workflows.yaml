@@ -1,0 +1,47 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Replaces .github/workflows/actionlint.yaml and zizmor.yaml, for as long as
+# GitHub Actions workflows remain.
+version: 1
+
+environment:
+  packages: [actionlint~1.7, shellcheck~0.11, zizmor~1.30, bash, findutils, grep]
+
+checks:
+  actionlint:
+    when:
+      changed:
+        - ".github/workflows/**"
+        - ".github/actions/**"
+        - ".chainguard/ci/workflows.yaml"
+    description: >-
+      Runs actionlint, with shellcheck on, over every workflow under
+      .github/workflows.
+    trigger: [presubmit, postsubmit]
+    timeout: 5m
+    vars:
+      SHELLCHECK_OPTS: --exclude=SC2129
+    shell: bash
+    script: |
+      set -eu
+      mapfile -t yamls < <(find .github/workflows -name "*.y*ml" | grep -v dependabot.)
+      actionlint "${yamls[@]}"
+
+  zizmor:
+    when:
+      changed:
+        - ".github/workflows/**"
+        - ".github/actions/**"
+        - ".github/dependabot.yml"
+        - ".github/zizmor.yml"
+        - ".chainguard/ci/workflows.yaml"
+    description: >-
+      Runs zizmor with the pedantic persona over .github, failing on any
+      finding. The GitHub workflow uploaded SARIF to Code Scanning instead;
+      a check has no token that can. It runs offline, so the audits that
+      query GitHub (impostor commits, known-vulnerable actions, stale pins)
+      are skipped.
+    trigger: [presubmit, postsubmit]
+    timeout: 5m
+    cmd: zizmor --persona pedantic --offline .github
