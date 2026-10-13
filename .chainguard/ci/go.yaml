@@ -60,9 +60,9 @@ checks:
         - build-base
         - git
         - make
-        # verify.yaml pins v2.13.1; Wolfi's oldest is 2.13.2. Keep the two in
-        # step.
-        - golangci-lint~2.13
+        # verify.yaml pins v2.13.1, but Wolfi's 2.13 builds predate Go 1.27
+        # and cannot read its export data.
+        - golangci-lint~2.14
       vars:
         GOTOOLCHAIN: local
         GOTMPDIR: /var/tmp
@@ -118,6 +118,7 @@ checks:
         - registry-1.docker.io
         - auth.docker.io
         - production.cloudflare.docker.com
+        - production.cloudfront.docker.com
     steps:
       - name: build
         cmd: [sh, -c, "make apko && ./apko version"]

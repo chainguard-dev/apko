@@ -55,6 +55,9 @@ checks:
       on macos-latest, which Checks has no guest for.
     trigger: [presubmit, postsubmit]
     timeout: 30m
+    vars:
+      # /tmp is a tmpfs sized from guest RAM, which the larger examples fill.
+      TMPDIR: /var/tmp
     network:
       egress: *egress
     shell: bash
@@ -68,8 +71,8 @@ checks:
         if [ -f "${build_script}" ]; then
           "${build_script}" ./apko
         else
-          ./apko build "${cfg}" "${name}:build" /tmp/"${name}".tar
-          ./apko build --offline "${cfg}" "${name}:build" /tmp/"${name}".tar
+          ./apko build "${cfg}" "${name}:build" /var/tmp/"${name}".tar
+          ./apko build --offline "${cfg}" "${name}:build" /var/tmp/"${name}".tar
         fi
       done < <(find ./examples/ -name '*.yaml')
 
