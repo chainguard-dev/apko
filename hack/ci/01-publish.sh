@@ -5,7 +5,7 @@
 
 set -ex
 
-REGISTRY_BASE_IMAGE="cgr.dev/chainguard/distribution:latest"
+REGISTRY_BASE_IMAGE="cgr.dev/chainguard-private/distribution:latest"
 REGISTRY_CONTAINER_NAME="ci-testing-registry"
 PORT=${PORT:-${RANDOM}}
 

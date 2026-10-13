@@ -102,6 +102,8 @@ checks:
       vars:
         GOTOOLCHAIN: local
         GOTMPDIR: /var/tmp
+    # Pulls cgr.dev/chainguard-private/distribution for hack/ci's registry.
+    identity: registry-pull
     trigger: [presubmit, postsubmit]
     resources: medium-amd64
     timeout: 45m
@@ -112,7 +114,7 @@ checks:
         - storage.googleapis.com
         - packages.wolfi.dev
         - apk.cgr.dev
-        # hack/ci/01-publish.sh runs cgr.dev/chainguard/distribution.
+        # hack/ci/01-publish.sh runs cgr.dev/chainguard-private/distribution.
         - cgr.dev
         - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
     steps:
