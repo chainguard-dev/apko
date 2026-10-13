@@ -112,7 +112,7 @@ checks:
         - storage.googleapis.com
         - packages.wolfi.dev
         - apk.cgr.dev
-        # hack/ci/01-publish.sh runs cgr.dev/chainguard/registry.
+        # hack/ci/01-publish.sh runs cgr.dev/chainguard/distribution.
         - cgr.dev
         - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
     steps:
