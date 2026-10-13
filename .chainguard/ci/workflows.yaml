@@ -1,8 +1,7 @@
 # Copyright 2026 Chainguard, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-# Replaces .github/workflows/actionlint.yaml and zizmor.yaml, for as long as
-# GitHub Actions workflows remain.
+# Lints the GitHub Actions workflows that remain (codeql, release).
 version: 1
 
 environment:

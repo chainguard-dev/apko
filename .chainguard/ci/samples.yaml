@@ -1,8 +1,8 @@
 # Copyright 2026 Chainguard, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-# Replaces .github/workflows/build-samples.yml, examples-test.yaml and
-# erofs.yaml. Each check builds apko from the tree with make apko.
+# End-to-end checks of apko against examples/. Each check builds apko from
+# the tree with make apko.
 version: 1
 
 environment: examples

@@ -1,7 +1,7 @@
 # Copyright 2026 Chainguard, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-# Replaces .github/workflows/go-tests.yaml, verify.yaml and build.yaml.
+# Unit tests, lint, and the build with its hack/ci end-to-end scripts.
 version: 1
 
 checks:
@@ -60,8 +60,7 @@ checks:
         - build-base
         - git
         - make
-        # verify.yaml pins v2.13.1, but Wolfi's 2.13 builds predate Go 1.27
-        # and cannot read its export data.
+        # Wolfi's 2.13 builds predate Go 1.27 and cannot read its export data.
         - golangci-lint~2.14
       vars:
         GOTOOLCHAIN: local
