@@ -1,0 +1,40 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+version: 1
+# apko is public: a pull request reaches subring `member` only when a
+# chainguard-dev member or dependabot opened it, so a fork's pull request
+# from anyone else never holds an identity.
+trust:
+  groups:
+    members: {github: {org: chainguard-dev}}
+    bots:
+      github:
+        app:
+          dependabot: 49699333
+  subrings:
+    member: {authors: [members, bots]}
+  github_token: 1.member
+identities:
+  # Pulls cgr.dev/chainguard-private/distribution, the registry go/build's
+  # hack/ci tests run under Docker. The Chainguard identity is
+  # chainguard-dev/mono env/chainguard-images/iac/sandbox-apko-registry-pull.tf:
+  # registry.pull on chainguard-private.
+  registry-pull:
+    ring: 1.member
+    checks:
+      - go.checks.build
+    audiences:
+      - urn:chainguard:apko:registry-pull
+    chainguard:
+      cgr.dev:
+        identity: ce2d1984a010471142503340d670612d63ffb9f6/1f42412170e21a5e
+        exchange_audience: urn:chainguard:apko:registry-pull
+        role: registry.pull
+        scopes:
+          - ce2d1984a010471142503340d670612d63ffb9f6
+    allow:
+      - run: presubmit
+        target_ref: refs/heads/main
+      - run: postsubmit
+        ref: refs/heads/main
