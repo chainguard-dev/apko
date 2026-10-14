@@ -61,6 +61,7 @@ checks:
         - git
         - make
         # Wolfi's 2.13 builds predate Go 1.27 and cannot read its export data.
+        # The Makefile's golangci-lint target reads this pin.
         - golangci-lint~2.14
       vars:
         GOTOOLCHAIN: local
