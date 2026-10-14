@@ -23,6 +23,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+func dedup(lists ...[]string) []string {
+	seen := sets.New[string]()
+	var out []string
+	for _, list := range lists {
+		for _, item := range list {
+			if !seen.Has(item) {
+				seen.Insert(item)
+				out = append(out, item)
+			}
+		}
+	}
+	return out
+}
+
 func (bc *Context) postBuildSetApk(ctx context.Context) error {
 	// When building on top of base image, we add "artificial" apkindex to repositories that is
 	// stored in some temp path. After build is done we need to bring the repositories file to
@@ -30,10 +44,11 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 	//
 	// We do not include the build-time repositories here, because this is
 	// what defines the /etc/apk/repositories file in the final image.
-	runtimeRepos := sets.List(
-		sets.New(bc.ic.Contents.Repositories...).
-			Insert(bc.ic.Contents.RuntimeOnlyRepositories...).
-			Insert(bc.o.ExtraRepos...))
+	runtimeRepos := dedup(
+		bc.ic.Contents.Repositories,
+		bc.ic.Contents.RuntimeOnlyRepositories,
+		bc.o.ExtraRepos,
+	)
 	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
 		return fmt.Errorf("failed to set apk repositories: %w", err)
 	}
@@ -51,11 +66,11 @@ func (bc *Context) initializeApk(ctx context.Context) error {
 	//
 	// We do not include the runtime-only repositories here, because those repos
 	// should not be used at build time.
-	buildRepos := sets.List(
-		sets.New(bc.ic.Contents.BuildRepositories...).
-			Insert(bc.ic.Contents.Repositories...).
-			Insert(bc.o.ExtraBuildRepos...).
-			Insert(bc.o.ExtraRepos...),
+	buildRepos := dedup(
+		bc.ic.Contents.BuildRepositories,
+		bc.ic.Contents.Repositories,
+		bc.o.ExtraBuildRepos,
+		bc.o.ExtraRepos,
 	)
 	if err := bc.apk.InitDB(ctx, buildRepos...); err != nil {
 		return fmt.Errorf("failed to initialize apk database: %w", err)
