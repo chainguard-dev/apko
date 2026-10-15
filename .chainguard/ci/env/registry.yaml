@@ -1,0 +1,20 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# env/examples.yaml plus a registry on localhost:5000 for apko publish.
+version: 1
+
+environment:
+  packages:
+    - go-1.27~1.27
+    - bash
+    - coreutils
+    - git
+    - grep
+    - jq
+    - make
+    - crane~0.22
+  services: [registry]
+  vars:
+    GOTOOLCHAIN: local
+    GOTMPDIR: /var/tmp

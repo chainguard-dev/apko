@@ -110,11 +110,11 @@ install: $(SRCS) ## Builds and moves apko into BINDIR (default /usr/bin)
 
 GOLANGCI_LINT_DIR = $(shell pwd)/bin
 GOLANGCI_LINT_BIN = $(GOLANGCI_LINT_DIR)/golangci-lint
-LINT_WORKFLOW = .github/workflows/verify.yaml
-# Read the version out of the workflow rather than pinning it again here, so
-# `make lint` cannot drift from CI. go install takes "v2.11" as a prefix query
-# and picks the highest v2.11.x, which is what golangci-lint-action does too.
-GOLANGCI_LINT_VERSION = $(shell sed -n '/golangci-lint-action/,/version:/s/^[[:space:]]*version:[[:space:]]*//p' $(LINT_WORKFLOW))
+LINT_WORKFLOW = .chainguard/ci/go.yaml
+# Read the version out of the lint check's package pin (golangci-lint~2.14)
+# rather than pinning it again here, so `make lint` cannot drift from CI. go
+# install takes "v2.14" as a prefix query and picks the highest v2.14.x.
+GOLANGCI_LINT_VERSION = $(shell sed -n 's/^[[:space:]]*-[[:space:]]*golangci-lint~\([0-9.]*\).*/v\1/p' $(LINT_WORKFLOW))
 
 .PHONY: golangci-lint
 golangci-lint:

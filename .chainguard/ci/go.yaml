@@ -1,0 +1,129 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Unit tests, lint, and the build with its hack/ci end-to-end scripts.
+version: 1
+
+checks:
+  test:
+    description: >-
+      Runs make test (go test -race ./...) with erofs-utils installed, so the
+      EROFS writer tests get fsck.erofs as a second opinion instead of
+      degrading to a t.Log.
+    environment:
+      packages:
+        - go-1.27~1.27 # go.mod's go directive; GOTOOLCHAIN=local refuses an older one
+        - bash
+        - build-base # cgo for -race
+        - git
+        - make
+        - erofs-utils~1.9
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+    trigger: [presubmit, postsubmit]
+    resources: medium-amd64
+    timeout: 30m
+    network:
+      egress:
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+        - packages.wolfi.dev
+        - apk.cgr.dev
+        - alpinelinux.org
+        - dl-cdn.alpinelinux.org
+        - files.example.com
+    steps:
+      - name: fsck.erofs on PATH
+        # The tests skip the fsck.erofs cross-check when it is missing, so a
+        # silent install failure would look like a pass.
+        cmd: [sh, -c, "command -v fsck.erofs"]
+      - name: test
+        shell: bash
+        # The golden fixtures expect SOURCE_DATE_EPOCH=0 and set it
+        # themselves; a random value here catches a test that reads the
+        # ambient one instead.
+        script: |
+          SOURCE_DATE_EPOCH=$(awk 'BEGIN { now = systime(); srand(now); print 1 + int(rand() * now) }')
+          export SOURCE_DATE_EPOCH
+          make test
+
+  lint:
+    description: >-
+      golangci-lint over the module, then make generate and go mod tidy,
+      failing if either leaves the tree dirty.
+    environment:
+      packages:
+        - go-1.27~1.27
+        - bash
+        - build-base
+        - git
+        - make
+        # Wolfi's 2.13 builds predate Go 1.27 and cannot read its export data.
+        # The Makefile's golangci-lint target reads this pin.
+        - golangci-lint~2.14
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+    trigger: [presubmit, postsubmit]
+    resources: medium
+    timeout: 15m
+    network:
+      egress:
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+    steps:
+      - name: golangci-lint
+        cmd: golangci-lint run
+      - name: generate and tidy
+        script: |
+          make generate
+          go mod tidy
+          git diff --exit-code
+
+  build:
+    description: >-
+      Builds apko, runs the hack/ci end-to-end scripts (build and publish
+      wolfi-base for amd64 and arm64, run it under Docker, and read the
+      per-arch layers back with crane), then builds an unsigned goreleaser
+      snapshot.
+    environment:
+      packages:
+        - go-1.27~1.27
+        - bash
+        - git
+        - make
+        - crane~0.22
+        - goreleaser~2.18
+        - grep
+        - sed
+      services: [docker]
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+    trigger: [presubmit, postsubmit]
+    resources: medium-amd64
+    timeout: 45m
+    network:
+      egress:
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+        - packages.wolfi.dev
+        - apk.cgr.dev
+        # hack/ci/01-publish.sh runs index.docker.io/library/registry:2.8.1.
+        # Docker Hub serves layers from a different CDN from one pull to the
+        # next: its own *.docker.com names, an S3 bucket, or an R2 bucket.
+        - "*.docker.io"
+        - "*.docker.com"
+        - docker-images-prod.s3.dualstack.us-east-1.amazonaws.com
+        - docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com
+    steps:
+      - name: build
+        cmd: [sh, -c, "make apko && ./apko version"]
+      - name: hack/ci
+        cmd: make ci
+      - name: snapshot
+        cmd: [sh, -c, "make snapshot && ./dist/apko-build_linux_amd64_v1/apko version"]
