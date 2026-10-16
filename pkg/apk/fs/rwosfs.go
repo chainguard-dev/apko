@@ -36,6 +36,7 @@ type dirFSOpts struct {
 	caseSensitive    bool
 	caseSensitiveSet bool
 	mkdir            bool
+	xattrsOnDisk     bool
 }
 
 // DirFSOption is an option for DirFS
@@ -62,6 +63,20 @@ func WithCreateDir() DirFSOption {
 	}
 }
 
+// DirFSWithXattrsOnDisk makes SetXattr and RemoveXattr write through to the
+// underlying directory as well as the in-memory metadata. Without it, xattrs
+// are tracked in memory only. Writes the filesystem does not support or the
+// process is not permitted to make are ignored, as for Chown; other errors
+// (e.g. a malformed security.capability) are returned. Inside a user
+// namespace the kernel stores capabilities as namespaced. On Linux this
+// requires /proc; elsewhere the option has no effect.
+func DirFSWithXattrsOnDisk() DirFSOption {
+	return func(opts *dirFSOpts) error {
+		opts.xattrsOnDisk = true
+		return nil
+	}
+}
+
 func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 	log := clog.FromContext(ctx).With("dir", dir)
 
@@ -69,6 +84,13 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 	for _, opt := range opts {
 		if err := opt(&options); err != nil {
 			log.Warn("error applying option", "error", err)
+			return nil
+		}
+	}
+
+	if options.xattrsOnDisk {
+		if err := checkXattrsOnDisk(); err != nil {
+			log.Warn("cannot write xattrs to disk", "error", err)
 			return nil
 		}
 	}
@@ -131,10 +153,11 @@ func DirFS(ctx context.Context, dir string, opts ...DirFSOption) FullFS {
 		caseMap = map[string]string{}
 	}
 	f := &dirFS{
-		base:      dir,
-		root:      root,
-		overrides: m,
-		caseMap:   caseMap,
+		base:         dir,
+		root:         root,
+		overrides:    m,
+		caseMap:      caseMap,
+		xattrsOnDisk: options.xattrsOnDisk,
 	}
 	// Safety net for the library-consumer case where the dirFS is stashed
 	// inside another type (e.g. apk.New's fallback) and never reachable for
@@ -287,6 +310,9 @@ type dirFS struct {
 	// once we're willing to take the breaking change across in-tree
 	// implementers and library consumers.
 	cleanup runtime.Cleanup
+	// xattrsOnDisk enables writing xattrs through to disk; see
+	// DirFSWithXattrsOnDisk.
+	xattrsOnDisk bool
 	// overrides is a map of overrides for things that could not be kept on disk because of permission,
 	// filesystem or operating system limitations.
 	// It will include all directories, but no file contents.
@@ -624,6 +650,16 @@ func isUnsupportedByFS(err error) bool {
 		errors.Is(err, syscall.EPERM)
 }
 
+// isUnsupportedXattr extends isUnsupportedByFS for xattr writes. EACCES is
+// how the kernel refuses user.* on a file the process cannot write, and
+// security.selinux can also fail with EINVAL for a context the host policy
+// does not know.
+func isUnsupportedXattr(attr string, err error) bool {
+	return isUnsupportedByFS(err) ||
+		errors.Is(err, syscall.EACCES) ||
+		(attr == "security.selinux" && errors.Is(err, syscall.EINVAL))
+}
+
 func (f *dirFS) Chmod(path string, perm fs.FileMode) error {
 	if f.caseSensitiveOnDisk(path) {
 		if err := f.root.Chmod(f.relPath(path), perm); err != nil && !isUnsupportedByFS(err) {
@@ -674,17 +710,28 @@ func (f *dirFS) placeholderOnDisk(rel string) error {
 	return nil
 }
 
+// SetXattr records the xattr in the in-memory overrides, which stay
+// authoritative for reads, and with DirFSWithXattrsOnDisk also sets it on disk.
 func (f *dirFS) SetXattr(path string, attr string, data []byte) error {
-	// the underlying filesystem might or might not support xattrs
-	// but we have info on every file in memory, so might as well store it there.
+	if f.xattrsOnDisk && f.caseSensitiveOnDisk(path) {
+		if err := f.setXattrOnDisk(f.relPath(path), attr, data); err != nil && !isUnsupportedXattr(attr, err) {
+			return fmt.Errorf("unable to set xattr %s on disk: %w", attr, err)
+		}
+	}
 	return f.overrides.SetXattr(path, attr, data)
 }
 func (f *dirFS) GetXattr(path string, attr string) ([]byte, error) {
 	return f.overrides.GetXattr(path, attr)
 }
 func (f *dirFS) RemoveXattr(path string, attr string) error {
+	if f.xattrsOnDisk && f.caseSensitiveOnDisk(path) {
+		if err := f.removeXattrOnDisk(f.relPath(path), attr); err != nil && !isUnsupportedXattr(attr, err) {
+			return fmt.Errorf("unable to remove xattr %s on disk: %w", attr, err)
+		}
+	}
 	return f.overrides.RemoveXattr(path, attr)
 }
+
 func (f *dirFS) ListXattrs(path string) (map[string][]byte, error) {
 	return f.overrides.ListXattrs(path)
 }
