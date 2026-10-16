@@ -370,7 +370,32 @@ func TestUnify(t *testing.T) {
 				"foo=1.2.3",
 			},
 		},
+	}, {
+		name:      "pinned repository packages",
+		originals: []string{"foo@local", "bar@edge=2.4.6", "baz=0.0.1@testing"},
+		inputs: []resolved{{
+			arch:     "amd64",
+			packages: sets.New("foo", "bar", "baz"),
+			versions: map[string]string{
+				"foo": "1.2.3-r0",
+				"bar": "2.4.6-r0",
+				"baz": "0.0.1-r0",
+			},
+		}},
+		want: map[string][]string{
+			"amd64": {
+				"bar@edge=2.4.6-r0",
+				"baz@testing=0.0.1-r0",
+				"foo@local=1.2.3-r0",
+			},
+			"index": {
+				"bar@edge=2.4.6-r0",
+				"baz@testing=0.0.1-r0",
+				"foo@local=1.2.3-r0",
+			},
+		},
 	}}
+
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
