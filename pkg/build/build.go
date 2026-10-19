@@ -186,7 +186,10 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		err     error
 	)
 
-	if bc.o.TarballPath != "" {
+	// A path set through WithTarball belongs to the caller; only a file apko
+	// named itself is removed on failure.
+	owned := bc.o.TarballPath == ""
+	if !owned {
 		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
 		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
@@ -195,6 +198,18 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
 	}
 	bc.o.TarballPath = outfile.Name()
+
+	// A caller that gets an error gets no layer, so the partial file is
+	// removed rather than left in a temp dir that library callers may never
+	// clean up.
+	done := false
+	defer func() {
+		if done || !owned {
+			return
+		}
+		_ = os.Remove(outfile.Name())
+		bc.o.TarballPath = ""
+	}()
 
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
 		// The EROFS path does not defer Close: it hashes the finished file, so
@@ -214,6 +229,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		if err != nil {
 			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
 		}
+		done = true
 		return outName, l, nil
 	}
 
@@ -245,6 +261,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, fmt.Errorf("closing %s: %w", outfile.Name(), err)
 	}
 
+	done = true
 	return outfile.Name(), l, nil
 }
 
