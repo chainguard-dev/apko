@@ -72,7 +72,7 @@ func (e expandedContents) Entries() ([]tar.Header, error) {
 	entries := e.exp.TarFS.Entries()
 	headers := make([]tar.Header, 0, len(entries))
 	for _, entry := range entries {
-		headers = append(headers, entry.Header)
+		headers = append(headers, entry.Header())
 	}
 	return headers, nil
 }
