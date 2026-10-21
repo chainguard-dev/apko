@@ -23,7 +23,14 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	"chainguard.dev/apko/pkg/apk/types"
+	"chainguard.dev/apko/pkg/cas"
 )
+
+// Entry contains an install record's tar header and its regular-file content digest.
+type Entry struct {
+	Header tar.Header
+	Digest cas.Digest
+}
 
 // PackageContents is the per-package input to installation: the package's
 // control-section metadata, its install records (tar headers, in install

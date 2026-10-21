@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"cmp"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"chainguard.dev/apko/pkg/cas"
 )
 
 var readerPool = sync.Pool{
@@ -43,9 +46,12 @@ func pooledBufioReader(r io.Reader) *bufio.Reader {
 type Entry struct {
 	Header tar.Header
 	Offset int64
+	// Digest is the sha256 of the entry's contents.
+	Digest cas.Digest
 
-	dir string
-	fi  fs.FileInfo
+	dir           string
+	fi            fs.FileInfo
+	duplicateName bool
 }
 
 func (e Entry) Name() string {
@@ -94,12 +100,44 @@ func (f *File) Close() error {
 	return nil
 }
 
+// FS indexes a tar archive both by name, as an [fs.FS], and by content
+// digest, as a [cas.Store].
 type FS struct {
-	ra    io.ReaderAt
-	size  int64
-	files []*Entry
-	index map[string]int
-	dirs  map[string][]fs.DirEntry
+	ra       io.ReaderAt
+	size     int64
+	files    []*Entry
+	index    map[string]int
+	byDigest map[cas.Digest]int
+	dirs     map[string][]fs.DirEntry
+}
+
+var _ cas.Store = (*FS)(nil)
+
+// Digest returns a regular file's content digest without reading its contents.
+// Duplicate names return [errors.ErrUnsupported] because a name cannot identify one archive record.
+func (fsys *FS) Digest(name string) (cas.Digest, error) {
+	i, ok := fsys.index[name]
+	if !ok {
+		return cas.Digest{}, &fs.PathError{Op: "digest", Path: name, Err: fs.ErrNotExist}
+	}
+	e := fsys.files[i]
+	if e.duplicateName {
+		return cas.Digest{}, &fs.PathError{Op: "digest", Path: name, Err: errors.ErrUnsupported}
+	}
+	if e.Header.Typeflag != tar.TypeReg {
+		return cas.Digest{}, &fs.PathError{Op: "digest", Path: name, Err: fs.ErrInvalid}
+	}
+	return e.Digest, nil
+}
+
+// OpenBlob implements [cas.Store] over the regular files in the archive.
+func (fsys *FS) OpenBlob(d cas.Digest) (*io.SectionReader, error) {
+	i, ok := fsys.byDigest[d]
+	if !ok {
+		return nil, fmt.Errorf("%s: %w", d, cas.ErrNotFound)
+	}
+	e := fsys.files[i]
+	return io.NewSectionReader(fsys.ra, e.Offset, e.Header.Size), nil
 }
 
 // Size is the length of the indexed tar, as passed to New. Callers that need to
@@ -215,11 +253,12 @@ func (cr *countReader) Read(p []byte) (int, error) {
 
 func New(ra io.ReaderAt, size int64) (*FS, error) {
 	fsys := &FS{
-		ra:    ra,
-		size:  size,
-		files: []*Entry{},
-		index: map[string]int{},
-		dirs:  map[string][]fs.DirEntry{},
+		ra:       ra,
+		size:     size,
+		files:    []*Entry{},
+		index:    map[string]int{},
+		byDigest: map[cas.Digest]int{},
+		dirs:     map[string][]fs.DirEntry{},
 	}
 
 	// Number of entries in a given directory, so we know how large of a slice to allocate.
@@ -233,6 +272,8 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 
 	cr := &countReader{br, 0}
 	tr := tar.NewReader(cr)
+	h := sha256.New()
+	buf := make([]byte, 32*1024)
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -241,13 +282,32 @@ func New(ra io.ReaderAt, size int64) (*FS, error) {
 		if err != nil {
 			return nil, err
 		}
+		offset := cr.n
+
+		// Hash contents while indexing so later metadata operations can use the digest.
+		h.Reset()
+		if _, err := io.CopyBuffer(h, tr, buf); err != nil { //nolint:gosec // the archive was already inflated under the configured size limits
+			return nil, fmt.Errorf("hashing %q: %w", hdr.Name, err)
+		}
+		var digest cas.Digest
+		h.Sum(digest[:0])
+
 		dir := path.Dir(hdr.Name)
-		fsys.index[hdr.Name] = len(fsys.files)
+		i := len(fsys.files)
+		_, duplicateName := fsys.index[hdr.Name]
+		fsys.index[hdr.Name] = i
+		if hdr.Typeflag == tar.TypeReg {
+			if _, ok := fsys.byDigest[digest]; !ok {
+				fsys.byDigest[digest] = i
+			}
+		}
 		fsys.files = append(fsys.files, &Entry{
-			Header: *hdr,
-			Offset: cr.n,
-			dir:    dir,
-			fi:     hdr.FileInfo(),
+			Header:        *hdr,
+			Offset:        offset,
+			Digest:        digest,
+			dir:           dir,
+			fi:            hdr.FileInfo(),
+			duplicateName: duplicateName,
 		})
 
 		dirCount[dir]++

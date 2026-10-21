@@ -17,7 +17,8 @@ package tarfs
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/sha1" //nolint:gosec // this is what apk tools is using
+	"crypto/sha1" //nolint:gosec // APK file checksums use SHA-1.
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -37,6 +38,7 @@ import (
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/cas"
 )
 
 const (
@@ -50,15 +52,12 @@ const (
 
 var _ apk.WriteHeaderer = (*memFS)(nil)
 
-type tarEntry struct {
-	tfs      fs.FS
-	header   tar.Header
-	checksum []byte
-	pkg      *apk.Package
-}
-
+// memFS references package contents by digest when the source supports it.
+// Other sources are read by name, and writable opens buffer the contents.
 type memFS struct {
 	tree *node
+
+	blobs *cas.Union
 }
 
 func New() *memFS {
@@ -71,40 +70,84 @@ func New() *memFS {
 			name:      "/",
 			mode:      fs.ModeDir | 0o755,
 		},
+		blobs: cas.NewUnion(),
 	}
 }
 
 func checksumFromHeader(header *tar.Header) ([]byte, error) {
-	pax := header.PAXRecords
-	if pax == nil {
-		return nil, nil
-	}
-
-	hexsum, ok := pax["APK-TOOLS.checksum.SHA1"]
+	hexsum, ok := header.PAXRecords["APK-TOOLS.checksum.SHA1"]
 	if !ok {
 		return nil, nil
 	}
-
 	if b64, ok := strings.CutPrefix(hexsum, "Q1"); ok {
-		// This is nonstandard but something we did at one point, handle it.
-		// In other contexts, this Q1 prefix means "this is sha1 not md5".
 		checksum, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {
 			return nil, fmt.Errorf("decoding base64 checksum from header for %q: %w", header.Name, err)
 		}
-
 		return checksum, nil
 	}
-
 	checksum, err := hex.DecodeString(hexsum)
 	if err != nil {
 		return nil, fmt.Errorf("decoding hex checksum from header for %q: %w", header.Name, err)
 	}
-
 	return checksum, nil
 }
 
-func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
+func (m *memFS) WriteHeader(hdr tar.Header, src fs.FS, pkg *apk.Package) (bool, error) {
+	if hdr.Typeflag != tar.TypeReg {
+		return m.WriteEntry(apk.Entry{Header: hdr}, nil, pkg)
+	}
+	if blobs, ok := src.(interface {
+		cas.Store
+		Digest(string) (cas.Digest, error)
+	}); ok {
+		digest, err := blobs.Digest(hdr.Name)
+		if err == nil {
+			return m.WriteEntry(apk.Entry{Header: hdr, Digest: digest}, blobs, pkg)
+		}
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return false, err
+		}
+	}
+	checksum, err := checksumFromHeader(&hdr)
+	if err != nil {
+		return false, err
+	}
+	if checksum == nil {
+		return false, fmt.Errorf("checksum is nil for %s", hdr.Name)
+	}
+	if src == nil {
+		return false, fmt.Errorf("missing source filesystem for %q", hdr.Name)
+	}
+	want := newEntryNode(filepath.Base(hdr.Name), &hdr, cas.Digest{}, pkg)
+	want.source = &fileSource{fs: src, name: hdr.Name}
+	want.checksum = checksum
+	return m.installHeader(hdr, want, nil)
+}
+
+// WriteEntry installs a package entry without copying its contents from blobs.
+func (m *memFS) WriteEntry(e apk.Entry, blobs cas.Store, pkg *apk.Package) (bool, error) {
+	hdr := e.Header
+	if hdr.Typeflag == tar.TypeReg {
+		if e.Digest == (cas.Digest{}) {
+			return false, fmt.Errorf("missing content digest for %q", hdr.Name)
+		}
+		if blobs == nil {
+			return false, fmt.Errorf("missing blob store for %q", hdr.Name)
+		}
+	}
+	want := newEntryNode(filepath.Base(hdr.Name), &hdr, e.Digest, pkg)
+	if hdr.Typeflag == tar.TypeReg {
+		checksum, err := checksumFromHeader(&hdr)
+		if err != nil {
+			return false, err
+		}
+		want.checksum = checksum
+	}
+	return m.installHeader(hdr, want, blobs)
+}
+
+func (m *memFS) installHeader(hdr tar.Header, want *node, blobs cas.Store) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
@@ -123,53 +166,23 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			return false, fmt.Errorf("error chtime on directory %s: %w", hdr.Name, err)
 		}
 
-		for k, v := range hdr.PAXRecords {
-			if !strings.HasPrefix(k, xattrTarPAXRecordsPrefix) {
-				continue
-			}
-			attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
-			if err := m.SetXattr(hdr.Name, attrName, []byte(v)); err != nil {
-				return false, fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
-			}
+		if err := m.setXattrsFromHeader(&hdr); err != nil {
+			return false, err
 		}
 
 	case tar.TypeReg, tar.TypeSymlink:
 		if hdr.Typeflag == tar.TypeSymlink {
-			// TODO: I think we can drop this because the header checksum thing should catch this.
 			if target, err := m.Readlink(hdr.Name); err == nil && target == hdr.Linkname {
 				return false, nil
 			}
 		}
-		// We trust this because we verify it earlier in ExpandAPK.
-		checksum, err := checksumFromHeader(&hdr)
+
+		installed, err := m.writeEntry(hdr.Name, want, blobs)
 		if err != nil {
+			return false, fmt.Errorf("writing entry for %q: %w", hdr.Name, err)
+		}
+		if err := m.setXattrsFromHeader(&hdr); err != nil {
 			return false, err
-		}
-
-		if checksum == nil {
-			return false, fmt.Errorf("checksum is nil for %s", hdr.Name)
-		}
-
-		te := tarEntry{
-			tfs:      tfs,
-			header:   hdr,
-			checksum: checksum,
-			pkg:      pkg,
-		}
-
-		installed, err := m.writeHeader(hdr.Name, te)
-		if err != nil {
-			return false, fmt.Errorf("writing header for %q: %w", hdr.Name, err)
-		}
-
-		for k, v := range hdr.PAXRecords {
-			if !strings.HasPrefix(k, xattrTarPAXRecordsPrefix) {
-				continue
-			}
-			attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
-			if err := m.SetXattr(hdr.Name, attrName, []byte(v)); err != nil {
-				return false, fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
-			}
 		}
 
 		return installed, nil
@@ -182,6 +195,19 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 	}
 
 	return true, nil
+}
+
+func (m *memFS) setXattrsFromHeader(hdr *tar.Header) error {
+	for k, v := range hdr.PAXRecords {
+		attrName, ok := strings.CutPrefix(k, xattrTarPAXRecordsPrefix)
+		if !ok {
+			continue
+		}
+		if err := m.SetXattr(hdr.Name, attrName, []byte(v)); err != nil {
+			return fmt.Errorf("error setting xattr %s on %s: %w", attrName, hdr.Name, err)
+		}
+	}
+	return nil
 }
 
 // getNode returns the node for the given path. If the path is not found, it
@@ -369,7 +395,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		parentAnode.mu.Unlock()
 
 		if parent == name {
-			return newMemFile(parentAnode, name, m, flag), nil
+			return newMemFile(parentAnode, name, m, flag)
 		}
 		return nil, fs.ErrNotExist
 	}
@@ -384,6 +410,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 				name:      base,
 				mode:      perm,
 				dir:       false,
+				digest:    cas.Empty,
 				xattrs:    map[string][]byte{},
 				hardlinks: map[string]*tar.Header{},
 			}
@@ -404,36 +431,74 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		return m.openFile(linkTarget, flag, perm, localCount)
 	}
 
-	// NOTE: This is where we diverge from memfs a bit.
-	// If the node has a tarentry, then we may be reading from a tarfs.
-	if anode.te != nil && len(anode.data) == 0 && anode.te.header.Size != 0 {
-		f, err := anode.te.tfs.Open(anode.te.header.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		// For read-only opens, we just defer to the tarfs.
-		write := flag&os.O_APPEND != 0 || flag&os.O_RDWR != 0 || flag&os.O_WRONLY != 0
-		if !write {
-			mf := newMemFile(anode, name, m, flag)
-
-			// rc gets used in Read() if it's set
-			mf.rc = f
-
-			return mf, nil
-		}
-
-		// Otherwise, we are opening this file to modify it, so buffer the data.
-		anode.data, err = io.ReadAll(f)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return newMemFile(anode, name, m, flag), nil
+	return newMemFile(anode, name, m, flag)
 }
 
-func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
+func newEntryNode(name string, hdr *tar.Header, digest cas.Digest, pkg *apk.Package) *node {
+	return &node{
+		name:       name,
+		mode:       hdr.FileInfo().Mode(),
+		modTime:    hdr.ModTime,
+		linkTarget: hdr.Linkname,
+		digest:     digest,
+		size:       hdr.Size,
+		pkg:        pkg,
+		xattrs:     map[string][]byte{},
+		hardlinks:  map[string]*tar.Header{},
+	}
+}
+
+// sameContents compares file digests or symlink targets, ignoring metadata.
+func (m *memFS) sameContents(got, want *node) (bool, error) {
+	switch {
+	case got.mode.IsRegular() && want.mode.IsRegular():
+		if got.source != nil || want.source != nil {
+			checksum := got.checksum
+			if got.buf != nil {
+				sum := sha1.Sum(got.buf) //nolint:gosec // Compare with the legacy APK checksum.
+				checksum = sum[:]
+			}
+			if checksum != nil && want.checksum != nil {
+				return bytes.Equal(checksum, want.checksum), nil
+			}
+		}
+		gotDigest, err := m.contentDigest(got)
+		if err != nil {
+			return false, err
+		}
+		wantDigest, err := m.contentDigest(want)
+		if err != nil {
+			return false, err
+		}
+		return gotDigest == wantDigest, nil
+	case got.mode&os.ModeSymlink != 0 && want.mode&os.ModeSymlink != 0:
+		return got.linkTarget == want.linkTarget, nil
+	}
+	return false, nil
+}
+
+func (m *memFS) contentDigest(n *node) (cas.Digest, error) {
+	if n.buf != nil {
+		return cas.Of(n.buf), nil
+	}
+	if n.source == nil {
+		return n.digest, nil
+	}
+	r, err := m.openContents(n)
+	if err != nil {
+		return cas.Digest{}, err
+	}
+	defer r.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return cas.Digest{}, err
+	}
+	var digest cas.Digest
+	h.Sum(digest[:0])
+	return digest, nil
+}
+
+func (m *memFS) writeEntry(name string, want *node, blobs cas.Store) (bool, error) {
 	parent := filepath.Dir(name)
 	base := filepath.Base(name)
 
@@ -450,84 +515,58 @@ func (m *memFS) writeHeader(name string, te tarEntry) (bool, error) {
 	}
 	parentAnode.mu.Lock()
 	defer parentAnode.mu.Unlock()
-	existing, ok := parentAnode.children[base]
+
+	got, ok := parentAnode.children[base]
 	if !ok {
-		// create the file
-		anode := &node{
-			name:       base,
-			mode:       te.header.FileInfo().Mode(),
-			dir:        false,
-			modTime:    te.header.ModTime,
-			linkTarget: te.header.Linkname,
-			xattrs:     map[string][]byte{},
-			hardlinks:  map[string]*tar.Header{},
-			te:         &te,
+		if want.mode.IsRegular() && blobs != nil {
+			m.blobs.Add(want.digest, blobs)
 		}
-		parentAnode.children[base] = anode
+		parentAnode.children[base] = want
 		return true, nil
 	}
 
-	want, got := te, existing.te
-
-	if got == nil {
-		if existing.data == nil {
-			return false, fmt.Errorf("conflicting file for %q has no tar entry", name)
-		}
-
-		// This can happen when go-apk's InitKeyring conflicts with alpine-keys.
-		// Since those files will be in memory, quickly compute the checksum and
-		// ignore this file if they match.
-		h := sha1.New() //nolint:gosec // this is what apk tools is using
-		h.Write(existing.data)
-		checksum := h.Sum(nil)
-
-		if bytes.Equal(want.checksum, checksum) {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("conflicting file for %q with checksum %x, existing has checksum %x", name, want.checksum, checksum)
+	// Identical contents are fine whoever wrote them, e.g. go-apk's InitKeyring
+	// writing a key that alpine-keys also ships.
+	same, err := m.sameContents(got, want)
+	if err != nil {
+		return false, fmt.Errorf("comparing contents for %q: %w", name, err)
 	}
-
-	// Files have the same checksum, that's fine.
-	if bytes.Equal(got.checksum, want.checksum) {
+	if same {
 		return false, nil
 	}
 
+	if got.pkg == nil {
+		return false, fmt.Errorf("conflicting file for %q, existing was not installed by a package", name)
+	}
+	pkg := want.pkg
+
 	// If the existing file's package replaces the package we want to install, we don't need to write this file.
-	if slices.Contains(got.pkg.Replaces, want.pkg.Name) {
+	if slices.Contains(got.pkg.Replaces, pkg.Name) {
 		return false, nil
 	}
 
 	// Otherwise, determine if the package we are installing replaces the existing package.
-	replaces := slices.Contains(want.pkg.Replaces, got.pkg.Name)
+	replaces := slices.Contains(pkg.Replaces, got.pkg.Name)
 
 	// Or if they're from the same origin.
-	sameOrigin := got.pkg.Origin == want.pkg.Origin
+	sameOrigin := got.pkg.Origin == pkg.Origin
 
 	// At this point we know the files conflict, but it's okay if this file replaces that one.
 	if !sameOrigin && !replaces {
 		return false, apk.FileConflictError{
 			Path: name,
 			Origins: map[string]string{
-				got.pkg.Name:  got.pkg.Origin,
-				want.pkg.Name: want.pkg.Origin,
+				got.pkg.Name: got.pkg.Origin,
+				pkg.Name:     pkg.Origin,
 			},
 		}
 	}
 
-	anode := &node{
-		name:       base,
-		mode:       te.header.FileInfo().Mode(),
-		dir:        false,
-		modTime:    te.header.ModTime,
-		linkTarget: te.header.Linkname,
-		xattrs:     map[string][]byte{},
-		hardlinks:  map[string]*tar.Header{},
-		te:         &te,
-	}
-	parentAnode.children[base] = anode
-
 	// If we got here, they're different, but want replaces got, so it's all cool.
+	if want.mode.IsRegular() && blobs != nil {
+		m.blobs.Add(want.digest, blobs)
+	}
+	parentAnode.children[base] = want
 	return true, nil
 }
 
@@ -826,30 +865,51 @@ func (m *memFS) Sub(path string) (apkfs.FullFS, error) {
 	}, nil
 }
 
+// memFile reads package contents until the node has a write buffer shared by all handles.
 type memFile struct {
 	node     *node
 	fs       *memFS
 	name     string
-	offset   int64
 	openMode int
 
-	rc io.ReadCloser
+	r io.ReadCloser
+
+	offset int64
 }
 
-func newMemFile(node *node, name string, memfs *memFS, openMode int) *memFile {
+func writable(openMode int) bool {
+	return openMode&(os.O_WRONLY|os.O_RDWR|os.O_APPEND) != 0
+}
+
+func newMemFile(node *node, name string, memfs *memFS, openMode int) (*memFile, error) {
 	m := &memFile{
 		node:     node,
 		fs:       memfs,
 		name:     name,
 		openMode: openMode,
 	}
-	if openMode&os.O_APPEND != 0 {
-		m.offset = int64(len(node.data))
-	}
 	if openMode&os.O_TRUNC != 0 {
-		node.data = nil
+		node.buf = []byte{}
 	}
-	return m
+
+	if !writable(openMode) {
+		if node.buf == nil {
+			r, err := memfs.openContents(node)
+			if err != nil {
+				return nil, fmt.Errorf("opening %q: %w", name, err)
+			}
+			m.r = r
+		}
+		return m, nil
+	}
+
+	if err := memfs.bufferContents(node); err != nil {
+		return nil, fmt.Errorf("opening %q: %w", name, err)
+	}
+	if openMode&os.O_APPEND != 0 {
+		m.offset = int64(len(node.buf))
+	}
+	return m, nil
 }
 
 func (f *memFile) Stat() (fs.FileInfo, error) {
@@ -863,32 +923,29 @@ func (f *memFile) Close() error {
 	if f.node == nil || f.fs == nil {
 		return fs.ErrClosed
 	}
-
-	if f.rc != nil {
-		if err := f.rc.Close(); err != nil {
-			return err
-		}
-		f.rc = nil
+	var err error
+	if f.r != nil {
+		err = f.r.Close()
 	}
-
 	f.fs = nil
 	f.node = nil
-
-	return nil
+	f.r = nil
+	return err
 }
 
 func (f *memFile) Read(b []byte) (int, error) {
 	if f.node == nil || f.fs == nil {
 		return 0, fs.ErrClosed
 	}
-	if f.rc != nil {
-		// Defer to tarfs-backed file.
-		return f.rc.Read(b)
+	if f.node.buf == nil {
+		n, err := f.r.Read(b)
+		f.offset += int64(n)
+		return n, err
 	}
-	if f.offset >= int64(len(f.node.data)) {
+	if f.offset >= int64(len(f.node.buf)) {
 		return 0, io.EOF
 	}
-	n := copy(b, f.node.data[f.offset:])
+	n := copy(b, f.node.buf[f.offset:])
 	f.offset += int64(n)
 	return n, nil
 }
@@ -897,38 +954,47 @@ func (f *memFile) ReadAt(p []byte, off int64) (n int, err error) {
 	if f.node == nil || f.fs == nil {
 		return 0, fs.ErrClosed
 	}
-	if f.rc != nil {
-		if ra, ok := f.rc.(io.ReaderAt); ok {
-			return ra.ReadAt(p, off)
+	if f.node.buf == nil {
+		if r, ok := f.r.(io.ReaderAt); ok {
+			return r.ReadAt(p, off)
 		}
-		// This would be a surprise!
 		return 0, fs.ErrInvalid
 	}
-	if off >= int64(len(f.node.data)) {
-		return 0, io.EOF
-	}
-	n = copy(p, f.node.data[off:])
-	return n, nil
+	return bytes.NewReader(f.node.buf).ReadAt(p, off)
 }
 
 func (f *memFile) Seek(offset int64, whence int) (int64, error) {
 	if f.node == nil || f.fs == nil {
 		return 0, fs.ErrClosed
 	}
-	if f.rc != nil {
-		// tarfs-backed files don't support Seek.
-		return 0, fs.ErrInvalid
-	}
 	switch whence {
 	case io.SeekStart:
-		f.offset = offset
 	case io.SeekCurrent:
-		f.offset += offset
+		offset += f.offset
 	case io.SeekEnd:
-		f.offset = int64(len(f.node.data)) + offset
+		if f.node.buf != nil {
+			offset += int64(len(f.node.buf))
+		} else {
+			offset += f.node.size
+		}
 	default:
 		return 0, errors.New("invalid whence")
 	}
+	if offset < 0 {
+		return 0, errors.New("negative seek offset")
+	}
+	if f.node.buf == nil {
+		r, ok := f.r.(io.Seeker)
+		if !ok {
+			return 0, fs.ErrInvalid
+		}
+		pos, err := r.Seek(offset, io.SeekStart)
+		if err != nil {
+			return pos, err
+		}
+		offset = pos
+	}
+	f.offset = offset
 	return f.offset, nil
 }
 
@@ -936,17 +1002,13 @@ func (f *memFile) Write(p []byte) (n int, err error) {
 	if f.node == nil || f.fs == nil {
 		return 0, fs.ErrClosed
 	}
-	if f.rc != nil {
-		// tarfs-backed files don't support Write.
-		return 0, fs.ErrInvalid
+	if !writable(f.openMode) {
+		return 0, fmt.Errorf("write %s: file not opened for writing", f.name)
 	}
-	if f.openMode&os.O_APPEND != 0 && f.openMode&os.O_RDWR != 0 && f.openMode&os.O_WRONLY != 0 {
-		return 0, errors.New("file not opened in write mode")
-	}
-	if f.offset+int64(len(p)) > int64(len(f.node.data)) {
-		f.node.data = append(f.node.data[:f.offset], p...)
+	if f.offset+int64(len(p)) > int64(len(f.node.buf)) {
+		f.node.buf = append(f.node.buf[:f.offset], p...)
 	} else {
-		copy(f.node.data[f.offset:], p)
+		copy(f.node.buf[f.offset:], p)
 	}
 	f.offset += int64(len(p))
 	return len(p), nil
@@ -957,7 +1019,6 @@ type node struct {
 	uid, gid     int
 	dir          bool
 	name         string
-	data         []byte
 	modTime      time.Time
 	linkTarget   string
 	linkCount    int // extra links, so 0 means a single pointer. O-based, like most compuuter counting systems.
@@ -968,8 +1029,63 @@ type node struct {
 
 	hardlinks map[string]*tar.Header
 
-	// This stores metadata for a tarfs-backed file.
-	te *tarEntry
+	digest cas.Digest
+	size   int64
+
+	// Legacy sources use APK checksums for comparisons without opening content.
+	source   *fileSource
+	checksum []byte
+
+	// A non-nil buf is authoritative, including when empty.
+	buf []byte
+
+	// pkg is the package that installed this file, if any.
+	pkg *apk.Package
+}
+
+type fileSource struct {
+	fs   fs.FS
+	name string
+}
+
+type blobReader struct {
+	*io.SectionReader
+}
+
+func (blobReader) Close() error { return nil }
+
+func (m *memFS) openContents(n *node) (io.ReadCloser, error) {
+	if n.buf != nil {
+		return blobReader{io.NewSectionReader(bytes.NewReader(n.buf), 0, int64(len(n.buf)))}, nil
+	}
+	if !n.mode.IsRegular() {
+		return blobReader{io.NewSectionReader(bytes.NewReader(nil), 0, 0)}, nil
+	}
+	if n.source != nil {
+		return n.source.fs.Open(n.source.name)
+	}
+	r, err := m.blobs.OpenBlob(n.digest)
+	if err != nil {
+		return nil, err
+	}
+	return blobReader{r}, nil
+}
+
+func (m *memFS) bufferContents(n *node) error {
+	if n.buf != nil {
+		return nil
+	}
+	r, err := m.openContents(n)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	n.buf = b
+	return nil
 }
 
 func (n *node) fileInfo(parent, name string) fs.FileInfo {
@@ -991,10 +1107,10 @@ func (m *memFileInfo) Name() string {
 }
 
 func (m *memFileInfo) Size() int64 {
-	if m.te != nil && len(m.data) == 0 {
-		return m.te.header.Size
+	if m.buf != nil {
+		return int64(len(m.buf))
 	}
-	return int64(len(m.data))
+	return m.size
 }
 
 func (m *memFileInfo) Mode() fs.FileMode {
@@ -1029,9 +1145,5 @@ func (m *memFileInfo) Sys() any {
 
 // This is a bit janky, but we need a way to know who owns this.
 func (m *memFileInfo) Package() *apk.Package {
-	if m.te == nil {
-		return nil
-	}
-
-	return m.te.pkg
+	return m.pkg
 }
