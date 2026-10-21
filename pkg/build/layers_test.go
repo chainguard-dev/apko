@@ -479,6 +479,48 @@ func TestImageLayoutToLayerFailureKeepsCallerTarball(t *testing.T) {
 	if _, err := os.Stat(tarball); err != nil {
 		t.Errorf("caller tarball: got = %v, want it kept", err)
 	}
+	if got := bc.TarballPath(); got != tarball {
+		t.Errorf("TarballPath: got = %q, want %q", got, tarball)
+	}
+}
+
+// A Context reused after a successful call still owns the layer file it
+// created, so a later failure removes it.
+func TestImageLayoutToLayerReuseFailureCleanup(t *testing.T) {
+	for _, format := range []types.LayerFormat{types.LayerFormatTar, types.LayerFormatErofs} {
+		t.Run(string(format), func(t *testing.T) {
+			tmpDir := t.TempDir()
+			bc := &Context{
+				ic: types.ImageConfiguration{Format: format},
+				o:  options.Options{TempDirPath: tmpDir, SourceDateEpoch: epoch},
+				fs: seedFS(t),
+			}
+
+			if _, _, err := bc.ImageLayoutToLayer(t.Context()); err != nil {
+				t.Fatalf("first ImageLayoutToLayer: %v", err)
+			}
+
+			bc.fs = &failOpenFS{FullFS: bc.fs, failPath: "a/b"}
+			if _, _, err := bc.ImageLayoutToLayer(t.Context()); err == nil {
+				t.Fatal("second ImageLayoutToLayer: got = nil, want injected error")
+			}
+
+			entries, err := os.ReadDir(tmpDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				names := make([]string, 0, len(entries))
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				t.Errorf("partial layer files left behind: %v", names)
+			}
+			if got := bc.TarballPath(); got != "" {
+				t.Errorf("TarballPath: got = %q, want empty after a failed build", got)
+			}
+		})
+	}
 }
 
 // pgzipGoroutines counts goroutines currently inside pgzip, so the leak check
