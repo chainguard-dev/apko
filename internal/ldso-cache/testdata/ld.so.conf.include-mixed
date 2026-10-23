@@ -1,0 +1,4 @@
+/before
+include ld.so.conf.d/*.conf
+/after
+/a/libs
