@@ -375,10 +375,17 @@ func LDSOCacheEntriesForDirs(fsys fs.FS, libdirs []string) ([]LDSOCacheEntry, er
 	// The dynamic linker binary-searches /etc/ld.so.cache using
 	// _dl_cache_libcmp, so entries must be ordered by that same comparison or
 	// ld.so may fail to find a library that is present in the cache (reporting
-	// "cannot open shared object file"). glibc's ldconfig emits entries in
-	// descending order, so we negate the comparison.
-	slices.SortFunc(allEntries, func(entry, other LDSOCacheEntry) int {
-		return -dlCacheLibcmp(filepath.Base(entry.Name), filepath.Base(other.Name))
+	// "cannot open shared object file"). This mirrors compare() in glibc's
+	// elf/cache.c: descending _dl_cache_libcmp order, then descending flags.
+	//
+	// ld.so uses the first matching entry, and ldconfig inserts entries that
+	// compare equal after the existing ones, so the first libdir to provide a
+	// library wins. A stable sort preserves that libdir order.
+	slices.SortStableFunc(allEntries, func(entry, other LDSOCacheEntry) int {
+		if c := dlCacheLibcmp(filepath.Base(other.Name), filepath.Base(entry.Name)); c != 0 {
+			return c
+		}
+		return cmp.Compare(other.Flags, entry.Flags)
 	})
 
 	return allEntries, nil
@@ -684,9 +691,13 @@ func ParseLDSOConf(fsys fs.FS, ldsoconf string) ([]string, error) {
 					debugf("Warning: Could not parse config file %s\n", match)
 					continue
 				}
-				libpaths = append(libpaths, incpaths...)
+				for _, incpath := range incpaths {
+					if !slices.Contains(libpaths, incpath) {
+						libpaths = append(libpaths, incpath)
+					}
+				}
 			}
-			return libpaths, nil
+			continue
 		}
 
 		libpath := line

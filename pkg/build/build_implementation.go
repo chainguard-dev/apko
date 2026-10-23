@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/chainguard-dev/clog"
@@ -346,10 +347,7 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	if err != nil {
 		return fmt.Errorf("parsing /etc/ld.so.conf: %w", err)
 	}
-	libdirs := make([]string, 0, 1+len(dirs))
-	libdirs = append(libdirs, "/lib")
-	libdirs = append(libdirs, dirs...)
-	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, libdirs)
+	cacheFile, err := ldsocache.BuildCacheFileForDirs(fsys, ldsoLibDirs(fsys, dirs))
 	if err != nil {
 		return fmt.Errorf("generating ldsocache: %w", err)
 	}
@@ -365,6 +363,29 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 	}
 
 	return nil
+}
+
+// ldsoLibDirs returns the directories to scan for /etc/ld.so.cache in the same
+// order as glibc's ldconfig: the ld.so.conf directories first, followed by the
+// built-in system directories /lib and /usr/lib. Duplicates are dropped, keeping
+// the first occurrence. On a usrmerged system /lib is a symlink to /usr/lib, so
+// it is skipped entirely to avoid listing every library twice.
+func ldsoLibDirs(fsys apkfs.FullFS, confDirs []string) []string {
+	_, err := fsys.Readlink("lib")
+	libIsSymlink := err == nil
+
+	libdirs := make([]string, 0, len(confDirs)+2)
+	for _, dir := range append(slices.Clone(confDirs), "/lib", "/usr/lib") {
+		dir = filepath.Clean(dir)
+		if dir == "/lib" && libIsSymlink {
+			continue
+		}
+		if slices.Contains(libdirs, dir) {
+			continue
+		}
+		libdirs = append(libdirs, dir)
+	}
+	return libdirs
 }
 
 func (bc *Context) WriteEtcApkoConfig(_ context.Context) error {
