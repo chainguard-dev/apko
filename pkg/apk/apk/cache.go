@@ -80,6 +80,13 @@ func (f *flightCache[K, V]) Forget(key K) {
 	f.lru.Remove(key)
 }
 
+// Purge removes every key from the cache.
+func (f *flightCache[K, V]) Purge() {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	f.lru.Purge()
+}
+
 // ForgetFunc removes all keys for which fn returns true.
 func (f *flightCache[K, V]) ForgetFunc(fn func(K) bool) {
 	f.mux.Lock()

@@ -16,7 +16,10 @@ package apk
 
 import (
 	"os"
+	"sync"
 	"testing"
+
+	"chainguard.dev/apko/pkg/apk/expandapk"
 )
 
 // unsetenv removes name from the environment for the duration of the test
@@ -68,4 +71,53 @@ func TestCacheEntriesFromEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPurgeCaches(t *testing.T) {
+	key := cacheKey{url: "https://example.com/x86_64/APKINDEX.tar.gz", etag: "purge-test"}
+	if _, _, err := globalIndexCache.indexes.Do(key, func() (NamedIndex, error) {
+		return NewNamedRepositoryWithIndex("", (&Repository{}).WithIndex(&APKIndex{})), nil
+	}); err != nil {
+		t.Fatalf("filling index cache: %v", err)
+	}
+	indexes := []NamedIndex{NewNamedRepositoryWithIndex("purge-test", (&Repository{}).WithIndex(&APKIndex{}))}
+	globalResolverCache.getOrFill(indexes, func() *PkgResolver { return &PkgResolver{} })
+	globalDisqualifyCache.getOrFill(indexes, func() map[*RepositoryPackage]string { return nil })
+	if _, _, err := globalApkCache.Do("https://example.com/purge-test.apk", func() (*expandapk.APKExpanded, error) {
+		return &expandapk.APKExpanded{}, nil
+	}); err != nil {
+		t.Fatalf("filling package cache: %v", err)
+	}
+
+	cachedResolvePackageNameVersionPin("purge-test=1.0")
+	if _, err := cachedParseVersion("1.0"); err != nil {
+		t.Fatalf("filling version cache: %v", err)
+	}
+
+	internPackage(&Package{Name: "purge-test", Checksum: []byte("purge-test")})
+
+	PurgeCaches()
+
+	for name, n := range map[string]int{
+		"index":      globalIndexCache.indexes.lru.Len(),
+		"resolver":   globalResolverCache.len(),
+		"disqualify": globalDisqualifyCache.len(),
+		"package":    globalApkCache.lru.Len(),
+		"version":    syncMapLen(&parsedVersions),
+		"constraint": syncMapLen(&parsedConstraints),
+		"intern":     len(packageInterner.m),
+	} {
+		if n != 0 {
+			t.Errorf("%s cache entries after PurgeCaches = %d, want 0", name, n)
+		}
+	}
+}
+
+func syncMapLen(m *sync.Map) int {
+	n := 0
+	m.Range(func(any, any) bool {
+		n++
+		return true
+	})
+	return n
 }

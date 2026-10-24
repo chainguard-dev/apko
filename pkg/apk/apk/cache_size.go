@@ -17,6 +17,7 @@ package apk
 import (
 	"os"
 	"strconv"
+	"weak"
 
 	"github.com/chainguard-dev/clog"
 )
@@ -52,4 +53,24 @@ func cacheEntriesFromEnv(name string, def int) int {
 		return def
 	}
 	return n
+}
+
+// PurgeCaches empties this package's process-wide in-memory caches: parsed
+// indexes, the resolvers and architecture differences built from them, parsed
+// versions and constraints, the package interning table, and expanded
+// packages. A process that has finished resolving can call it to release the
+// memory they hold; later resolutions fetch and parse again. Call it only when
+// no resolution is in flight: one that spans the purge can see two
+// generations of the same index, and its cross-architecture filtering then
+// matches neither.
+func PurgeCaches() {
+	globalIndexCache.indexes.Purge()
+	globalResolverCache.purge()
+	globalDisqualifyCache.purge()
+	globalApkCache.Purge()
+	parsedVersions.Clear()
+	parsedConstraints.Clear()
+	packageInterner.Lock()
+	packageInterner.m = map[internKey]weak.Pointer[Package]{}
+	packageInterner.Unlock()
 }

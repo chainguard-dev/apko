@@ -92,6 +92,12 @@ func (c *lruCache[V]) len() int {
 	return len(c.entries)
 }
 
+func (c *lruCache[V]) purge() {
+	c.Lock()
+	defer c.Unlock()
+	c.entries = nil
+}
+
 // It is expensive to parse every version in the APKINDEX and grow a bunch of maps.
 // This caches a PkgResolver based on the input []NamedIndex.
 var globalResolverCache = &resolverCache{newLRUCache[*PkgResolver](maxResolverCacheEntries)}
