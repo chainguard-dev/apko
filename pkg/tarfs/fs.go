@@ -35,6 +35,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"chainguard.dev/apko/internal/contentdigest"
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
@@ -55,6 +56,9 @@ type tarEntry struct {
 	header   tar.Header
 	checksum []byte
 	pkg      *apk.Package
+	// digest is the content digest tfs gave for the entry, if it is an
+	// apk.ContentDigester.
+	digest string
 }
 
 type memFS struct {
@@ -155,6 +159,11 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			header:   hdr,
 			checksum: checksum,
 			pkg:      pkg,
+		}
+		if cd, ok := tfs.(apk.ContentDigester); ok && hdr.Typeflag == tar.TypeReg {
+			if d, ok := cd.ContentDigest(hdr.Name); ok {
+				te.digest = d
+			}
 		}
 
 		installed, err := m.writeHeader(hdr.Name, te)
@@ -1031,6 +1040,31 @@ func (m *memFileInfo) Sys() any {
 	}
 
 	return th
+}
+
+// ContentDigest returns the file's content digest in "<algorithm>:<hex>"
+// format. While the content is backed by the package, it uses the digest
+// supplied through apk.ContentDigester, if available; otherwise it reads
+// and hashes the package file with SHA-256. Content held in memory is
+// hashed with SHA-256, even if its bytes are unchanged.
+// Empty files and non-regular entries return an empty digest.
+// Each name of a hard-linked file reports the same content digest.
+func (m *memFileInfo) ContentDigest() (string, error) {
+	if !m.Mode().IsRegular() || m.Size() == 0 {
+		return "", nil
+	}
+	if m.te == nil || m.written || len(m.data) != 0 {
+		return contentdigest.OfBytes(m.data), nil
+	}
+	if m.te.digest != "" {
+		return m.te.digest, nil
+	}
+	f, err := m.te.tfs.Open(m.te.header.Name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return contentdigest.Of(f)
 }
 
 // This is a bit janky, but we need a way to know who owns this.
