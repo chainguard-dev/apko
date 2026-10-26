@@ -28,6 +28,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
@@ -208,7 +210,7 @@ func TestAlignStacks(t *testing.T) {
 	}} {
 		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
 			// clone to avoid mutating the usr and etc slices directly
-			w := &layerWriter{stack: slices.Clone(tc.before)}
+			w := &dirStack{stack: slices.Clone(tc.before)}
 
 			if err := compareStacks(w.alignStacks(tc.stack), tc.diff); err != nil {
 				t.Errorf("alignStacks() mismatch: %v", err)
@@ -448,4 +450,89 @@ func pgzipGoroutines() int {
 		}
 	}
 	return count
+}
+
+// TestSplitLayersPartitionsByPackage pins where splitLayers puts each entry:
+// every package's files in its group's layer, everything else in the top
+// layer, parent directories ahead of their contents with the mtime of the
+// entry that needed them, and each group's slice of the installed db.
+func TestSplitLayersPartitionsByPackage(t *testing.T) {
+	t1, t2, t3 := time.Unix(1000, 0), time.Unix(2000, 0), time.Unix(3000, 0)
+	a, b := newPkg("alpha"), newPkg("beta")
+	fsys := tarfsFixture(t, []entry{
+		{path: "etc", dir: true, mtime: t3},
+		{path: "etc/alpha.conf", data: "alpha conf\n", pkg: a, mtime: t1},
+		{path: "etc/hello", data: "hi\n", mtime: t3},
+		{path: "usr", dir: true, mtime: t3},
+		{path: "usr/bin", dir: true, mtime: t3},
+		{path: "usr/bin/alpha", data: "alpha bin\n", pkg: a, mtime: t1},
+		{path: "usr/bin/beta", data: "beta bin\n", pkg: b, mtime: t2},
+		{path: "usr/lib", dir: true, mtime: t3},
+		{path: "usr/lib/apk", dir: true, mtime: t3},
+		{path: "usr/lib/apk/db", dir: true, mtime: t3},
+		{path: "usr/lib/apk/db/installed", data: "alpha info\nbeta info\n", mtime: t3},
+	})
+	groups := []*group{{pkgs: []*apk.Package{a}}, {pkgs: []*apk.Package{b}}}
+	pkgToDiff := map[*apk.Package][]byte{a: []byte("alpha info\n"), b: []byte("beta info\n")}
+
+	layers, err := splitLayers(t.Context(), fsys, groups, pkgToDiff, t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([][]string, 0, len(layers))
+	for _, l := range layers {
+		rc, err := l.Uncompressed()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []string
+		tr := tar.NewReader(rc)
+		for {
+			hdr, err := tr.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries = append(entries, fmt.Sprintf("%s %c %d %q", hdr.Name, hdr.Typeflag, hdr.ModTime.Unix(), data))
+		}
+		rc.Close()
+		got = append(got, entries)
+	}
+	want := [][]string{{
+		`etc 5 1000 ""`,
+		`etc/alpha.conf 0 1000 "alpha conf\n"`,
+		`usr 5 1000 ""`,
+		`usr/bin 5 1000 ""`,
+		`usr/bin/alpha 0 1000 "alpha bin\n"`,
+		`usr/lib 5 3000 ""`,
+		`usr/lib/apk 5 3000 ""`,
+		`usr/lib/apk/db 5 3000 ""`,
+		`usr/lib/apk/db/installed 0 3000 "alpha info\n"`,
+	}, {
+		`usr 5 2000 ""`,
+		`usr/bin 5 2000 ""`,
+		`usr/bin/beta 0 2000 "beta bin\n"`,
+		`usr/lib 5 3000 ""`,
+		`usr/lib/apk 5 3000 ""`,
+		`usr/lib/apk/db 5 3000 ""`,
+		`usr/lib/apk/db/installed 0 3000 "beta info\n"`,
+	}, {
+		`etc 5 3000 ""`,
+		`etc/hello 0 3000 "hi\n"`,
+		`usr 5 3000 ""`,
+		`usr/bin 5 3000 ""`,
+		`usr/lib 5 3000 ""`,
+		`usr/lib/apk 5 3000 ""`,
+		`usr/lib/apk/db 5 3000 ""`,
+		`usr/lib/apk/db/installed 0 3000 "alpha info\nbeta info\n"`,
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("layer entries (-want +got):\n%s", diff)
+	}
 }
