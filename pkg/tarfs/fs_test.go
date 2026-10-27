@@ -20,8 +20,10 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
 
@@ -175,4 +177,34 @@ func TestTarFSCreate(t *testing.T) {
 	fileInfo, err := fd.Stat()
 	require.NoError(t, err)
 	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
+}
+
+// TestTarFSTruncatePackageFile checks that a package file truncated through
+// OpenFile is empty from then on, rather than the package's content again.
+func TestTarFSTruncatePackageFile(t *testing.T) {
+	content := []byte("the package's content\n")
+	sum := sha1.Sum(content) //nolint:gosec // APK per-file checksums are SHA-1
+	src := fstest.MapFS{"etc/conf": {Data: content, Mode: 0o644}}
+	hdr := tar.Header{
+		Typeflag:   tar.TypeReg,
+		Name:       "etc/conf",
+		Mode:       0o644,
+		Size:       int64(len(content)),
+		PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])},
+	}
+	m := tarfs.New()
+	require.NoError(t, m.MkdirAll("etc", 0o755))
+	_, err := m.WriteHeader(hdr, src, &apk.Package{Name: "p", Origin: "p"})
+	require.NoError(t, err)
+
+	f, err := m.OpenFile("etc/conf", os.O_WRONLY|os.O_TRUNC, 0o644)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	got, err := m.ReadFile("etc/conf")
+	require.NoError(t, err)
+	require.Empty(t, got)
+	info, err := m.Stat("etc/conf")
+	require.NoError(t, err)
+	require.Zero(t, info.Size())
 }
