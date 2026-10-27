@@ -215,6 +215,13 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 
 		log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
 
+		// An offline cache is an input that may be read-only (a Bazel tree
+		// artifact, say), so expand into the system temp dir and publish
+		// nothing, as the no-cache path does.
+		if d.cache.offline {
+			return d.fetchExpandAndVerify(ctx, pkg, "", d.expandOptions())
+		}
+
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			return nil, fmt.Errorf("unable to create cache directory %q: %w", cacheDir, err)
 		}
