@@ -113,6 +113,32 @@ apko publish examples/alpine-base.yaml myrepo/alpine-apko:test
 
 See the [docs](./docs/apko_file.md) for details of the file format and the [examples directory](./examples) for more, err, examples!
 
+## Tracing
+
+The standalone CLI can export its existing OpenTelemetry spans when you explicitly
+set `OTEL_TRACES_EXPORTER=otlp`. For example, to send a build trace to a local
+collector over gRPC:
+
+```sh
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+apko build examples/alpine-base.yaml alpine:latest alpine.tar
+```
+
+Export is disabled by default. `OTEL_SDK_DISABLED=true` also disables this setup.
+`OTEL_SERVICE_NAME` overrides the default service name, `apko`, and
+`OTEL_RESOURCE_ATTRIBUTES` adds resource attributes. The OTLP exporters use the
+standard endpoint, header, timeout, and TLS environment variables.
+
+`OTEL_EXPORTER_OTLP_PROTOCOL` selects `grpc` (the default) or `http/protobuf`.
+`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` takes precedence for traces. For HTTP, use an
+endpoint such as `http://localhost:4318` instead.
+
+The CLI ends the command span and gives pending spans up to five seconds to flush,
+including after a command error or cancellation. Telemetry failures are reported
+without changing the command result or exit code. Library callers continue to
+configure their own TracerProvider.
+
 ## Why
 
 apko was created by [Chainguard](https://www.chainguard.dev), who requires secure and reproducible
