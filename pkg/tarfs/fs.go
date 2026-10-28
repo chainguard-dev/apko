@@ -424,13 +424,14 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		}
 
 		// Otherwise, we are opening this file to modify it, so buffer the data.
-		// From here on the node's data is the file's content, even once it is
-		// empty.
-		anode.written = true
-		anode.data, err = io.ReadAll(f)
+		data, err := io.ReadAll(f)
 		if err != nil {
 			return nil, err
 		}
+		// From here on the node's data is the file's content, even once it is
+		// empty.
+		anode.data = data
+		anode.written = true
 	}
 
 	return newMemFile(anode, name, m, flag), nil

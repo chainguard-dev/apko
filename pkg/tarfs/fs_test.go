@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -207,4 +208,74 @@ func TestTarFSTruncatePackageFile(t *testing.T) {
 	info, err := m.Stat("etc/conf")
 	require.NoError(t, err)
 	require.Zero(t, info.Size())
+}
+
+func TestTarFSPackageFileReadFailure(t *testing.T) {
+	content := []byte("the package's content\n")
+	sum := sha1.Sum(content) //nolint:gosec // APK per-file checksums are SHA-1
+	base := fstest.MapFS{"etc/conf": {Data: content, Mode: 0o644}}
+	readErr := errors.New("backing read failed")
+	src := &failFirstReadFS{FS: base, err: readErr}
+	hdr := tar.Header{
+		Typeflag:   tar.TypeReg,
+		Name:       "etc/conf",
+		Mode:       0o644,
+		Size:       int64(len(content)),
+		PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])},
+	}
+	m := tarfs.New()
+	require.NoError(t, m.MkdirAll("etc", 0o755))
+	_, err := m.WriteHeader(hdr, src, &apk.Package{Name: "p", Origin: "p"})
+	require.NoError(t, err)
+
+	_, err = m.OpenFile("etc/conf", os.O_RDWR, 0o644)
+	require.ErrorIs(t, err, readErr)
+
+	got, err := m.ReadFile("etc/conf")
+	require.NoError(t, err)
+	require.Equal(t, content, got)
+	info, err := m.Stat("etc/conf")
+	require.NoError(t, err)
+	require.Equal(t, int64(len(content)), info.Size())
+
+	f, err := m.OpenFile("etc/conf", os.O_RDWR, 0o644)
+	require.NoError(t, err)
+	n, err := f.Write([]byte("new"))
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	require.NoError(t, f.Close())
+
+	got, err = m.ReadFile("etc/conf")
+	require.NoError(t, err)
+	require.Equal(t, "new"+string(content[3:]), string(got))
+	got, err = fs.ReadFile(base, "etc/conf")
+	require.NoError(t, err)
+	require.Equal(t, content, got)
+}
+
+type failFirstReadFS struct {
+	fs.FS
+	err error
+}
+
+func (f *failFirstReadFS) Open(name string) (fs.File, error) {
+	file, err := f.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if f.err != nil {
+		err := f.err
+		f.err = nil
+		return &failedReadFile{File: file, err: err}, nil
+	}
+	return file, nil
+}
+
+type failedReadFile struct {
+	fs.File
+	err error
+}
+
+func (f *failedReadFile) Read([]byte) (int, error) {
+	return 0, f.err
 }
