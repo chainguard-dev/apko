@@ -406,7 +406,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 
 	// NOTE: This is where we diverge from memfs a bit.
 	// If the node has a tarentry, then we may be reading from a tarfs.
-	if anode.te != nil && len(anode.data) == 0 && anode.te.header.Size != 0 {
+	if anode.te != nil && !anode.written && len(anode.data) == 0 && anode.te.header.Size != 0 {
 		f, err := anode.te.tfs.Open(anode.te.header.Name)
 		if err != nil {
 			return nil, err
@@ -424,10 +424,14 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		}
 
 		// Otherwise, we are opening this file to modify it, so buffer the data.
-		anode.data, err = io.ReadAll(f)
+		data, err := io.ReadAll(f)
 		if err != nil {
 			return nil, err
 		}
+		// From here on the node's data is the file's content, even once it is
+		// empty.
+		anode.data = data
+		anode.written = true
 	}
 
 	return newMemFile(anode, name, m, flag), nil
@@ -970,6 +974,8 @@ type node struct {
 
 	// This stores metadata for a tarfs-backed file.
 	te *tarEntry
+	// written is set once a tarfs-backed file is opened to be modified.
+	written bool
 }
 
 func (n *node) fileInfo(parent, name string) fs.FileInfo {
@@ -991,7 +997,7 @@ func (m *memFileInfo) Name() string {
 }
 
 func (m *memFileInfo) Size() int64 {
-	if m.te != nil && len(m.data) == 0 {
+	if m.te != nil && !m.written && len(m.data) == 0 {
 		return m.te.header.Size
 	}
 	return int64(len(m.data))
