@@ -21,6 +21,7 @@ import (
 	"os/signal"
 
 	"chainguard.dev/apko/internal/cli"
+	"chainguard.dev/apko/internal/tracing"
 
 	// Import spdx generator to register it.
 	_ "chainguard.dev/apko/pkg/sbom/generator/spdx"
@@ -36,5 +37,5 @@ func mainE() error {
 	ctx, done := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer done()
 
-	return cli.New().ExecuteContext(ctx)
+	return tracing.Run(ctx, "apko", "apko", cli.New().ExecuteContext)
 }
