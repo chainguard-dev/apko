@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -91,8 +92,7 @@ func pooledBufioWriter(w io.Writer) *bufio.Writer {
 // of doing everything in one pass, this is necessary for multi-layer
 // images where we are writing to multiple layers at the same time.
 type layerWriter struct {
-	w     *tar.Writer
-	stack []*file // only used by multi-layer builds
+	w *tar.Writer
 	// finalize closes the writer chain and returns the layer it produced.
 	// It always completes the teardown, even when it reports an error, so a
 	// caller abandoning a writer mid-build calls it and discards the result
@@ -125,15 +125,76 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 // written and compression is deferred to layer.compress(). workers is ignored
 // unless compressed is set.
 func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, error) {
+	ls, err := newLayerStream(out, compressed, workers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &layerWriter{
+		w: ls.tw,
+		finalize: func() (v1.Layer, error) {
+			d, err := ls.finish()
+			if err != nil {
+				if errors.Is(err, errStreamFinished) {
+					return nil, fmt.Errorf("layer writer for %s already finalized", out.Name())
+				}
+				return nil, fmt.Errorf("%s: %w", out.Name(), err)
+			}
+
+			l := &layer{
+				desc: &v1.Descriptor{
+					MediaType: v1types.OCILayer,
+				},
+				diffid: &d.DiffID,
+			}
+			if compressed {
+				l.compressed = out.Name()
+				l.desc.Digest = d.Digest
+				l.desc.Size = d.Size
+			} else {
+				l.uncompressed = out.Name()
+			}
+
+			return l, nil
+		},
+	}, nil
+}
+
+// LayerDigests identify a written layer: the digest of its tar (its diff
+// ID) and, when the layer is gzipped, the digest and size of the gzip.
+type LayerDigests struct {
+	// DiffID is the digest of the uncompressed tar.
+	DiffID v1.Hash
+	// Digest and Size describe the gzipped tar, with Size measured in bytes.
+	// Both have their zero values when compression is disabled.
+	Digest v1.Hash
+	Size   int64
+}
+
+var errStreamFinished = errors.New("layer stream already finished")
+
+// layerStream computes a layer's digests and compressed size as it writes,
+// without reading the output back.
+type layerStream struct {
+	tw     *tar.Writer
+	finish func() (LayerDigests, error)
+}
+
+// newLayerStream starts a layer's tar on out, gzipped with workers pgzip
+// workers when compressed is set (the output is the same for any worker
+// count) and buffered otherwise. finish flushes and closes the writers,
+// even after an error, and returns the digests; a second call returns
+// errStreamFinished.
+func newLayerStream(out io.Writer, compressed bool, workers int) (*layerStream, error) {
 	diffid := sha256.New()
 
-	// The modes differ only in what sits between the tar writer and the file.
+	// The modes differ only in what sits between the tar writer and out.
 	var (
 		dst io.Writer
 		buf *bufio.Writer
 		gzw *gzip.Writer
-		// Set in compressed mode only: the compressed digest and byte count,
-		// which have to be captured inline because nothing re-reads the file.
+		// Track the compressed digest and byte count while writing because
+		// out may not support reading.
 		digest hash.Hash
 		cw     *countingWriter
 	)
@@ -153,11 +214,11 @@ func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, e
 	w := tar.NewWriter(io.MultiWriter(diffid, dst))
 
 	done := false
-	return &layerWriter{
-		w: w,
-		finalize: func() (v1.Layer, error) {
+	return &layerStream{
+		tw: w,
+		finish: func() (LayerDigests, error) {
 			if done {
-				return nil, fmt.Errorf("layer writer for %s already finalized", out.Name())
+				return LayerDigests{}, errStreamFinished
 			}
 			done = true
 
@@ -180,35 +241,28 @@ func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, e
 			}
 			if buf != nil {
 				if err := buf.Flush(); err != nil {
-					fail(fmt.Errorf("flushing %s: %w", out.Name(), err))
+					fail(fmt.Errorf("flushing layer: %w", err))
 				}
 				bufioPool.Put(buf)
 			}
 			if rerr != nil {
-				return nil, rerr
+				return LayerDigests{}, rerr
 			}
 
-			l := &layer{
-				desc: &v1.Descriptor{
-					MediaType: v1types.OCILayer,
-				},
-				diffid: &v1.Hash{
+			d := LayerDigests{
+				DiffID: v1.Hash{
 					Algorithm: "sha256",
 					Hex:       hex.EncodeToString(diffid.Sum(make([]byte, 0, diffid.Size()))),
 				},
 			}
 			if compressed {
-				l.compressed = out.Name()
-				l.desc.Digest = v1.Hash{
+				d.Digest = v1.Hash{
 					Algorithm: "sha256",
 					Hex:       hex.EncodeToString(digest.Sum(make([]byte, 0, digest.Size()))),
 				}
-				l.desc.Size = cw.n
-			} else {
-				l.uncompressed = out.Name()
+				d.Size = cw.n
 			}
-
-			return l, nil
+			return d, nil
 		},
 	}, nil
 }
