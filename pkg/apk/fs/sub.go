@@ -81,7 +81,7 @@ func (s *SubFS) Chown(path string, uid int, gid int) error {
 func (s *SubFS) Lchown(path string, uid int, gid int) error {
 	lfs, ok := s.FS.(LchownFS)
 	if !ok {
-		return fmt.Errorf("lchown %q: underlying filesystem does not support lchown", path)
+		return fmt.Errorf("lchown %q: underlying filesystem: %w", path, errors.ErrUnsupported)
 	}
 	fullPath := filepath.Join(s.Root, path)
 	return lfs.Lchown(fullPath, uid, gid)

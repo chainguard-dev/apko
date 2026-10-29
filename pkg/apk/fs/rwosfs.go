@@ -650,7 +650,7 @@ func (f *dirFS) Lchown(path string, uid, gid int) error {
 	}
 	lfs, ok := f.overrides.(LchownFS)
 	if !ok {
-		return fmt.Errorf("lchown %q: overrides filesystem does not support lchown", path)
+		return fmt.Errorf("lchown %q: overrides filesystem: %w", path, errors.ErrUnsupported)
 	}
 	return lfs.Lchown(path, uid, gid)
 }

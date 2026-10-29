@@ -16,6 +16,7 @@ package fs
 
 import (
 	"archive/tar"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,4 +61,51 @@ func TestLchownDoesNotFollowSymlink(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLchownTrailingSlash: a trailing slash must not make Lchown resolve the
+// link. With /home/link -> /etc and an existing /etc/link, an unclean path
+// would otherwise look "link" up in the link's target and re-own /etc/link.
+func TestLchownTrailingSlash(t *testing.T) {
+	for name, newFS := range map[string]func(t *testing.T) FullFS{
+		"memfs": func(*testing.T) FullFS { return NewMemFS() },
+		"dirfs": func(t *testing.T) FullFS { return DirFS(t.Context(), t.TempDir()) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			fsys := newFS(t)
+			require.NoError(t, fsys.MkdirAll("/etc", 0o755))
+			require.NoError(t, fsys.WriteFile("/etc/link", []byte("x"), 0o644))
+			require.NoError(t, fsys.MkdirAll("/home", 0o755))
+			require.NoError(t, fsys.Symlink("/etc", "/home/link"))
+
+			require.NoError(t, fsys.(LchownFS).Lchown("/home/link/", 999, 998))
+
+			fi, err := fsys.Stat("/etc/link")
+			require.NoError(t, err)
+			require.Equal(t, 0, fi.Sys().(*tar.Header).Uid, "/etc/link was re-owned")
+			des, err := fsys.ReadDir("/home")
+			require.NoError(t, err)
+			require.Len(t, des, 1)
+			info, err := des[0].Info()
+			require.NoError(t, err)
+			require.Equal(t, 999, info.Sys().(*tar.Header).Uid, "/home/link was not re-owned")
+			require.Equal(t, 998, info.Sys().(*tar.Header).Gid, "/home/link was not re-owned")
+		})
+	}
+}
+
+// noLchownFS hides any Lchown method of the wrapped filesystem.
+type noLchownFS struct{ FullFS }
+
+func TestSubFSLchownUnsupported(t *testing.T) {
+	base := noLchownFS{NewMemFS()}
+	require.NoError(t, base.MkdirAll("/sub/home", 0o755))
+	require.NoError(t, base.Symlink("/etc", "/sub/home/link"))
+	sub := &SubFS{FS: base, Root: "/sub"}
+	require.ErrorIs(t, sub.Lchown("/home/link", 999, 998), errors.ErrUnsupported)
+
+	full := &SubFS{FS: NewMemFS(), Root: "/sub"}
+	require.NoError(t, full.FS.MkdirAll("/sub/home", 0o755))
+	require.NoError(t, full.FS.Symlink("/etc", "/sub/home/link"))
+	require.NoError(t, full.Lchown("/home/link", 999, 998))
 }

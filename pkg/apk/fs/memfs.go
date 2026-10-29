@@ -396,6 +396,7 @@ func (m *memFS) Lchown(path string, uid, gid int) error {
 
 // getNodeNoFollow is getNode without resolving the final path component.
 func (m *memFS) getNodeNoFollow(path string) (*node, error) {
+	path = filepath.Clean(path)
 	base := filepath.Base(path)
 	if base == pathSep || base == "." {
 		return m.getNode(path)

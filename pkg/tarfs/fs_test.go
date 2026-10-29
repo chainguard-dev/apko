@@ -279,3 +279,56 @@ type failedReadFile struct {
 func (f *failedReadFile) Read([]byte) (int, error) {
 	return 0, f.err
 }
+
+// TestTarFSLchown checks that Lchown re-owns a symlink itself rather than its
+// target, including for a dangling link and a path with a trailing slash.
+func TestTarFSLchown(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		wantErr    bool
+	}{
+		{name: "link", path: "/home/link"},
+		{name: "trailing slash", path: "/home/link/"},
+		{name: "dangling", path: "/home/dangling"},
+		{name: "regular file", path: "/etc/link"},
+		{name: "missing", path: "/home/missing", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tarfs.New()
+			require.NoError(t, m.MkdirAll("/etc", 0o755))
+			require.NoError(t, m.WriteFile("/etc/link", []byte("x"), 0o644))
+			require.NoError(t, m.MkdirAll("/home", 0o755))
+			require.NoError(t, m.Symlink("/etc", "/home/link"))
+			require.NoError(t, m.Symlink("/does/not/exist", "/home/dangling"))
+
+			err := m.Lchown(tc.path, 999, 998)
+			if tc.wantErr {
+				require.ErrorIs(t, err, fs.ErrNotExist)
+				return
+			}
+			require.NoError(t, err)
+
+			owners := map[string][2]int{}
+			for _, dir := range []string{"/etc", "/home"} {
+				des, err := m.ReadDir(dir)
+				require.NoError(t, err)
+				for _, de := range des {
+					info, err := de.Info()
+					require.NoError(t, err)
+					hdr, ok := info.Sys().(*tar.Header)
+					require.True(t, ok)
+					owners[filepath.Join(dir, de.Name())] = [2]int{hdr.Uid, hdr.Gid}
+				}
+			}
+			want := filepath.Clean(tc.path)
+			for path, got := range owners {
+				if path == want {
+					require.Equal(t, [2]int{999, 998}, got, "owner of %s", path)
+				} else {
+					require.Equal(t, [2]int{0, 0}, got, "owner of %s changed", path)
+				}
+			}
+			require.Contains(t, owners, want)
+		})
+	}
+}

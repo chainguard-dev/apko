@@ -46,14 +46,17 @@ func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMuta
 // mutatePermissionsRecursive applies perms (and uid/gid, when set) to path and,
 // if path is a directory, to every entry beneath it.
 //
-// Symlinks found inside the tree are not followed, matching chmod -R and
-// chown -R: their mode is left alone (it is meaningless on Linux) and only the
-// link itself is re-owned. Chmod/Chown on the FS resolve the final path
-// component, so applying them to a link would instead mutate its target, which
-// can be anywhere in the image (e.g. a venv's certifi/cacert.pem linking to
-// /etc/ssl/certs/ca-certificates.crt), or fail the build if the link dangles.
-// A symlink passed as path itself is still resolved, as chmod -R does for its
-// operands.
+// Symlinks found inside the tree are not followed, as with chmod -R and
+// chown -R (which defaults to -P): their mode is left alone (it is
+// meaningless on Linux) and only the link itself is re-owned. Chmod/Chown on
+// the FS resolve the final path component, so applying them to a link would
+// instead mutate its target, which can be anywhere in the image (e.g. a venv's
+// certifi/cacert.pem linking to /etc/ssl/certs/ca-certificates.crt), or fail
+// the build if the link dangles.
+// A symlink passed as path itself is still resolved, for ownership as well
+// as mode (like chmod -R; chown -R would re-own only the link). Packages ship
+// compat paths such as /opt/<app> as links to their real tree, and configs
+// expect that tree re-owned.
 func mutatePermissionsRecursive(fsys apkfs.FullFS, path string, perms uint32, uid types.UID, gid types.GID) error {
 	return fs.WalkDir(fsys, path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -73,7 +76,9 @@ func mutatePermissionsRecursive(fsys apkfs.FullFS, path string, perms uint32, ui
 }
 
 // mutateSymlinkOwner re-owns the symlink at path without touching its target.
-// Filesystems that cannot do that leave the link's ownership as-is.
+// Filesystems that cannot do that (no Lchown, or an Lchown that reports
+// errors.ErrUnsupported, as SubFS does over such a filesystem) leave the link's
+// ownership as-is.
 func mutateSymlinkOwner(fsys apkfs.FullFS, path string, uid types.UID, gid types.GID) error {
 	u, g, ok := resolveOwner(uid, gid)
 	if !ok {
@@ -84,6 +89,9 @@ func mutateSymlinkOwner(fsys apkfs.FullFS, path string, uid types.UID, gid types
 		return nil
 	}
 	if err := lfs.Lchown(path, u, g); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			return nil
+		}
 		return fmt.Errorf("lchown %q: %w", path, err)
 	}
 	return nil
