@@ -642,6 +642,19 @@ func (f *dirFS) Chown(path string, uid, gid int) error {
 	return f.overrides.Chown(path, uid, gid)
 }
 
+func (f *dirFS) Lchown(path string, uid, gid int) error {
+	if f.caseSensitiveOnDisk(path) {
+		if err := f.root.Lchown(f.relPath(path), uid, gid); err != nil && !isUnsupportedByFS(err) {
+			return err
+		}
+	}
+	lfs, ok := f.overrides.(LchownFS)
+	if !ok {
+		return fmt.Errorf("lchown %q: overrides filesystem does not support lchown", path)
+	}
+	return lfs.Lchown(path, uid, gid)
+}
+
 func (f *dirFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 	if err := f.root.Chtimes(f.relPath(path), atime, mtime); err != nil {
 		return fmt.Errorf("unable to change times: %w", err)
