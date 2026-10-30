@@ -25,6 +25,18 @@ import (
 	"chainguard.dev/apko/pkg/apk/types"
 )
 
+// ContentDigester is an optional interface for a PackageContents' FS: one that
+// can name an entry's content by digest without it being read. A filesystem
+// installed from it (such as pkg/tarfs) can then report each file's digest
+// for as long as the file's content is still what was installed.
+//
+// A digest must identify the content exactly, since a consumer may stand it
+// in for the bytes: two entries with the same digest have the same content.
+// It is in "<algorithm>:<hex>" format.
+type ContentDigester interface {
+	ContentDigest(name string) (digest string, ok bool)
+}
+
 // PackageContents is the per-package input to installation: the package's
 // control-section metadata, its install records (tar headers, in install
 // order), and a filesystem that opens each record's content by name. It

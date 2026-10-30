@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io/fs"
@@ -330,5 +331,113 @@ func TestTarFSLchown(t *testing.T) {
 			}
 			require.Contains(t, owners, want)
 		})
+	}
+}
+
+// digestingFS names each entry's content by digest, as an
+// apk.ContentDigester.
+type digestingFS struct {
+	fstest.MapFS
+	digests map[string]string
+}
+
+func (d digestingFS) ContentDigest(name string) (string, bool) {
+	dg, ok := d.digests[name]
+	return dg, ok
+}
+
+func TestContentDigest(t *testing.T) {
+	const content = "package content"
+	sum := sha1.Sum([]byte(content)) //nolint:gosec
+	reg := func(name string) tar.Header {
+		return tar.Header{
+			Typeflag:   tar.TypeReg,
+			Name:       name,
+			Mode:       0o644,
+			Size:       int64(len(content)),
+			PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])},
+		}
+	}
+	names := []string{"kept", "chmodded", "chowned", "rewritten", "appended", "opened-rw", "removed", "nodigest", "plain-source"}
+	src := digestingFS{MapFS: fstest.MapFS{}, digests: map[string]string{}}
+	plain := fstest.MapFS{}
+	for _, n := range names {
+		src.MapFS[n] = &fstest.MapFile{Data: []byte(content)}
+		plain[n] = &fstest.MapFile{Data: []byte(content)}
+		if n != "nodigest" {
+			src.digests[n] = "test:" + n
+		}
+	}
+	pkg := &apk.Package{Name: "p", Origin: "p"}
+
+	m := tarfs.New()
+	for _, n := range names {
+		var from fs.FS = src
+		if n == "plain-source" {
+			from = plain
+		}
+		if _, err := m.WriteHeader(reg(n), from, pkg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for link, target := range map[string]string{"kept-link": "kept", "appended-link": "appended"} {
+		if _, err := m.WriteHeader(tar.Header{Typeflag: tar.TypeLink, Name: link, Linkname: target}, src, pkg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.WriteFile("created", []byte(content), 0o644) //nolint:errcheck
+
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(m.Chmod("chmodded", 0o600))
+	must(m.Chown("chowned", 1000, 1000))
+	must(m.WriteFile("rewritten", []byte("other"), 0o644))
+	f, err := m.OpenFile("appended", os.O_WRONLY|os.O_APPEND, 0o644)
+	must(err)
+	_, err = f.Write([]byte("more"))
+	must(err)
+	must(f.Close())
+	// Opened to be modified, but nothing written: its content is now held in
+	// memory, so it is hashed rather than taken from the package.
+	f, err = m.OpenFile("opened-rw", os.O_RDWR, 0o644)
+	must(err)
+	must(f.Close())
+	must(m.Remove("removed"))
+	must(m.WriteFile("removed", []byte(content), 0o644))
+	must(m.MkdirAll("dir", 0o755))
+
+	sha256Of := func(s string) string {
+		sum := sha256.Sum256([]byte(s))
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	// Non-empty regular files use the supplied digest while backed by the
+	// package, and SHA-256 otherwise. Directories return an empty digest.
+	for name, want := range map[string]string{
+		"kept":          "test:kept",
+		"chmodded":      "test:chmodded",
+		"chowned":       "test:chowned",
+		"rewritten":     sha256Of("other"),
+		"appended":      sha256Of(content + "more"),
+		"kept-link":     "test:kept",
+		"appended-link": sha256Of(content + "more"),
+		"opened-rw":     sha256Of(content),
+		"removed":       sha256Of(content),
+		"nodigest":      sha256Of(content),
+		"plain-source":  sha256Of(content),
+		"created":       sha256Of(content),
+		"dir":           "",
+	} {
+		info, err := m.Stat(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := info.(interface{ ContentDigest() (string, error) }).ContentDigest()
+		if err != nil || got != want {
+			t.Errorf("%s: ContentDigest() = %q, %v; want %q", name, got, err, want)
+		}
 	}
 }
