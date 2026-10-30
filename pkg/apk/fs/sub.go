@@ -2,6 +2,7 @@ package fs
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"time"
@@ -76,6 +77,14 @@ func (s *SubFS) Chmod(path string, perm fs.FileMode) error {
 func (s *SubFS) Chown(path string, uid int, gid int) error {
 	fullPath := filepath.Join(s.Root, path)
 	return s.FS.Chown(fullPath, uid, gid)
+}
+func (s *SubFS) Lchown(path string, uid int, gid int) error {
+	lfs, ok := s.FS.(LchownFS)
+	if !ok {
+		return fmt.Errorf("lchown %q: underlying filesystem: %w", path, errors.ErrUnsupported)
+	}
+	fullPath := filepath.Join(s.Root, path)
+	return lfs.Lchown(fullPath, uid, gid)
 }
 func (s *SubFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 	fullPath := filepath.Join(s.Root, path)
