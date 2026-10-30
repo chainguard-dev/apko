@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io/fs"
@@ -28,7 +29,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"chainguard.dev/apko/internal/contentdigest"
 	"chainguard.dev/apko/pkg/apk/apk"
 
 	"chainguard.dev/apko/pkg/build"
@@ -410,21 +410,25 @@ func TestContentDigest(t *testing.T) {
 	must(m.WriteFile("removed", []byte(content), 0o644))
 	must(m.MkdirAll("dir", 0o755))
 
+	sha256Of := func(s string) string {
+		sum := sha256.Sum256([]byte(s))
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
 	// Non-empty regular files use the supplied digest while backed by the
 	// package, and SHA-256 otherwise. Directories return an empty digest.
 	for name, want := range map[string]string{
 		"kept":          "test:kept",
 		"chmodded":      "test:chmodded",
 		"chowned":       "test:chowned",
-		"rewritten":     contentdigest.OfBytes([]byte("other")),
-		"appended":      contentdigest.OfBytes([]byte(content + "more")),
+		"rewritten":     sha256Of("other"),
+		"appended":      sha256Of(content + "more"),
 		"kept-link":     "test:kept",
-		"appended-link": contentdigest.OfBytes([]byte(content + "more")),
-		"opened-rw":     contentdigest.OfBytes([]byte(content)),
-		"removed":       contentdigest.OfBytes([]byte(content)),
-		"nodigest":      contentdigest.OfBytes([]byte(content)),
-		"plain-source":  contentdigest.OfBytes([]byte(content)),
-		"created":       contentdigest.OfBytes([]byte(content)),
+		"appended-link": sha256Of(content + "more"),
+		"opened-rw":     sha256Of(content),
+		"removed":       sha256Of(content),
+		"nodigest":      sha256Of(content),
+		"plain-source":  sha256Of(content),
+		"created":       sha256Of(content),
 		"dir":           "",
 	} {
 		info, err := m.Stat(name)

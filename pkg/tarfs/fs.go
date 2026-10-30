@@ -33,9 +33,9 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"golang.org/x/sys/unix"
 
-	"chainguard.dev/apko/internal/contentdigest"
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 )
@@ -1086,7 +1086,7 @@ func (m *memFileInfo) ContentDigest() (string, error) {
 		return "", nil
 	}
 	if m.te == nil || m.written || len(m.data) != 0 {
-		return contentdigest.OfBytes(m.data), nil
+		return sha256Digest(bytes.NewReader(m.data))
 	}
 	if m.te.digest != "" {
 		return m.te.digest, nil
@@ -1096,7 +1096,15 @@ func (m *memFileInfo) ContentDigest() (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	return contentdigest.Of(f)
+	return sha256Digest(f)
+}
+
+func sha256Digest(r io.Reader) (string, error) {
+	h, _, err := v1.SHA256(r)
+	if err != nil {
+		return "", err
+	}
+	return h.String(), nil
 }
 
 // This is a bit janky, but we need a way to know who owns this.
