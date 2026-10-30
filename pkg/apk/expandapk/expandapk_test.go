@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -550,4 +551,196 @@ func TestGzipBombProtection(t *testing.T) {
 		}
 		t.Logf("Successfully caught gzip bomb with limit %d", sizeErr.Limit)
 	})
+}
+
+// TestExpandApkUncompressedTarFile pins what WithUncompressedTarFile changes and
+// what the default leaves out. By default the data section is served from a
+// private copy and no uncompressed tar exists on disk. With the option the tar
+// is written next to PackageFile, TarFile names it, TarFS is indexed from it,
+// and IsValid notices when that named file is replaced, which is what a caller
+// that stores the file itself relies on.
+func TestExpandApkUncompressedTarFile(t *testing.T) {
+	file := "testdata/hello-wolfi-2.12.1-r0.apk"
+	open := func(t *testing.T) *os.File {
+		t.Helper()
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return f
+	}
+	names := func(t *testing.T, exp *APKExpanded) []string {
+		t.Helper()
+		out := make([]string, 0, len(exp.TarFS.Entries()))
+		for _, e := range exp.TarFS.Entries() {
+			out = append(out, e.Header.Name)
+		}
+		return out
+	}
+	tarsOnDisk := func(t *testing.T, dir string) []string {
+		t.Helper()
+		var out []string
+		if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() && strings.HasSuffix(path, ".tar") {
+				out = append(out, path)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	t.Run("default writes no uncompressed tar", func(t *testing.T) {
+		dir := t.TempDir()
+		exp, err := ExpandApkWithOptions(context.Background(), open(t), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exp.Close()
+
+		if exp.TarFile != "" {
+			t.Errorf("TarFile = %q, want empty", exp.TarFile)
+		}
+		if got := tarsOnDisk(t, dir); len(got) != 0 {
+			t.Errorf("uncompressed tar written to disk: %v", got)
+		}
+		if len(names(t, exp)) == 0 {
+			t.Error("TarFS has no entries")
+		}
+		if !exp.IsValid() {
+			t.Error("a fresh expansion must be valid")
+		}
+	})
+
+	t.Run("option writes and serves the named tar", func(t *testing.T) {
+		dir := t.TempDir()
+		exp, err := ExpandApkWithOptions(context.Background(), open(t), dir, WithUncompressedTarFile())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exp.Close()
+
+		if exp.TarFile == "" {
+			t.Fatal("TarFile is empty with WithUncompressedTarFile")
+		}
+		if got := tarsOnDisk(t, dir); len(got) != 1 || got[0] != exp.TarFile {
+			t.Errorf("uncompressed tars on disk = %v, want exactly %q", got, exp.TarFile)
+		}
+		f, ok := exp.TarFS.UnderlyingReader().(*os.File)
+		if !ok || f.Name() != exp.TarFile {
+			t.Fatalf("TarFS is not indexed from the named tar: %T %v", exp.TarFS.UnderlyingReader(), ok)
+		}
+
+		want := names(t, mustExpand(t, open(t), t.TempDir()))
+		if got := names(t, exp); !slices.Equal(got, want) {
+			t.Errorf("entries differ between the named tar and the private copy:\n got %v\nwant %v", got, want)
+		}
+
+		if !exp.IsValid() {
+			t.Fatal("a fresh expansion must be valid")
+		}
+		// Replace the named file. The descriptor TarFS holds now points at an
+		// orphaned inode, which the name check must catch.
+		b, err := os.ReadFile(exp.TarFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(exp.TarFile); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exp.TarFile, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if exp.IsValid() {
+			t.Error("IsValid did not notice the named tar being replaced")
+		}
+	})
+}
+
+func mustExpand(t *testing.T, f *os.File, dir string) *APKExpanded {
+	t.Helper()
+	exp, err := ExpandApkWithOptions(context.Background(), f, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { exp.Close() })
+	return exp
+}
+
+// TestPackageDataAfterExpandApk pins that an explicit PackageData request still
+// works on a default expansion, which names no tar: the destination is derived
+// from PackageFile, written on first use, reused on the next, and holds the
+// same entries TarFS serves from the private copy.
+func TestPackageDataAfterExpandApk(t *testing.T) {
+	f, err := os.Open("testdata/hello-wolfi-2.12.1-r0.apk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	exp, err := ExpandApkWithOptions(context.Background(), f, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exp.Close()
+	if exp.TarFile != "" {
+		t.Fatalf("TarFile = %q before PackageData, want empty", exp.TarFile)
+	}
+
+	data, err := exp.PackageData()
+	if err != nil {
+		t.Fatalf("PackageData on a default expansion: %v", err)
+	}
+	defer data.Close()
+
+	want := strings.TrimSuffix(exp.PackageFile, ".gz")
+	if exp.TarFile != want || data.Name() != want {
+		t.Fatalf("PackageData wrote %q and recorded %q, want %q", data.Name(), exp.TarFile, want)
+	}
+	first, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tarNames := func(r io.Reader) []string {
+		var out []string
+		tr := tar.NewReader(r)
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				return out
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, h.Name)
+		}
+	}
+	got := tarNames(data)
+	want2 := make([]string, 0, len(exp.TarFS.Entries()))
+	for _, e := range exp.TarFS.Entries() {
+		want2 = append(want2, e.Header.Name)
+	}
+	if !slices.Equal(got, want2) {
+		t.Errorf("PackageData entries differ from TarFS:\n got %v\nwant %v", got, want2)
+	}
+
+	// A second call opens the file already written rather than rewriting it.
+	again, err := exp.PackageData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	second, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(first, second) {
+		t.Error("second PackageData call rewrote the tar")
+	}
 }
