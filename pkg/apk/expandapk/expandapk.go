@@ -76,9 +76,10 @@ type APKExpanded struct {
 	// The package data filename in .tar.gz format
 	PackageFile string
 
-	// The package data filename in .tar format. Only PackageData names and
-	// writes it; the package getter serves the data section from a private
-	// copy instead (VerifiedPackageData) and leaves this empty.
+	// The package data filename in .tar format. Set by ExpandApk only with
+	// WithUncompressedTarFile, and by PackageData, which names and writes it;
+	// the package getter serves the data section from a private copy instead
+	// (VerifiedPackageData) and leaves this empty.
 	TarFile string
 
 	// Expose ControlFile as an indexed FS implementation.
@@ -520,18 +521,41 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 			hashes = append(hashes, h.Sum(nil))
 			gzipStreams = append(gzipStreams, sw.CurrentName())
 		} else {
-			// Verify the per-file checksums from the stream. The data section is
-			// inflated again below, into the private copy that gets served, so
-			// nothing is written to disk here.
+			// Verify the per-file checksums from the stream. By default nothing
+			// is written to disk here: the data section is inflated again below
+			// into the private copy that gets served. With UncompressedTarFile
+			// the tar is tee'd to disk as well, to be indexed and served by name.
 			//
 			// Wrap the gzip reader with a limit to protect against decompression bombs
 			limitedGzi := limitio.NewLimitedReaderWithDefault(gzi, options.MaxDataSize, DefaultMaxDataSize)
+			var tr io.Reader = limitedGzi
 
-			if err := checkSums(ctx, limitedGzi); err != nil {
+			var tarfile *os.File
+			var bw *bufio.Writer
+			if options.UncompressedTarFile {
+				tarfile, err = os.Create(strings.TrimSuffix(sw.CurrentName(), ".gz"))
+				if err != nil {
+					return nil, fmt.Errorf("opening tar file: %w", err)
+				}
+				bw = pooledBufioWriter(tarfile)
+				defer writerPool.Put(bw)
+				tr = io.TeeReader(limitedGzi, bw)
+			}
+
+			if err := checkSums(ctx, tr); err != nil {
 				return nil, fmt.Errorf("checking sums: %w", err)
 			}
-			if _, err := io.Copy(io.Discard, limitedGzi); err != nil {
+			if _, err := io.Copy(io.Discard, tr); err != nil {
 				return nil, fmt.Errorf("expandApk error 3: %w", err)
+			}
+
+			if tarfile != nil {
+				if err := bw.Flush(); err != nil {
+					return nil, fmt.Errorf("flushing tarfile: %w", err)
+				}
+				if err := tarfile.Close(); err != nil {
+					return nil, fmt.Errorf("closing tarfile: %w", err)
+				}
 			}
 
 			gzipStreams = append(gzipStreams, sw.CurrentName())
@@ -614,8 +638,17 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 	// PackageFile: nothing reads one from the cache, and it would double every
 	// package's footprint on disk. TarFile stays empty.
 	//
+	// With UncompressedTarFile the tar tee'd above is what gets indexed, and
+	// TarFile names it, for callers that keep the file and read it by name.
+	//
 	// TODO: We could overlap this with checkSums.
-	data, err := expanded.VerifiedPackageData(expanded.PackageHash)
+	var data *os.File
+	if options.UncompressedTarFile {
+		expanded.TarFile = strings.TrimSuffix(expanded.PackageFile, ".gz")
+		data, err = expanded.PackageData()
+	} else {
+		data, err = expanded.VerifiedPackageData(expanded.PackageHash)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +660,7 @@ func ExpandApkWithOptions(ctx context.Context, source io.Reader, cacheDir string
 	expanded.TarFS, err = tarfs.New(data, info.Size())
 	if err != nil {
 		data.Close()
-		return nil, fmt.Errorf("indexing %q: %w", expanded.PackageFile, err)
+		return nil, fmt.Errorf("indexing %q: %w", data.Name(), err)
 	}
 
 	succeeded = true
