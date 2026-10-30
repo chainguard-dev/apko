@@ -38,12 +38,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/hashicorp/go-retryablehttp"
 	"go.lsp.dev/uri"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"go.step.sm/crypto/jose"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 

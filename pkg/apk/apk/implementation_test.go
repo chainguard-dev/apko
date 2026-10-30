@@ -33,8 +33,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/require"
-	"go.step.sm/crypto/jose"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
