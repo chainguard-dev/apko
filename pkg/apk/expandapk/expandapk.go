@@ -77,9 +77,10 @@ type APKExpanded struct {
 	PackageFile string
 
 	// The package data filename in .tar format. Set by ExpandApk only with
-	// WithUncompressedTarFile, and by PackageData, which names and writes it;
-	// the package getter serves the data section from a private copy instead
-	// (VerifiedPackageData) and leaves this empty.
+	// WithUncompressedTarFile, and otherwise by the first PackageData call,
+	// which derives it from PackageFile and writes it; the package getter
+	// serves the data section from a private copy instead (VerifiedPackageData)
+	// and leaves this empty.
 	TarFile string
 
 	// Expose ControlFile as an indexed FS implementation.
@@ -162,7 +163,8 @@ func (a *APKExpanded) ControlData() ([]byte, error) {
 }
 
 // PackageData opens the uncompressed data tar, decompressing PackageFile into
-// place first if TarFile is absent.
+// place first if TarFile is absent. When TarFile is unset it is derived from
+// PackageFile by dropping the .gz suffix, and recorded.
 //
 // It performs no integrity checking of any kind: it returns whatever is at
 // TarFile, and TarFile carries no authenticated digest anywhere in the apk
@@ -170,6 +172,12 @@ func (a *APKExpanded) ControlData() ([]byte, error) {
 // a stream it already verified. Anything reading a cache directory it did not
 // just write wants VerifiedPackageData instead.
 func (a *APKExpanded) PackageData() (*os.File, error) {
+	a.Lock()
+	if a.TarFile == "" {
+		a.TarFile = strings.TrimSuffix(a.PackageFile, ".gz")
+	}
+	a.Unlock()
+
 	uf, err := os.Open(a.TarFile)
 	if err == nil {
 		return uf, nil

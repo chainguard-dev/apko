@@ -617,18 +617,16 @@ func TestGetPackage_PoisonedCacheIsRepaired(t *testing.T) {
 
 	exp, err := a.GetPackage(ctx, pkg)
 	require.NoError(t, err, "populating cache")
-	datGz, datTar := exp.PackageFile, strings.TrimSuffix(exp.PackageFile, ".gz")
+	datGz := exp.PackageFile
 	cacheDir := filepath.Dir(exp.ControlFile)
 	wantNames := fsNames(t, exp.TarFS)
 	wantGzSum := sha256File(t, datGz)
 
-	// Poison both halves of the data section. Replacing only the uncompressed
-	// tar is inert, since nothing reads it; poisoning the .gz is what fails the
-	// digest, forces the refetch, and so exercises the install-over-poison path.
+	// Poison the compressed data section: that is what fails the digest, forces
+	// the refetch, and so exercises the install-over-poison path.
 	evil := attackerTar(t)
 	require.NoError(t, os.Remove(datGz))
 	require.NoError(t, os.WriteFile(datGz, gzipped(t, evil), 0o644))
-	require.NoError(t, os.WriteFile(datTar, evil, 0o644))
 
 	globalApkCache.Forget(pkg.URL())
 	_, err = a.cachedPackage(ctx, pkg, cacheDir)
@@ -646,8 +644,6 @@ func TestGetPackage_PoisonedCacheIsRepaired(t *testing.T) {
 	// The repair has to land on disk, or every later call rejects and refetches
 	// again -- a warm cache turned into an unbounded download loop, and a hard
 	// failure when offline.
-	_, err = os.Stat(datTar)
-	require.ErrorIs(t, err, os.ErrNotExist, "planted .dat.tar survived the repair")
 	// Compared against the known-good digest, not against the raw attacker tar:
 	// this file was poisoned with the *gzipped* form, so comparing it to the
 	// uncompressed bytes could never fail and would assert nothing.
@@ -1117,11 +1113,12 @@ func TestGetPackage_PrePlantedEntryLosesToVerifiedDownload(t *testing.T) {
 	}
 
 	// The layout is content-addressed, so learn it from a throwaway fetch rather
-	// than restating the naming scheme here and letting it drift.
+	// than restating the naming scheme here and letting it drift. The plant
+	// goes at the published name of the data section, <datahash>.dat.tar.gz.
 	scoutDir := t.TempDir()
 	scout, err := newGetter(t, scoutDir).GetPackage(ctx, pkg)
 	require.NoError(t, err, "scouting the cache layout")
-	relTar, err := filepath.Rel(scoutDir, strings.TrimSuffix(scout.PackageFile, ".gz"))
+	relTar, err := filepath.Rel(scoutDir, scout.PackageFile)
 	require.NoError(t, err)
 	wantNames := fsNames(t, scout.TarFS)
 

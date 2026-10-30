@@ -574,7 +574,7 @@ func TestExpandApkUncompressedTarFile(t *testing.T) {
 		t.Helper()
 		out := make([]string, 0, len(exp.TarFS.Entries()))
 		for _, e := range exp.TarFS.Entries() {
-			out = append(out, e.Name())
+			out = append(out, e.Header.Name)
 		}
 		return out
 	}
@@ -670,4 +670,77 @@ func mustExpand(t *testing.T, f *os.File, dir string) *APKExpanded {
 	}
 	t.Cleanup(func() { exp.Close() })
 	return exp
+}
+
+// TestPackageDataAfterExpandApk pins that an explicit PackageData request still
+// works on a default expansion, which names no tar: the destination is derived
+// from PackageFile, written on first use, reused on the next, and holds the
+// same entries TarFS serves from the private copy.
+func TestPackageDataAfterExpandApk(t *testing.T) {
+	f, err := os.Open("testdata/hello-wolfi-2.12.1-r0.apk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	exp, err := ExpandApkWithOptions(context.Background(), f, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exp.Close()
+	if exp.TarFile != "" {
+		t.Fatalf("TarFile = %q before PackageData, want empty", exp.TarFile)
+	}
+
+	data, err := exp.PackageData()
+	if err != nil {
+		t.Fatalf("PackageData on a default expansion: %v", err)
+	}
+	defer data.Close()
+
+	want := strings.TrimSuffix(exp.PackageFile, ".gz")
+	if exp.TarFile != want || data.Name() != want {
+		t.Fatalf("PackageData wrote %q and recorded %q, want %q", data.Name(), exp.TarFile, want)
+	}
+	first, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tarNames := func(r io.Reader) []string {
+		var out []string
+		tr := tar.NewReader(r)
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				return out
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, h.Name)
+		}
+	}
+	got := tarNames(data)
+	want2 := make([]string, 0, len(exp.TarFS.Entries()))
+	for _, e := range exp.TarFS.Entries() {
+		want2 = append(want2, e.Header.Name)
+	}
+	if !slices.Equal(got, want2) {
+		t.Errorf("PackageData entries differ from TarFS:\n got %v\nwant %v", got, want2)
+	}
+
+	// A second call opens the file already written rather than rewriting it.
+	again, err := exp.PackageData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	second, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(first, second) {
+		t.Error("second PackageData call rewrote the tar")
+	}
 }

@@ -413,6 +413,10 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 // publishPackage renames exp's temp files to their content-addressable names in
 // cacheDir. It publishes; it does not read anything back, since what a name
 // resolves to once published is not this process's to decide.
+//
+// An entry is the three compressed sections. The uncompressed tar is not one
+// of them: every reader inflates its own verified private copy from the .gz,
+// and a <datahash>.dat.tar left by an older apko is neither read nor touched.
 func publishPackage(exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
 	// These use ReplaceCachedFile rather than AdvertiseCachedFile: everything here
 	// has just been fetched and verified by doFetchExpandAndVerify, so it must win
@@ -448,15 +452,6 @@ func publishPackage(exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APK
 	}
 
 	exp.PackageFile = datDst
-
-	// A cache entry holds only the compressed sections; every reader inflates
-	// its own verified private copy from the .gz. Older apko versions published
-	// the uncompressed tar as <datahash>.dat.tar and read it back by name, so
-	// clear whatever sits at that name, a stale copy, a plant or a directory,
-	// rather than leave it for such a reader to serve.
-	if err := os.RemoveAll(strings.TrimSuffix(datDst, ".gz")); err != nil {
-		return nil, fmt.Errorf("removing stale uncompressed tar: %w", err)
-	}
 
 	return exp, nil
 }
