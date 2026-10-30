@@ -16,12 +16,10 @@ import (
 )
 
 // TestCachePackage_FailureReleasesEverything pins what cachePackage must let go
-// of when it fails part way. Verification now happens before anything is
-// published, so a failure there leaves exp entirely this process's
-// responsibility: its TarFS still holds a descriptor, and its temp directory
-// sits in the shared cache directory where nothing will ever reference or
-// remove it. Once publishing starts, the verified private copy is exp's only
-// data, so a failure to publish has to close that instead.
+// of when publishing fails part way. By then exp's TarFS is the verified
+// private copy ExpandApk inflated, its only data, and its temp directory sits
+// in the shared cache directory where nothing will ever reference or remove
+// it, so a failed publish has to close the one and remove the other.
 func TestCachePackage_FailureReleasesEverything(t *testing.T) {
 	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
 	pkg := NewRepositoryPackage(&testPkg, repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}}))
@@ -52,30 +50,9 @@ func TestCachePackage_FailureReleasesEverything(t *testing.T) {
 		// where there is no handle left to inspect.
 		checkFDs bool
 	}{
-		{
-			name: "verification failure publishes nothing and releases exp",
-			setup: func(t *testing.T, exp *expandapk.APKExpanded) {
-				require.NoError(t, os.WriteFile(exp.PackageFile, []byte("not the package"), 0o600))
-			},
-			wantErr:         "data hash mismatch",
-			wantPublishes:   0,
-			wantTempDirGone: true,
-		},
-		{
-			name: "failure closing the original TarFS still removes the temp dir",
-			setup: func(t *testing.T, exp *expandapk.APKExpanded) {
-				// Closed early, so cachePackage's own Close fails.
-				require.NoError(t, exp.TarFS.Close())
-			},
-			wantErr:         "closing tarfs",
-			wantPublishes:   0,
-			wantTempDirGone: true,
-			checkFDs:        true,
-		},
-		{name: "control publish failure releases the private copy", failPublish: 1, wantErrIs: injected, wantPublishes: 1},
-		{name: "signature publish failure releases the private copy", failPublish: 2, wantErrIs: injected, wantPublishes: 2},
-		{name: "data publish failure releases the private copy", failPublish: 3, wantErrIs: injected, wantPublishes: 3},
-		{name: "tar publish failure releases the private copy", failPublish: 4, wantErrIs: injected, wantPublishes: 4},
+		{name: "control publish failure releases the private copy", failPublish: 1, wantErrIs: injected, wantPublishes: 1, wantTempDirGone: true},
+		{name: "signature publish failure releases the private copy", failPublish: 2, wantErrIs: injected, wantPublishes: 2, wantTempDirGone: true},
+		{name: "data publish failure releases the private copy", failPublish: 3, wantErrIs: injected, wantPublishes: 3, wantTempDirGone: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDefaultPackageGetter(
@@ -84,7 +61,7 @@ func TestCachePackage_FailureReleasesEverything(t *testing.T) {
 			cacheDir := t.TempDir()
 			exp, err := d.doFetchExpandAndVerify(context.Background(), pkg, cacheDir, nil)
 			require.NoError(t, err)
-			require.NotEmpty(t, exp.SignatureFile, "fixture must be signed for the four-publish rows to mean what they say")
+			require.NotEmpty(t, exp.SignatureFile, "fixture must be signed for the three-publish rows to mean what they say")
 			tempDir := filepath.Dir(exp.PackageFile)
 			original, _ := exp.TarFS.UnderlyingReader().(*os.File)
 

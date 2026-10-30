@@ -230,7 +230,10 @@ The `paths` element contains the following children:
    (ignored for `empty-file`, `hardlink`, and `symlink`). The same mode is applied to files and
    directories alike, and only paths that already exist when the mutation runs are affected.
    Combine with omitted `uid`/`gid` to fix permissions across an existing tree without changing
-   ownership.
+   ownership. A symlink inside the tree is not followed: its target keeps its mode and owner, and
+   the link itself takes `uid`/`gid` when set. A symlink given as `path` is followed, so its
+   target and everything beneath it get the mode and ownership. To change a file reached through a
+   link inside the tree, add a separate entry for the file's real path.
 
 
 ### Includes

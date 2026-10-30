@@ -656,6 +656,38 @@ func (m *memFS) Chown(path string, uid, gid int) error {
 	return nil
 }
 
+// Lchown changes the ownership of path itself, without resolving it if it is
+// a symlink.
+func (m *memFS) Lchown(path string, uid, gid int) error {
+	anode, err := m.getNodeNoFollow(path)
+	if err != nil {
+		return err
+	}
+	anode.uid = uid
+	anode.gid = gid
+	return nil
+}
+
+// getNodeNoFollow is getNode without resolving the final path component.
+func (m *memFS) getNodeNoFollow(path string) (*node, error) {
+	path = filepath.Clean(path)
+	base := filepath.Base(path)
+	if base == pathSep || base == "." {
+		return m.getNode(path)
+	}
+	parent, err := m.getNode(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	parent.mu.Lock()
+	defer parent.mu.Unlock()
+	anode, ok := parent.children[base]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return anode, nil
+}
+
 func (m *memFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 	anode, err := m.getNode(path)
 	if err != nil {
