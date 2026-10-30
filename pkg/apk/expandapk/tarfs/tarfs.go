@@ -57,7 +57,7 @@ func (e Entry) Size() int64 {
 }
 
 func (e Entry) Type() fs.FileMode {
-	return e.fi.Mode()
+	return e.fi.Mode().Type()
 }
 
 func (e Entry) Info() (fs.FileInfo, error) {
@@ -142,10 +142,17 @@ func (fsys *FS) open(name string, hops int) (fs.File, error) {
 	e := fsys.files[i]
 
 	switch e.Header.Typeflag {
-	case tar.TypeSymlink, tar.TypeLink:
+	case tar.TypeLink:
+		// A hardlink's Linkname names its target relative to the archive
+		// root (unlike a symlink's), so it must be looked up as-is rather
+		// than joined with the link's own directory.
+		return fsys.open(e.Header.Linkname, hops+1)
+
+	case tar.TypeSymlink:
 		link := e.Header.Linkname
 		if path.IsAbs(link) {
-			return fsys.open(link, hops+1)
+			// The index is keyed by member names with no leading slash.
+			return fsys.open(link[1:], hops+1)
 		}
 
 		return fsys.open(path.Join(e.dir, link), hops+1)
