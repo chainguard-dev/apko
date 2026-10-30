@@ -69,7 +69,8 @@ type EnvAuth struct{}
 
 func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) error {
 	env := os.Getenv("HTTP_AUTH")
-	parts := strings.Split(env, ":")
+	// SplitN keeps any ":" in the password as part of the password.
+	parts := strings.SplitN(env, ":", 4)
 	if len(parts) != 4 || parts[0] != "basic" {
 		return nil
 	}
