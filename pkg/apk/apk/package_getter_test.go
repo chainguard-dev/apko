@@ -110,19 +110,16 @@ func TestFetchPackage(t *testing.T) {
 		// Fill the cache
 		exp, err := a.GetPackage(ctx, pkg)
 		require.NoError(t, err, "unable to expand package")
-		_, err = os.Stat(exp.TarFile)
-		require.NoError(t, err, "unable to stat cached tar file")
-
-		// Delete the uncompressed tar from the cache. Nothing depends on it any
-		// more: the data served is inflated from the compressed section into a
-		// private copy, so losing this file must not break a subsequent read.
-		require.NoError(t, os.Remove(exp.TarFile), "unable to delete cached tar file")
-		_, err = os.Stat(exp.TarFile)
-		require.ErrorIs(t, err, os.ErrNotExist, "unexpectedly able to stat cached tar file that should have been deleted")
+		// The cache holds no uncompressed tar: nothing depends on it, since the
+		// data served is inflated from the compressed section into a private
+		// copy, and writing it would double every package's footprint on disk.
+		require.Empty(t, exp.TarFile, "the getter should not name an uncompressed tar")
+		_, err = os.Stat(strings.TrimSuffix(exp.PackageFile, ".gz"))
+		require.ErrorIs(t, err, os.ErrNotExist, "an uncompressed tar was written into the cache")
 
 		exp2, err := a.GetPackage(ctx, pkg)
-		require.NoError(t, err, "unable to expandPackage after deleting cached tar file")
-		require.NotEmpty(t, fsNames(t, exp2.TarFS), "package contents unavailable after deleting the cached tar")
+		require.NoError(t, err, "unable to GetPackage a second time")
+		require.NotEmpty(t, fsNames(t, exp2.TarFS), "package contents unavailable on the second read")
 
 		// Deleting the compressed section is a different matter, since that is
 		// what verification chains to. It must invalidate the entry and be
@@ -431,12 +428,10 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 
 	// cached describes a freshly populated cache entry for testPkg.
 	type cached struct {
-		dir     string      // the package's cache directory
-		datGz   string      // <datahash>.dat.tar.gz
-		datTar  string      // <datahash>.dat.tar
-		tarSum  []byte      // sha256 of the legitimate uncompressed tar
-		tarInfo os.FileInfo // Lstat of datTar as cachePackage left it
-		names   []string    // every entry in the legitimate package
+		dir    string   // the package's cache directory
+		datGz  string   // <datahash>.dat.tar.gz
+		datTar string   // <datahash>.dat.tar, which this version never writes
+		names  []string // every entry in the legitimate package
 	}
 
 	setup := func(t *testing.T) (*defaultPackageGetter, cached) {
@@ -458,16 +453,17 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 		exp, err := a.GetPackage(ctx, pkg)
 		require.NoError(t, err, "populating cache")
 
-		tarInfo, err := os.Lstat(exp.TarFile)
-		require.NoError(t, err)
+		// The entry has no uncompressed tar; datTar is where an older apko put
+		// one, and where an attacker who knows the layout would plant one.
+		datTar := strings.TrimSuffix(exp.PackageFile, ".gz")
+		_, err = os.Lstat(datTar)
+		require.ErrorIs(t, err, os.ErrNotExist, "cachePackage wrote an uncompressed tar")
 
 		return a, cached{
-			dir:     filepath.Dir(exp.ControlFile),
-			datGz:   exp.PackageFile,
-			datTar:  exp.TarFile,
-			tarSum:  sha256File(t, exp.TarFile),
-			tarInfo: tarInfo,
-			names:   fsNames(t, exp.TarFS),
+			dir:    filepath.Dir(exp.ControlFile),
+			datGz:  exp.PackageFile,
+			datTar: datTar,
+			names:  fsNames(t, exp.TarFS),
 		}
 	}
 
@@ -485,14 +481,11 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 			verify: func(t *testing.T, c cached, exp *expandapk.APKExpanded) {
 				require.Equal(t, c.names, fsNames(t, exp.TarFS), "served contents differ from the cached package")
 
-				// A verified hit must not rewrite the uncompressed tar: doing so
-				// would orphan the file cachePackage advertised and double the
-				// cache's on-disk footprint.
-				after, err := os.Lstat(c.datTar)
-				require.NoError(t, err)
-				require.True(t, os.SameFile(c.tarInfo, after),
-					"verified cache hit replaced %s (was mode %v, now mode %v)", c.datTar, c.tarInfo.Mode(), after.Mode())
-				require.Equal(t, c.tarSum, sha256File(t, c.datTar))
+				// A verified hit must not materialise the uncompressed tar: it
+				// would double the cache's on-disk footprint for a file nothing
+				// reads.
+				_, err := os.Lstat(c.datTar)
+				require.ErrorIs(t, err, os.ErrNotExist, "verified cache hit wrote %s", c.datTar)
 			},
 		},
 		{
@@ -516,7 +509,6 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 			tamper: func(t *testing.T, c cached) {
 				elsewhere := filepath.Join(t.TempDir(), "planted.tar")
 				require.NoError(t, os.WriteFile(elsewhere, attackerTar(t), 0o644))
-				require.NoError(t, os.Remove(c.datTar))
 				require.NoError(t, os.Symlink(elsewhere, c.datTar))
 			},
 			verify: func(t *testing.T, c cached, exp *expandapk.APKExpanded) {
@@ -533,11 +525,10 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 			wantErr: "data hash mismatch",
 		},
 		{
-			// The uncompressed file is not consulted either way, so removing it
-			// changes nothing: the .gz is still what is measured and inflated.
-			name: "attacker tar.gz swapped in with .dat.tar removed is rejected",
+			// There is no uncompressed file to fall back to, and there must not
+			// be: the .gz is what is measured and inflated.
+			name: "attacker tar.gz swapped in is rejected",
 			tamper: func(t *testing.T, c cached) {
-				require.NoError(t, os.Remove(c.datTar))
 				require.NoError(t, os.WriteFile(c.datGz, gzipped(t, attackerTar(t)), 0o644))
 			},
 			wantErr: "data hash mismatch",
@@ -563,6 +554,7 @@ func TestCachedPackage_TamperedData(t *testing.T) {
 		{
 			name: "missing .dat.tar.gz is rejected even when .dat.tar is present",
 			tamper: func(t *testing.T, c cached) {
+				require.NoError(t, os.WriteFile(c.datTar, attackerTar(t), 0o644))
 				require.NoError(t, os.Remove(c.datGz))
 			},
 			// Not the path: it is interpolated into nearly every error this code
@@ -625,10 +617,9 @@ func TestGetPackage_PoisonedCacheIsRepaired(t *testing.T) {
 
 	exp, err := a.GetPackage(ctx, pkg)
 	require.NoError(t, err, "populating cache")
-	datGz, datTar := exp.PackageFile, exp.TarFile
+	datGz, datTar := exp.PackageFile, strings.TrimSuffix(exp.PackageFile, ".gz")
 	cacheDir := filepath.Dir(exp.ControlFile)
 	wantNames := fsNames(t, exp.TarFS)
-	wantTarSum := sha256File(t, datTar)
 	wantGzSum := sha256File(t, datGz)
 
 	// Poison both halves of the data section. Replacing only the uncompressed
@@ -637,7 +628,6 @@ func TestGetPackage_PoisonedCacheIsRepaired(t *testing.T) {
 	evil := attackerTar(t)
 	require.NoError(t, os.Remove(datGz))
 	require.NoError(t, os.WriteFile(datGz, gzipped(t, evil), 0o644))
-	require.NoError(t, os.Remove(datTar))
 	require.NoError(t, os.WriteFile(datTar, evil, 0o644))
 
 	globalApkCache.Forget(pkg.URL())
@@ -656,7 +646,8 @@ func TestGetPackage_PoisonedCacheIsRepaired(t *testing.T) {
 	// The repair has to land on disk, or every later call rejects and refetches
 	// again -- a warm cache turned into an unbounded download loop, and a hard
 	// failure when offline.
-	require.Equal(t, wantTarSum, sha256File(t, datTar), "poisoned .dat.tar survived the repair")
+	_, err = os.Stat(datTar)
+	require.ErrorIs(t, err, os.ErrNotExist, "planted .dat.tar survived the repair")
 	// Compared against the known-good digest, not against the raw attacker tar:
 	// this file was poisoned with the *gzipped* form, so comparing it to the
 	// uncompressed bytes could never fail and would assert nothing.
@@ -708,7 +699,7 @@ func TestCachedPackageSurvivesInPlaceRewrite(t *testing.T) {
 	require.NotEmpty(t, want, "need a non-empty file to detect a rewrite")
 
 	// Overwrite in place, without changing any file's identity or length.
-	for _, path := range []string{exp.TarFile, exp.PackageFile} {
+	for _, path := range []string{exp.PackageFile} {
 		info, err := os.Stat(path)
 		require.NoError(t, err)
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
@@ -787,8 +778,7 @@ func TestInstallDoesNotReadTheCachedTar(t *testing.T) {
 	require.NoError(t, err, "populating cache")
 
 	// The attacker wins the window between verification and installation.
-	require.NoError(t, os.Remove(exp.TarFile))
-	require.NoError(t, os.WriteFile(exp.TarFile, attackerTar(t), 0o644))
+	require.NoError(t, os.WriteFile(strings.TrimSuffix(exp.PackageFile, ".gz"), attackerTar(t), 0o644))
 
 	installed, err := apk.installPackage(ctx, &testPkg, ExpandedContents(exp), nil)
 	require.NoError(t, err, "installing a verified package")
@@ -823,8 +813,7 @@ func TestCachedPackageHonoursDataSizeLimit(t *testing.T) {
 	exp, err := warm.GetPackage(ctx, pkg)
 	require.NoError(t, err, "populating cache")
 	cacheDir := filepath.Dir(exp.ControlFile)
-	tarInfo, err := os.Stat(exp.TarFile)
-	require.NoError(t, err)
+	tarSize := exp.TarFS.Size()
 
 	for _, tc := range []struct {
 		name    string
@@ -835,7 +824,7 @@ func TestCachedPackageHonoursDataSizeLimit(t *testing.T) {
 		{name: "unlimited serves the entry", opts: []packageGetterOption{withAPKDataMaxSize(-1)}},
 		{
 			name: "a limit above the data section serves the entry",
-			opts: []packageGetterOption{withAPKDataMaxSize(tarInfo.Size() + 1)},
+			opts: []packageGetterOption{withAPKDataMaxSize(tarSize + 1)},
 		},
 		{
 			// Below the compressed section, so openRegular's gate rejects it
@@ -897,13 +886,11 @@ func BenchmarkCachedPackage(b *testing.B) {
 	// is written once into the private copy then read back once to index it.
 	// Reporting only the tar size would credit the run with throughput over a
 	// stream it never processes, and would flatter any change that drops a pass.
-	tarInfo, err := os.Stat(exp.TarFile)
-	require.NoError(b, err)
 	gzInfo, err := os.Stat(exp.PackageFile)
 	require.NoError(b, err)
 	ctlInfo, err := os.Stat(exp.ControlFile)
 	require.NoError(b, err)
-	b.SetBytes(2*ctlInfo.Size() + 2*gzInfo.Size() + 2*tarInfo.Size())
+	b.SetBytes(2*ctlInfo.Size() + 2*gzInfo.Size() + 2*exp.TarFS.Size())
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -1134,7 +1121,7 @@ func TestGetPackage_PrePlantedEntryLosesToVerifiedDownload(t *testing.T) {
 	scoutDir := t.TempDir()
 	scout, err := newGetter(t, scoutDir).GetPackage(ctx, pkg)
 	require.NoError(t, err, "scouting the cache layout")
-	relTar, err := filepath.Rel(scoutDir, scout.TarFile)
+	relTar, err := filepath.Rel(scoutDir, strings.TrimSuffix(scout.PackageFile, ".gz"))
 	require.NoError(t, err)
 	wantNames := fsNames(t, scout.TarFS)
 
@@ -1211,4 +1198,69 @@ func TestGetPackage_PrePlantedEntryLosesToVerifiedDownload(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetPackage_CacheEntryHasNoUncompressedTar pins the on-disk shape of a
+// cache entry: the three compressed sections and nothing else. The data section
+// is served from a verified private copy, so an uncompressed tar in the cache
+// would be a second copy of every package that nothing reads. Both paths that
+// produce an entry are covered: the cold fetch publishes it, and a warm read
+// must not materialise the tar either.
+func TestGetPackage_CacheEntryHasNoUncompressedTar(t *testing.T) {
+	ctx := context.Background()
+	repo := Repository{URI: fmt.Sprintf("%s/%s", testAlpineRepos, testArch)}
+	repoWithIndex := repo.WithIndex(&APKIndex{Packages: []*Package{&testPkg}})
+	pkg := NewRepositoryPackage(&testPkg, repoWithIndex)
+
+	globalApkCache.Forget(pkg.URL())
+	t.Cleanup(func() { globalApkCache.Forget(pkg.URL()) })
+
+	httpClient := &http.Client{Transport: &testLocalTransport{root: testPrimaryPkgDir, basenameOnly: true}}
+	a := newDefaultPackageGetter(httpClient, &cache{dir: t.TempDir(), offline: false, shared: NewCache(false)}, auth.DefaultAuthenticators)
+
+	// Every regular file under the entry, including inside the expand-apk
+	// temp directory the published names link into, with its size. An
+	// uncompressed data section would show up here as the largest file by far.
+	regularFiles := func(t *testing.T, dir string) map[string]int64 {
+		t.Helper()
+		files := map[string]int64{}
+		require.NoError(t, filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			files[rel] = info.Size()
+			return nil
+		}))
+		return files
+	}
+
+	cold, err := a.GetPackage(ctx, pkg)
+	require.NoError(t, err, "cold fetch")
+	require.Empty(t, cold.TarFile)
+	dir := filepath.Dir(cold.PackageFile)
+
+	files := regularFiles(t, dir)
+	require.Len(t, files, 3, "cold fetch left more than the three compressed sections on disk: %v", files)
+	for name, size := range files {
+		require.True(t, strings.HasSuffix(name, ".tar.gz"), "unexpected file %s in the cache entry", name)
+		require.Less(t, size, cold.TarFS.Size(), "%s is as large as the uncompressed data section", name)
+	}
+
+	globalApkCache.Forget(pkg.URL())
+	warm, err := a.cachedPackage(ctx, pkg, dir)
+	require.NoError(t, err, "warm read")
+	require.Empty(t, warm.TarFile)
+	require.Equal(t, files, regularFiles(t, dir), "warm read materialised something in the entry")
+	require.Equal(t, fsNames(t, cold.TarFS), fsNames(t, warm.TarFS))
 }

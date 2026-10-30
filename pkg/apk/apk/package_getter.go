@@ -391,66 +391,23 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	_, span := otel.Tracer("go-apk").Start(ctx, "cachePackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
 	defer span.End()
 
-	// Measure the data section before publishing anything, from this process's
-	// own copy, and serve only what that produces.
+	// exp.TarFS already serves the data section from an unlinked private copy
+	// that ExpandApk measured against datahash and inflated before anything
+	// was published, while exp's files were only reachable inside the 0700
+	// directory it created. Nothing here reopens by name: once an entry is
+	// published this process no longer controls what the name resolves to.
 	//
-	// It has to happen first, and from exp's own file rather than the published
-	// name, because once an entry is published this process no longer controls
-	// what the name resolves to. A concurrent cachePackage for the same package
-	// republishes it and unlinks the copy it displaced, so a read through the name
-	// can land on that unlinked copy and fail with ENOENT; on ext4 and btrfs,
-	// open() through a symlink being renamed over can even return the link's
-	// parent directory; and any writer to the cache can put other bytes there,
-	// turning a download that verified into a hash mismatch.
-	// Before publication, exp.PackageFile is only reachable inside the 0700
-	// directory ExpandApk created, and nothing else publishes or unlinks it.
-	//
-	// Measured rather than merely reopened, all the same: VerifiedPackageData
-	// re-hashes against the datahash from the verified control section and
-	// inflates into an unlinked private copy, which is the only thing served.
-	//
-	// Nothing is published yet, so a failure here has to dispose of exp itself:
-	// its TarFS still holds a descriptor, and its temp directory is in the shared
-	// cache directory where nothing will ever reference or remove it.
-	// TODO: Split out the tarfs Index creation from the FS.
+	// The private copy is exp's only data, so a failure to publish has to
+	// release it along with the temp directory, which sits in the shared cache
+	// directory where nothing else will ever remove it.
 	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	discard := func() {
+	published, err := publishPackage(exp, cacheDir)
+	if err != nil {
 		_ = exp.TarFS.Close()
 		_ = exp.Close()
-	}
-	data, err := exp.VerifiedPackageData(exp.PackageHash)
-	if err != nil {
-		discard()
-		return nil, fmt.Errorf("caching %q: %w", exp.PackageFile, err)
-	}
-	info, err := data.Stat()
-	if err != nil {
-		data.Close()
-		discard()
 		return nil, err
 	}
-	verified, err := tarfs.New(data, info.Size())
-	if err != nil {
-		data.Close()
-		discard()
-		return nil, err
-	}
-
-	if err := exp.TarFS.Close(); err != nil {
-		data.Close()
-		_ = exp.Close()
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
-	exp.TarFS = verified
-
-	// The private copy is exp's only data from here on, so any failure to
-	// publish has to release it.
-	exp, err = publishPackage(exp, cacheDir)
-	if err != nil {
-		data.Close()
-		return nil, err
-	}
-	return exp, nil
+	return published, nil
 }
 
 // publishPackage renames exp's temp files to their content-addressable names in
@@ -492,13 +449,14 @@ func publishPackage(exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APK
 
 	exp.PackageFile = datDst
 
-	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
-
-	if err := replaceCachedFile(exp.TarFile, tarDst); err != nil {
-		return nil, err
+	// A cache entry holds only the compressed sections; every reader inflates
+	// its own verified private copy from the .gz. Older apko versions published
+	// the uncompressed tar as <datahash>.dat.tar and read it back by name, so
+	// clear whatever sits at that name, a stale copy, a plant or a directory,
+	// rather than leave it for such a reader to serve.
+	if err := os.RemoveAll(strings.TrimSuffix(datDst, ".gz")); err != nil {
+		return nil, fmt.Errorf("removing stale uncompressed tar: %w", err)
 	}
-
-	exp.TarFile = tarDst
 
 	return exp, nil
 }
@@ -589,8 +547,6 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	if err != nil {
 		return nil, err
 	}
-
-	exp.TarFile = strings.TrimSuffix(exp.PackageFile, ".gz")
 
 	// As with the control section above, recompute rather than trust the
 	// content-addressable filename. datahash is usable as the anchor here
