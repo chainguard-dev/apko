@@ -91,11 +91,21 @@ func (s *SubFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
 	return s.FS.Chtimes(fullPath, atime, mtime)
 }
 
+// Symlink creates newname under the sub-filesystem root. oldname is the
+// target string stored in the link, not a path on this filesystem, so it is
+// passed through unchanged: a relative target resolves against the link's own
+// directory, and an absolute target records exactly what the caller wrote.
 func (s *SubFS) Symlink(oldname, newname string) error {
-	return s.FS.Symlink(oldname, newname)
+	fullNewname := filepath.Join(s.Root, newname)
+	return s.FS.Symlink(oldname, fullNewname)
 }
+
+// Link creates newname as a hard link to oldname. Both are paths on this
+// filesystem, so both are resolved under the sub-filesystem root.
 func (s *SubFS) Link(oldname, newname string) error {
-	return s.FS.Link(oldname, newname)
+	fullOldname := filepath.Join(s.Root, oldname)
+	fullNewname := filepath.Join(s.Root, newname)
+	return s.FS.Link(fullOldname, fullNewname)
 }
 func (s *SubFS) Readlink(name string) (string, error) {
 	fullPath := filepath.Join(s.Root, name)
