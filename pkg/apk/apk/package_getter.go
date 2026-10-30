@@ -279,33 +279,40 @@ func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg I
 		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
 	}
 
+	// A rejected package is disposed of whole: the private copy behind TarFS
+	// along with the temp directory, as cachePackage does on a failed publish.
+	discard := func() {
+		_ = exp.TarFS.Close()
+		_ = exp.Close()
+	}
+
 	chk := pkg.ChecksumString()
 	if !strings.HasPrefix(chk, "Q1") {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
 	}
 	expectedControlHash, err := base64.StdEncoding.DecodeString(chk[2:])
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
 	}
 	if !bytes.Equal(expectedControlHash, exp.ControlHash) {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash)
 	}
 
 	pkgInfo, err := exp.PkgInfo()
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("reading pkginfo for %s: %w", pkg.PackageName(), err)
 	}
 	expectedDataHash, err := hex.DecodeString(pkgInfo.DataHash)
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has malformed datahash %q: %w", pkg.PackageName(), pkgInfo.DataHash, err)
 	}
 	if !bytes.Equal(expectedDataHash, exp.PackageHash) {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash)
 	}
 
