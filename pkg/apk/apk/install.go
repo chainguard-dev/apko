@@ -162,18 +162,21 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 	}
 	// apk installed db uses this format
 	header.PAXRecords[paxRecordsChecksumKey] = fmt.Sprintf("Q1%s", base64.StdEncoding.EncodeToString(checksum))
+	return true, nil
+}
 
-	// xattrs
+// setXattrs applies the header's SCHILY.xattr.* PAX records to its path.
+func (a *APK) setXattrs(header *tar.Header) error {
 	for k, v := range header.PAXRecords {
 		if !strings.HasPrefix(k, xattrTarPAXRecordsPrefix) {
 			continue
 		}
 		attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
 		if err := a.fs.SetXattr(header.Name, attrName, []byte(v)); err != nil {
-			return false, fmt.Errorf("error setting xattr %s on %s: %w", attrName, header.Name, err)
+			return fmt.Errorf("error setting xattr %s on %s: %w", attrName, header.Name, err)
 		}
 	}
-	return true, nil
+	return nil
 }
 
 // checkOwner rejects a header whose uid or gid does not fit a uint32.
@@ -323,15 +326,8 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 					return nil, fmt.Errorf("error setting mode on directory %s: %w", header.Name, err)
 				}
 			}
-			// xattrs
-			for k, v := range header.PAXRecords {
-				if !strings.HasPrefix(k, xattrTarPAXRecordsPrefix) {
-					continue
-				}
-				attrName := strings.TrimPrefix(k, xattrTarPAXRecordsPrefix)
-				if err := a.fs.SetXattr(header.Name, attrName, []byte(v)); err != nil {
-					return nil, fmt.Errorf("error setting xattr %s on %s: %w", attrName, header.Name, err)
-				}
+			if err := a.setXattrs(header); err != nil {
+				return nil, err
 			}
 
 		case tar.TypeReg:
@@ -353,8 +349,9 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 				// well, so chowning after restoring those bits would drop them
 				// again on any filesystem that writes through to disk. The
 				// in-memory overrides would still say otherwise, which is what
-				// makes the loss silent. TestInstallAPKFilesMetadataOrder pins
-				// this.
+				// makes the loss silent. chown(2) likewise clears
+				// security.capability, so xattrs are set last of the three.
+				// TestInstallAPKFilesMetadataOrder pins this.
 				if err := a.fs.Chown(header.Name, header.Uid, header.Gid); err != nil {
 					return nil, fmt.Errorf("error setting owner on %s: %w", header.Name, err)
 				}
@@ -369,6 +366,9 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 					if err := a.fs.Chmod(header.Name, mode&^fs.ModeType); err != nil {
 						return nil, fmt.Errorf("error setting mode on %s: %w", header.Name, err)
 					}
+				}
+				if err := a.setXattrs(header); err != nil {
+					return nil, err
 				}
 
 				if err := a.fs.Chtimes(header.Name, header.AccessTime, header.ModTime); err != nil {
