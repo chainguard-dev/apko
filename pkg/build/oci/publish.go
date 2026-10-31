@@ -142,7 +142,7 @@ func LoadIndex(ctx context.Context, idx v1.ImageIndex, tags []string) (name.Refe
 		return name.Digest{}, fmt.Errorf("reading child image %q", useManifest.Digest.String())
 	}
 
-	log.Infof("using best guess single-arch image for local tags (%s/%s)", goos, goarch)
+	log.Infof("using best guess single-arch image for local tags (%s/%s)", useManifest.Platform.OS, useManifest.Platform.Architecture)
 	return LoadImage(ctx, img, tags)
 }
 
