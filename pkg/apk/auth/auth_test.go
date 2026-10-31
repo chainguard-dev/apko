@@ -75,6 +75,8 @@ func TestEnvAuth(t *testing.T) {
 	tests := []struct {
 		name       string
 		env        string
+		host       string // explicit req.Host, if different from the URL host
+		emptyHost  bool   // clear req.Host, as a hand-built request may have it
 		expectAuth bool
 		expectUser string
 		expectPass string
@@ -120,12 +122,38 @@ func TestEnvAuth(t *testing.T) {
 			env:        "",
 			expectAuth: false,
 		},
+		{
+			name:       "explicit request Host matches",
+			env:        "basic:other.example.com:user:pass",
+			host:       "other.example.com",
+			expectAuth: true,
+			expectUser: "user",
+			expectPass: "pass",
+		},
+		{
+			name:       "explicit request Host differs",
+			env:        "basic:example.com:user:pass",
+			host:       "other.example.com",
+			expectAuth: false,
+		},
+		{
+			name:       "empty request Host",
+			env:        "basic:example.com:user:pass",
+			emptyHost:  true,
+			expectAuth: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("HTTP_AUTH", tt.env)
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
+			if tt.host != "" {
+				req.Host = tt.host
+			}
+			if tt.emptyHost {
+				req.Host = ""
+			}
 			if err := (EnvAuth{}).AddAuth(context.Background(), req); err != nil {
 				t.Fatalf("did not expect error but got: %v", err)
 			}
