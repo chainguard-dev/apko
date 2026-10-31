@@ -1140,6 +1140,67 @@ func TestHigherVersionBreaksProviderTieAcrossRepositories(t *testing.T) {
 	require.Equal(t, []string{"prov-1.0-r2.apk"}, got)
 }
 
+func TestRepositoryOrderBreaksEqualVersionTie(t *testing.T) {
+	t.Run("same package and version across repositories", func(t *testing.T) {
+		repoZ := Repository{URI: "https://example.invalid/z"}
+		indexZ := repoZ.WithIndex(&APKIndex{
+			Packages: []*Package{
+				{Name: "foo", Version: "0.9-r0", Origin: "foo"},
+				{Name: "foo", Version: "1.0-r0", Origin: "foo", Checksum: []byte("from-z")},
+			},
+		})
+		repoA := Repository{URI: "https://example.invalid/a"}
+		indexA := repoA.WithIndex(&APKIndex{
+			Packages: []*Package{
+				{Name: "foo", Version: "1.0-r0", Origin: "foo", Checksum: []byte("from-a")},
+			},
+		})
+		resolver := BuildPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{indexZ, indexA}))
+
+		pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"foo"}, nil)
+		require.NoError(t, err)
+		require.Len(t, pkgs, 1)
+		require.Equal(t, "https://example.invalid/z", pkgs[0].Repository().URI)
+
+		resolved, err := resolver.ResolvePackage("foo", map[*RepositoryPackage]string{})
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(resolved), 2)
+		require.Equal(t, "https://example.invalid/z", resolved[0].Repository().URI)
+		require.Equal(t, "https://example.invalid/a", resolved[1].Repository().URI)
+	})
+
+	t.Run("virtual providers with different package names preserve name tiebreak", func(t *testing.T) {
+		repoZ := Repository{URI: "https://example.invalid/z"}
+		indexZ := repoZ.WithIndex(&APKIndex{
+			Packages: []*Package{
+				{Name: "prov-z", Version: "1.0-r0", Origin: "prov-z",
+					Provides: []string{"so:libprov.so.12=12"}},
+			},
+		})
+		repoA := Repository{URI: "https://example.invalid/a"}
+		indexA := repoA.WithIndex(&APKIndex{
+			Packages: []*Package{
+				{Name: "prov-a", Version: "1.0-r0", Origin: "prov-a",
+					Provides: []string{"so:libprov.so.12=12"}},
+			},
+		})
+		resolver := BuildPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{indexZ, indexA}))
+
+		pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"so:libprov.so.12"}, nil)
+		require.NoError(t, err)
+		require.Len(t, pkgs, 1)
+		require.Equal(t, "prov-a-1.0-r0.apk", pkgs[0].Filename())
+		require.Equal(t, "https://example.invalid/a", pkgs[0].Repository().URI)
+
+		resolved, err := resolver.ResolvePackage("so:libprov.so.12", map[*RepositoryPackage]string{})
+		require.NoError(t, err)
+		require.Len(t, resolved, 2)
+		require.Equal(t, "prov-a-1.0-r0.apk", resolved[0].Filename())
+		require.Equal(t, "prov-z-1.0-r0.apk", resolved[1].Filename())
+	})
+}
+
+
 func TestConstrains(t *testing.T) {
 	providers := map[string][]string{
 		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1=1.0"},

@@ -450,3 +450,67 @@ func TestAuth_bad(t *testing.T) {
 	require.Error(t, err, "build should have failed to init keyring")
 	require.True(t, called)
 }
+
+func TestRepositoryOrderPreserved(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/z/"):
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/z")
+		case strings.HasPrefix(r.URL.Path, "/a/"):
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/a")
+		case strings.HasPrefix(r.URL.Path, "/extra/"):
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/extra")
+		}
+		http.FileServer(http.Dir("testdata/packages")).ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	repoZ := srv.URL + "/z"
+	repoA := srv.URL + "/a"
+	repoExtra := srv.URL + "/extra"
+
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{
+			BuildRepositories:       []string{repoZ, repoA, repoZ},
+			Repositories:            []string{repoZ, repoA, repoZ},
+			RuntimeOnlyRepositories: []string{repoExtra, repoA},
+			Keyring:                 []string{srv.URL + "/melange.rsa.pub"},
+			Packages:                []string{"pretend-baselayout"},
+		},
+		Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+	}
+
+	ics, _, resolvedPkgs, err := build.LockImageConfigurationWithPackages(t.Context(), ic,
+		build.WithoutDiskCache(),
+		build.WithExtraBuildRepos([]string{repoExtra, repoZ}),
+		build.WithExtraRepos([]string{repoExtra, repoZ}),
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{repoZ, repoA, repoExtra}, ics["index"].Contents.BuildRepositories)
+	require.Equal(t, []string{repoZ, repoA, repoExtra}, ics["index"].Contents.Repositories)
+
+	archPkgs := resolvedPkgs[types.ParseArchitecture("amd64")]
+	require.NotEmpty(t, archPkgs)
+	found := false
+	for _, p := range archPkgs {
+		if p.Name == "pretend-baselayout" {
+			found = true
+			require.True(t, strings.HasPrefix(p.URL(), repoZ+"/"), "expected package from first repository %s, got %s", repoZ, p.URL())
+		}
+	}
+	require.True(t, found, "expected pretend-baselayout in resolved packages")
+
+	fsys := fs.NewMemFS()
+	bc, err := build.New(t.Context(), fsys, withIsolatedDirs(t,
+		build.WithImageConfiguration(ic),
+		build.WithArch(types.ParseArchitecture("amd64")),
+		build.WithExtraRepos([]string{repoExtra, repoZ}),
+	)...)
+	require.NoError(t, err)
+	require.NoError(t, bc.BuildImage(t.Context()))
+
+	reposData, err := fsys.ReadFile("etc/apk/repositories")
+	require.NoError(t, err)
+	require.Equal(t, strings.Join([]string{repoZ, repoA, repoExtra}, "\n")+"\n", string(reposData))
+}
+
