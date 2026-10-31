@@ -450,3 +450,35 @@ func TestAuth_bad(t *testing.T) {
 	require.Error(t, err, "build should have failed to init keyring")
 	require.True(t, called)
 }
+
+func TestLockAndBuildPinnedRepositoryPackage(t *testing.T) {
+	repository, err := filepath.Abs("testdata/packages")
+	require.NoError(t, err)
+
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{
+			Repositories: []string{"@local " + repository},
+			Keyring:      []string{filepath.Join(repository, "melange.rsa.pub")},
+			Packages:     []string{"pretend-baselayout@local"},
+		},
+		Archs: []types.Architecture{types.ParseArchitecture("amd64")},
+	}
+
+	ics, _, err := build.LockImageConfiguration(t.Context(), ic, build.WithoutDiskCache())
+	require.NoError(t, err)
+	require.Contains(t, ics["index"].Contents.Packages, "pretend-baselayout@local=1.0.0-r0")
+	require.Contains(t, ics["amd64"].Contents.Packages, "pretend-baselayout@local=1.0.0-r0")
+
+	fsys := fs.NewMemFS()
+	bc, err := build.New(t.Context(), fsys, withIsolatedDirs(t,
+		build.WithImageConfiguration(*ics["amd64"]),
+		build.WithArch(types.ParseArchitecture("amd64")),
+	)...)
+	require.NoError(t, err)
+	require.NoError(t, bc.BuildImage(t.Context()))
+
+	worldData, err := fsys.ReadFile("etc/apk/world")
+	require.NoError(t, err)
+	require.Contains(t, strings.Fields(string(worldData)), "pretend-baselayout@local=1.0.0-r0")
+}
+
