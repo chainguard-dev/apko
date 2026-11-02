@@ -113,13 +113,6 @@ checks:
         - storage.googleapis.com
         - packages.wolfi.dev
         - apk.cgr.dev
-        # hack/ci/01-publish.sh runs index.docker.io/library/registry:2.8.1.
-        # Docker Hub serves layers from a different CDN from one pull to the
-        # next: its own *.docker.com names, an S3 bucket, or an R2 bucket.
-        - "*.docker.io"
-        - "*.docker.com"
-        - docker-images-prod.s3.dualstack.us-east-1.amazonaws.com
-        - docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com
     steps:
       - name: build
         cmd: [sh, -c, "make apko && ./apko version"]

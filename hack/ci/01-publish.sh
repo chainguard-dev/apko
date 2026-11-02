@@ -5,16 +5,20 @@
 
 set -ex
 
-REGISTRY_BASE_IMAGE="index.docker.io/library/registry:2.8.1"
-REGISTRY_CONTAINER_NAME="ci-testing-registry"
 PORT=${PORT:-${RANDOM}}
 
-trap "rm -f *.sbom.json && \
-docker rm -f ${REGISTRY_CONTAINER_NAME}" EXIT
+# Docker treats 127.0.0.0/8 as an insecure registry, so its daemon pulls the
+# published image straight from this one.
+crane registry serve --address "localhost:${PORT}" &
+REGISTRY_PID=$!
 
-docker rm -f "${REGISTRY_CONTAINER_NAME}"
-docker run --name "${REGISTRY_CONTAINER_NAME}" \
-  -d -p ${PORT}:5000 "${REGISTRY_BASE_IMAGE}"
+trap "rm -f *.sbom.json && \
+kill ${REGISTRY_PID}" EXIT
+
+until crane catalog --insecure "localhost:${PORT}" >/dev/null 2>&1; do
+  kill -0 "${REGISTRY_PID}"
+  sleep 0.1
+done
 
 for f in examples/wolfi-base.yaml; do
   echo "=== building $f"
