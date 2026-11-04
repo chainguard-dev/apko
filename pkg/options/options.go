@@ -88,6 +88,7 @@ type Options struct {
 	Auth                auth.Authenticator    `json:"-"`
 	IncludePaths        []string              `json:"includePaths,omitempty"`
 	IgnoreSignatures    bool                  `json:"ignoreSignatures,omitempty"`
+	StripElfmetaStamps  bool                  `json:"stripElfmetaStamps,omitempty"`
 	Transport           http.RoundTripper     `json:"-"`
 	PackageGetter       apk.PackageGetter     `json:"-"`
 	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`

@@ -15,10 +15,15 @@
 package build_test
 
 import (
+	"archive/tar"
 	"context"
+	"crypto/sha1" //nolint:gosec // apk's per-file checksum is SHA-1
 	"crypto/sha256"
+	"debug/elf"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,14 +31,19 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/auth"
 	"chainguard.dev/apko/pkg/apk/fs"
+	apktypes "chainguard.dev/apko/pkg/apk/types"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/elfmeta"
+	"chainguard.dev/apko/pkg/tarfs"
 )
 
 // withIsolatedDirs puts a build's disk cache and scratch files in per-test
@@ -141,6 +151,76 @@ func TestBuildImage(t *testing.T) {
 	require.Equal(t, installed[0].Version, "1.0.0-r0")
 	require.Equal(t, installed[1].Name, "replayout")
 	require.Equal(t, installed[1].Version, "1.0.0-r0")
+}
+
+// TestStripElfmetaStamps checks that stamps populate ld.so.cache and are
+// retained in layers unless stripping is enabled, while other xattrs remain.
+func TestStripElfmetaStamps(t *testing.T) {
+	const lib, conf = "usr/lib/libstamped.so.1", "/usr/lib\n"
+	stamp := string(elfmeta.Info{Dyn: true, Machine: elf.EM_X86_64, Sonames: []string{"libstamped.so.1"}}.Encode())
+	reg := func(name, content string, pax map[string]string) tar.Header {
+		sum := sha1.Sum([]byte(content)) //nolint:gosec
+		pax["APK-TOOLS.checksum.SHA1"] = hex.EncodeToString(sum[:])
+		return tar.Header{Typeflag: tar.TypeReg, Name: name, Mode: 0o644, Size: int64(len(content)), PAXRecords: pax}
+	}
+	dir := func(name string) tar.Header { return tar.Header{Typeflag: tar.TypeDir, Name: name, Mode: 0o755} }
+	// The library is not ELF, so only its stamp can put it in ld.so.cache.
+	pkg := fakePackage{
+		info: &apktypes.PackageInfo{Name: "stamped", Origin: "stamped", Version: "1", Size: 100},
+		entries: []tar.Header{
+			dir("etc"), dir("usr"), dir("usr/lib"),
+			reg("etc/ld.so.conf", conf, map[string]string{}),
+			reg(lib, "not an ELF", map[string]string{"SCHILY.xattr." + elfmeta.Xattr: stamp, "SCHILY.xattr.user.other": "kept"}),
+		},
+		files: fstest.MapFS{
+			"etc/ld.so.conf": {Data: []byte(conf), Mode: 0o644},
+			lib:              {Data: []byte("not an ELF"), Mode: 0o644},
+		},
+		report: reportSHA256,
+	}
+
+	for _, strip := range []bool{false, true} {
+		bc, err := build.New(t.Context(), tarfs.New(), withIsolatedDirs(t,
+			build.WithImageConfiguration(types.ImageConfiguration{Contents: types.ImageContents{Repositories: []string{unusedRepository}}}),
+			build.WithArch(types.ParseArchitecture("x86_64")),
+			build.WithSourceDateEpoch(time.Unix(1700000000, 0).UTC()),
+			build.WithPreResolvedPackages([]apk.PackageContents{pkg}),
+			build.WithStripElfmetaStamps(strip),
+		)...)
+		require.NoError(t, err)
+		layers, err := bc.BuildLayers(t.Context())
+		require.NoError(t, err)
+		require.Len(t, layers, 1)
+		rc, err := layers[0].Uncompressed()
+		require.NoError(t, err)
+		defer rc.Close()
+
+		var pax map[string]string
+		var cache []byte
+		tr := tar.NewReader(rc)
+		for {
+			hdr, err := tr.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			switch hdr.Name {
+			case lib:
+				pax = hdr.PAXRecords
+			case "etc/ld.so.cache":
+				cache, err = io.ReadAll(tr)
+				require.NoError(t, err)
+			}
+		}
+
+		require.Contains(t, string(cache), "libstamped.so.1", "strip=%t", strip)
+		require.Equal(t, "kept", pax["SCHILY.xattr.user.other"], "strip=%t", strip)
+		if strip {
+			require.NotContains(t, pax, "SCHILY.xattr."+elfmeta.Xattr)
+		} else {
+			require.Equal(t, stamp, pax["SCHILY.xattr."+elfmeta.Xattr])
+		}
+	}
 }
 
 func TestLockImageConfigurationWithoutDiskCache(t *testing.T) {

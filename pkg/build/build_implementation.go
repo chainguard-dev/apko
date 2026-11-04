@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,6 +40,7 @@ import (
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
+	"chainguard.dev/apko/pkg/elfmeta"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 )
@@ -374,6 +376,12 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		return nil, err
 	}
 
+	if bc.o.StripElfmetaStamps {
+		if err := stripELFStamps(bc.fs); err != nil {
+			return nil, fmt.Errorf("stripping ELF stamps: %w", err)
+		}
+	}
+
 	log.Debug("finished building filesystem")
 
 	return pkgs, nil
@@ -389,6 +397,20 @@ func (bc *Context) VerifyLockfileConsistency(ctx context.Context, lockConfig *lo
 			bc.o.Lockfile, bc.o.ImageConfigFile)
 	}
 	return nil
+}
+
+// stripELFStamps removes user.dev.chainguard.elfmeta from every regular
+// file in the build filesystem.
+func stripELFStamps(fsys apkfs.FullFS) error {
+	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		return fsys.RemoveXattr(p, elfmeta.Xattr)
+	})
 }
 
 func updateCache(ctx context.Context, fsys apkfs.FullFS) error {

@@ -250,6 +250,17 @@ func WithCache(cacheDir string, offline bool, shared *apk.Cache) Option {
 	}
 }
 
+// WithStripElfmetaStamps controls removal of user.dev.chainguard.elfmeta
+// from every regular file after ld.so.cache generation, before writing
+// layers. The default is false. Enabling it also removes stamps carried by
+// packages.
+func WithStripElfmetaStamps(strip bool) Option {
+	return func(bc *Context) error {
+		bc.o.StripElfmetaStamps = strip
+		return nil
+	}
+}
+
 // WithOffline controls whether network requests are permitted. Cached and
 // local resources remain available in offline mode.
 func WithOffline(offline bool) Option {
