@@ -91,6 +91,7 @@ type PackageInfo struct {
 	BuildDate        int64    `ini:"builddate"`
 	RepoCommit       string   `ini:"commit"`
 	Replaces         []string `ini:"replaces,,allowshadow"`
+	ReplacesPriority uint64   `ini:"replaces_priority"`
 	DataHash         string   `ini:"datahash"`
 	Triggers         []string `ini:"triggers,,allowshadow"`
 }
@@ -114,6 +115,7 @@ func (pkginfo *PackageInfo) AsPackage(controlHash []byte, size uint64) *Package 
 		BuildDate:        pkginfo.BuildDate,
 		RepoCommit:       pkginfo.RepoCommit,
 		Replaces:         pkginfo.Replaces,
+		ReplacesPriority: pkginfo.ReplacesPriority,
 		DataHash:         pkginfo.DataHash,
 
 		BuildTime: time.Unix(pkginfo.BuildDate, 0).UTC(),
@@ -144,6 +146,7 @@ type Package struct {
 	BuildDate        int64    `ini:"builddate"`
 	RepoCommit       string   `ini:"commit"`
 	Replaces         []string `ini:"replaces,,allowshadow"`
+	ReplacesPriority uint64   `ini:"replaces_priority"`
 	DataHash         string   `ini:"datahash"`
 }
 
