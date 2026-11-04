@@ -348,6 +348,7 @@ func New(ctx context.Context, fs apkfs.FullFS, opts ...Option) (*Context, error)
 		apk.WithIgnoreMknodErrors(true),
 		apk.WithIgnoreIndexSignatures(bc.o.IgnoreSignatures),
 		apk.WithAuthenticator(bc.o.Auth),
+		apk.WithJWKSAllowedOrigins(bc.o.JWKSAllowedOrigins...),
 		apk.WithTransport(bc.o.Transport),
 		apk.WithPackageGetter(bc.o.PackageGetter),
 		apk.WithSizeLimits(&apk.SizeLimits{

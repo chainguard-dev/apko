@@ -22,6 +22,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -977,7 +978,7 @@ func TestDiscoverKeysNonRSA(t *testing.T) {
 	require.NoError(t, err)
 
 	var jwksURL string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/apk-configuration":
 			w.Header().Set("Content-Type", "application/json")
@@ -1004,7 +1005,7 @@ func TestDiscoverKeysRSA(t *testing.T) {
 	require.NoError(t, err)
 
 	var jwksURL string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/apk-configuration":
 			w.Header().Set("Content-Type", "application/json")
@@ -1023,6 +1024,214 @@ func TestDiscoverKeysRSA(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.Equal(t, "rsa-test.rsa.pub", keys[0].ID)
+}
+
+type discoverKeysRoundTripper func(*http.Request) (*http.Response, error)
+
+func (rt discoverKeysRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt(req)
+}
+
+func discoveryHTTPResponse(req *http.Request, status int, body string, headers http.Header) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Status:     fmt.Sprintf("%d %s", status, http.StatusText(status)),
+		Header:     headers,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}
+}
+
+func TestDiscoverKeysRejectsUnsafeJWKSURIs(t *testing.T) {
+	tests := []struct {
+		name    string
+		jwksURI string
+	}{
+		{name: "missing URI"},
+		{name: "relative URI", jwksURI: "/jwks"},
+		{name: "malformed URI", jwksURI: "://invalid"},
+		{name: "plain HTTP", jwksURI: "http://repo.example/repo/jwks"},
+		{name: "embedded credentials", jwksURI: "https://user:pass@repo.example/jwks"},
+		{name: "localhost", jwksURI: "https://localhost/jwks"},
+		{name: "loopback IP", jwksURI: "https://127.0.0.1/jwks"},
+		{name: "cloud metadata IP", jwksURI: "https://169.254.169.254/latest/meta-data"},
+		{name: "private IP", jwksURI: "https://10.0.0.1/jwks"},
+		{name: "same host with unexpected port", jwksURI: "https://repo.example:444/jwks"},
+		{name: "malformed port", jwksURI: "https://repo.example:bad/jwks"},
+		{name: "untrusted external origin", jwksURI: "https://keys.example.net/jwks"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jwksCalls := 0
+			transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path != "/repo/apk-configuration" {
+					jwksCalls++
+					return discoveryHTTPResponse(req, http.StatusOK, `{"keys":[]}`, nil), nil
+				}
+				payload, err := json.Marshal(struct {
+					JWKSURI string `json:"jwks_uri"`
+				}{JWKSURI: tt.jwksURI})
+				require.NoError(t, err)
+				return discoveryHTTPResponse(req, http.StatusOK, string(payload), nil), nil
+			})
+
+			_, err := DiscoverKeys(t.Context(), &http.Client{Transport: transport}, auth.StaticAuth("", "", ""), "https://repo.example/repo")
+			require.Error(t, err)
+			require.Zero(t, jwksCalls, "unsafe JWKS URI must be rejected before the client requests it")
+		})
+	}
+}
+
+func TestDiscoverKeysAllowsExplicitMirrorOrigin(t *testing.T) {
+	const repository = "https://repo.example/wolfi"
+	const jwksOrigin = "https://keys.mirror.example:8443"
+	var discoveryAuth, jwksAuth string
+
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Host == "repo.example" && req.URL.Path == "/wolfi/apk-configuration":
+			discoveryAuth, _, _ = req.BasicAuth()
+			return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://keys.mirror.example:8443/jwks"}`, nil), nil
+		case req.URL.Host == "keys.mirror.example:8443" && req.URL.Path == "/jwks":
+			jwksAuth, _, _ = req.BasicAuth()
+			return discoveryHTTPResponse(req, http.StatusOK, `{"keys":[]}`, nil), nil
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", req.URL)
+		}
+	})
+
+	a, err := New(t.Context(),
+		WithFS(apkfs.NewMemFS()),
+		WithTransport(transport),
+		WithAuthenticator(auth.StaticAuth("repo.example", "user", "pass")),
+		WithJWKSAllowedOrigins(jwksOrigin),
+	)
+	require.NoError(t, err)
+
+	keys, err := a.DiscoverKeys(t.Context(), repository)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+	require.Equal(t, "user", discoveryAuth)
+	require.Empty(t, jwksAuth, "repo credentials should remain scoped to the repository host")
+}
+
+func TestDiscoverKeysRejectsInvalidAllowedJWKSOrigins(t *testing.T) {
+	tests := []struct {
+		name   string
+		origin string
+	}{
+		{name: "HTTP scheme", origin: "http://keys.example"},
+		{name: "userinfo", origin: "https://user:pass@keys.example"},
+		{name: "path", origin: "https://keys.example/jwks"},
+		{name: "query", origin: "https://keys.example?token=secret"},
+		{name: "invalid port", origin: "https://keys.example:bad"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+				requests++
+				return discoveryHTTPResponse(req, http.StatusNotFound, "", nil), nil
+			})
+			_, err := DiscoverKeys(t.Context(), &http.Client{Transport: transport}, auth.StaticAuth("", "", ""), "https://repo.example/repo", tt.origin)
+			require.Error(t, err)
+			require.Zero(t, requests, "invalid allowlist origins must be rejected before discovery requests")
+		})
+	}
+}
+
+func TestDiscoverKeysRejectsUntrustedRedirect(t *testing.T) {
+	var internalTargetCalled bool
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/repo/apk-configuration" {
+			return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://repo.example/jwks"}`, nil), nil
+		}
+		if req.URL.Host == "169.254.169.254" {
+			internalTargetCalled = true
+			return discoveryHTTPResponse(req, http.StatusOK, `{"keys":[]}`, nil), nil
+		}
+		headers := make(http.Header)
+		headers.Set("Location", "https://169.254.169.254/latest/meta-data")
+		return discoveryHTTPResponse(req, http.StatusFound, "", headers), nil
+	})
+
+	_, err := DiscoverKeys(t.Context(), &http.Client{Transport: transport}, auth.StaticAuth("", "", ""), "https://repo.example/repo")
+	require.Error(t, err)
+	require.False(t, internalTargetCalled, "redirect destination must be checked before following it")
+}
+
+func TestDiscoverKeysRejectsUntrustedDiscoveryRedirect(t *testing.T) {
+	var internalTargetCalled bool
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/repo/apk-configuration" {
+			headers := make(http.Header)
+			headers.Set("Location", "https://169.254.169.254/latest/meta-data")
+			return discoveryHTTPResponse(req, http.StatusFound, "", headers), nil
+		}
+		internalTargetCalled = true
+		return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://repo.example/jwks"}`, nil), nil
+	})
+
+	_, err := DiscoverKeys(t.Context(), &http.Client{Transport: transport}, auth.StaticAuth("repo.example", "user", "pass"), "https://repo.example/repo")
+	require.Error(t, err)
+	require.False(t, internalTargetCalled, "discovery redirects must be checked before the destination is requested")
+}
+
+func TestDiscoverKeysRedirectHookCannotBypassPolicy(t *testing.T) {
+	var internalTargetCalled bool
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/repo/apk-configuration" {
+			return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://repo.example/jwks"}`, nil), nil
+		}
+		if req.URL.Host == "169.254.169.254" {
+			internalTargetCalled = true
+			return discoveryHTTPResponse(req, http.StatusOK, `{"keys":[]}`, nil), nil
+		}
+		headers := make(http.Header)
+		headers.Set("Location", "https://repo.example/safe-redirect")
+		return discoveryHTTPResponse(req, http.StatusFound, "", headers), nil
+	})
+	client := &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			req.URL = &url.URL{Scheme: "https", Host: "169.254.169.254", Path: "/latest/meta-data"}
+			return nil
+		},
+	}
+
+	_, err := DiscoverKeys(t.Context(), client, auth.StaticAuth("", "", ""), "https://repo.example/repo")
+	require.Error(t, err)
+	require.False(t, internalTargetCalled, "the final redirect URL must be validated after a caller hook can mutate it")
+}
+
+func TestDiscoverKeysDoesNotForwardCredentialsAcrossRedirect(t *testing.T) {
+	var mirrorAuth string
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Host == "repo.example" && req.URL.Path == "/repo/apk-configuration":
+			return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://repo.example/jwks"}`, nil), nil
+		case req.URL.Host == "repo.example" && req.URL.Path == "/jwks":
+			headers := make(http.Header)
+			headers.Set("Location", "https://keys.mirror.example/jwks")
+			return discoveryHTTPResponse(req, http.StatusFound, "", headers), nil
+		case req.URL.Host == "keys.mirror.example":
+			mirrorAuth = req.Header.Get("Authorization")
+			return discoveryHTTPResponse(req, http.StatusOK, `{"keys":[]}`, nil), nil
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", req.URL)
+		}
+	})
+
+	_, err := DiscoverKeys(t.Context(),
+		&http.Client{Transport: transport},
+		auth.StaticAuth("repo.example", "user", "pass"),
+		"https://repo.example/repo",
+		"https://keys.mirror.example",
+	)
+	require.NoError(t, err)
+	require.Empty(t, mirrorAuth, "repository credentials must not be forwarded to an explicitly trusted mirror")
 }
 
 // TestInitDBBaseDirectoryPerms covers the base-directory permission check

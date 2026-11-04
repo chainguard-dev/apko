@@ -86,6 +86,7 @@ type Options struct {
 	// option is unset and the package set is settled another way.
 	PreResolvedPackages []apk.PackageContents `json:"-"`
 	Auth                auth.Authenticator    `json:"-"`
+	JWKSAllowedOrigins  []string              `json:"-"`
 	IncludePaths        []string              `json:"includePaths,omitempty"`
 	IgnoreSignatures    bool                  `json:"ignoreSignatures,omitempty"`
 	Transport           http.RoundTripper     `json:"-"`

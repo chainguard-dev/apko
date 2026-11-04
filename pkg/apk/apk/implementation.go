@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +73,7 @@ type APK struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
+	jwksAllowedOrigins []string
 	packageGetter      PackageGetter
 	sizeLimits         *SizeLimits
 
@@ -156,6 +159,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		offline:            opt.offline,
 		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
+		jwksAllowedOrigins: opt.jwksAllowedOrigins,
 		keys:               make(map[string][]byte),
 		runtimeKeys:        make(map[string][]byte),
 		installedFiles:     map[string]*Package{},
@@ -1168,8 +1172,143 @@ func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticato
 	return b, nil
 }
 
+// normalizeJWKSOrigin validates and canonicalizes an explicitly trusted HTTPS
+// origin. Paths other than the root are not part of an origin and are rejected.
+func normalizeJWKSOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an HTTPS origin without user info, path, query, or fragment")
+	}
+	return httpsOrigin(u)
+}
+
+func httpsOrigin(u *url.URL) (string, error) {
+	if u == nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" {
+		return "", fmt.Errorf("must have an HTTPS scheme and host")
+	}
+	return canonicalHTTPOrigin(u)
+}
+
+func canonicalHTTPOrigin(u *url.URL) (string, error) {
+	if u == nil || !u.IsAbs() || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Host == "" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an absolute HTTP(S) URL without user info or fragment")
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", fmt.Errorf("invalid port %q", port)
+	}
+	port = strconv.Itoa(portNumber)
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" {
+		return "", fmt.Errorf("must have a host")
+	}
+	return u.Scheme + "://" + net.JoinHostPort(host, port), nil
+}
+
+func validateJWKSURI(raw string, repositoryURL *url.URL, allowedOrigins map[string]struct{}) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse jwks_uri: %w", err)
+	}
+	if u.Scheme != "https" || !u.IsAbs() || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("jwks_uri must be an absolute HTTPS URL without user info or fragment")
+	}
+	targetOrigin, err := httpsOrigin(u)
+	if err != nil {
+		return nil, fmt.Errorf("invalid jwks_uri origin: %w", err)
+	}
+	if repositoryOrigin, err := httpsOrigin(repositoryURL); err == nil && targetOrigin == repositoryOrigin {
+		return u, nil
+	}
+	if _, ok := allowedOrigins[targetOrigin]; ok {
+		return u, nil
+	}
+	return nil, fmt.Errorf("jwks_uri origin %q is not the repository origin or an explicitly allowed JWKS origin", targetOrigin)
+}
+
+func clientWithRedirectPolicy(client *http.Client, validateTarget func(*url.URL) error) *http.Client {
+	policyClient := *client
+	previousCheckRedirect := client.CheckRedirect
+	policyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		var previousOrigin string
+		if len(via) > 0 {
+			var err error
+			previousOrigin, err = canonicalHTTPOrigin(via[len(via)-1].URL)
+			if err != nil {
+				return fmt.Errorf("invalid redirect source: %w", err)
+			}
+		}
+		if previousCheckRedirect != nil {
+			if err := previousCheckRedirect(req, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		// Check after the caller's hook because it may rewrite req.URL.
+		if err := validateTarget(req.URL); err != nil {
+			return err
+		}
+		if len(via) > 0 {
+			targetOrigin, err := canonicalHTTPOrigin(req.URL)
+			if err != nil {
+				return fmt.Errorf("invalid redirect target: %w", err)
+			}
+			if previousOrigin != targetOrigin {
+				// net/http can forward Authorization to subdomains. Clear all
+				// caller headers before following a cross-origin redirect.
+				req.Header = make(http.Header)
+			}
+		}
+		return nil
+	}
+	return &policyClient
+}
+
+func clientWithJWKSRedirectPolicy(client *http.Client, repositoryURL *url.URL, allowedOrigins map[string]struct{}) *http.Client {
+	return clientWithRedirectPolicy(client, func(target *url.URL) error {
+		_, err := validateJWKSURI(target.String(), repositoryURL, allowedOrigins)
+		return err
+	})
+}
+
+func clientWithDiscoveryRedirectPolicy(client *http.Client, repositoryURL *url.URL, allowedOrigins map[string]struct{}) *http.Client {
+	return clientWithRedirectPolicy(client, func(target *url.URL) error {
+		targetOrigin, err := canonicalHTTPOrigin(target)
+		if err != nil {
+			return fmt.Errorf("invalid discovery redirect target: %w", err)
+		}
+		repositoryOrigin, err := canonicalHTTPOrigin(repositoryURL)
+		if err != nil {
+			return fmt.Errorf("invalid repository origin: %w", err)
+		}
+		if targetOrigin == repositoryOrigin {
+			return nil
+		}
+		if _, ok := allowedOrigins[targetOrigin]; ok && target.Scheme == "https" {
+			return nil
+		}
+		return fmt.Errorf("discovery redirect origin %q is not the repository origin or an explicitly allowed JWKS origin", targetOrigin)
+	})
+}
+
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
-func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
+// Additional JWKS origins must be explicitly trusted when a mirror serves its
+// discovery document and keys from separate HTTPS origins.
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string, allowedJWKSOrigins ...string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
@@ -1177,9 +1316,20 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		// Ignore non-remote repositories.
 		return nil, nil
 	}
+	allowedOrigins := make(map[string]struct{}, len(allowedJWKSOrigins))
+	for _, origin := range allowedJWKSOrigins {
+		normalized, err := normalizeJWKSOrigin(origin)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed JWKS origin %q: %w", origin, err)
+		}
+		allowedOrigins[normalized] = struct{}{}
+	}
 	asURL, err := url.Parse(strings.TrimSuffix(repository, "/") + "/apk-configuration")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repository URL: %w", err)
+	}
+	if _, err := canonicalHTTPOrigin(asURL); err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
 
 	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
@@ -1190,7 +1340,7 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, err
 	}
 
-	discoveryResponse, err := client.Do(discoveryRequest)
+	discoveryResponse, err := clientWithDiscoveryRedirectPolicy(client, asURL, allowedOrigins).Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -1215,14 +1365,18 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, fmt.Errorf("failed to unmarshal discovery payload: %w", err)
 	}
 
-	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
+	jwksURL, err := validateJWKSURI(discovery.JWKSURI, asURL, allowedOrigins)
+	if err != nil {
+		return nil, err
+	}
+	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
 		return nil, err
 	}
-	jwksResponse, err := client.Do(jwksRequest)
+	jwksResponse, err := clientWithJWKSRedirectPolicy(client, asURL, allowedOrigins).Do(jwksRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -1282,13 +1436,16 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 			client = rc.StandardClient()
 		}
 
-		keys, _, err := a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
-			return DiscoverKeys(ctx, client, a.auth, repository)
+		origins := slices.Clone(a.jwksAllowedOrigins)
+		slices.Sort(origins)
+		cacheKey := strings.Join(append([]string{repository}, origins...), "\x00")
+		keys, _, err := a.cache.shared.discoverKeys.Do(cacheKey, func() ([]Key, error) {
+			return DiscoverKeys(ctx, client, a.auth, repository, a.jwksAllowedOrigins...)
 		})
 		return keys, err
 	}
 
-	return DiscoverKeys(ctx, client, a.auth, repository)
+	return DiscoverKeys(ctx, client, a.auth, repository, a.jwksAllowedOrigins...)
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.

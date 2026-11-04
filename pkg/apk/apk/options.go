@@ -15,6 +15,7 @@
 package apk
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,6 +37,7 @@ type opts struct {
 	offline            bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
+	jwksAllowedOrigins []string
 	ignoreSignatures   bool
 	transport          http.RoundTripper
 	packageGetter      PackageGetter
@@ -150,6 +152,22 @@ func WithNoSignatureIndexes(noSignatureIndex ...string) Option {
 func WithAuthenticator(a auth.Authenticator) Option {
 	return func(o *opts) error {
 		o.auth = a
+		return nil
+	}
+}
+
+// WithJWKSAllowedOrigins allows key discovery to fetch JWKS documents from
+// HTTPS origins other than the repository origin. Origins must include the
+// scheme and may not include a path, query, fragment, or user information.
+func WithJWKSAllowedOrigins(origins ...string) Option {
+	return func(o *opts) error {
+		for _, origin := range origins {
+			normalized, err := normalizeJWKSOrigin(origin)
+			if err != nil {
+				return fmt.Errorf("invalid allowed JWKS origin %q: %w", origin, err)
+			}
+			o.jwksAllowedOrigins = append(o.jwksAllowedOrigins, normalized)
+		}
 		return nil
 	}
 }
