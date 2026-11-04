@@ -35,12 +35,18 @@ import (
 
 type flightCache[K comparable, V any] struct {
 	mux sync.Mutex
-	lru *simplelru.LRU[K, func() (V, error)]
+	lru *simplelru.LRU[K, *flightLoad[V]]
+}
+
+// flightLoad is one in-flight or completed call. Entries are pointers so a
+// caller can tell its own entry apart from a newer one for the same key.
+type flightLoad[V any] struct {
+	load func() (V, error)
 }
 
 func newFlightCache[K comparable, V any](maxEntries int) *flightCache[K, V] {
 	return &flightCache[K, V]{
-		lru: newLRU[K, func() (V, error)](maxEntries, nil),
+		lru: newLRU[K, *flightLoad[V]](maxEntries, nil),
 	}
 }
 
@@ -54,20 +60,38 @@ func newLRU[K comparable, V any](maxEntries int, onEvict simplelru.EvictCallback
 
 // Do coalesces multiple calls, like singleflight, but also caches
 // the result if the call is successful. Failures are not cached to avoid
-// permanently failing for transient errors. The boolean result reports
-// whether the key was already present, including an in-flight call.
+// permanently failing for transient errors: the caller that ran the failing
+// call gets its error, while callers that only joined that in-flight call
+// retry once with their own call instead of all reporting the same transient
+// error. The boolean result reports whether the key was already present,
+// including an in-flight call; for a retried caller it describes the retry,
+// so it is false when that caller ended up running its own call.
 func (f *flightCache[K, V]) Do(key K, fn func() (V, error)) (V, bool, error) {
+	value, hit, err := f.do(key, fn)
+	if err != nil && hit {
+		return f.do(key, fn)
+	}
+	return value, hit, err
+}
+
+func (f *flightCache[K, V]) do(key K, fn func() (V, error)) (V, bool, error) {
 	f.mux.Lock()
-	load, hit := f.lru.Get(key)
+	entry, hit := f.lru.Get(key)
 	if !hit {
-		load = sync.OnceValues(fn)
-		f.lru.Add(key, load)
+		entry = &flightLoad[V]{load: sync.OnceValues(fn)}
+		f.lru.Add(key, entry)
 	}
 	f.mux.Unlock()
 
-	value, err := load()
+	value, err := entry.load()
 	if err != nil {
-		f.Forget(key)
+		// Drop the failed entry, but only if it is still ours: a concurrent
+		// caller may already have replaced it with a fresh call.
+		f.mux.Lock()
+		if current, ok := f.lru.Peek(key); ok && current == entry {
+			f.lru.Remove(key)
+		}
+		f.mux.Unlock()
 	}
 
 	return value, hit, err
@@ -136,7 +160,11 @@ func (c *Cache) load(cacheFile string) (*http.Response, bool) {
 		return nil, false
 	}
 
-	return v.(*http.Response), true
+	resp, ok := v.(*http.Response)
+	if !ok {
+		return nil, false
+	}
+	return resp, true
 }
 
 func (c *Cache) store(cacheFile string, resp *http.Response) {
@@ -240,7 +268,11 @@ func (t *cacheTransport) head(request *http.Request, cacheFile string) (*http.Re
 		return nil, err
 	}
 
-	return v.(*http.Response), nil
+	headResp, ok := v.(*http.Response)
+	if !ok {
+		return nil, fmt.Errorf("unexpected HEAD result type %T for %s", v, cacheFile)
+	}
+	return headResp, nil
 }
 
 func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFile, initialEtag string) (string, error) {
@@ -272,7 +304,11 @@ func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFi
 		return "", err
 	}
 
-	return v.(string), nil
+	file, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected GET result type %T for %s", v, cacheFile)
+	}
+	return file, nil
 }
 
 func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Request, cacheFile string) (*http.Response, error) {
@@ -465,11 +501,14 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 	}()
 	// Now that symlinks are used to advertise cached files,
 	// CreateTemp permissions are no longer suitable default,
-	// update to world readable, group/user writable.
+	// update to world readable, owner writable. Once advertised an entry
+	// is immutable (replacement goes through a rename, which depends on
+	// the directory, not the file), so nobody but the owner needs write
+	// access to it.
 	// Ignore error, since some filesystem types don't support this,
 	// and if this fails this should surface in other ways
 	// (e.g. permission denied trying to read the file).
-	_ = tmp.Chmod(os.FileMode(0664))
+	_ = tmp.Chmod(os.FileMode(0644))
 
 	if err := func() error {
 		defer tmp.Close()

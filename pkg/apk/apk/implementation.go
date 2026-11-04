@@ -542,6 +542,28 @@ func (a *APK) loadSystemKeyring(ctx context.Context, locations ...string) ([]str
 	return nil, errors.New("no suitable keyring directory found")
 }
 
+// maxKeySize bounds a key fetched over HTTP. A PEM-encoded RSA-4096 public
+// key is under 1 KiB, so this is generous without letting a misbehaving
+// server make us buffer an arbitrary body.
+const maxKeySize int64 = 64 * 1024
+
+// validatePublicKey checks that data is a PEM-encoded RSA public key in the
+// SubjectPublicKeyInfo form apk-tools and RSAVerifyDigest expect.
+func validatePublicKey(data []byte) error {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return errors.New("no PEM block found")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parsing PKIX public key: %w", err)
+	}
+	if _, ok := pub.(*rsa.PublicKey); !ok {
+		return fmt.Errorf("unsupported key type %T, expected RSA", pub)
+	}
+	return nil
+}
+
 // Installs the specified keys into the APK keyring inside the build context.
 func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string) error {
 	log := clog.FromContext(ctx)
@@ -586,6 +608,9 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 					return fmt.Errorf("failed to read apk key: %w", err)
 				}
 			case "https", "http": //nolint:goconst
+				if asURL.Scheme == "http" {
+					log.Warnf("fetching apk key %s over plain HTTP; the key is not protected in transit, prefer https://", asURL.Redacted())
+				}
 				client := a.client
 				if a.cache != nil {
 					client = a.cache.client(client, true)
@@ -608,9 +633,19 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 					return fmt.Errorf("failed to fetch apk key from %s: http response indicated error code: %d", req.Host, resp.StatusCode)
 				}
 
-				data, err = io.ReadAll(resp.Body)
+				// Read one byte past the limit so an oversized body is an error
+				// rather than a silently truncated key.
+				data, err = io.ReadAll(io.LimitReader(resp.Body, maxKeySize+1))
 				if err != nil {
 					return fmt.Errorf("failed to read apk key response: %w", err)
+				}
+				if int64(len(data)) > maxKeySize {
+					return fmt.Errorf("apk key from %s is larger than the %d byte limit", asURL.Redacted(), maxKeySize)
+				}
+				// Only PEM public keys belong in the keyring; apk-tools and the
+				// index verifier parse them as such and ignore anything else.
+				if err := validatePublicKey(data); err != nil {
+					return fmt.Errorf("apk key from %s is not a valid public key: %w", asURL.Redacted(), err)
 				}
 			default:
 				return fmt.Errorf("scheme %s not supported", asURL.Scheme)

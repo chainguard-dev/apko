@@ -17,6 +17,7 @@ package apk
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto"
 	"errors"
@@ -30,6 +31,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chainguard-dev/clog"
@@ -76,6 +78,9 @@ func newIndexCache(maxEntries int) *indexCache {
 	}
 }
 
+// plainHTTPWarned records index URLs already warned about for using http://.
+var plainHTTPWarned sync.Map
+
 func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map[string][]byte, arch string, opts *indexOpts) (NamedIndex, error) {
 	u := IndexURL(repoURL, arch)
 
@@ -89,6 +94,12 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		asURL, err := url.Parse(u)
 		if err != nil {
 			return nil, fmt.Errorf("parsing repo: %w", err)
+		}
+		if asURL.Scheme == "http" {
+			// Once per URL: get runs for every resolve, cache hits included.
+			if _, seen := plainHTTPWarned.LoadOrStore(u, struct{}{}); !seen {
+				clog.FromContext(ctx).Warnf("fetching repository index %s over plain HTTP; only its signature protects it in transit, prefer https://", asURL.Redacted())
+			}
 		}
 
 		// We usually don't want remote indexes to change while we're running.
@@ -417,6 +428,11 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 		if len(sigs) == 0 {
 			return 0, fmt.Errorf("no signature with known key (one of: %v) found in repository index", slices.Collect(maps.Keys(keys)))
 		}
+		// Try the strongest digest first, so a legacy RSA/SHA-1 signature is
+		// only relied on when nothing stronger verifies. The warning below
+		// fires on the signature that actually verified, so it also covers
+		// an index whose RSA256 signature is present but does not verify.
+		sortSignaturesByStrength(sigs)
 		// we now have the signature bytes and name, get the contents of the rest;
 		// this should be everything else in the raw gzip file as is.
 		allBytes := len(b)
@@ -435,6 +451,9 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 				indexDigest[sig.DigestAlgorithm] = h.Sum(nil)
 			}
 			if err := sign.RSAVerifyDigest(indexDigest[sig.DigestAlgorithm], sig.DigestAlgorithm, sig.Signature, keys[sig.KeyID]); err == nil {
+				if sig.DigestAlgorithm == crypto.SHA1 {
+					clog.FromContext(ctx).Warnf("repository index verified with a legacy RSA/SHA-1 signature (key %s); publish an RSA256 signature as well", sig.KeyID)
+				}
 				verified = true
 				break
 			} else {
@@ -447,6 +466,15 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 		return readBytes, nil
 	}
 	return 0, nil
+}
+
+// sortSignaturesByStrength orders signatures so the one with the largest
+// digest is verified first. Signatures with the same digest keep their
+// order in the index.
+func sortSignaturesByStrength(sigs []Signature) {
+	slices.SortStableFunc(sigs, func(a, b Signature) int {
+		return cmp.Compare(b.DigestAlgorithm.Size(), a.DigestAlgorithm.Size())
+	})
 }
 
 func parseRepositoryIndex(ctx context.Context, u string, keys map[string][]byte, arch string, b []byte, opts *indexOpts) (*APKIndex, error) {

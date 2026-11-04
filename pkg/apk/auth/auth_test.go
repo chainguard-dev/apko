@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 )
 
@@ -145,4 +146,78 @@ func TestEnvAuth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsChainguardHost(t *testing.T) {
+	for host, want := range map[string]bool{
+		"apk.cgr.dev":              true,
+		"apk.cgr.dev:443":          true,
+		"APK.CGR.DEV":              true,
+		"cgr.dev":                  true,
+		"example.com":              false,
+		"cgr.dev.evil.com":         false,
+		"notcgr.dev":               false,
+		"apk.cgr.dev.attacker.net": false,
+	} {
+		if got := isChainguardHost(host); got != want {
+			t.Errorf("isChainguardHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestCGRAuthOnlyMatchesConfiguredHost(t *testing.T) {
+	t.Setenv("APKO_APK_HOST", "apk.example.com")
+
+	for _, target := range []string{"https://apk.cgr.dev/x", "https://other.example.com/x"} {
+		req, err := http.NewRequest(http.MethodGet, target, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := (CGRAuth{}).AddAuth(context.Background(), req); err != nil {
+			t.Fatalf("AddAuth(%s): %v", target, err)
+		}
+		if _, _, ok := req.BasicAuth(); ok {
+			t.Errorf("AddAuth(%s) added credentials for a host other than APKO_APK_HOST", target)
+		}
+	}
+}
+
+// TestCGRAuthReadsCachedTokenConcurrently checks that AddAuth reads the
+// cached token safely while it is being refreshed. The token is seeded
+// directly and the once-per-interval chainctl call is consumed first, so no
+// chainctl process runs here.
+func TestCGRAuthReadsCachedTokenConcurrently(t *testing.T) {
+	t.Setenv("APKO_APK_HOST", "apk.cgr.dev")
+	sometimes.Do(func() {})
+	seed := "test-token"
+	tok.Store(&seed)
+	t.Cleanup(func() { tok.Store(nil) })
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 200 {
+			refreshed := "test-token"
+			tok.Store(&refreshed)
+		}
+	})
+	for range 8 {
+		wg.Go(func() {
+			for range 50 {
+				req, err := http.NewRequest(http.MethodGet, "https://apk.cgr.dev/x", nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if err := (CGRAuth{}).AddAuth(context.Background(), req); err != nil {
+					t.Error(err)
+					return
+				}
+				if _, pass, ok := req.BasicAuth(); !ok || pass != "test-token" {
+					t.Errorf("AddAuth: basic auth = %q, %v; want the cached token", pass, ok)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
