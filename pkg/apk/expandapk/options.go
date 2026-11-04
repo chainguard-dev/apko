@@ -31,6 +31,12 @@ type Options struct {
 	// MaxDataSize is the maximum decompressed size for the data section.
 	// Use -1 for unlimited.
 	MaxDataSize int64
+
+	// UncompressedTarFile writes the data section's uncompressed tar next to
+	// PackageFile and serves TarFS from that named file, for callers that keep
+	// the tar in their own store and read it back by name. By default the tar
+	// is not written and TarFS is served from a private copy.
+	UncompressedTarFile bool
 }
 
 // Option is a functional option for configuring Options.
@@ -48,6 +54,21 @@ func WithMaxControlSize(size int64) Option {
 func WithMaxDataSize(size int64) Option {
 	return func(o *Options) error {
 		o.MaxDataSize = size
+		return nil
+	}
+}
+
+// WithUncompressedTarFile makes ExpandApk write the data section's
+// uncompressed tar to disk, named in TarFile, and index TarFS from it.
+//
+// This is for callers that store that file themselves and read it back by
+// name through PackageData. It costs a second uncompressed copy of every
+// package on disk, and TarFS then names a file on disk, so IsValid checks that
+// the name still resolves to the descriptor it holds. Nothing in apko needs
+// this; its own cache serves a verified private copy instead.
+func WithUncompressedTarFile() Option {
+	return func(o *Options) error {
+		o.UncompressedTarFile = true
 		return nil
 	}
 }

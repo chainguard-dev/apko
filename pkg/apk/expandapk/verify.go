@@ -22,10 +22,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/klauspost/compress/gzip"
-	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/limitio"
 )
@@ -155,13 +153,14 @@ func (a *APKExpanded) inflate(src io.Reader, out io.Writer) error {
 // data. A cache directory can legitimately be read-only, and a build over one
 // must keep working, so that falls back to the system temp dir.
 //
-// THE STRENGTH OF THIS DEPENDS ON THE PLATFORM. anonymousFile has two
+// THE STRENGTH OF THIS DEPENDS ON THE PLATFORM. anonymousFile has several
 // implementations and they do not give the same guarantee. On Linux, O_TMPFILE
 // never publishes a name, so there is no window and nothing to attack.
-// Everywhere else -- darwin is a supported apko target -- and on Linux
+// Everywhere else on unix -- darwin is a supported apko target -- and on Linux
 // filesystems without O_TMPFILE, the only option is unlinkedTempFile, which has
 // to create a name and unlink it; see the analysis of that window on
-// unlinkedTempFile itself.
+// unlinkedTempFile itself. Windows cannot unlink an open file, and gets an
+// exclusive, delete-on-close handle instead; see verify_windows.go.
 func privateFile(dir string) (*os.File, error) {
 	f, err := anonymousFile(dir)
 	if err == nil {
@@ -172,67 +171,6 @@ func privateFile(dir string) (*os.File, error) {
 	if fallbackErr != nil {
 		return nil, fmt.Errorf("creating a private data file in %q (%w) or %q: %w",
 			dir, err, os.TempDir(), fallbackErr)
-	}
-	return f, nil
-}
-
-// unlinkedTempFile creates a named temporary file, unlinks it, and returns the
-// descriptor only if no other name for the inode survived. It is the weaker half
-// of anonymousFile: the fallback for platforms and filesystems with no
-// windowless primitive, and the only path outside Linux.
-//
-// The window between creating the name and unlinking it is exploitable rather
-// than theoretical, and two distinct attacks live in it which are not equally
-// defensible:
-//
-//   - Hardlink the name, keeping a second reference to the inode after the
-//     unlink. Detectable: the link count is non-zero afterwards, so this
-//     function checks it and refuses.
-//   - Simply open the name for writing. The unlink then removes the only link,
-//     the link count reads zero, the check passes, and the attacker still writes
-//     through their descriptor into what this one serves. There is no portable
-//     way to count the openers of an inode, so this cannot be detected at all.
-//
-// What saves the realistic case is ownership rather than either check.
-// os.CreateTemp creates at mode 0600 owned by us, so a cache writer running as a
-// *different* uid -- the shared-CI case this threat model is about -- cannot open
-// it, and where /proc/sys/fs/protected_hardlinks is enabled they cannot hardlink
-// a file they neither own nor can read either. That sysctl is not a kernel
-// default: the kernel ships it off and distribution sysctl defaults turn it on,
-// so a minimal container may not have it at all, leaving the link check above as
-// the only thing standing between a different-uid attacker and a second
-// reference. Note also that hardlinking needs write access to the containing
-// directory rather than read access to the file, so 0600 alone does not prevent
-// it. Against a *same-uid*
-// attacker none of that holds: they can open it, and if it were created mode
-// 0000 instead they own it and can chmod it back. No DAC arrangement helps,
-// because they already have every privilege this process has -- they can ptrace
-// it too, so the private copy was never the binding constraint for them.
-//
-// So: integrity holds here against a different-uid cache writer, and does not
-// hold against a same-uid one. Closing that properly means verifying at
-// consumption rather than ahead of it -- hashing the tar as it is read for
-// install and abandoning the layer on mismatch -- which is a larger change than
-// this.
-func unlinkedTempFile(dir string) (*os.File, error) {
-	f, err := os.CreateTemp(dir, ".apko-data-*")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Remove(f.Name()); err != nil && !os.IsNotExist(err) {
-		f.Close()
-		return nil, fmt.Errorf("unlinking %q: %w", f.Name(), err)
-	}
-
-	var st unix.Stat_t
-	if err := unix.Fstat(int(f.Fd()), &st); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("stat of %q: %w", f.Name(), err)
-	}
-	if st.Nlink != 0 {
-		f.Close()
-		return nil, fmt.Errorf("%q still has %d link(s) after being unlinked, so another process holds a reference to it",
-			f.Name(), st.Nlink)
 	}
 	return f, nil
 }
@@ -287,7 +225,7 @@ func maxCompressedSize(maxData int64) int64 {
 // time: the file can still be extended afterwards, so callers must bound their
 // reads by what was approved instead of reading to EOF.
 func openRegular(path string, max int64) (*os.File, int64, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, err := openNonblocking(path)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -308,7 +246,7 @@ func openRegular(path string, max int64) (*os.File, int64, error) {
 
 	// O_NONBLOCK has no meaning for a regular file, and leaving it set would be
 	// inherited by anything that later re-uses the descriptor's flags.
-	if err := unix.SetNonblock(int(f.Fd()), false); err != nil {
+	if err := clearNonblock(f); err != nil {
 		f.Close()
 		return nil, 0, fmt.Errorf("%q: clearing O_NONBLOCK: %w", path, err)
 	}

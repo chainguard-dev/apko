@@ -1,0 +1,20 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Builds apko from the tree (make apko) and runs it against examples/.
+version: 1
+
+environment:
+  packages:
+    - go-1.27~1.27 # go.mod's go directive; GOTOOLCHAIN=local refuses an older one
+    - bash
+    - coreutils
+    - findutils
+    - git
+    - grep
+    - jq
+    - make
+    - crane~0.22
+  vars:
+    GOTOOLCHAIN: local
+    GOTMPDIR: /var/tmp

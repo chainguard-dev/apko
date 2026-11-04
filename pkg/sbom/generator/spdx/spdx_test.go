@@ -15,6 +15,7 @@
 package spdx
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -218,7 +219,7 @@ func TestSPDX_Generate(t *testing.T) {
 			fsys := apkfs.NewMemFS()
 			tt.opts.FS = fsys
 			sbomDir := path.Join("var", "lib", "db", "sbom")
-			err := fsys.MkdirAll(sbomDir, 0750)
+			err := fsys.MkdirAll(sbomDir, 0o750)
 			require.NoError(t, err)
 
 			for _, apkPkg := range tt.opts.Packages {
@@ -228,8 +229,9 @@ func TestSPDX_Generate(t *testing.T) {
 				require.NoError(t, err)
 
 				sbomDestPath := path.Join(sbomDir, apkSBOMName)
-				err = fsys.WriteFile(sbomDestPath, apkSBOMBytes, 0644)
+				err = fsys.WriteFile(sbomDestPath, apkSBOMBytes, 0o644)
 				require.NoError(t, err)
+				apkPkg.Files = append(apkPkg.Files, tar.Header{Name: sbomDestPath})
 			}
 
 			sx := New()
@@ -281,7 +283,11 @@ func TestReproducible(t *testing.T) {
 	dir := t.TempDir()
 	fsys := apkfs.NewMemFS()
 	opts := testOpts(fsys)
-	opts.Packages = []*apk.InstalledPackage{{Name: "glibc", Version: "2.40-r0"}}
+	opts.Packages = []*apk.InstalledPackage{{
+		Name:    "glibc",
+		Version: "2.40-r0",
+		Files:   []tar.Header{{Name: internalSBOMPath}},
+	}}
 
 	internalSBOM := Document{
 		DocumentDescribes: []string{
@@ -289,14 +295,15 @@ func TestReproducible(t *testing.T) {
 			documentRootID,
 		},
 		Packages: []Package{
-			{ID: packageID, Name: "glibc"},
-			{ID: documentRootID, Name: "/"},
+			// Every described element must name the installed package.
+			{ID: packageID, Name: "glibc", Version: "2.40-r0"},
+			{ID: documentRootID, Name: "glibc", Version: "2.40-r0"},
 		},
 	}
 	data, err := json.Marshal(internalSBOM)
 	require.NoError(t, err)
-	require.NoError(t, fsys.MkdirAll("/var/lib/db/sbom", 0750))
-	require.NoError(t, fsys.WriteFile(internalSBOMPath, data, 0644))
+	require.NoError(t, fsys.MkdirAll("/var/lib/db/sbom", 0o750))
+	require.NoError(t, fsys.WriteFile(internalSBOMPath, data, 0o644))
 
 	sx := New()
 	generate := func(i int) []byte {
@@ -353,7 +360,7 @@ func TestValidateSPDX(t *testing.T) {
 }
 
 func TestStringToIdentifier(t *testing.T) {
-	var validIDRe = regexp.MustCompile(`^[a-zA-Z0-9-.]+$`)
+	validIDRe := regexp.MustCompile(`^[a-zA-Z0-9-.]+$`)
 	for _, tc := range []string{
 		"alpine",
 		"kindest/node:v1.21.1",

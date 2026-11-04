@@ -171,7 +171,7 @@ func TestSupersededGenerationsAreBounded(t *testing.T) {
 		next()
 	}
 	base := heapMB()
-	const extra = 2 * maxResolverCacheEntries
+	extra := 2 * maxResolverCacheEntries
 	for range extra {
 		next()
 	}

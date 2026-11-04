@@ -95,3 +95,11 @@ type XattrFS interface {
 	RemoveXattr(path string, attr string) error
 	ListXattrs(path string) (map[string][]byte, error)
 }
+
+// LchownFS is implemented by filesystems that can change the ownership of a
+// symlink itself rather than of the file it points to, like lchown(2).
+// Chown on a FullFS resolves symlinks in every path component, including the
+// last one.
+type LchownFS interface {
+	Lchown(path string, uid int, gid int) error
+}

@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"golang.org/x/sys/unix"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -55,6 +56,9 @@ type tarEntry struct {
 	header   tar.Header
 	checksum []byte
 	pkg      *apk.Package
+	// digest is the content digest tfs gave for the entry, if it is an
+	// apk.ContentDigester.
+	digest string
 }
 
 type memFS struct {
@@ -155,6 +159,11 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			header:   hdr,
 			checksum: checksum,
 			pkg:      pkg,
+		}
+		if cd, ok := tfs.(apk.ContentDigester); ok && hdr.Typeflag == tar.TypeReg {
+			if d, ok := cd.ContentDigest(hdr.Name); ok {
+				te.digest = d
+			}
 		}
 
 		installed, err := m.writeHeader(hdr.Name, te)
@@ -406,7 +415,7 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 
 	// NOTE: This is where we diverge from memfs a bit.
 	// If the node has a tarentry, then we may be reading from a tarfs.
-	if anode.te != nil && len(anode.data) == 0 && anode.te.header.Size != 0 {
+	if anode.te != nil && !anode.written && len(anode.data) == 0 && anode.te.header.Size != 0 {
 		f, err := anode.te.tfs.Open(anode.te.header.Name)
 		if err != nil {
 			return nil, err
@@ -424,10 +433,14 @@ func (m *memFS) openFile(name string, flag int, perm fs.FileMode, linkCount int)
 		}
 
 		// Otherwise, we are opening this file to modify it, so buffer the data.
-		anode.data, err = io.ReadAll(f)
+		data, err := io.ReadAll(f)
 		if err != nil {
 			return nil, err
 		}
+		// From here on the node's data is the file's content, even once it is
+		// empty.
+		anode.data = data
+		anode.written = true
 	}
 
 	return newMemFile(anode, name, m, flag), nil
@@ -641,6 +654,38 @@ func (m *memFS) Chown(path string, uid, gid int) error {
 	anode.uid = uid
 	anode.gid = gid
 	return nil
+}
+
+// Lchown changes the ownership of path itself, without resolving it if it is
+// a symlink.
+func (m *memFS) Lchown(path string, uid, gid int) error {
+	anode, err := m.getNodeNoFollow(path)
+	if err != nil {
+		return err
+	}
+	anode.uid = uid
+	anode.gid = gid
+	return nil
+}
+
+// getNodeNoFollow is getNode without resolving the final path component.
+func (m *memFS) getNodeNoFollow(path string) (*node, error) {
+	path = filepath.Clean(path)
+	base := filepath.Base(path)
+	if base == pathSep || base == "." {
+		return m.getNode(path)
+	}
+	parent, err := m.getNode(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	parent.mu.Lock()
+	defer parent.mu.Unlock()
+	anode, ok := parent.children[base]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return anode, nil
 }
 
 func (m *memFS) Chtimes(path string, atime time.Time, mtime time.Time) error {
@@ -970,6 +1015,8 @@ type node struct {
 
 	// This stores metadata for a tarfs-backed file.
 	te *tarEntry
+	// written is set once a tarfs-backed file is opened to be modified.
+	written bool
 }
 
 func (n *node) fileInfo(parent, name string) fs.FileInfo {
@@ -991,7 +1038,7 @@ func (m *memFileInfo) Name() string {
 }
 
 func (m *memFileInfo) Size() int64 {
-	if m.te != nil && len(m.data) == 0 {
+	if m.te != nil && !m.written && len(m.data) == 0 {
 		return m.te.header.Size
 	}
 	return int64(len(m.data))
@@ -1025,6 +1072,39 @@ func (m *memFileInfo) Sys() any {
 	}
 
 	return th
+}
+
+// ContentDigest returns the file's content digest in "<algorithm>:<hex>"
+// format. While the content is backed by the package, it uses the digest
+// supplied through apk.ContentDigester, if available; otherwise it reads
+// and hashes the package file with SHA-256. Content held in memory is
+// hashed with SHA-256, even if its bytes are unchanged.
+// Empty files and non-regular entries return an empty digest.
+// Each name of a hard-linked file reports the same content digest.
+func (m *memFileInfo) ContentDigest() (string, error) {
+	if !m.Mode().IsRegular() || m.Size() == 0 {
+		return "", nil
+	}
+	if m.te == nil || m.written || len(m.data) != 0 {
+		return sha256Digest(bytes.NewReader(m.data))
+	}
+	if m.te.digest != "" {
+		return m.te.digest, nil
+	}
+	f, err := m.te.tfs.Open(m.te.header.Name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return sha256Digest(f)
+}
+
+func sha256Digest(r io.Reader) (string, error) {
+	h, _, err := v1.SHA256(r)
+	if err != nil {
+		return "", err
+	}
+	return h.String(), nil
 }
 
 // This is a bit janky, but we need a way to know who owns this.

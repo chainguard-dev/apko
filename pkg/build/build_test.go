@@ -36,6 +36,19 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 )
 
+// withIsolatedDirs puts a build's disk cache and scratch files in per-test
+// directories, ahead of opts so a test can still override them. Left to the
+// defaults, the build reads and writes the user's real cache directory and
+// creates an apko-temp-* directory under $TMPDIR that nothing removes.
+func withIsolatedDirs(t *testing.T, opts ...build.Option) []build.Option {
+	t.Helper()
+
+	return append([]build.Option{
+		build.WithCache(t.TempDir(), false, apk.NewCache(false)),
+		build.WithTempDir(t.TempDir()),
+	}, opts...)
+}
+
 func TestBuildLayers(t *testing.T) {
 	ctx := context.Background()
 
@@ -43,7 +56,7 @@ func TestBuildLayers(t *testing.T) {
 		build.WithConfig("layering.yaml", []string{"testdata"}),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +77,7 @@ func TestBuildLayersWithEmptyLayering(t *testing.T) {
 		build.WithConfig("empty-layering.yaml", []string{"testdata"}),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +104,7 @@ func TestBuildLayerWithLayeringStrategy(t *testing.T) {
 		build.WithConfig("layering.yaml", []string{"testdata"}),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +122,7 @@ func TestBuildImage(t *testing.T) {
 		build.WithConfig("apko.yaml", []string{"testdata"}),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +277,7 @@ func TestBuildImageWithCertPackages(t *testing.T) {
 	require.NoError(t, fsys.MkdirAll("etc/ssl/certs", 0o755))
 	require.NoError(t, fsys.WriteFile("etc/ssl/certs/ca-certificates.crt", []byte{}, 0o644))
 
-	bc, err := build.New(ctx, fsys, opts...)
+	bc, err := build.New(ctx, fsys, withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +339,7 @@ func TestBuildImageFromLockFile(t *testing.T) {
 		build.WithLockFile(filepath.Join("testdata", "apko.lock.json")),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +368,7 @@ func TestBuildImageFromTooOldResolvedFile(t *testing.T) {
 		build.WithLockFile(filepath.Join("testdata", "apko.pre-0.13.lock.json")),
 	}
 
-	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +399,7 @@ func TestAuth_good(t *testing.T) {
 	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
-	bc, err := build.New(ctx, fs.NewMemFS(),
+	bc, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t,
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Repositories: []string{s.URL},
@@ -395,7 +408,7 @@ func TestAuth_good(t *testing.T) {
 			},
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
 		}),
-		build.WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))
+		build.WithAuthenticator(auth.StaticAuth(host, testUser, testPass)))...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +437,7 @@ func TestAuth_bad(t *testing.T) {
 	host := strings.TrimPrefix(s.URL, "http://")
 
 	ctx := context.Background()
-	_, err := build.New(ctx, fs.NewMemFS(),
+	_, err := build.New(ctx, fs.NewMemFS(), withIsolatedDirs(t,
 		build.WithImageConfiguration(types.ImageConfiguration{
 			Contents: types.ImageContents{
 				Keyring: []string{s.URL + "/melange.rsa.pub"},
@@ -433,7 +446,7 @@ func TestAuth_bad(t *testing.T) {
 			Archs: types.ParseArchitectures([]string{"amd64", "arm64"}),
 		}),
 		build.WithAuthenticator(auth.StaticAuth(host, "baduser", "badpass")),
-	)
+	)...)
 	require.Error(t, err, "build should have failed to init keyring")
 	require.True(t, called)
 }

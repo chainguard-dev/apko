@@ -82,7 +82,7 @@ func TestPublish(t *testing.T) {
 	err = os.MkdirAll(sbomPath, 0o750)
 	require.NoError(t, err)
 
-	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, opts, publishOpts)
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, withIsolatedDirs(t, opts...), publishOpts)
 	require.NoError(t, err)
 
 	ref, err := name.ParseReference(dst)
@@ -158,7 +158,7 @@ func TestPublishLayering(t *testing.T) {
 	err = os.MkdirAll(sbomPath, 0o750)
 	require.NoError(t, err)
 
-	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, opts, publishOpts)
+	err = cli.PublishCmd(ctx, outputRefs, archs, ropt, sbomPath, withIsolatedDirs(t, opts...), publishOpts)
 	require.NoError(t, err)
 
 	ref, err := name.ParseReference(dst)

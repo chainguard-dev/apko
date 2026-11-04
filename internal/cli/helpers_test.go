@@ -17,6 +17,9 @@ package cli_test
 import (
 	"os"
 	"testing"
+
+	"chainguard.dev/apko/pkg/apk/apk"
+	"chainguard.dev/apko/pkg/build"
 )
 
 // unsetSourceDateEpoch clears SOURCE_DATE_EPOCH for the duration of the
@@ -28,4 +31,17 @@ func unsetSourceDateEpoch(t *testing.T) {
 
 	t.Setenv("SOURCE_DATE_EPOCH", "")
 	os.Unsetenv("SOURCE_DATE_EPOCH")
+}
+
+// withIsolatedDirs puts a build's disk cache and scratch files in per-test
+// directories, ahead of opts so a test can still override them. Left to the
+// defaults, the build reads and writes the user's real cache directory and
+// creates an apko-temp-* directory under $TMPDIR that nothing removes.
+func withIsolatedDirs(t *testing.T, opts ...build.Option) []build.Option {
+	t.Helper()
+
+	return append([]build.Option{
+		build.WithCache(t.TempDir(), false, apk.NewCache(false)),
+		build.WithTempDir(t.TempDir()),
+	}, opts...)
 }

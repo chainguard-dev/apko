@@ -44,19 +44,77 @@ func mutatePermissions(fsys apkfs.FullFS, o *options.Options, mut types.PathMuta
 }
 
 // mutatePermissionsRecursive applies perms (and uid/gid, when set) to path and,
-// if path is a directory, to every entry beneath it. WalkDir does not follow
-// symlinks, so a symlink entry is mutated in place rather than its target's
-// tree being descended.
+// if path is a directory, to every entry beneath it.
+//
+// Symlinks found inside the tree are not followed, as with chmod -R and
+// chown -R (which defaults to -P): their mode is left alone (it is
+// meaningless on Linux) and only the link itself is re-owned. Chmod/Chown on
+// the FS resolve the final path component, so applying them to a link would
+// instead mutate its target, which can be anywhere in the image (e.g. a venv's
+// certifi/cacert.pem linking to /etc/ssl/certs/ca-certificates.crt), or fail
+// the build if the link dangles.
+// A symlink passed as path itself is still resolved, for ownership as well
+// as mode (like chmod -R; chown -R would re-own only the link). Packages ship
+// compat paths such as /opt/<app> as links to their real tree, and configs
+// expect that tree re-owned.
 func mutatePermissionsRecursive(fsys apkfs.FullFS, path string, perms uint32, uid types.UID, gid types.GID) error {
-	return fs.WalkDir(fsys, path, func(p string, _ fs.DirEntry, err error) error {
+	return fs.WalkDir(fsys, path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			if err := mutateSymlinkOwner(fsys, p, uid, gid); err != nil {
+				return fmt.Errorf("mutating ownership for symlink %q: %w", p, err)
+			}
+			return nil
 		}
 		if err := mutatePermissionsDirect(fsys, p, perms, uid, gid); err != nil {
 			return fmt.Errorf("mutating permissions for path %q: %w", p, err)
 		}
 		return nil
 	})
+}
+
+// mutateSymlinkOwner re-owns the symlink at path without touching its target.
+// Filesystems that cannot do that (no Lchown, or an Lchown that reports
+// errors.ErrUnsupported, as SubFS does over such a filesystem) leave the link's
+// ownership as-is.
+func mutateSymlinkOwner(fsys apkfs.FullFS, path string, uid types.UID, gid types.GID) error {
+	u, g, ok := resolveOwner(uid, gid)
+	if !ok {
+		return nil
+	}
+	lfs, ok := fsys.(apkfs.LchownFS)
+	if !ok {
+		return nil
+	}
+	if err := lfs.Lchown(path, u, g); err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			return nil
+		}
+		return fmt.Errorf("lchown %q: %w", path, err)
+	}
+	return nil
+}
+
+// resolveOwner maps a mutation's optional uid/gid to the ownership to apply.
+// Only chown when at least one of uid/gid is set. Omitting both leaves
+// ownership untouched (mode-only), which is what makes a recursive
+// "permissions" mutation safe to run over a pre-existing tree. When only one
+// of the two is set, the other defaults to 0 (root), preserving the historical
+// single-path behavior.
+func resolveOwner(uid types.UID, gid types.GID) (int, int, bool) {
+	if uid == nil && gid == nil {
+		return 0, 0, false
+	}
+	u, g := uint32(0), uint32(0)
+	if uid != nil {
+		u = *uid
+	}
+	if gid != nil {
+		g = *gid
+	}
+	return int(u), int(g), true
 }
 
 // unixModeToFsMode converts raw unix permission bits (as written in apko
@@ -83,22 +141,11 @@ func mutatePermissionsDirect(fsys apkfs.FullFS, path string, perms uint32, uid t
 		return fmt.Errorf("chmod %q: %w", target, err)
 	}
 
-	// Only chown when at least one of uid/gid is set. Omitting both leaves
-	// ownership untouched (mode-only), which is what makes a recursive
-	// "permissions" mutation safe to run over a pre-existing tree. When only
-	// one of the two is set, the other defaults to 0 (root), preserving the
-	// historical single-path behavior.
-	if uid == nil && gid == nil {
+	u, g, ok := resolveOwner(uid, gid)
+	if !ok {
 		return nil
 	}
-	u, g := uint32(0), uint32(0)
-	if uid != nil {
-		u = *uid
-	}
-	if gid != nil {
-		g = *gid
-	}
-	if err := fsys.Chown(target, int(u), int(g)); err != nil {
+	if err := fsys.Chown(target, u, g); err != nil {
 		return fmt.Errorf("chown %q: %w", target, err)
 	}
 	return nil

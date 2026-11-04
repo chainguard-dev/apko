@@ -215,6 +215,13 @@ func (d *defaultPackageGetter) getPackageImpl(ctx context.Context, pkg Installab
 
 		log.Debugf("cache miss (%s): %v", pkg.PackageName(), err)
 
+		// An offline cache is an input that may be read-only (a Bazel tree
+		// artifact, say), so expand into the system temp dir and publish
+		// nothing, as the no-cache path does.
+		if d.cache.offline {
+			return d.fetchExpandAndVerify(ctx, pkg, "", d.expandOptions())
+		}
+
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			return nil, fmt.Errorf("unable to create cache directory %q: %w", cacheDir, err)
 		}
@@ -272,33 +279,40 @@ func (d *defaultPackageGetter) doFetchExpandAndVerify(ctx context.Context, pkg I
 		return nil, fmt.Errorf("expanding %s: %w", pkg.PackageName(), err)
 	}
 
+	// A rejected package is disposed of whole: the private copy behind TarFS
+	// along with the temp directory, as cachePackage does on a failed publish.
+	discard := func() {
+		_ = exp.TarFS.Close()
+		_ = exp.Close()
+	}
+
 	chk := pkg.ChecksumString()
 	if !strings.HasPrefix(chk, "Q1") {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has unexpected checksum format: %q", pkg.PackageName(), chk)
 	}
 	expectedControlHash, err := base64.StdEncoding.DecodeString(chk[2:])
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has malformed checksum %q: %w", pkg.PackageName(), chk, err)
 	}
 	if !bytes.Equal(expectedControlHash, exp.ControlHash) {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q control hash mismatch: expected %x, got %x", pkg.PackageName(), expectedControlHash, exp.ControlHash)
 	}
 
 	pkgInfo, err := exp.PkgInfo()
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("reading pkginfo for %s: %w", pkg.PackageName(), err)
 	}
 	expectedDataHash, err := hex.DecodeString(pkgInfo.DataHash)
 	if err != nil {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q has malformed datahash %q: %w", pkg.PackageName(), pkgInfo.DataHash, err)
 	}
 	if !bytes.Equal(expectedDataHash, exp.PackageHash) {
-		_ = exp.Close()
+		discard()
 		return nil, fmt.Errorf("package %q data hash mismatch: expected %x, got %x", pkg.PackageName(), expectedDataHash, exp.PackageHash)
 	}
 
@@ -373,13 +387,44 @@ func (d *defaultPackageGetter) fetchPackage(ctx context.Context, pkg FetchablePa
 	}
 }
 
+// replaceCachedFile is what cachePackage publishes through, as a seam for
+// tests: the races cachePackage has to survive are another process republishing
+// an entry in the instant after this one published it, which no test can force
+// from outside, so tests disturb the entry from here instead.
+var replaceCachedFile = paths.ReplaceCachedFile
+
 // cachePackage moves expanded package files to the cache directory.
 func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg InstallablePackage, exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
 	_, span := otel.Tracer("go-apk").Start(ctx, "cachePackage", trace.WithAttributes(attribute.String("package", pkg.PackageName())))
 	defer span.End()
 
-	// Rename exp's temp files to content-addressable identifiers in the cache.
+	// exp.TarFS already serves the data section from an unlinked private copy
+	// that ExpandApk measured against datahash and inflated before anything
+	// was published, while exp's files were only reachable inside the 0700
+	// directory it created. Nothing here reopens by name: once an entry is
+	// published this process no longer controls what the name resolves to.
 	//
+	// The private copy is exp's only data, so a failure to publish has to
+	// release it along with the temp directory, which sits in the shared cache
+	// directory where nothing else will ever remove it.
+	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
+	published, err := publishPackage(exp, cacheDir)
+	if err != nil {
+		_ = exp.TarFS.Close()
+		_ = exp.Close()
+		return nil, err
+	}
+	return published, nil
+}
+
+// publishPackage renames exp's temp files to their content-addressable names in
+// cacheDir. It publishes; it does not read anything back, since what a name
+// resolves to once published is not this process's to decide.
+//
+// An entry is the three compressed sections. The uncompressed tar is not one
+// of them: every reader inflates its own verified private copy from the .gz,
+// and a <datahash>.dat.tar left by an older apko is neither read nor touched.
+func publishPackage(exp *expandapk.APKExpanded, cacheDir string) (*expandapk.APKExpanded, error) {
 	// These use ReplaceCachedFile rather than AdvertiseCachedFile: everything here
 	// has just been fetched and verified by doFetchExpandAndVerify, so it must win
 	// over whatever is already sitting at the destination. Deferring to an existing
@@ -390,7 +435,7 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	ctlHex := hex.EncodeToString(exp.ControlHash)
 	ctlDst := filepath.Join(cacheDir, ctlHex+".ctl.tar.gz")
 
-	if err := paths.ReplaceCachedFile(exp.ControlFile, ctlDst); err != nil {
+	if err := replaceCachedFile(exp.ControlFile, ctlDst); err != nil {
 		return nil, err
 	}
 
@@ -399,7 +444,7 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	if exp.SignatureFile != "" {
 		sigDst := filepath.Join(cacheDir, ctlHex+".sig.tar.gz")
 
-		if err := paths.ReplaceCachedFile(exp.SignatureFile, sigDst); err != nil {
+		if err := replaceCachedFile(exp.SignatureFile, sigDst); err != nil {
 			return nil, err
 		}
 
@@ -409,46 +454,11 @@ func (d *defaultPackageGetter) cachePackage(ctx context.Context, pkg Installable
 	datHex := hex.EncodeToString(exp.PackageHash)
 	datDst := filepath.Join(cacheDir, datHex+".dat.tar.gz")
 
-	if err := paths.ReplaceCachedFile(exp.PackageFile, datDst); err != nil {
+	if err := replaceCachedFile(exp.PackageFile, datDst); err != nil {
 		return nil, err
 	}
 
 	exp.PackageFile = datDst
-
-	if err := exp.TarFS.Close(); err != nil {
-		return nil, fmt.Errorf("closing tarfs: %w", err)
-	}
-
-	tarDst := strings.TrimSuffix(exp.PackageFile, ".gz")
-
-	if err := paths.ReplaceCachedFile(exp.TarFile, tarDst); err != nil {
-		return nil, err
-	}
-
-	exp.TarFile = tarDst
-
-	// Re-initialize the tarfs with the renamed file.
-	//
-	// Measured rather than merely reopened: the files above were installed
-	// atomically, but nothing stops another writer replacing them between the
-	// rename and this read, and the whole point of the cache path is that its
-	// contents are not trusted.
-	// TODO: Split out the tarfs Index creation from the FS.
-	// TODO: Consolidate ExpandAPK(), cachedPackage(), and cachePackage().
-	data, err := exp.VerifiedPackageData(exp.PackageHash)
-	if err != nil {
-		return nil, fmt.Errorf("caching %q: %w", exp.PackageFile, err)
-	}
-	info, err := data.Stat()
-	if err != nil {
-		data.Close()
-		return nil, err
-	}
-	exp.TarFS, err = tarfs.New(data, info.Size())
-	if err != nil {
-		data.Close()
-		return nil, err
-	}
 
 	return exp, nil
 }
@@ -539,8 +549,6 @@ func (d *defaultPackageGetter) cachedPackage(ctx context.Context, pkg Installabl
 	if err != nil {
 		return nil, err
 	}
-
-	exp.TarFile = strings.TrimSuffix(exp.PackageFile, ".gz")
 
 	// As with the control section above, recompute rather than trust the
 	// content-addressable filename. datahash is usable as the anchor here

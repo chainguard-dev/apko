@@ -455,6 +455,14 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 	if err != nil {
 		return "", fmt.Errorf("unable to create a temporary cache file: %w", err)
 	}
+	// Once advertised, tmp is the cache entry's storage. Until then nothing
+	// links to it, so a failure must not leave it in the cache directory.
+	advertised := false
+	defer func() {
+		if !advertised {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
 	// Now that symlinks are used to advertise cached files,
 	// CreateTemp permissions are no longer suitable default,
 	// update to world readable, group/user writable.
@@ -479,6 +487,7 @@ func (t *cacheTransport) retrieveAndSaveFile(ctx context.Context, request *http.
 	if err := paths.AdvertiseCachedFile(tmp.Name(), cacheFile); err != nil {
 		return "", err
 	}
+	advertised = true
 	return cacheFile, nil
 }
 

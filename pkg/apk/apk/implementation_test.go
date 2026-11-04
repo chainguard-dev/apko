@@ -33,8 +33,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/require"
-	"go.step.sm/crypto/jose"
 
 	"chainguard.dev/apko/pkg/apk/auth"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -539,10 +539,7 @@ func TestInitKeyring(t *testing.T) {
 	a, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors), WithTransport(tr))
 	require.NoError(t, err)
 
-	dir, err := os.MkdirTemp("", "go-apk")
-	require.NoError(t, err)
-
-	keyPath := filepath.Join(dir, "alpine-devel@lists.alpinelinux.org-5e69ca50.rsa.pub")
+	keyPath := filepath.Join(t.TempDir(), "alpine-devel@lists.alpinelinux.org-5e69ca50.rsa.pub")
 	err = os.WriteFile(keyPath, []byte(testDemoKey), 0o644) //nolint:gosec
 	require.NoError(t, err)
 

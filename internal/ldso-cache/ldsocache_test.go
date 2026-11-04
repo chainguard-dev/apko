@@ -129,6 +129,15 @@ func Test_ParseLDSOConf_Glob(t *testing.T) {
 	require.Contains(t, dirs, "/b/libs")
 }
 
+func Test_ParseLDSOConf_LinesAfterInclude(t *testing.T) {
+	fsys := os.DirFS("testdata")
+	dirs, err := ParseLDSOConf(fsys, "ld.so.conf.include-mixed")
+	require.NoError(t, err)
+	// Directories after an include must not be dropped, and duplicates keep
+	// their first position.
+	require.Equal(t, []string{"/before", "/a/libs", "/b/libs", "/after"}, dirs)
+}
+
 // Instead of real ELF binaries, our "libraries" are YAML files
 // that are used to populate an elfInfo structure.
 func mockGetElfInfo(r io.ReaderAt) (elfInfo, error) {
@@ -220,5 +229,26 @@ func Test_LDSOCacheEntriesForDirs_SortMatchesDlCacheLibcmp(t *testing.T) {
 		b := filepath.Base(entries[i].Name)
 		require.GreaterOrEqual(t, dlCacheLibcmp(a, b), 0,
 			"entries not in descending _dl_cache_libcmp order: %q before %q", a, b)
+	}
+}
+
+func Test_LDSOCacheEntriesForDirs_DuplicatesKeepLibdirOrder(t *testing.T) {
+	getElfInfo = mockGetElfInfo
+	root := os.DirFS("testdata/libroot")
+	for _, libdirs := range [][]string{
+		{"/lib", "/usr/lib"},
+		{"/usr/lib", "/lib"},
+	} {
+		entries, err := LDSOCacheEntriesForDirs(root, libdirs)
+		require.NoError(t, err)
+		// ld.so picks the first matching entry, so a library found in an
+		// earlier libdir must come before the same library in a later one.
+		for i := 1; i < len(entries); i++ {
+			if filepath.Base(entries[i-1].Name) != filepath.Base(entries[i].Name) {
+				continue
+			}
+			require.Equal(t, libdirs[0], filepath.Dir(entries[i-1].Name))
+			require.Equal(t, libdirs[1], filepath.Dir(entries[i].Name))
+		}
 	}
 }

@@ -70,3 +70,79 @@ func TestMultiAuthenticator(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvAuth(t *testing.T) {
+	tests := []struct {
+		name       string
+		env        string
+		expectAuth bool
+		expectUser string
+		expectPass string
+	}{
+		{
+			name:       "plain password",
+			env:        "basic:example.com:user:pass",
+			expectAuth: true,
+			expectUser: "user",
+			expectPass: "pass",
+		},
+		{
+			name:       "password with one colon",
+			env:        "basic:example.com:user:pa:ss",
+			expectAuth: true,
+			expectUser: "user",
+			expectPass: "pa:ss",
+		},
+		{
+			name:       "password with several colons",
+			env:        "basic:example.com:user:p:a:s:s:",
+			expectAuth: true,
+			expectUser: "user",
+			expectPass: "p:a:s:s:",
+		},
+		{
+			name:       "too few parts",
+			env:        "basic:example.com:user",
+			expectAuth: false,
+		},
+		{
+			name:       "wrong scheme",
+			env:        "bearer:example.com:user:pass",
+			expectAuth: false,
+		},
+		{
+			name:       "host mismatch",
+			env:        "basic:other.example.com:user:pass",
+			expectAuth: false,
+		},
+		{
+			name:       "unset",
+			env:        "",
+			expectAuth: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HTTP_AUTH", tt.env)
+			req, _ := http.NewRequest("GET", "http://example.com", nil)
+			if err := (EnvAuth{}).AddAuth(context.Background(), req); err != nil {
+				t.Fatalf("did not expect error but got: %v", err)
+			}
+
+			user, pass, ok := req.BasicAuth()
+			if ok != tt.expectAuth {
+				t.Fatalf("expected auth=%v, got auth=%v (user: %q, pass: %q)", tt.expectAuth, ok, user, pass)
+			}
+			if !ok {
+				return
+			}
+			if user != tt.expectUser {
+				t.Errorf("expected user %q, got %q", tt.expectUser, user)
+			}
+			if pass != tt.expectPass {
+				t.Errorf("expected pass %q, got %q", tt.expectPass, pass)
+			}
+		})
+	}
+}

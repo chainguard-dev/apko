@@ -1,0 +1,8 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Every check file declares its own environment, so this empty default
+# changes none of them.
+version: 1
+
+environment: {}

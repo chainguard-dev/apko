@@ -1,0 +1,10 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+version: 1
+name: docker
+packages: [busybox, docker, iptables]
+cmd: [sh, ./docker.sh]
+timeout: 5m
+exports:
+  DOCKER_HOST: unix:///var/run/docker.sock

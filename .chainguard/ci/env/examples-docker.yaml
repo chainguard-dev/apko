@@ -1,0 +1,24 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# env/examples.yaml plus a Docker daemon, for checks that docker load and
+# docker run the images apko built.
+version: 1
+
+environment:
+  packages:
+    - go-1.27~1.27
+    - bash
+    - coreutils
+    - findutils
+    - git
+    - grep
+    - jq
+    - make
+    - crane~0.22
+    - openssl # hack/test-certificates.sh fingerprints the bundles
+    - sed
+  services: [docker]
+  vars:
+    GOTOOLCHAIN: local
+    GOTMPDIR: /var/tmp

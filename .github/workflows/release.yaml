@@ -18,7 +18,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -63,11 +63,11 @@ jobs:
               # Get all changed files since last tag
               CHANGED_FILES=$(git diff --name-only "$LAST_TAG"..HEAD)
 
-              # Only release if changes include .go files, go.mod, go.sum, or LICENSE
-              RELEASE_WORTHY_CHANGES=$(echo "$CHANGED_FILES" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^LICENSE$)' || true)
+              # Only release if changes include .go files, go.mod, go.sum, .go-version, or LICENSE
+              RELEASE_WORTHY_CHANGES=$(echo "$CHANGED_FILES" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^\.go-version$|^LICENSE$)' || true)
 
               if [ -z "$RELEASE_WORTHY_CHANGES" ]; then
-                echo "No Go source files, go.mod, go.sum, or LICENSE changed since last release. Skipping release."
+                echo "No Go source files, go.mod, go.sum, .go-version, or LICENSE changed since last release. Skipping release."
                 echo "need_release=no" >> "$GITHUB_OUTPUT"
               else
                 echo "Found release-worthy changes since last release:"
@@ -92,7 +92,7 @@ jobs:
 
       - name: Bump version and push tag
         id: create_tag
-        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7.0.0
         if: steps.check.outputs.need_release == 'yes' && steps.check.outputs.existing_tag == ''
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.check.outputs.need_release == 'yes'
         with:
-          go-version-file: './go.mod'
+          go-version-file: './.go-version'
           check-latest: true
           # Disable caching to avoid cache poisoning of release artifacts.
           cache: false
@@ -119,7 +119,7 @@ jobs:
           # https://github.com/goreleaser/goreleaser/issues/6195
           cosign-release: "v2.6.1"
 
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         if: steps.check.outputs.need_release == 'yes'
         with:
           version: latest

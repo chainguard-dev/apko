@@ -1,0 +1,218 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# End-to-end checks of apko against examples/. Each check builds apko from
+# the tree with make apko.
+version: 1
+
+environment: examples
+
+checks:
+  nginx:
+    description: >-
+      Builds examples/nginx.yaml for each arch and validates every SBOM it
+      writes with spdx-tools-java. apko installs packages without running
+      them, so the aarch64 build needs no emulation.
+    environment:
+      packages:
+        - go-1.27~1.27
+        - bash
+        - make
+        - spdx-tools-java~2.0
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+    trigger: [presubmit, postsubmit]
+    timeout: 15m
+    foreach:
+      - vars: {ARCH: x86_64}
+      - vars: {ARCH: aarch64}
+    network:
+      egress: &egress
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+        - packages.wolfi.dev
+        - apk.cgr.dev
+        - cgr.dev
+        - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
+        - dl-cdn.alpinelinux.org
+        - alpinelinux.org
+        - spdx.org
+    script: |
+      make apko
+      ./apko build ./examples/nginx.yaml nginx:build "/tmp/nginx-${ARCH}.tar" --arch "${ARCH}"
+      ls ./*.spdx.json
+      for f in ./*.spdx.json; do
+        tools-java Verify "$f"
+      done
+
+  all-examples:
+    description: >-
+      Builds every examples/**/*.yaml for the host arch, online and then
+      --offline from the cache the first build filled; an example with a
+      build.sh beside it runs that instead. The GitHub workflow also ran this
+      on macos-latest, which Checks has no guest for.
+    trigger: [presubmit, postsubmit]
+    timeout: 30m
+    vars:
+      # /tmp is a tmpfs sized from guest RAM, which the larger examples fill.
+      TMPDIR: /var/tmp
+    network:
+      egress: *egress
+    shell: bash
+    script: |
+      set -eu
+      make apko
+      while IFS= read -r cfg; do
+        name=$(basename "${cfg}" .yaml)
+        echo "Building ${name}..."
+        build_script=$(dirname "${cfg}")/build.sh
+        if [ -f "${build_script}" ]; then
+          "${build_script}" ./apko
+        else
+          ./apko build "${cfg}" "${name}:build" /var/tmp/"${name}".tar
+          ./apko build --offline "${cfg}" "${name}:build" /var/tmp/"${name}".tar
+        fi
+      done < <(find ./examples/ -name '*.yaml')
+
+  reproducible:
+    description: >-
+      Publishes examples/wolfi-base.yaml for x86_64 and aarch64 ten times to a
+      local registry and fails if any digest differs: once with
+      SOURCE_DATE_EPOCH=0, and once without it, where the image timestamp is
+      the newest build date among the resolved APKs.
+    environment: registry
+    trigger: [presubmit, postsubmit]
+    timeout: 20m
+    foreach:
+      - name: source-date-epoch
+        vars: {SOURCE_DATE_EPOCH: "0"}
+      - name: build-date-epoch
+    network:
+      egress: *egress
+    shell: bash
+    script: |
+      set -eu
+      make apko
+      FIRST=$(./apko publish ./examples/wolfi-base.yaml localhost:5000/wolfi --arch x86_64,aarch64 2> /dev/null)
+      for idx in {2..10}; do
+        NEXT=$(./apko publish ./examples/wolfi-base.yaml localhost:5000/wolfi --arch x86_64,aarch64 2> /dev/null)
+        if [ "${FIRST}" = "${NEXT}" ]; then
+          echo "Build ${idx} matches."
+        else
+          echo "Build ${idx} differs: ${FIRST} and ${NEXT}"
+          exit 1
+        fi
+      done
+
+  annotations:
+    description: >-
+      Publishes examples/nginx.yaml to a local registry and checks its
+      annotations on the index and the arm64 manifest, and its labels in the
+      arm64 config.
+    environment: registry
+    trigger: [presubmit, postsubmit]
+    timeout: 15m
+    network:
+      egress: *egress
+    script: |
+      set -eu
+      make apko
+      ref=$(./apko publish ./examples/nginx.yaml localhost:5000/nginx --arch x86_64,aarch64)
+      crane manifest "$ref" | jq -r '.annotations.foo' | grep bar
+      crane manifest --platform=linux/arm64 "$ref" | jq -r '.annotations.foo' | grep bar
+      crane config --platform=linux/arm64 "$ref" | jq -r '.config.Labels' | grep bar
+
+  certificates:
+    description: >-
+      Builds examples/certificates.yaml and examples/package-certificates.yaml
+      and runs each image under Docker to check the CA bundle and the Java
+      trust store hold the expected certificates, before and after
+      update-ca-certificates.
+    environment: examples-docker
+    trigger: [presubmit, postsubmit]
+    resources: medium-amd64 # the images are built --arch amd64 and run here
+    timeout: 20m
+    foreach:
+      - name: certificates
+        vars:
+          YAML: ./examples/certificates.yaml
+          FINGERPRINTS: >-
+            E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98
+            9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D
+      - name: package-certificates
+        vars:
+          YAML: ./examples/package-certificates.yaml
+          FINGERPRINTS: >-
+            E7:05:70:A9:89:F8:56:5A:AB:DF:7C:AE:27:AB:D1:62:18:72:D6:A3:F8:11:E3:FE:F2:7E:3D:BA:02:91:21:98
+            9B:2A:33:9F:E6:A3:E8:55:85:C4:CD:75:53:6C:B8:C1:CF:7C:D6:03:B9:A6:4B:EC:25:21:85:8A:E4:8D:A8:5D
+            34:75:37:AF:7A:09:D4:03:F1:9F:58:F8:3C:35:68:91:2A:F2:4B:7C:12:E7:45:F1:D5:55:70:79:70:8C:91:AD
+            12:AE:34:99:9A:A6:4D:CD:1A:69:47:E8:38:A5:3A:AB:AB:FC:FA:CA:45:AB:CA:8D:C0:CB:B8:DC:B7:BD:06:3C
+    network:
+      egress: *egress
+    # FINGERPRINTS is split on whitespace into the script's arguments.
+    script: |
+      # shellcheck disable=SC2086
+      ./hack/test-certificates.sh "${YAML}" ${FINGERPRINTS}
+
+  on-top-of-base:
+    description: >-
+      Builds examples/on_top_of_base on cgr.dev/chainguard/busybox, whose
+      /lib is a symlink to /usr/lib, and runs /bin/sh and /bin/busybox from
+      the result under Docker on a guest of each arch, which fails if apko
+      broke the usr-merge symlink.
+    environment: examples-docker
+    trigger: [presubmit, postsubmit]
+    timeout: 20m
+    foreach:
+      - name: x86_64
+        vars: {ARCH: x86_64, IMAGE_TAG: "base_image:latest-amd64"}
+        resources: medium-amd64
+      - name: aarch64
+        vars: {ARCH: aarch64, IMAGE_TAG: "base_image:latest-arm64"}
+        resources: medium-arm64
+    network:
+      egress: *egress
+    script: |
+      set -eu
+      make apko
+      ./examples/on_top_of_base/build.sh ./apko cgr.dev/chainguard/busybox:latest "test-output-${ARCH}.tar" "${ARCH}"
+      docker load -i "test-output-${ARCH}.tar"
+      docker run --rm --entrypoint /bin/sh "${IMAGE_TAG}" -c "echo 'Shell works on ${ARCH}'" | grep -q "Shell works"
+      docker run --rm --entrypoint /bin/busybox "${IMAGE_TAG}" echo "Busybox works" | grep -q "Busybox works"
+
+  erofs-mount:
+    description: >-
+      The one place an apko-built EROFS layer meets the kernel driver and
+      erofs-utils: hack/test-erofs.sh builds examples/wolfi-base.yaml as
+      EROFS, fscks it, mounts it single and layered, read-only and --rw, and
+      compares the trees with apko erofs ls and a tar build.
+    environment:
+      packages:
+        - go-1.27~1.27
+        - bash
+        - coreutils
+        - erofs-utils~1.9
+        - findutils
+        - jq
+        - make
+        - mount
+        - umount
+        - util-linux-misc # mountpoint
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+    trigger: [presubmit, postsubmit]
+    timeout: 15m
+    vars:
+      # The --rw section's overlay upperdir cannot live on the overlay that
+      # /var/tmp is part of; tmpfs takes it.
+      TMPDIR: /tmp
+    network:
+      egress: *egress
+    script: |
+      set -eu
+      grep -qw erofs /proc/filesystems
+      make apko
+      ./hack/test-erofs.sh ./examples/wolfi-base.yaml

@@ -19,9 +19,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,6 +35,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/expandapk/tarfs"
 	"chainguard.dev/apko/pkg/apk/types"
 	"chainguard.dev/apko/pkg/limitio"
+	"chainguard.dev/apko/pkg/paths"
 )
 
 func TestPkgInfo(t *testing.T) {
@@ -204,6 +210,107 @@ func TestExpandApkWithOptions(t *testing.T) {
 		}
 		defer exp.Close()
 	})
+}
+
+// TestExpandApkFailureRemovesTempDir pins that a failed expansion leaves
+// cacheDir exactly as it found it. On success the caller owns the temp
+// directory through APKExpanded.Close; on failure there is no APKExpanded to
+// close, so anything left there is unreachable. In a disk cache that is an
+// orphan in the shared cache directory, and with an empty cacheDir it is a
+// leak in $TMPDIR.
+//
+// The cleanup must remove only what the failed call created. Each case runs
+// in a cacheDir that already holds a published entry, a content-addressed
+// symlink into an earlier expansion's temp directory, as the package getter
+// leaves it, and checks that the entry still resolves to the same data.
+func TestExpandApkFailureRemovesTempDir(t *testing.T) {
+	apk, err := os.ReadFile("testdata/hello-wolfi-2.12.1-r0.apk")
+	require.NoError(t, err)
+
+	// A single gzip stream holding a control tar: well formed, but an apk
+	// needs at least a control and a data stream.
+	var oneStream bytes.Buffer
+	gz := gzip.NewWriter(&oneStream)
+	tw := tar.NewWriter(gz)
+	pkginfo := []byte("pkgname = test\npkgver = 1.0.0-r0\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: ".PKGINFO", Mode: 0o644, Size: int64(len(pkginfo))}))
+	_, err = tw.Write(pkginfo)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	for _, tc := range []struct {
+		name    string
+		input   []byte
+		opts    []Option
+		wantErr string
+	}{{
+		name:    "input is not gzip",
+		input:   []byte("this is not an apk"),
+		wantErr: "creating gzip reader",
+	}, {
+		name:    "control section exceeds size limit",
+		input:   apk,
+		opts:    []Option{WithMaxControlSize(1)},
+		wantErr: "expandApk error 3",
+	}, {
+		name:    "data section exceeds size limit",
+		input:   apk,
+		opts:    []Option{WithMaxDataSize(1)},
+		wantErr: "checking sums",
+	}, {
+		name:    "input truncated in the data section",
+		input:   apk[:len(apk)-64],
+		wantErr: "unexpected EOF",
+	}, {
+		name:    "only one gzip stream",
+		input:   oneStream.Bytes(),
+		wantErr: "invalid number of tar streams: 1",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+
+			// Publish a live entry the way the package getter does.
+			live, err := ExpandApkWithOptions(t.Context(), bytes.NewReader(apk), cacheDir)
+			require.NoError(t, err)
+			require.NoError(t, live.TarFS.Close())
+			liveLink := filepath.Join(cacheDir, hex.EncodeToString(live.PackageHash)+".dat.tar.gz")
+			require.NoError(t, paths.ReplaceCachedFile(live.PackageFile, liveLink))
+			liveData, err := os.ReadFile(liveLink)
+			require.NoError(t, err)
+			before := dirNames(t, cacheDir)
+
+			exp, err := ExpandApkWithOptions(t.Context(), bytes.NewReader(tc.input), cacheDir, tc.opts...)
+			if err == nil {
+				_ = exp.Close()
+				t.Fatalf("ExpandApkWithOptions(%d bytes, %d opts): want error containing %q, got success", len(tc.input), len(tc.opts), tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ExpandApkWithOptions(%d bytes, %d opts): want error containing %q, got %v", len(tc.input), len(tc.opts), tc.wantErr, err)
+			}
+
+			if after := dirNames(t, cacheDir); !slices.Equal(after, before) {
+				t.Errorf("after failed expansion, cacheDir should hold only what it held before\n got: %v\nwant: %v", after, before)
+			}
+			got, err := os.ReadFile(liveLink)
+			if err != nil || !bytes.Equal(got, liveData) {
+				t.Errorf("published entry %s after failed expansion: read %d bytes, err=%v; want the %d bytes it held before", liveLink, len(got), err, len(liveData))
+			}
+		})
+	}
+}
+
+// dirNames returns the sorted names of dir's entries.
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 func TestSplitWithOptions(t *testing.T) {
@@ -444,4 +551,196 @@ func TestGzipBombProtection(t *testing.T) {
 		}
 		t.Logf("Successfully caught gzip bomb with limit %d", sizeErr.Limit)
 	})
+}
+
+// TestExpandApkUncompressedTarFile pins what WithUncompressedTarFile changes and
+// what the default leaves out. By default the data section is served from a
+// private copy and no uncompressed tar exists on disk. With the option the tar
+// is written next to PackageFile, TarFile names it, TarFS is indexed from it,
+// and IsValid notices when that named file is replaced, which is what a caller
+// that stores the file itself relies on.
+func TestExpandApkUncompressedTarFile(t *testing.T) {
+	file := "testdata/hello-wolfi-2.12.1-r0.apk"
+	open := func(t *testing.T) *os.File {
+		t.Helper()
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return f
+	}
+	names := func(t *testing.T, exp *APKExpanded) []string {
+		t.Helper()
+		out := make([]string, 0, len(exp.TarFS.Entries()))
+		for _, e := range exp.TarFS.Entries() {
+			out = append(out, e.Header.Name)
+		}
+		return out
+	}
+	tarsOnDisk := func(t *testing.T, dir string) []string {
+		t.Helper()
+		var out []string
+		if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() && strings.HasSuffix(path, ".tar") {
+				out = append(out, path)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	t.Run("default writes no uncompressed tar", func(t *testing.T) {
+		dir := t.TempDir()
+		exp, err := ExpandApkWithOptions(context.Background(), open(t), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exp.Close()
+
+		if exp.TarFile != "" {
+			t.Errorf("TarFile = %q, want empty", exp.TarFile)
+		}
+		if got := tarsOnDisk(t, dir); len(got) != 0 {
+			t.Errorf("uncompressed tar written to disk: %v", got)
+		}
+		if len(names(t, exp)) == 0 {
+			t.Error("TarFS has no entries")
+		}
+		if !exp.IsValid() {
+			t.Error("a fresh expansion must be valid")
+		}
+	})
+
+	t.Run("option writes and serves the named tar", func(t *testing.T) {
+		dir := t.TempDir()
+		exp, err := ExpandApkWithOptions(context.Background(), open(t), dir, WithUncompressedTarFile())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exp.Close()
+
+		if exp.TarFile == "" {
+			t.Fatal("TarFile is empty with WithUncompressedTarFile")
+		}
+		if got := tarsOnDisk(t, dir); len(got) != 1 || got[0] != exp.TarFile {
+			t.Errorf("uncompressed tars on disk = %v, want exactly %q", got, exp.TarFile)
+		}
+		f, ok := exp.TarFS.UnderlyingReader().(*os.File)
+		if !ok || f.Name() != exp.TarFile {
+			t.Fatalf("TarFS is not indexed from the named tar: %T %v", exp.TarFS.UnderlyingReader(), ok)
+		}
+
+		want := names(t, mustExpand(t, open(t), t.TempDir()))
+		if got := names(t, exp); !slices.Equal(got, want) {
+			t.Errorf("entries differ between the named tar and the private copy:\n got %v\nwant %v", got, want)
+		}
+
+		if !exp.IsValid() {
+			t.Fatal("a fresh expansion must be valid")
+		}
+		// Replace the named file. The descriptor TarFS holds now points at an
+		// orphaned inode, which the name check must catch.
+		b, err := os.ReadFile(exp.TarFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(exp.TarFile); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exp.TarFile, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if exp.IsValid() {
+			t.Error("IsValid did not notice the named tar being replaced")
+		}
+	})
+}
+
+func mustExpand(t *testing.T, f *os.File, dir string) *APKExpanded {
+	t.Helper()
+	exp, err := ExpandApkWithOptions(context.Background(), f, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { exp.Close() })
+	return exp
+}
+
+// TestPackageDataAfterExpandApk pins that an explicit PackageData request still
+// works on a default expansion, which names no tar: the destination is derived
+// from PackageFile, written on first use, reused on the next, and holds the
+// same entries TarFS serves from the private copy.
+func TestPackageDataAfterExpandApk(t *testing.T) {
+	f, err := os.Open("testdata/hello-wolfi-2.12.1-r0.apk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	exp, err := ExpandApkWithOptions(context.Background(), f, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exp.Close()
+	if exp.TarFile != "" {
+		t.Fatalf("TarFile = %q before PackageData, want empty", exp.TarFile)
+	}
+
+	data, err := exp.PackageData()
+	if err != nil {
+		t.Fatalf("PackageData on a default expansion: %v", err)
+	}
+	defer data.Close()
+
+	want := strings.TrimSuffix(exp.PackageFile, ".gz")
+	if exp.TarFile != want || data.Name() != want {
+		t.Fatalf("PackageData wrote %q and recorded %q, want %q", data.Name(), exp.TarFile, want)
+	}
+	first, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tarNames := func(r io.Reader) []string {
+		var out []string
+		tr := tar.NewReader(r)
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				return out
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, h.Name)
+		}
+	}
+	got := tarNames(data)
+	want2 := make([]string, 0, len(exp.TarFS.Entries()))
+	for _, e := range exp.TarFS.Entries() {
+		want2 = append(want2, e.Header.Name)
+	}
+	if !slices.Equal(got, want2) {
+		t.Errorf("PackageData entries differ from TarFS:\n got %v\nwant %v", got, want2)
+	}
+
+	// A second call opens the file already written rather than rewriting it.
+	again, err := exp.PackageData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	second, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(first, second) {
+		t.Error("second PackageData call rewrote the tar")
+	}
 }
