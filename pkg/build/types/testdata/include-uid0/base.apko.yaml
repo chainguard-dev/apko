@@ -1,0 +1,7 @@
+contents:
+  repositories:
+    - repository
+accounts:
+  users:
+    - username: toor
+      uid: 0
