@@ -15,17 +15,25 @@
 package fs
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-// subFSBases are the filesystems a SubFS is tested over.
-var subFSBases = map[string]func(t *testing.T) FullFS{
-	"memfs": func(*testing.T) FullFS { return NewMemFS() },
-	"dirfs": func(t *testing.T) FullFS { return DirFS(t.Context(), t.TempDir()) },
+// subFSBases are the filesystems a SubFS is tested over. onDisk is the
+// directory a dirfs base writes to, so tests can check the disk as well as
+// the in-memory view; it is empty for memfs.
+var subFSBases = map[string]func(t *testing.T) (base FullFS, onDisk string){
+	"memfs": func(*testing.T) (FullFS, string) { return NewMemFS(), "" },
+	"dirfs": func(t *testing.T) (FullFS, string) {
+		dir := t.TempDir()
+		return DirFS(t.Context(), dir), dir
+	},
 }
 
 func TestSubFSSymlinkUnderRoot(t *testing.T) {
@@ -43,7 +51,7 @@ func TestSubFSSymlinkUnderRoot(t *testing.T) {
 	for baseName, newBase := range subFSBases {
 		for _, tt := range tests {
 			t.Run(baseName+"/"+tt.name, func(t *testing.T) {
-				base := newBase(t)
+				base, onDisk := newBase(t)
 				require.NoError(t, base.MkdirAll("/sub/home", 0o755))
 				require.NoError(t, base.MkdirAll("/home", 0o755))
 				sub := &SubFS{FS: base, Root: "/sub"}
@@ -61,8 +69,19 @@ func TestSubFSSymlinkUnderRoot(t *testing.T) {
 				require.Equal(t, tt.target, got)
 
 				// Nothing was created at the un-prefixed path outside the root.
-				_, err = base.Lstat(strings.TrimPrefix(tt.wantPath, "/sub"))
+				unprefixed := strings.TrimPrefix(tt.wantPath, "/sub")
+				_, err = base.Lstat(unprefixed)
 				require.ErrorIs(t, err, os.ErrNotExist)
+
+				// dirfs answers Readlink and Lstat from its in-memory copy, so
+				// check the disk separately.
+				if onDisk != "" {
+					got, err := os.Readlink(filepath.Join(onDisk, tt.wantPath))
+					require.NoError(t, err)
+					require.Equal(t, tt.target, got)
+					_, err = os.Lstat(filepath.Join(onDisk, unprefixed))
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
 			})
 		}
 	}
@@ -85,10 +104,11 @@ func TestSubFSLinkUnderRoot(t *testing.T) {
 	for baseName, newBase := range subFSBases {
 		for _, tt := range tests {
 			t.Run(baseName+"/"+tt.name, func(t *testing.T) {
-				base := newBase(t)
+				base, onDisk := newBase(t)
 				require.NoError(t, base.MkdirAll("/sub/a", 0o755))
 				require.NoError(t, base.MkdirAll("/sub/b", 0o755))
 				require.NoError(t, base.MkdirAll("/a", 0o755))
+				require.NoError(t, base.MkdirAll("/b", 0o755))
 				require.NoError(t, base.WriteFile("/sub/a/orig", []byte("inside"), 0o644))
 				// Same-named files outside the root must never be the link source.
 				require.NoError(t, base.WriteFile("/a/orig", []byte("outside"), 0o644))
@@ -113,9 +133,155 @@ func TestSubFSLinkUnderRoot(t *testing.T) {
 				require.Equal(t, "inside", string(got))
 
 				// Nothing was created at the un-prefixed path outside the root.
-				_, err = base.Lstat(strings.TrimPrefix(tt.wantPath, "/sub"))
+				unprefixed := strings.TrimPrefix(tt.wantPath, "/sub")
+				_, err = base.Lstat(unprefixed)
 				require.ErrorIs(t, err, os.ErrNotExist)
+
+				// dirfs answers Lstat from its in-memory copy, so check the
+				// disk separately.
+				if onDisk != "" {
+					got, err := os.ReadFile(filepath.Join(onDisk, tt.wantPath))
+					require.NoError(t, err)
+					require.Equal(t, "inside", string(got))
+					_, err = os.Lstat(filepath.Join(onDisk, unprefixed))
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
 			})
 		}
+	}
+}
+
+// subFSMethods is every SubFS method that takes a path, each wrapped so the
+// confinement tests can call it with one argument. Symlink's first argument
+// is a link target, not a path, so it is fixed here.
+var subFSMethods = map[string]func(sub *SubFS, name string) error{
+	"OpenReaderAt": func(s *SubFS, n string) error { _, err := s.OpenReaderAt(n); return err },
+	"OpenFile":     func(s *SubFS, n string) error { _, err := s.OpenFile(n, os.O_RDONLY, 0); return err },
+	"Create":       func(s *SubFS, n string) error { _, err := s.Create(n); return err },
+	"ReadFile":     func(s *SubFS, n string) error { _, err := s.ReadFile(n); return err },
+	"WriteFile":    func(s *SubFS, n string) error { return s.WriteFile(n, []byte("x"), 0o644) },
+	"Mkdir":        func(s *SubFS, n string) error { return s.Mkdir(n, 0o755) },
+	"MkdirAll":     func(s *SubFS, n string) error { return s.MkdirAll(n, 0o755) },
+	"ReadDir":      func(s *SubFS, n string) error { _, err := s.ReadDir(n); return err },
+	"Stat":         func(s *SubFS, n string) error { _, err := s.Stat(n); return err },
+	"Lstat":        func(s *SubFS, n string) error { _, err := s.Lstat(n); return err },
+	"Remove":       func(s *SubFS, n string) error { return s.Remove(n) },
+	"Chmod":        func(s *SubFS, n string) error { return s.Chmod(n, 0o644) },
+	"Chown":        func(s *SubFS, n string) error { return s.Chown(n, 0, 0) },
+	"Lchown":       func(s *SubFS, n string) error { return s.Lchown(n, 0, 0) },
+	"Chtimes":      func(s *SubFS, n string) error { return s.Chtimes(n, time.Time{}, time.Time{}) },
+	"Symlink":      func(s *SubFS, n string) error { return s.Symlink("target", n) },
+	"Link old":     func(s *SubFS, n string) error { return s.Link(n, "/inside/hl") },
+	"Link new":     func(s *SubFS, n string) error { return s.Link("/inside/file", n) },
+	"Readlink":     func(s *SubFS, n string) error { _, err := s.Readlink(n); return err },
+	"Mknod":        func(s *SubFS, n string) error { return s.Mknod(n, 0o644, 0) },
+	"Readnod":      func(s *SubFS, n string) error { _, err := s.Readnod(n); return err },
+	"SetXattr":     func(s *SubFS, n string) error { return s.SetXattr(n, "user.k", []byte("v")) },
+	"GetXattr":     func(s *SubFS, n string) error { _, err := s.GetXattr(n, "user.k"); return err },
+	"RemoveXattr":  func(s *SubFS, n string) error { return s.RemoveXattr(n, "user.k") },
+	"ListXattrs":   func(s *SubFS, n string) error { _, err := s.ListXattrs(n); return err },
+}
+
+// TestSubFSRejectsPathsAboveRoot checks that no method accepts a path that
+// climbs above the root, on either base, and that nothing is created at the
+// place such a path would have named.
+func TestSubFSRejectsPathsAboveRoot(t *testing.T) {
+	escapes := []string{"..", "../x", "/../x", "a/../../x", "./../x"}
+	for baseName, newBase := range subFSBases {
+		for method, call := range subFSMethods {
+			for _, name := range escapes {
+				t.Run(baseName+"/"+method+"/"+name, func(t *testing.T) {
+					base, _ := newBase(t)
+					require.NoError(t, base.MkdirAll("/sub/inside", 0o755))
+					require.NoError(t, base.WriteFile("/sub/inside/file", []byte("in"), 0o644))
+					sub := &SubFS{FS: base, Root: "/sub"}
+
+					err := call(sub, name)
+					require.ErrorIs(t, err, fs.ErrInvalid)
+
+					// The sibling of the root the path named does not exist.
+					_, err = base.Lstat("/x")
+					require.ErrorIs(t, err, os.ErrNotExist)
+				})
+			}
+		}
+	}
+}
+
+// TestSubFSAcceptsPathsWithinRoot checks that the forms callers rely on still
+// resolve under the root: absolute, relative, empty, dot, and a ".." that
+// stays inside.
+func TestSubFSAcceptsPathsWithinRoot(t *testing.T) {
+	tests := []struct {
+		name string
+		want string // path on the base
+	}{
+		{"/a/f", "/sub/a/f"},
+		{"a/f", "/sub/a/f"},
+		{"./a/f", "/sub/a/f"},
+		{"a/../b/f", "/sub/b/f"},
+		{"/a/../b/f", "/sub/b/f"},
+	}
+	for baseName, newBase := range subFSBases {
+		for _, tt := range tests {
+			t.Run(baseName+"/"+tt.name, func(t *testing.T) {
+				base, _ := newBase(t)
+				require.NoError(t, base.MkdirAll("/sub/a", 0o755))
+				require.NoError(t, base.MkdirAll("/sub/b", 0o755))
+				sub := &SubFS{FS: base, Root: "/sub"}
+
+				require.NoError(t, sub.WriteFile(tt.name, []byte("x"), 0o644))
+				got, err := base.ReadFile(tt.want)
+				require.NoError(t, err)
+				require.Equal(t, "x", string(got))
+			})
+		}
+		t.Run(baseName+"/root itself", func(t *testing.T) {
+			base, _ := newBase(t)
+			require.NoError(t, base.MkdirAll("/sub/a", 0o755))
+			sub := &SubFS{FS: base, Root: "/sub"}
+			for _, name := range []string{"", ".", "/"} {
+				entries, err := sub.ReadDir(name)
+				require.NoError(t, err, "ReadDir(%q)", name)
+				require.Len(t, entries, 1, "ReadDir(%q)", name)
+			}
+		})
+	}
+}
+
+// TestSubFSSymlinkResolutionIsLeftToBase pins the part of the contract SubFS
+// does not provide: a symlink under the root is resolved by the base, which
+// knows nothing about the root. A dirfs confines the result to its own base
+// directory; a memfs does not confine it at all. If the base ever starts
+// confining to the SubFS root, this test should be updated, not deleted.
+func TestSubFSSymlinkResolutionIsLeftToBase(t *testing.T) {
+	for baseName, newBase := range subFSBases {
+		t.Run(baseName, func(t *testing.T) {
+			base, _ := newBase(t)
+			require.NoError(t, base.MkdirAll("/sub/home", 0o755))
+			require.NoError(t, base.MkdirAll("/etc", 0o755))
+			require.NoError(t, base.WriteFile("/etc/target", []byte("orig"), 0o644))
+			sub := &SubFS{FS: base, Root: "/sub"}
+
+			// The link itself lands under the root (PSEC-2285).
+			require.NoError(t, sub.Symlink("/etc/target", "/home/abs"))
+			got, err := base.Readlink("/sub/home/abs")
+			require.NoError(t, err)
+			require.Equal(t, "/etc/target", got)
+
+			// Writing through it is decided by the base.
+			err = sub.WriteFile("/home/abs", []byte("new"), 0o644)
+			onBase, _ := base.ReadFile("/etc/target")
+			switch baseName {
+			case "dirfs":
+				require.Error(t, err, "os.Root refuses a link that leaves the base directory")
+				require.Equal(t, "orig", string(onBase))
+			case "memfs":
+				require.NoError(t, err)
+				require.Equal(t, "new", string(onBase), "memfs resolves the absolute target against its own root")
+			default:
+				t.Fatalf("unknown base %q", baseName)
+			}
+		})
 	}
 }
