@@ -19,6 +19,8 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -64,6 +66,28 @@ type cacheKey struct {
 	url     string
 	etag    string    // Only used for remote indexes.
 	modtime time.Time // Only used for local indexes.
+
+	// verification identifies how the index was verified, so a caller
+	// trusting different keys, or one that checks signatures where an
+	// earlier caller did not, never receives an index it would reject.
+	// See verificationKey.
+	verification string
+}
+
+// verificationKey identifies the trust an index at u is parsed under: a
+// digest of the keys its signature is checked against, or "unverified"
+// when signature checking is off for it.
+func verificationKey(u, arch string, keys map[string][]byte, opts *indexOpts) string {
+	if !shouldCheckSignatureForIndex(u, arch, opts) {
+		return "unverified"
+	}
+	h := sha256.New()
+	for _, name := range slices.Sorted(maps.Keys(keys)) {
+		// Length-prefixed, so no two key sets serialize alike.
+		fmt.Fprintf(h, "%d:%s:%d:", len(name), name, len(keys[name]))
+		h.Write(keys[name])
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 type indexCache struct {
@@ -84,6 +108,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 
 	repoBase := fmt.Sprintf("%s/%s", repoURL, arch)
 	repoRef := Repository{URI: repoBase}
+	verification := verificationKey(u, arch, keys, opts)
 
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 		asURL, err := url.Parse(u)
@@ -133,7 +158,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return fetchAndParse(etag)
 		}
 
-		key := cacheKey{url: u, etag: etag}
+		key := cacheKey{url: u, etag: etag, verification: verification}
 		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			return fetchAndParse(etag)
 		})
@@ -156,7 +181,7 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 			return nil, fmt.Errorf("stat: %w", err)
 		}
 
-		key := cacheKey{url: u, modtime: stat.ModTime()}
+		key := cacheKey{url: u, modtime: stat.ModTime(), verification: verification}
 
 		idx, hit, err := i.indexes.Do(key, func() (NamedIndex, error) {
 			b, err := os.ReadFile(u)
