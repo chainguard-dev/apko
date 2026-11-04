@@ -21,10 +21,11 @@
 // A producer (melange, or any packaging tool) runs [Extract] over a built
 // file and stamps [Xattr] with the encoded [Info]. Consumers read the xattr
 // instead of the file; a miss or a malformed value falls back to parsing.
-// The stamp is ordinary package metadata: it rides the data section's PAX
-// records like any other xattr, is covered by the package signature, and
-// persists wherever the package's files do — installed systems and built
-// images alike. No consumer removes it.
+// When carried in a package, the stamp rides the data section's PAX records
+// like any other xattr and is covered by the package signature. It stays on
+// installed files and persists into images by default. In apko image builds,
+// WithStripElfmetaStamps(true) removes it after ld.so.cache generation,
+// before writing image layers.
 //
 // Stamps live on regular files only: Linux permits user.* xattrs on
 // neither symlinks nor special files, so a library's facts are stamped on
