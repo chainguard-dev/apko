@@ -108,6 +108,32 @@ func TestYamlMarshallingRepositories(t *testing.T) {
 	}
 }
 
+
+func TestImageContentsMarshalYAMLDoesNotMutateCaller(t *testing.T) {
+	const credURL = "https://user:pass@dl-cdn.my.org/alpine/v3.22/main"
+	const keyURL = "https://user:pass@keys.example/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub"
+	ic := ImageContents{
+		BuildRepositories:       []string{credURL},
+		RuntimeOnlyRepositories: []string{credURL},
+		Repositories:            []string{"@myorg " + credURL},
+		Keyring:                 []string{keyURL},
+	}
+	origBuild := append([]string(nil), ic.BuildRepositories...)
+	origRuntime := append([]string(nil), ic.RuntimeOnlyRepositories...)
+	origRepos := append([]string(nil), ic.Repositories...)
+	origKeyring := append([]string(nil), ic.Keyring...)
+
+	b, err := yaml.Marshal(ic)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "user:xxxxx@")
+	require.NotContains(t, string(b), "user:pass@")
+
+	require.Equal(t, origBuild, ic.BuildRepositories)
+	require.Equal(t, origRuntime, ic.RuntimeOnlyRepositories)
+	require.Equal(t, origRepos, ic.Repositories)
+	require.Equal(t, origKeyring, ic.Keyring)
+}
+
 func TestParseArchitectures(t *testing.T) {
 	for _, c := range []struct {
 		desc string
