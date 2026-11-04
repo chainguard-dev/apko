@@ -174,6 +174,13 @@ func TestResolveGitRevision(t *testing.T) {
 func TestGetRemoteURL(t *testing.T) {
 	repoDir := createTestRepo(t)
 
+	// git allows a remote section without a url; go-git's API refuses to write one
+	f, err := os.OpenFile(filepath.Join(repoDir, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString("[remote \"nourl\"]\n\tfetch = +refs/heads/*:refs/remotes/nourl/*\n")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
 	repo, err := OpenRepository(repoDir, "")
 	require.NoError(t, err)
 
@@ -197,6 +204,11 @@ func TestGetRemoteURL(t *testing.T) {
 		{
 			// Non existing remote should fail
 			remoteName: "upstream",
+			shouldErr:  true,
+		},
+		{
+			// Remote without a url should fail, not panic
+			remoteName: "nourl",
 			shouldErr:  true,
 		},
 	} {
