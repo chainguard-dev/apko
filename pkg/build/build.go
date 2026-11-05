@@ -15,7 +15,6 @@
 package build
 
 import (
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -50,7 +49,7 @@ import (
 )
 
 // compressionCache stores descriptor information for already-compressed layers,
-// keyed by diffID. This avoids recompressing identical layers.
+// keyed by compression algorithm and diffID. This avoids recompressing identical layers.
 var compressionCache sync.Map // map[string]*v1.Descriptor
 
 // Context contains all of the information necessary to build an
@@ -219,7 +218,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 
 	// A single layer writer has the machine to itself, so it gets the full
 	// worker fan-out.
-	lw, err := newLayerWriter(outfile, bc.o.CompressedLayerFile, pgzipThreads)
+	lw, err := newLayerWriter(outfile, bc.o.CompressedLayerFile, bc.o.Compression, pgzipThreads)
 	if err != nil {
 		_ = outfile.Close()
 		return "", nil, fmt.Errorf("creating layer writer: %w", err)
@@ -427,19 +426,20 @@ func (f *notAFile) Close() error {
 // digests and diffids.
 //
 // A layer is written in one of two modes. Two-pass layers have uncompressed
-// set and are gzipped on demand by compress(). Single-pass layers were gzipped
-// as they were written, so only compressed is set and desc is already
+// set and are compressed on demand by compress(). Single-pass layers were
+// compressed as they were written, so only compressed is set and desc is already
 // complete; see singlePass.
 type layer struct {
 	mu           sync.Mutex
 	uncompressed string
 	compressed   string
+	compression  options.Compression
 	diffid       *v1.Hash
 	desc         *v1.Descriptor
 	cacheCounted bool // first compression-cache lookup already recorded
 }
 
-// singlePass reports whether this layer was gzipped as it was written, in
+// singlePass reports whether this layer was compressed as it was written, in
 // which case there is no plain tar on disk and nothing left to compute.
 func (l *layer) singlePass() bool {
 	return l.uncompressed == ""
@@ -458,6 +458,11 @@ func (l *layer) recordCacheAccess(result apkometrics.CacheResult) {
 	apkometrics.RecordCompressionCacheAccess(result)
 }
 
+// cacheKey identifies this layer's entry in compressionCache.
+func (l *layer) cacheKey() string {
+	return string(l.compression) + ":" + l.diffid.String()
+}
+
 func (l *layer) compress() (rerr error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -472,7 +477,7 @@ func (l *layer) compress() (rerr error) {
 	}
 	defer in.Close()
 
-	out, err := os.Create(l.uncompressed + ".gz")
+	out, err := os.Create(l.uncompressed + l.compression.Extension())
 	if err != nil {
 		return err
 	}
@@ -486,15 +491,25 @@ func (l *layer) compress() (rerr error) {
 	defer bufioPool.Put(buf)
 
 	digest := sha256.New()
-	gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
-	defer pgzipPool.Put(gzw)
+	var zw io.WriteCloser
+	if l.compression == options.Zstd {
+		zw, err = newCompressor(io.MultiWriter(digest, buf), l.compression, pgzipThreads)
+		if err != nil {
+			return err
+		}
+	} else {
+		gzw := pooledGzipWriter(io.MultiWriter(digest, buf))
+		defer pgzipPool.Put(gzw)
+		zw = gzw
+	}
 
-	if _, err := io.Copy(gzw, in); err != nil {
+	if _, err := io.Copy(zw, in); err != nil {
+		_ = zw.Close()
 		return err
 	}
 
-	if err := gzw.Close(); err != nil {
-		return fmt.Errorf("closing gzip writer: %w", err)
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("closing compressor: %w", err)
 	}
 
 	if err := buf.Flush(); err != nil {
@@ -516,9 +531,9 @@ func (l *layer) compress() (rerr error) {
 
 	// Store in cache for future use
 	descCopy := *l.desc
-	compressionCache.Store(l.diffid.String(), &descCopy)
+	compressionCache.Store(l.cacheKey(), &descCopy)
 
-	l.compressed = l.uncompressed + ".gz"
+	l.compressed = l.uncompressed + l.compression.Extension()
 
 	return nil
 }
@@ -533,7 +548,7 @@ func (l *layer) Digest() (v1.Hash, error) {
 	}
 
 	// Check if we've already compressed a layer with this diffID
-	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+	if cached, ok := compressionCache.Load(l.cacheKey()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
@@ -567,30 +582,31 @@ func (l *layer) Uncompressed() (io.ReadCloser, error) {
 		return os.Open(l.uncompressed)
 	}
 
-	// Only the gzip file exists, so give the caller tar bytes back out of it.
+	// Only the compressed file exists, so give the caller tar bytes back out
+	// of it.
 	f, err := os.Open(l.compressed)
 	if err != nil {
 		return nil, err
 	}
-	zr, err := gzip.NewReader(f)
+	zr, err := newDecompressor(f, l.compression)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
-	return &gunzipReadCloser{zr: zr, f: f}, nil
+	return &decompressReadCloser{zr: zr, f: f}, nil
 }
 
-// gunzipReadCloser decompresses a compressed-backed layer on demand. Close
-// has to release both the gzip reader and the underlying file, because
-// gzip.Reader.Close does not close its source.
-type gunzipReadCloser struct {
-	zr *gzip.Reader
+// decompressReadCloser decompresses a compressed-backed layer on demand.
+// Close has to release both the decompressor and the underlying file,
+// because the decompressor's Close does not close its source.
+type decompressReadCloser struct {
+	zr io.ReadCloser
 	f  *os.File
 }
 
-func (g *gunzipReadCloser) Read(p []byte) (int, error) { return g.zr.Read(p) }
+func (g *decompressReadCloser) Read(p []byte) (int, error) { return g.zr.Read(p) }
 
-func (g *gunzipReadCloser) Close() error {
+func (g *decompressReadCloser) Close() error {
 	zerr := g.zr.Close()
 	if ferr := g.f.Close(); zerr == nil {
 		return ferr
@@ -604,7 +620,7 @@ func (l *layer) Size() (int64, error) {
 	}
 
 	// Check if we've already compressed a layer with this diffID
-	if cached, ok := compressionCache.Load(l.diffid.String()); ok {
+	if cached, ok := compressionCache.Load(l.cacheKey()); ok {
 		l.recordCacheAccess(apkometrics.CacheResultHit)
 		cachedDesc := cached.(*v1.Descriptor)
 		l.desc.Digest = cachedDesc.Digest
