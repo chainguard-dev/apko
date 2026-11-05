@@ -54,19 +54,36 @@ func NewMemFS() FullFS {
 	}
 }
 
-// getNode returns the node for the given path. If the path is not found, it
-// returns an error.
+// getNode returns the node for the given path, following a symlink in the final
+// path component (as Stat would). If the path is not found, it returns an error.
 func (m *memFS) getNode(path string) (*node, error) {
-	return m.getNodeCountLinks(path, 0)
+	return m.getNodeCountLinks(path, 0, true)
 }
-func (m *memFS) getNodeCountLinks(path string, linkDepth int) (*node, error) {
+
+// getNodeNoFollowFinal is like getNode, but if the final path component itself
+// names a symlink, it returns the symlink node itself rather than resolving it --
+// matching POSIX lstat(2) semantics. Intermediate path components are still
+// resolved through symlinks normally, exactly like getNode.
+func (m *memFS) getNodeNoFollowFinal(path string) (*node, error) {
+	return m.getNodeCountLinks(path, 0, false)
+}
+
+func (m *memFS) getNodeCountLinks(path string, linkDepth int, followFinal bool) (*node, error) {
 	if path == "/" || path == "." {
 		return m.tree, nil
 	}
 	parts := strings.Split(path, pathSep)
+	// find the index of the last non-empty part, so we know when we are
+	// resolving the final path component (relevant only when !followFinal).
+	lastIdx := -1
+	for i, part := range parts {
+		if part != "" {
+			lastIdx = i
+		}
+	}
 	node := m.tree
 	traversed := make([]string, 0)
-	for _, part := range parts {
+	for i, part := range parts {
 		if part == "" {
 			continue
 		}
@@ -82,8 +99,10 @@ func (m *memFS) getNodeCountLinks(path string, linkDepth int) (*node, error) {
 		if !ok {
 			return nil, os.ErrNotExist
 		}
-		// what if it is a symlink?
-		if childNode.mode&os.ModeSymlink != 0 {
+		// what if it is a symlink? Resolve it unless this is the final path component
+		// and the caller asked us not to follow it (lstat semantics).
+		isFinalComponent := i == lastIdx
+		if childNode.mode&os.ModeSymlink != 0 && (followFinal || !isFinalComponent) {
 			newDepth := linkDepth + 1
 			if newDepth > maxLinks {
 				return nil, fmt.Errorf("maximum symlink depth exceeded")
@@ -100,7 +119,10 @@ func (m *memFS) getNodeCountLinks(path string, linkDepth int) (*node, error) {
 			// but that absolute path can cause us to try and hit something that is already locked
 			// and since we are recursing, it will not get freed until we return
 			// leading to a deadlock race condition
-			targetNode, err := m.getNodeCountLinks(linkTarget, newDepth)
+			// A symlink target is always fully resolved (followFinal=true), regardless of
+			// what the caller asked for the outer path -- that only governs the outer path's
+			// own final component.
+			targetNode, err := m.getNodeCountLinks(linkTarget, newDepth, true)
 			if err != nil {
 				return nil, err
 			}
@@ -153,14 +175,11 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 	return node.fileInfo(path), nil
 }
 
-// There is an issue with memfs.Lstat where it will always return a regular FileInfo mode (file, directory)
-// instead of a symlink. This is due to MemFS.Lstat handing back FileInfo whose Mode never has the ModeSymlink
-// bit set, even if the node is in fact a symlink. Therefore, checking if the mode on a symlink is indeed a
-// symlink will awlays fail. One possible fix is to detect whether the node is a symlink, and if so return a
-// wrapper around the real FileInfo that ORʼs in fs.ModeSymlink.
-
+// Lstat is like Stat, but if path itself names a symlink, it returns information
+// about the symlink, not about the file it points to (matching POSIX lstat(2)).
+// Intermediate path components are still resolved through symlinks normally.
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
-	node, err := m.getNode(path)
+	node, err := m.getNodeNoFollowFinal(path)
 	if err != nil {
 		return nil, err
 	}
