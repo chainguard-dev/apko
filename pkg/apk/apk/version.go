@@ -435,6 +435,7 @@ type filterOptions struct {
 	version   string
 	installed *RepositoryPackage
 	compare   versionDependency
+	queryName string // the name that was queried (to match against provides)
 }
 
 type filterOption func(*filterOptions)
@@ -458,6 +459,12 @@ func withVersion(version string, compare versionDependency) filterOption {
 func withInstalledPackage(pkg *RepositoryPackage) filterOption {
 	return func(o *filterOptions) {
 		o.installed = pkg
+	}
+}
+
+func withQueryName(name string) filterOption {
+	return func(o *filterOptions) {
+		o.queryName = name
 	}
 }
 
@@ -501,24 +508,33 @@ func filterPackages(pkgs []*repositoryPackage, dq map[*RepositoryPackage]string,
 			return nil
 		}
 
-		actualVersion, err := cachedParseVersion(pkg.Version)
-		// skip invalid ones
-		if err != nil {
-			continue
+		// Check if this package directly satisfies the constraint
+		// Only do this if we're querying by the package's actual name
+		if o.queryName == "" || o.queryName == pkg.Name {
+			actualVersion, err := cachedParseVersion(pkg.Version)
+			// skip invalid ones for direct package version check
+			if err == nil && o.compare.satisfies(actualVersion, requiredVersion) {
+				passed = append(passed, pkg)
+				continue
+			}
 		}
 
-		if o.compare.satisfies(actualVersion, requiredVersion) {
-			passed = append(passed, pkg)
-			continue
-		}
-
+		// Check if this package provides what we're looking for with the right version
 		for _, prov := range pkg.Provides {
-			version := cachedResolvePackageNameVersionPin(prov).Version
-			if version == "" {
+			provConstraint := cachedResolvePackageNameVersionPin(prov)
+			// Skip if this provide doesn't match the queried name (if specified)
+			if o.queryName != "" && provConstraint.Name != o.queryName {
 				continue
 			}
 
-			actualVersion, err = cachedParseVersion(version)
+			version := provConstraint.Version
+			if version == "" {
+				// If no version specified in provides, treat it as the package's own version
+				// This maintains backward compatibility with the existing behavior
+				version = pkg.Version
+			}
+
+			actualVersion, err := cachedParseVersion(version)
 			// again, we skip invalid ones
 			if err != nil {
 				continue
