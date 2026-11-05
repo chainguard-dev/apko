@@ -17,6 +17,7 @@ package cpio
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"io"
 	"math"
 	"strings"
@@ -78,8 +79,7 @@ func TestFromLayerPreservesUIDGID(t *testing.T) {
 		if err := tw.WriteHeader(hdr); err != nil {
 			t.Fatal(err)
 		}
-		switch hdr.Typeflag {
-		case tar.TypeReg:
+		if hdr.Typeflag == tar.TypeReg {
 			payload := "data"
 			if hdr.Name == "root-owned" {
 				payload = "own"
@@ -110,7 +110,7 @@ func TestFromLayerPreservesUIDGID(t *testing.T) {
 	seen := make(map[string]bool, len(want))
 	for {
 		rec, err := reader.ReadRecord()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
