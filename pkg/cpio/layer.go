@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/u-root/u-root/pkg/cpio"
@@ -40,6 +41,31 @@ func FromLayers(layers []v1.Layer, dest io.Writer) error {
 	}
 
 	return w.WriteRecord(cpio.TrailerRecord)
+}
+
+// preserveOwnership copies numeric UID/GID from a TAR header onto a CPIO
+// record. newc stores ownership in 32-bit fields, so values outside that
+// range are rejected rather than truncated.
+func preserveOwnership(rec cpio.Record, hdr *tar.Header) (cpio.Record, error) {
+	if hdr.Uid < 0 || hdr.Gid < 0 {
+		return cpio.Record{}, fmt.Errorf("negative uid/gid on %q: %d:%d",
+			hdr.Name, hdr.Uid, hdr.Gid)
+	}
+	if uint64(hdr.Uid) > math.MaxUint32 || uint64(hdr.Gid) > math.MaxUint32 {
+		return cpio.Record{}, fmt.Errorf("uid/gid outside newc range on %q: %d:%d",
+			hdr.Name, hdr.Uid, hdr.Gid)
+	}
+	rec.UID = uint64(hdr.Uid)
+	rec.GID = uint64(hdr.Gid)
+	return rec, nil
+}
+
+func writeRecord(w cpio.RecordWriter, rec cpio.Record, hdr *tar.Header) error {
+	rec, err := preserveOwnership(rec, hdr)
+	if err != nil {
+		return err
+	}
+	return cpio.WriteRecordsAndDirs(w, []cpio.Record{rec})
 }
 
 // recordsFromLayer reads tar entries from a layer and writes them as CPIO records.
@@ -67,16 +93,12 @@ func recordsFromLayer(layer v1.Layer, w cpio.RecordWriter) error {
 		// Determine CPIO file mode based on TAR typeflag
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := cpio.WriteRecordsAndDirs(w, []cpio.Record{
-				cpio.Directory(header.Name, uint64(header.Mode)),
-			}); err != nil {
+			if err := writeRecord(w, cpio.Directory(header.Name, uint64(header.Mode)), header); err != nil {
 				return err
 			}
 
 		case tar.TypeSymlink:
-			if err := cpio.WriteRecordsAndDirs(w, []cpio.Record{
-				cpio.Symlink(header.Name, header.Linkname),
-			}); err != nil {
+			if err := writeRecord(w, cpio.Symlink(header.Name, header.Linkname), header); err != nil {
 				return err
 			}
 
@@ -92,16 +114,12 @@ func recordsFromLayer(layer v1.Layer, w cpio.RecordWriter) error {
 				return err
 			}
 
-			if err := cpio.WriteRecordsAndDirs(w, []cpio.Record{
-				cpio.StaticFile(header.Name, original.String(), uint64(header.Mode)),
-			}); err != nil {
+			if err := writeRecord(w, cpio.StaticFile(header.Name, original.String(), uint64(header.Mode)), header); err != nil {
 				return err
 			}
 
 		case tar.TypeChar:
-			if err := cpio.WriteRecordsAndDirs(w, []cpio.Record{
-				cpio.CharDev(header.Name, uint64(header.Mode), uint64(header.Devmajor), uint64(header.Devminor)),
-			}); err != nil {
+			if err := writeRecord(w, cpio.CharDev(header.Name, uint64(header.Mode), uint64(header.Devmajor), uint64(header.Devminor)), header); err != nil {
 				return err
 			}
 
