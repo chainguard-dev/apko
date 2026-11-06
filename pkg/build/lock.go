@@ -184,21 +184,25 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 
 		// The function we want from go-apk is private, but these are all the
 		// special characters that delimit the package name from the constraint
-		// so lop off the package name and stick the rest of the constraint into
-		// the versions map.
-		if idx := strings.IndexAny(orig, "=<>~"); idx >= 0 {
-			name = orig[:idx]
-			version = orig[idx:]
+		// and repository tag.
+		verIdx := strings.IndexAny(orig, "=<>~")
+		atIdx := strings.Index(orig, "@")
+		switch {
+		case atIdx >= 0 && verIdx >= 0 && atIdx < verIdx:
+			name = orig[:atIdx]
+			pinned = orig[atIdx:verIdx]
+			version = orig[verIdx:]
+		case atIdx >= 0 && verIdx >= 0 && verIdx < atIdx:
+			name = orig[:verIdx]
+			version = orig[verIdx:atIdx]
+			pinned = orig[atIdx:]
+		case verIdx >= 0:
+			name = orig[:verIdx]
+			version = orig[verIdx:]
+		case atIdx >= 0:
+			name = orig[:atIdx]
+			pinned = orig[atIdx:]
 		}
-
-		// Extract pinned version if present
-		if idx := strings.IndexAny(orig, "@"); idx >= 0 {
-			pinned = orig[idx:]
-		}
-
-		// Remove pinned suffix from name and version
-		name = strings.TrimSuffix(name, pinned)
-		version = strings.TrimSuffix(version, pinned)
 
 		originalPackages.packages.Insert(name)
 		originalPackages.versions[name] = version
@@ -289,25 +293,13 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 	// NOTE: the originalPackages "versions" includes the remainder of the
 	// package constraint including the operator.
 	for _, pkg := range sets.List(missing) {
-		if ver := originalPackages.versions[pkg]; ver != "" {
-			if pin := originalPackages.versions[pkg]; pin != "" {
-				pl = append(pl, fmt.Sprintf("%s%s%s", pkg, ver, pin))
-			} else {
-				pl = append(pl, fmt.Sprintf("%s%s", pkg, ver))
-			}
-		} else {
-			pl = append(pl, pkg)
-		}
+		pl = append(pl, fmt.Sprintf("%s%s%s", pkg, originalPackages.pinned[pkg], originalPackages.versions[pkg]))
 	}
 
 	// Append all of the resolved and unified packages with an exact match
 	// based on the resolved version we found.
 	for _, pkg := range sets.List(acc.packages) {
-		pkgName := fmt.Sprintf("%s=%s", pkg, acc.versions[pkg])
-		if pin := originalPackages.pinned[pkg]; pin != "" {
-			pkgName = fmt.Sprintf("%s%s", pkgName, pin)
-		}
-		pl = append(pl, pkgName)
+		pl = append(pl, fmt.Sprintf("%s%s=%s", pkg, originalPackages.pinned[pkg], acc.versions[pkg]))
 	}
 	// Sort the package list explicitly with the `=` included.
 	// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
@@ -321,11 +313,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 	for _, input := range inputs {
 		pl := make([]string, 0, len(input.packages))
 		for _, pkg := range sets.List(input.packages) {
-			pkgName := fmt.Sprintf("%s=%s", pkg, input.versions[pkg])
-			if pin := originalPackages.pinned[pkg]; pin != "" {
-				pkgName = fmt.Sprintf("%s%s", pkgName, pin)
-			}
-			pl = append(pl, pkgName)
+			pl = append(pl, fmt.Sprintf("%s%s=%s", pkg, originalPackages.pinned[pkg], input.versions[pkg]))
 		}
 		// Sort the package list explicitly with the `=` included.
 		// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
@@ -351,4 +339,4 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 }
 
 // Copied from go-apk's version.go
-var packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
+var packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(@([a-zA-Z0-9]+))?(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)

@@ -944,7 +944,9 @@ func TestResolverPackageNameVersionPin(t *testing.T) {
 		{"name<=1.2.3", "name", "1.2.3", versionLessEqual, ""},
 		{"name~1.2.3", "name", "1.2.3", versionTilde, ""},
 		{"name=~1.2.3", "name", "1.2.3", versionTilde, ""},
-		{"name@edge=1.2.3", "name@edge=1.2.3", "", versionAny, ""}, // wrong order, so just returns the whole thing
+		{"name@edge=1.2.3", "name", "1.2.3", versionEqual, "edge"},
+		{"name@edge>=1.2.3", "name", "1.2.3", versionGreaterEqual, "edge"},
+		{"name@edge~1.2.3", "name", "1.2.3", versionTilde, "edge"},
 		{"name=1.2.3@community", "name", "1.2.3", versionEqual, "community"},
 		{"so:libfoo.so.6=6", "so:libfoo.so.6", "0.6", versionEqual, ""},
 		{"so:libfoo.so.6=1.0-r3", "so:libfoo.so.6", "1.0-r3", versionEqual, ""},
