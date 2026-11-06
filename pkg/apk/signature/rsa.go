@@ -45,6 +45,12 @@ func RSASignDigest(digest []byte, digestType crypto.Hash, keyFile, passphrase st
 	}
 
 	blockData := block.Bytes
+	// IsEncryptedPEMBlock and DecryptPEMBlock are deprecated because legacy
+	// (RFC 1423) PEM encryption is insecure by design: the key is derived
+	// with MD5 and the padding is not authenticated. They stay because
+	// melange passes its signing passphrase through this function and the
+	// standard library offers no replacement. Prefer an unencrypted key kept
+	// in a secret store over relying on this encryption.
 	if x509.IsEncryptedPEMBlock(block) { //nolint:staticcheck
 		if passphrase == "" {
 			return nil, errNoPassphrase
