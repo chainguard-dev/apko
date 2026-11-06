@@ -117,11 +117,11 @@ See the [docs](./docs/apko_file.md) for details of the file format and the [exam
 
 The standalone CLI can export its existing OpenTelemetry spans when you explicitly
 set `OTEL_TRACES_EXPORTER=otlp`. For example, to send a build trace to a local
-collector over gRPC:
+collector over HTTP/protobuf:
 
 ```sh
 OTEL_TRACES_EXPORTER=otlp \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 apko build examples/alpine-base.yaml alpine:latest alpine.tar
 ```
 
@@ -130,9 +130,11 @@ Export is disabled by default. `OTEL_SDK_DISABLED=true` also disables this setup
 `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes. The OTLP exporters use the
 standard endpoint, header, timeout, and TLS environment variables.
 
-`OTEL_EXPORTER_OTLP_PROTOCOL` selects `grpc` (the default) or `http/protobuf`.
-`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` takes precedence for traces. For HTTP, use an
-endpoint such as `http://localhost:4318` instead.
+`OTEL_EXPORTER_OTLP_PROTOCOL` selects `http/protobuf` (the default) or `grpc`.
+`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` takes precedence for traces. For gRPC, set the
+protocol to `grpc` and use an endpoint such as `http://localhost:4317`.
+
+The root span uses the command path, such as `apko build` or `apko publish`.
 
 The CLI ends the command span and gives pending spans up to five seconds to flush,
 including after a command error or cancellation. Telemetry failures are reported
