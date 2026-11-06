@@ -81,11 +81,11 @@ func newExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 		protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 	}
 	switch protocol {
-	case "", "grpc":
-		return otlptracegrpc.New(ctx)
-	case "http/protobuf":
+	case "", "http/protobuf":
 		return otlptracehttp.New(ctx)
+	case "grpc":
+		return otlptracegrpc.New(ctx)
 	default:
-		return nil, fmt.Errorf("unsupported OTLP protocol %q (use grpc or http/protobuf)", protocol)
+		return nil, fmt.Errorf("unsupported OTLP protocol %q (use http/protobuf or grpc)", protocol)
 	}
 }

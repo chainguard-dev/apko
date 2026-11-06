@@ -37,5 +37,10 @@ func mainE() error {
 	ctx, done := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer done()
 
-	return tracing.Run(ctx, "apko", "apko", cli.New().ExecuteContext)
+	cmd := cli.New()
+	name := "apko"
+	if c, _, err := cmd.Find(os.Args[1:]); err == nil {
+		name = c.CommandPath()
+	}
+	return tracing.Run(ctx, "apko", name, cmd.ExecuteContext)
 }
