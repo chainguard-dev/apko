@@ -1,0 +1,8 @@
+include: testdata/include-uid0/base.apko.yaml
+contents:
+  packages:
+    - package
+accounts:
+  users:
+    - username: app
+      uid: 65532
