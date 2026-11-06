@@ -853,3 +853,83 @@ func TestLazilyInstallAPKFilesRejectsOutOfRangeOwner(t *testing.T) {
 		})
 	}
 }
+
+// TestInstallAPKFilesKeepsSymlinkToDirectory installs a package carrying a
+// directory entry at a path that is already a symlink to a directory. The
+// symlink must be kept, which only works if the install code detects it
+// with Lstat: Stat follows the link and never reports ModeSymlink. The link
+// is relative, so the check must resolve it against the link's directory,
+// and the entry carries an xattr that must not reach the link's target.
+func TestInstallAPKFilesKeepsSymlinkToDirectory(t *testing.T) {
+	skipWithoutOwnerValidation(t)
+	apk, src, err := testGetTestAPK()
+	require.NoError(t, err)
+
+	require.NoError(t, src.MkdirAll("usr/lib", 0o755))
+	require.NoError(t, src.Symlink("lib", "usr/lib64"))
+
+	entries := []testDirEntry{
+		{"usr/lib64", 0o755, true, nil, map[string][]byte{"user.pkg": []byte("x")}},
+		{"usr/lib64/libfoo.so", 0o644, false, []byte("so"), nil},
+	}
+	_, err = apk.installAPKFiles(context.Background(), testCreateTarForPackage(entries), &Package{})
+	require.NoError(t, err)
+
+	fi, err := src.Lstat("usr/lib64")
+	require.NoError(t, err)
+	require.NotZero(t, fi.Mode()&os.ModeSymlink, "usr/lib64 must still be a symlink after installing a usr/lib64/ directory entry")
+
+	got, err := src.ReadFile("usr/lib/libfoo.so")
+	require.NoError(t, err)
+	require.Equal(t, "so", string(got), "the file lands in the symlink's target")
+
+	xattrs, err := src.ListXattrs("usr/lib")
+	require.NoError(t, err)
+	require.Empty(t, xattrs, "the directory entry's xattrs are not applied to the link's target")
+}
+
+// TestInstallAPKFilesDirectoryOverOtherSymlinks covers a directory entry
+// whose path is a symlink that does not point at a directory. Neither case
+// is accepted as is: the directory cannot be created through the link, the
+// install fails, and the link is left untouched.
+func TestInstallAPKFilesDirectoryOverOtherSymlinks(t *testing.T) {
+	skipWithoutOwnerValidation(t)
+	for name, tc := range map[string]struct {
+		setup   func(t *testing.T, src apkfs.FullFS)
+		wantErr string
+	}{
+		"dangling link": {
+			setup: func(t *testing.T, src apkfs.FullFS) {
+				require.NoError(t, src.MkdirAll("usr", 0o755))
+				require.NoError(t, src.Symlink("missing", "usr/lib64"))
+			},
+			wantErr: "error creating directory usr/lib64",
+		},
+		"link to a file": {
+			setup: func(t *testing.T, src apkfs.FullFS) {
+				require.NoError(t, src.MkdirAll("usr", 0o755))
+				require.NoError(t, src.WriteFile("usr/file", []byte("f"), 0o644))
+				require.NoError(t, src.Symlink("file", "usr/lib64"))
+			},
+			wantErr: "not a directory",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			apk, src, err := testGetTestAPK()
+			require.NoError(t, err)
+			tc.setup(t, src)
+
+			entries := []testDirEntry{
+				{"usr/lib64", 0o755, true, nil, map[string][]byte{"user.pkg": []byte("x")}},
+				{"usr/lib64/libfoo.so", 0o644, false, []byte("so"), nil},
+			}
+			_, err = apk.installAPKFiles(context.Background(), testCreateTarForPackage(entries), &Package{})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErr)
+
+			fi, err := src.Lstat("usr/lib64")
+			require.NoError(t, err)
+			require.NotZero(t, fi.Mode()&os.ModeSymlink, "the link is left in place")
+		})
+	}
+}

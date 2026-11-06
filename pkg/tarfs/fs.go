@@ -112,12 +112,14 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
-		// otherwise, we need to create the directory.
-		if fi, err := m.Stat(hdr.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			if target, err := m.Readlink(hdr.Name); err == nil {
-				if fi, err = m.Stat(target); err == nil && fi.IsDir() {
-					return false, nil
-				}
+		// otherwise, we need to create the directory. Lstat, because Stat
+		// follows the link and would never report ModeSymlink; Stat on the
+		// same path then resolves a relative link target against the link's
+		// directory. The entry's times and xattrs belong to the link's path,
+		// so they are not applied to the directory it points at.
+		if fi, err := m.Lstat(hdr.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if fi, err = m.Stat(hdr.Name); err == nil && fi.IsDir() {
+				return false, nil
 			}
 		}
 		if err := m.MkdirAll(hdr.Name, hdr.FileInfo().Mode().Perm()); err != nil {
@@ -295,8 +297,10 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 	return node.fileInfo("", path), nil
 }
 
+// Lstat does not follow a symlink at path, so its Mode carries ModeSymlink
+// for a link; Stat follows it.
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
-	node, err := m.getNode(path)
+	node, err := m.getNodeNoFollow(path)
 	if err != nil {
 		return nil, err
 	}
