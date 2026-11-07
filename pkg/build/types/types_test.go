@@ -108,6 +108,32 @@ func TestYamlMarshallingRepositories(t *testing.T) {
 	}
 }
 
+func TestYamlMarshallingDoesNotRedactInput(t *testing.T) {
+	const withCreds = "https://user:pass@repo.example/os"
+	const redacted = "https://user:xxxxx@repo.example/os"
+	ic := ImageConfiguration{Contents: ImageContents{
+		BuildRepositories:       []string{withCreds},
+		RuntimeOnlyRepositories: []string{withCreds},
+		Repositories:            []string{"@tagged " + withCreds},
+		Keyring:                 []string{"https://user:pass@repo.example/key.rsa.pub"},
+	}}
+	want := ImageContents{
+		BuildRepositories:       []string{withCreds},
+		RuntimeOnlyRepositories: []string{withCreds},
+		Repositories:            []string{"@tagged " + withCreds},
+		Keyring:                 []string{"https://user:pass@repo.example/key.rsa.pub"},
+	}
+
+	b, err := yaml.Marshal(ic)
+	require.NoError(t, err)
+	require.Contains(t, string(b), redacted)
+	require.NotContains(t, string(b), "pass@")
+
+	if diff := cmp.Diff(want, ic.Contents); diff != "" {
+		t.Errorf("marshalling modified the input (-want +got):\n%s", diff)
+	}
+}
+
 func TestParseArchitectures(t *testing.T) {
 	for _, c := range []struct {
 		desc string

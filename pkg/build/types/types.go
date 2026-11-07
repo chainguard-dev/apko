@@ -144,6 +144,13 @@ func (i ImageContents) MarshalYAML() (any, error) {
 	type redactedImageContents ImageContents
 	ri := redactedImageContents(i)
 
+	// The receiver is a copy, but its slices still share backing arrays with
+	// the caller's config. Clone them so redaction does not leak back into it.
+	ri.BuildRepositories = slices.Clone(ri.BuildRepositories)
+	ri.RuntimeOnlyRepositories = slices.Clone(ri.RuntimeOnlyRepositories)
+	ri.Repositories = slices.Clone(ri.Repositories)
+	ri.Keyring = slices.Clone(ri.Keyring)
+
 	if err := processRepositoryURLs(ri.BuildRepositories); err != nil {
 		return nil, err
 	}
