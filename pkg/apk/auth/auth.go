@@ -63,7 +63,7 @@ func (m multiAuthenticator) AddAuth(ctx context.Context, req *http.Request) erro
 	return merr
 }
 
-// EnvAuth adds HTTP basic auth to the request if the request URL matches the
+// EnvAuth adds HTTP basic auth to the request if the request host matches the
 // HTTP_AUTH environment variable.
 type EnvAuth struct{}
 
@@ -74,13 +74,13 @@ func (e EnvAuth) AddAuth(_ context.Context, req *http.Request) error {
 	if len(parts) != 4 || parts[0] != "basic" {
 		return nil
 	}
-	if req.URL.Host == parts[1] {
+	if req.Host == parts[1] {
 		req.SetBasicAuth(parts[2], parts[3])
 	}
 	return nil
 }
 
-// CGRAuth adds HTTP basic auth to the request if the request URL matches
+// CGRAuth adds HTTP basic auth to the request if the request host matches
 // apk.cgr.dev and the `chainctl` command is available.
 //
 // It executes `chainctl` to get a token. If you need to assume an identity
@@ -127,7 +127,7 @@ func (c CGRAuth) AddAuth(ctx context.Context, req *http.Request) error {
 }
 
 // StaticAuth is an Authenticator that adds HTTP basic auth to the request if
-// the request URL matches the given domain.
+// the request host matches the given domain.
 func StaticAuth(domain, user, pass string) Authenticator {
 	return staticAuth{domain, user, pass}
 }
