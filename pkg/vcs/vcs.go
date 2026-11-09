@@ -91,6 +91,9 @@ func getRemoteURL(repo *git.Repository, remoteName string) (string, error) {
 	}
 
 	remoteConfig := remote.Config()
+	if len(remoteConfig.URLs) == 0 {
+		return "", fmt.Errorf("git remote %q has no url", remoteName)
+	}
 	remoteURL := remoteConfig.URLs[0]
 
 	normalizedURL, err := url.Parse(remoteURL)
