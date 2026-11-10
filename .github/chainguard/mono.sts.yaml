@@ -1,0 +1,14 @@
+# Copyright 2025 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Grants mono's open-source-publish workflow write access to this repo for
+# pushing exported commits on merge to mono's main.
+# Place in .github/chainguard/mono.sts.yaml
+
+issuer: https://token.actions.githubusercontent.com
+subject_pattern: repo:chainguard-dev/mono:ref:refs/heads/main
+claim_pattern:
+  workflow_ref: chainguard-dev/mono/.github/workflows/open-source-publish.yaml@refs/heads/main
+
+permissions:
+  contents: write

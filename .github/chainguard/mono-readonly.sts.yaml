@@ -1,0 +1,14 @@
+# Copyright 2025 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Grants mono's open-source-publish workflow read access when it runs in
+# pull_request_target mode to dry-run the export without pushing.
+# Place in .github/chainguard/mono-readonly.sts.yaml
+
+issuer: https://token.actions.githubusercontent.com
+subject_pattern: repo:chainguard-dev/mono:pull_request
+claim_pattern:
+  workflow_ref: chainguard-dev/mono/.github/workflows/open-source-publish.yaml@.*
+
+permissions:
+  contents: read
