@@ -8,6 +8,9 @@ spec:
         identities:
           - issuer: https://accounts.google.com
           - issuer: https://github.com/login/oauth
+          # allow commits exported from mono by the open-source-publish workflow
+          - subject: https://github.com/chainguard-dev/mono/.github/workflows/open-source-publish.yaml@refs/heads/main
+            issuer: https://token.actions.githubusercontent.com
     - key:
         # allow commits signed by GitHub, e.g. the UI
         kms: https://github.com/web-flow.gpg
