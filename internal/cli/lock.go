@@ -180,7 +180,8 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 	}
 
 	// Discover and add auto-discovered keys from repositories
-	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs)
+	lockHTTPClient := &http.Client{}
+	discoveredKeys, err := discoverKeysForLock(ctx, ic, archs, lockHTTPClient, o.JWKSAllowedOrigins...)
 	if err != nil {
 		return fmt.Errorf("failed to discover keys: %w", err)
 	}
@@ -298,7 +299,7 @@ func loadKeyringBytes(ctx context.Context, client *http.Client, keyring string) 
 }
 
 // discoverKeysForLock discovers keys from repositories and returns them as LockKeyring entries
-func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture) ([]pkglock.LockKeyring, error) {
+func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, archs []types.Architecture, client *http.Client, allowedJWKSOrigins ...string) ([]pkglock.LockKeyring, error) {
 	log := clog.FromContext(ctx)
 
 	// Collect all unique repositories
@@ -317,7 +318,6 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 	discoveredKeyMap := make(map[string]pkglock.LockKeyring)
 
 	// Fetch Alpine releases once (cached by HTTP client)
-	client := &http.Client{}
 	var alpineReleases *apk.Releases
 
 	// Discover keys for each repository and architecture
@@ -368,7 +368,7 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 
 		// Try Chainguard-style key discovery
 		log.Debugf("Attempting Chainguard-style key discovery for %s", repo)
-		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo)
+		keys, err := apk.DiscoverKeys(ctx, client, auth.DefaultAuthenticators, repo, allowedJWKSOrigins...)
 		if err != nil {
 			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
 		} else if len(keys) > 0 {

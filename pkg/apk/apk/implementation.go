@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,9 +73,12 @@ type APK struct {
 	ignoreSignatures   bool
 	noSignatureIndexes []string
 	auth               auth.Authenticator
+	jwksAllowedOrigins []string
 	packageGetter      PackageGetter
 	sizeLimits         *SizeLimits
 
+	keys        map[string][]byte
+	runtimeKeys map[string][]byte
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
 
@@ -154,11 +159,25 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		offline:            opt.offline,
 		ignoreSignatures:   opt.ignoreSignatures,
 		noSignatureIndexes: opt.noSignatureIndexes,
+		jwksAllowedOrigins: opt.jwksAllowedOrigins,
+		keys:               make(map[string][]byte),
+		runtimeKeys:        make(map[string][]byte),
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
 		packageGetter:      packageGetter,
 		sizeLimits:         opt.sizeLimits,
 	}, nil
+}
+
+func (a *APK) addkey(key Key) {
+	a.keys[key.ID] = key.Bytes
+}
+
+func (a *APK) addRuntimeKey(key Key) {
+	if a.runtimeKeys == nil {
+		a.runtimeKeys = make(map[string][]byte)
+	}
+	a.runtimeKeys[key.ID] = key.Bytes
 }
 
 type directory struct {
@@ -360,7 +379,7 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 	// Perform key discovery for the various build-time repositories.
 	for _, repo := range buildRepos {
 		if ver, ok := ParseAlpineVersion(repo); ok {
-			if err := a.fetchAlpineKeys(ctx, ver); err != nil {
+			if err := a.fetchAlpineKeys(ctx, false, ver); err != nil {
 				var nokeysErr *NoKeysFoundError
 				if !a.offline && !errors.As(err, &nokeysErr) {
 					return &AlpineKeyFetchError{
@@ -373,12 +392,48 @@ func (a *APK) InitDB(ctx context.Context, buildRepos ...string) error {
 			}
 		}
 
-		if err := a.fetchChainguardKeys(ctx, repo); err != nil {
+		if err := a.fetchChainguardKeys(ctx, false, repo); err != nil {
 			return fmt.Errorf("fetching chainguard keys for %s: %w", repo, err)
 		}
 	}
 
 	log.Debug("finished initializing apk database")
+	return nil
+}
+
+func (a *APK) InitRuntimeKeys(ctx context.Context, repositories ...string) error {
+	for _, repo := range repositories {
+		if ver, ok := ParseAlpineVersion(repo); ok {
+			if err := a.fetchAlpineKeys(ctx, true, ver); err != nil {
+				var noKeysErr *NoKeysFoundError
+				if !a.cache.offline && !errors.As(err, &noKeysErr) {
+					return fmt.Errorf("failed to fetch alpine runtime keys: %w", err)
+				}
+			}
+			continue
+		}
+		if err := a.fetchChainguardKeys(ctx, true, repo); err != nil {
+			return fmt.Errorf("failed to fetch chainguard runtime keys for %s: %w", repo, err)
+		}
+	}
+	return nil
+}
+
+func (a *APK) WriteRuntimeKeys() error {
+	if len(a.runtimeKeys) == 0 {
+		return nil
+	}
+	if err := a.fs.MkdirAll(keysDirPath, 0o755); err != nil {
+		return fmt.Errorf("failed to create apk keys directory: %w", err)
+	}
+
+	for name, data := range a.runtimeKeys {
+		filename := filepath.Join(keysDirPath, name)
+
+		if err := a.fs.WriteFile(filename, data, 0o644); err != nil {
+			return fmt.Errorf("failed to write runtime keys %s: %w", filename, err)
+		}
+	}
 	return nil
 }
 
@@ -651,11 +706,10 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				return fmt.Errorf("scheme %s not supported", asURL.Scheme)
 			}
 
-			// #nosec G306 -- apk keyring must be publicly readable
-			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", filepath.Base(element)), data,
-				0o644); err != nil {
-				return fmt.Errorf("failed to write apk key: %w", err)
-			}
+			a.addkey(Key{
+				ID:    filepath.Base(element),
+				Bytes: data,
+			})
 
 			return nil
 		})
@@ -1055,7 +1109,7 @@ func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, e
 }
 
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) error {
+func (a *APK) fetchAlpineKeys(ctx context.Context, runtime bool, alpineVersions ...string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
 	defer span.End()
 
@@ -1096,15 +1150,24 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, alpineVersions ...string) err
 		if err != nil {
 			return fmt.Errorf("failed to unescape key filename %s: %w", basefilenameEscape, err)
 		}
-		filename := filepath.Join(keysDirPath, basefilename)
-		f, err := a.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
+		data, err := io.ReadAll(res.Body)
 		if err != nil {
-			return fmt.Errorf("failed to open key file %s: %w", filename, err)
+			return fmt.Errorf("failed to read alpine keys %s : %w", u, err)
 		}
-		defer f.Close()
-		if _, err := io.Copy(f, res.Body); err != nil {
-			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		key := Key{
+			ID:    basefilename,
+			Bytes: data,
 		}
+		if runtime {
+			a.addRuntimeKey(key)
+		} else {
+			a.addkey(key)
+		}
+
+		a.addkey(Key{
+			ID:    basefilename,
+			Bytes: data,
+		})
 	}
 	return nil
 }
@@ -1144,8 +1207,143 @@ func FetchKeyBytes(ctx context.Context, client *http.Client, a auth.Authenticato
 	return b, nil
 }
 
+// normalizeJWKSOrigin validates and canonicalizes an explicitly trusted HTTPS
+// origin. Paths other than the root are not part of an origin and are rejected.
+func normalizeJWKSOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an HTTPS origin without user info, path, query, or fragment")
+	}
+	return httpsOrigin(u)
+}
+
+func httpsOrigin(u *url.URL) (string, error) {
+	if u == nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" {
+		return "", fmt.Errorf("must have an HTTPS scheme and host")
+	}
+	return canonicalHTTPOrigin(u)
+}
+
+func canonicalHTTPOrigin(u *url.URL) (string, error) {
+	if u == nil || !u.IsAbs() || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Host == "" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an absolute HTTP(S) URL without user info or fragment")
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", fmt.Errorf("invalid port %q", port)
+	}
+	port = strconv.Itoa(portNumber)
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" {
+		return "", fmt.Errorf("must have a host")
+	}
+	return u.Scheme + "://" + net.JoinHostPort(host, port), nil
+}
+
+func validateJWKSURI(raw string, repositoryURL *url.URL, allowedOrigins map[string]struct{}) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse jwks_uri: %w", err)
+	}
+	if u.Scheme != "https" || !u.IsAbs() || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("jwks_uri must be an absolute HTTPS URL without user info or fragment")
+	}
+	targetOrigin, err := httpsOrigin(u)
+	if err != nil {
+		return nil, fmt.Errorf("invalid jwks_uri origin: %w", err)
+	}
+	if repositoryOrigin, err := httpsOrigin(repositoryURL); err == nil && targetOrigin == repositoryOrigin {
+		return u, nil
+	}
+	if _, ok := allowedOrigins[targetOrigin]; ok {
+		return u, nil
+	}
+	return nil, fmt.Errorf("jwks_uri origin %q is not the repository origin or an explicitly allowed JWKS origin", targetOrigin)
+}
+
+func clientWithRedirectPolicy(client *http.Client, validateTarget func(*url.URL) error) *http.Client {
+	policyClient := *client
+	previousCheckRedirect := client.CheckRedirect
+	policyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		var previousOrigin string
+		if len(via) > 0 {
+			var err error
+			previousOrigin, err = canonicalHTTPOrigin(via[len(via)-1].URL)
+			if err != nil {
+				return fmt.Errorf("invalid redirect source: %w", err)
+			}
+		}
+		if previousCheckRedirect != nil {
+			if err := previousCheckRedirect(req, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		// Check after the caller's hook because it may rewrite req.URL.
+		if err := validateTarget(req.URL); err != nil {
+			return err
+		}
+		if len(via) > 0 {
+			targetOrigin, err := canonicalHTTPOrigin(req.URL)
+			if err != nil {
+				return fmt.Errorf("invalid redirect target: %w", err)
+			}
+			if previousOrigin != targetOrigin {
+				// net/http can forward Authorization to subdomains. Clear all
+				// caller headers before following a cross-origin redirect.
+				req.Header = make(http.Header)
+			}
+		}
+		return nil
+	}
+	return &policyClient
+}
+
+func clientWithJWKSRedirectPolicy(client *http.Client, repositoryURL *url.URL, allowedOrigins map[string]struct{}) *http.Client {
+	return clientWithRedirectPolicy(client, func(target *url.URL) error {
+		_, err := validateJWKSURI(target.String(), repositoryURL, allowedOrigins)
+		return err
+	})
+}
+
+func clientWithDiscoveryRedirectPolicy(client *http.Client, repositoryURL *url.URL, allowedOrigins map[string]struct{}) *http.Client {
+	return clientWithRedirectPolicy(client, func(target *url.URL) error {
+		targetOrigin, err := canonicalHTTPOrigin(target)
+		if err != nil {
+			return fmt.Errorf("invalid discovery redirect target: %w", err)
+		}
+		repositoryOrigin, err := canonicalHTTPOrigin(repositoryURL)
+		if err != nil {
+			return fmt.Errorf("invalid repository origin: %w", err)
+		}
+		if targetOrigin == repositoryOrigin {
+			return nil
+		}
+		if _, ok := allowedOrigins[targetOrigin]; ok && target.Scheme == "https" {
+			return nil
+		}
+		return fmt.Errorf("discovery redirect origin %q is not the repository origin or an explicitly allowed JWKS origin", targetOrigin)
+	})
+}
+
 // DiscoverKeys fetches the public keys for the repositories in the APK database using chainguard-style discovery.
-func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string) ([]Key, error) {
+// Additional JWKS origins must be explicitly trusted when a mirror serves its
+// discovery document and keys from separate HTTPS origins.
+func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authenticator, repository string, allowedJWKSOrigins ...string) ([]Key, error) {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "DiscoverKeys")
 	defer span.End()
 
@@ -1153,9 +1351,20 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		// Ignore non-remote repositories.
 		return nil, nil
 	}
+	allowedOrigins := make(map[string]struct{}, len(allowedJWKSOrigins))
+	for _, origin := range allowedJWKSOrigins {
+		normalized, err := normalizeJWKSOrigin(origin)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed JWKS origin %q: %w", origin, err)
+		}
+		allowedOrigins[normalized] = struct{}{}
+	}
 	asURL, err := url.Parse(strings.TrimSuffix(repository, "/") + "/apk-configuration")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repository URL: %w", err)
+	}
+	if _, err := canonicalHTTPOrigin(asURL); err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
 
 	discoveryRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, asURL.String(), nil)
@@ -1166,7 +1375,7 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, err
 	}
 
-	discoveryResponse, err := client.Do(discoveryRequest)
+	discoveryResponse, err := clientWithDiscoveryRedirectPolicy(client, asURL, allowedOrigins).Do(discoveryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform key discovery: %w", err)
 	}
@@ -1191,14 +1400,18 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		return nil, fmt.Errorf("failed to unmarshal discovery payload: %w", err)
 	}
 
-	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
+	jwksURL, err := validateJWKSURI(discovery.JWKSURI, asURL, allowedOrigins)
+	if err != nil {
+		return nil, err
+	}
+	jwksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 	if err := auth.AddAuth(ctx, jwksRequest); err != nil {
 		return nil, err
 	}
-	jwksResponse, err := client.Do(jwksRequest)
+	jwksResponse, err := clientWithJWKSRedirectPolicy(client, asURL, allowedOrigins).Do(jwksRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -1258,17 +1471,20 @@ func (a *APK) DiscoverKeys(ctx context.Context, repository string) ([]Key, error
 			client = rc.StandardClient()
 		}
 
-		keys, _, err := a.cache.shared.discoverKeys.Do(repository, func() ([]Key, error) {
-			return DiscoverKeys(ctx, client, a.auth, repository)
+		origins := slices.Clone(a.jwksAllowedOrigins)
+		slices.Sort(origins)
+		cacheKey := strings.Join(append([]string{repository}, origins...), "\x00")
+		keys, _, err := a.cache.shared.discoverKeys.Do(cacheKey, func() ([]Key, error) {
+			return DiscoverKeys(ctx, client, a.auth, repository, a.jwksAllowedOrigins...)
 		})
 		return keys, err
 	}
 
-	return DiscoverKeys(ctx, client, a.auth, repository)
+	return DiscoverKeys(ctx, client, a.auth, repository, a.jwksAllowedOrigins...)
 }
 
 // fetchChainguardKeys fetches the public keys for the repositories in the APK database.
-func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error {
+func (a *APK) fetchChainguardKeys(ctx context.Context, runtime bool, repository string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchChainguardKeys")
 	defer span.End()
 
@@ -1285,9 +1501,10 @@ func (a *APK) fetchChainguardKeys(ctx context.Context, repository string) error 
 	}
 
 	for _, key := range keys {
-		filename := filepath.Join(keysDirPath, key.ID)
-		if err := a.fs.WriteFile(filename, key.Bytes, 0o644); err != nil {
-			return fmt.Errorf("failed to write key file %s: %w", filename, err)
+		if runtime {
+			a.addRuntimeKey(key)
+		} else {
+			a.addkey(key)
 		}
 	}
 	return nil

@@ -120,6 +120,13 @@ func TestGetRepositoryIndexes(t *testing.T) {
 		a, err := New(t.Context(), opts...)
 		require.NoError(t, err, "unable to create APK")
 
+		for k, v := range testKeys {
+			a.addkey(Key{
+				ID:    k,
+				Bytes: []byte(v),
+			})
+		}
+
 		// set a client so we use local testdata instead of heading out to the Internet each time
 		return a
 	}

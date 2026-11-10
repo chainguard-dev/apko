@@ -316,6 +316,15 @@ func WithAuthenticator(a auth.Authenticator) Option {
 	}
 }
 
+// WithJWKSAllowedOrigins trusts additional HTTPS origins for repository key
+// discovery. Use this for mirrors that publish their JWKS on a separate host.
+func WithJWKSAllowedOrigins(origins ...string) Option {
+	return func(bc *Context) error {
+		bc.o.JWKSAllowedOrigins = append(bc.o.JWKSAllowedOrigins, origins...)
+		return nil
+	}
+}
+
 // WithIgnoreSignatures sets whether to ignore repository signature verification.
 // Default is false.
 func WithIgnoreSignatures(ignore bool) Option {
