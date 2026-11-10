@@ -164,10 +164,8 @@ func TestInstallRuntimeKeyring(t *testing.T) {
 // A symlink at the key's path must never be silently written through — that
 // would land the key outside /etc/apk/keys. The existence check uses Lstat so
 // a symlink (even dangling, which Stat reports as not-exist) counts as a
-// collision on a real filesystem. MemFS's Lstat follows links (a known quirk,
-// documented in memfs.go), so there a dangling link surfaces as a write error
-// instead — either way the install fails and nothing is written through the
-// link.
+// collision, on a real filesystem and on MemFS alike: either way the install
+// fails and nothing is written through the link.
 func TestInstallRuntimeKeyringRefusesSymlink(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1337")
 	fsys := apkfs.NewMemFS()
@@ -186,8 +184,12 @@ func TestInstallRuntimeKeyringRefusesSymlink(t *testing.T) {
 		fs: fsys,
 	}
 
-	if err := bc.installRuntimeKeyring(t.Context()); err == nil {
+	err := bc.installRuntimeKeyring(t.Context())
+	if err == nil {
 		t.Fatal("installRuntimeKeyring() = nil, want an error for a symlinked key path")
+	}
+	if !strings.Contains(err.Error(), "collides with an existing /etc/apk/keys entry") {
+		t.Fatalf("installRuntimeKeyring() = %v, want the symlink reported as a collision, not a write error", err)
 	}
 	if _, err := fsys.Stat("/outside/target.rsa.pub"); err == nil {
 		t.Fatal("key content was written through the symlink outside /etc/apk/keys")

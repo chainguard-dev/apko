@@ -153,14 +153,11 @@ func (m *memFS) Stat(path string) (fs.FileInfo, error) {
 	return node.fileInfo(path), nil
 }
 
-// There is an issue with memfs.Lstat where it will always return a regular FileInfo mode (file, directory)
-// instead of a symlink. This is due to MemFS.Lstat handing back FileInfo whose Mode never has the ModeSymlink
-// bit set, even if the node is in fact a symlink. Therefore, checking if the mode on a symlink is indeed a
-// symlink will awlays fail. One possible fix is to detect whether the node is a symlink, and if so return a
-// wrapper around the real FileInfo that ORʼs in fs.ModeSymlink.
-
+// Lstat does not follow a symlink at path: the returned FileInfo describes
+// the link itself and its Mode carries fs.ModeSymlink. Stat follows symlinks,
+// so a caller deciding whether a path is a symlink must use Lstat.
 func (m *memFS) Lstat(path string) (fs.FileInfo, error) {
-	node, err := m.getNode(path)
+	node, err := m.getNodeNoFollow(path)
 	if err != nil {
 		return nil, err
 	}
@@ -611,6 +608,8 @@ func newMemFile(node *node, name string, memfs *memFS, openMode int) *memFile {
 		name:     name,
 		openMode: openMode,
 	}
+	node.mu.Lock()
+	defer node.mu.Unlock()
 	if openMode&os.O_APPEND != 0 {
 		m.offset = int64(len(node.data))
 	}
@@ -636,10 +635,15 @@ func (f *memFile) Close() error {
 	return nil
 }
 
+// node.data is shared by every open handle on the file, so each method
+// below holds node.mu while it reads or grows the slice.
+
 func (f *memFile) Read(b []byte) (int, error) {
 	if f.node == nil || f.fs == nil {
 		return 0, os.ErrClosed
 	}
+	f.node.mu.Lock()
+	defer f.node.mu.Unlock()
 	if f.offset >= int64(len(f.node.data)) {
 		return 0, io.EOF
 	}
@@ -652,6 +656,8 @@ func (f *memFile) ReadAt(p []byte, off int64) (n int, err error) {
 	if f.node == nil || f.fs == nil {
 		return 0, os.ErrClosed
 	}
+	f.node.mu.Lock()
+	defer f.node.mu.Unlock()
 	if off >= int64(len(f.node.data)) {
 		return 0, io.EOF
 	}
@@ -668,7 +674,9 @@ func (f *memFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekCurrent:
 		f.offset += offset
 	case io.SeekEnd:
+		f.node.mu.Lock()
 		f.offset = int64(len(f.node.data)) + offset
+		f.node.mu.Unlock()
 	default:
 		return 0, errors.New("invalid whence")
 	}
@@ -682,6 +690,8 @@ func (f *memFile) Write(p []byte) (n int, err error) {
 	if f.openMode&os.O_APPEND != 0 && f.openMode&os.O_RDWR != 0 && f.openMode&os.O_WRONLY != 0 {
 		return 0, errors.New("file not opened in write mode")
 	}
+	f.node.mu.Lock()
+	defer f.node.mu.Unlock()
 	if f.offset+int64(len(p)) > int64(len(f.node.data)) {
 		f.node.data = append(f.node.data[:f.offset], p...)
 	} else {
@@ -722,6 +732,9 @@ func (m *memFileInfo) Name() string {
 	return m.name
 }
 func (m *memFileInfo) Size() int64 {
+	// node.data is shared with every open handle on the file; see memFile.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return int64(len(m.data))
 }
 func (m *memFileInfo) Mode() fs.FileMode {

@@ -891,9 +891,13 @@ func TestSeedOverride_TypesFromWalk(t *testing.T) {
 	fsys := DirFS(t.Context(), dir)
 	require.NotNil(t, fsys)
 
-	// Types come from ReadDir rather than Lstat: memFS.getNode resolves every
-	// component including the last, so dirFS.Lstat on a symlink reports its
-	// target. That predates this change and is left alone here.
+	// dirFS.Lstat delegates to the memFS overrides, so it reports the link
+	// itself; the install code relies on that to keep a symlink to a directory.
+	li, err := fsys.Lstat("etc/link")
+	require.NoError(t, err)
+	require.NotZero(t, li.Mode()&fs.ModeSymlink, "dirFS.Lstat must report the symlink, not its target")
+
+	// Types come from ReadDir, which is what the tar/EROFS layer writers use.
 	byName := map[string]fs.DirEntry{}
 	ents, err := fs.ReadDir(fsys, "etc")
 	require.NoError(t, err)

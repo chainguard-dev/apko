@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -440,4 +441,45 @@ func TestContentDigest(t *testing.T) {
 			t.Errorf("%s: ContentDigest() = %q, %v; want %q", name, got, err, want)
 		}
 	}
+}
+
+// TestTarFSWriteHeaderKeepsSymlinkToDirectory writes a directory header at a
+// path that is already a relative symlink to a directory. The link is kept,
+// the header counts as not installed, and the target directory's times and
+// xattrs are left alone.
+func TestTarFSWriteHeaderKeepsSymlinkToDirectory(t *testing.T) {
+	tfs := tarfs.New()
+	require.NoError(t, tfs.MkdirAll("usr/lib", 0o755))
+	require.NoError(t, tfs.Symlink("lib", "usr/lib64"))
+
+	before, err := tfs.Stat("usr/lib")
+	require.NoError(t, err)
+
+	installed, err := tfs.WriteHeader(tar.Header{
+		Name:       "usr/lib64",
+		Typeflag:   tar.TypeDir,
+		Mode:       0o755,
+		ModTime:    time.Unix(1_000_000, 0),
+		AccessTime: time.Unix(1_000_000, 0),
+		PAXRecords: map[string]string{"SCHILY.xattr.user.pkg": "x"},
+	}, nil, nil)
+	require.NoError(t, err)
+	require.False(t, installed)
+
+	fi, err := tfs.Lstat("usr/lib64")
+	require.NoError(t, err)
+	require.NotZero(t, fi.Mode()&fs.ModeSymlink, "Lstat reports the link")
+
+	fi, err = tfs.Stat("usr/lib64")
+	require.NoError(t, err)
+	require.True(t, fi.IsDir(), "Stat follows the link to the directory")
+	require.Zero(t, fi.Mode()&fs.ModeSymlink)
+
+	after, err := tfs.Stat("usr/lib")
+	require.NoError(t, err)
+	require.Equal(t, before.ModTime(), after.ModTime(), "the target directory's mtime is untouched")
+
+	xattrs, err := tfs.ListXattrs("usr/lib")
+	require.NoError(t, err)
+	require.Empty(t, xattrs, "the header's xattrs are not applied to the target directory")
 }
