@@ -3,6 +3,7 @@ package lock
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 
@@ -98,4 +99,58 @@ func (lock Lock) Arch2LockedPackages(archs []types.Architecture) map[string][]st
 		}
 	}
 	return wantedPackages
+}
+
+// Architectures returns the architectures the lock file holds records for,
+// normalized to their OCI form (amd64 rather than x86_64) and sorted.
+//
+// `apko lock` writes one record per architecture for every package it locks
+// and for every repository it resolves against, so the union of the two is
+// the set of architectures the lock file was generated for. The repositories
+// matter: an architecture that resolves to no packages at all (an empty
+// package list, or a base image that already provides everything requested)
+// is still covered by the lock file, and its repository records say so.
+//
+// An empty result means the lock file carries no per-architecture records, in
+// which case the architectures it was generated for cannot be determined.
+func (lock Lock) Architectures() []types.Architecture {
+	seen := map[types.Architecture]struct{}{}
+	for _, p := range lock.Contents.Packages {
+		seen[types.ParseArchitecture(p.Architecture)] = struct{}{}
+	}
+	for _, repos := range [][]LockRepo{
+		lock.Contents.BuildRepositories,
+		lock.Contents.RuntimeOnlyRepositories,
+		lock.Contents.Repositories,
+	} {
+		for _, r := range repos {
+			seen[types.ParseArchitecture(r.Architecture)] = struct{}{}
+		}
+	}
+	// Records without an architecture say nothing about coverage.
+	delete(seen, "")
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// MissingArchitectures returns the architectures in archs that the lock file
+// was not generated for, deduplicated, in OCI form and in the order they were
+// requested. Both APK and OCI spellings (x86_64 and amd64) are accepted.
+//
+// It returns nil when every requested architecture is covered. It also
+// returns nil when the lock file carries no per-architecture records at all
+// (see Architectures): coverage cannot be determined from such a lock file,
+// so nothing is reported as missing.
+func (lock Lock) MissingArchitectures(archs []types.Architecture) []types.Architecture {
+	locked := lock.Architectures()
+	if len(locked) == 0 {
+		return nil
+	}
+	var missing []types.Architecture
+	for _, a := range archs {
+		arch := types.ParseArchitecture(a.String())
+		if !slices.Contains(locked, arch) && !slices.Contains(missing, arch) {
+			missing = append(missing, arch)
+		}
+	}
+	return missing
 }
