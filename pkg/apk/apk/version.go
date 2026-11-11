@@ -37,7 +37,7 @@ import (
 
 var (
 	versionRegex     = regexp.MustCompile(`^([0-9]+)((\.[0-9]+)*)([a-z]?)((_alpha|_beta|_pre|_rc)([0-9]*))?((_cvs|_svn|_git|_hg|_p)([0-9]*))?((-r)([0-9]+))?$`)
-	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
+	packageNameRegex = regexp.MustCompile(`^([^@=><~]+)(@([a-zA-Z0-9]+))?(([=><~]+)([^@]+))?(@([a-zA-Z0-9]+))?$`)
 )
 
 func init() {
@@ -390,21 +390,25 @@ func ResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 	}
 
 	parts := packageNameRegex.FindAllStringSubmatch(pkgName, -1)
-	if len(parts) == 0 || len(parts[0]) < 2 {
+	if len(parts) == 0 || len(parts[0]) < 2 || (parts[0][3] != "" && parts[0][8] != "") {
 		return ParsedConstraint{
 			Name: pkgName,
 			dep:  versionAny,
 		}
 	}
-	// layout: [full match, name, =version, =|>|<, version, @pin, pin]
+	pin := parts[0][3]
+	if pin == "" {
+		pin = parts[0][8]
+	}
+	// layout: [full match, name, @pin, pin, =version, =|>|<, version, @pin, pin]
 	p := ParsedConstraint{
 		Name:    parts[0][1],
-		Version: parts[0][4],
-		pin:     parts[0][6],
+		Version: parts[0][6],
+		pin:     pin,
 		dep:     versionAny,
 	}
 
-	matcher := parts[0][3]
+	matcher := parts[0][5]
 	if matcher != "" {
 		// we have an equal
 		switch matcher {
