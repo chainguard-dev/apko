@@ -68,7 +68,9 @@ func WithTags(tags ...string) Option {
 	}
 }
 
-// WithTarball sets the output path of the layer tarball.
+// WithTarball sets the output path of the layer tarball. The file belongs to
+// the caller: if the build fails, it is left in place and may hold a partial
+// layer.
 func WithTarball(path string) Option {
 	return func(bc *Context) error {
 		bc.o.TarballPath = path
