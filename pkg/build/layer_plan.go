@@ -36,6 +36,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 )
 
 // planVersion identifies the plan's encoding format. Bump it when the
@@ -146,7 +147,7 @@ func (c *LayerContent) open(digest string) (io.ReadCloser, error) {
 func (p *LayerPlan) Render(ctx context.Context, c *LayerContent, w io.Writer) (*LayerDigests, error) {
 	// With the same compression settings, pgzip produces the same output
 	// regardless of worker count, matching BuildLayers.
-	ls, err := newLayerStream(w, true, pgzipThreads)
+	ls, err := newLayerStream(w, true, options.Gzip, pgzipThreads)
 	if err != nil {
 		return nil, err
 	}
