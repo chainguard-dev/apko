@@ -24,7 +24,9 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
@@ -161,8 +163,7 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 	}
 
 	if fi, err := os.Stat(output); err == nil && fi.IsDir() {
-		// bundle the parts of the image into a tarball
-		if _, err := layout.Write(output, idx); err != nil {
+		if err := writeLayout(output, idx, append([]string{imageRef}, tags...)); err != nil {
 			return fmt.Errorf("writing image layout: %w", err)
 		}
 		log.Debugf("Final image layout at: %s", output)
@@ -179,6 +180,34 @@ func BuildCmd(ctx context.Context, imageRef, output string, archs []types.Archit
 		// because os.Rename fails across partitions, we do our own
 		if err := rename(sbom.Path, filepath.Join(sbomPath, filepath.Base(sbom.Path))); err != nil {
 			return fmt.Errorf("moving sbom: %w", err)
+		}
+	}
+	return nil
+}
+
+// writeLayout writes idx to an OCI image layout at path, as an entry in index.json per tag (instead of as
+// index.json itself), so tools that resolve layouts by tag (e.g. BuildKit's `oci-layout://`) can find
+// the multi-arch image.
+func writeLayout(path string, idx v1.ImageIndex, tags []string) error {
+	p, err := layout.Write(path, empty.Index)
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, t := range tags {
+		tag, err := name.NewTag(t)
+		if err != nil {
+			return fmt.Errorf("parsing tag %q: %w", t, err)
+		}
+		// ref.name is only the tag (per the image-spec), so e.g. `foo:latest` and `bar:latest` are one entry.
+		if seen[tag.TagStr()] {
+			continue
+		}
+		seen[tag.TagStr()] = true
+		if err := p.AppendIndex(idx, layout.WithAnnotations(map[string]string{
+			"org.opencontainers.image.ref.name": tag.TagStr(),
+		})); err != nil {
+			return err
 		}
 	}
 	return nil
