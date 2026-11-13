@@ -20,6 +20,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"chainguard.dev/apko/pkg/build/types"
+	pkglock "chainguard.dev/apko/pkg/lock"
 )
 
 func TestUnify(t *testing.T) {
@@ -385,6 +388,69 @@ func TestUnify(t *testing.T) {
 				t.Errorf("unify() = %v, wanted %v", gotDiag, test.wantDiag)
 			} else if test.wantDiag != nil && gotDiag != nil && test.wantDiag.Error() != gotDiag.Error() {
 				t.Errorf("unify() = %v, wanted %v", gotDiag, test.wantDiag)
+			}
+		})
+	}
+}
+
+func TestVerifyLockfileArchitectures(t *testing.T) {
+	lockedFor := func(apkArchs ...string) pkglock.Lock {
+		var l pkglock.Lock
+		for _, arch := range apkArchs {
+			l.Contents.Packages = append(l.Contents.Packages, pkglock.LockPkg{Name: "pkg", Version: "1.2.3", Architecture: arch})
+			l.Contents.Repositories = append(l.Contents.Repositories, pkglock.LockRepo{Name: "repo/" + arch, Architecture: arch})
+		}
+		return l
+	}
+
+	tests := []struct {
+		name      string
+		lock      pkglock.Lock
+		requested []types.Architecture
+		wantErr   string
+	}{{
+		name:      "partially covered",
+		lock:      lockedFor("x86_64"),
+		requested: []types.Architecture{"amd64", "arm64"},
+		wantErr:   "lockfile \"apko.lock.json\" does not cover requested architecture arm64 (aarch64): it was generated for amd64 (x86_64); regenerate it with `apko lock --arch=amd64,arm64`",
+	}, {
+		name:      "not covered at all",
+		lock:      lockedFor("x86_64"),
+		requested: []types.Architecture{"arm64"},
+		// The suggestion keeps the architectures that are already locked.
+		wantErr: "lockfile \"apko.lock.json\" does not cover requested architecture arm64 (aarch64): it was generated for amd64 (x86_64); regenerate it with `apko lock --arch=amd64,arm64`",
+	}, {
+		name:      "several architectures missing",
+		lock:      lockedFor("x86_64", "aarch64"),
+		requested: []types.Architecture{"amd64", "s390x", "armv7", "riscv64"},
+		wantErr:   "lockfile \"apko.lock.json\" does not cover requested architectures s390x, arm/v7 (armv7), riscv64: it was generated for amd64 (x86_64), arm64 (aarch64); regenerate it with `apko lock --arch=amd64,arm/v7,arm64,riscv64,s390x`",
+	}, {
+		name:      "covered",
+		lock:      lockedFor("x86_64", "aarch64"),
+		requested: []types.Architecture{"amd64", "arm64"},
+	}, {
+		name:      "covered subset",
+		lock:      lockedFor("x86_64", "aarch64"),
+		requested: []types.Architecture{"arm64"},
+	}, {
+		name:      "apk-style names in the request",
+		lock:      lockedFor("x86_64", "aarch64"),
+		requested: []types.Architecture{"x86_64", "aarch64"},
+	}, {
+		name:      "lock without per-architecture records",
+		requested: []types.Architecture{"amd64", "arm64"},
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := verifyLockfileArchitectures("apko.lock.json", test.lock, test.requested)
+			switch {
+			case test.wantErr == "" && err != nil:
+				t.Errorf("verifyLockfileArchitectures() = %v, wanted no error", err)
+			case test.wantErr != "" && err == nil:
+				t.Errorf("verifyLockfileArchitectures() = nil, wanted %q", test.wantErr)
+			case test.wantErr != "" && err.Error() != test.wantErr:
+				t.Errorf("verifyLockfileArchitectures() = %q, wanted %q", err, test.wantErr)
 			}
 		})
 	}

@@ -37,6 +37,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	pkglock "chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/options"
 	"chainguard.dev/apko/pkg/sbom/generator"
 	"chainguard.dev/apko/pkg/tarfs"
@@ -203,7 +204,8 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	// cases:
 	// - archs set: use those archs
 	// - archs not set, bc.ImageConfiguration.Archs set: use Config archs
-	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs
+	// - archs not set, bc.ImageConfiguration.Archs not set: use all archs,
+	//   or the archs of the lockfile when building from one
 	switch {
 	case len(archs) != 0:
 		ic.Archs = archs
@@ -211,6 +213,17 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 		// do nothing
 	default:
 		ic.Archs = types.AllArchs
+		if o.Lockfile != "" {
+			// No architecture was asked for, and a lockfile can only build
+			// the architectures it was generated for.
+			locked, err := lockedArchs(o.Lockfile)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(locked) != 0 {
+				ic.Archs = locked
+			}
+		}
 	}
 	// save the final set we will build
 	log.Debugf("Building images for %d architectures: %+v", len(ic.Archs), ic.Archs)
@@ -350,6 +363,16 @@ func buildImageComponents(ctx context.Context, workDir string, archs []types.Arc
 	}
 
 	return idx, sboms, nil
+}
+
+// lockedArchs returns the architectures the lockfile was generated for, or
+// none when the lockfile does not say.
+func lockedArchs(lockfile string) ([]types.Architecture, error) {
+	l, err := pkglock.FromFile(lockfile)
+	if err != nil {
+		return nil, err
+	}
+	return l.Architectures(), nil
 }
 
 // rename just like os.Rename, but does a copy and delete if the rename fails
