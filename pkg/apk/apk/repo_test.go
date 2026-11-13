@@ -29,6 +29,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -335,6 +336,58 @@ func TestIndexAuth_bad(t *testing.T) {
 	_, err = a.GetRepositoryIndexes(ctx, true)
 	require.Error(t, err, "should fail with bad auth")
 	require.True(t, called, "did not make request")
+}
+
+func TestIndexHeadUnsupported(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		headStatus int
+		wantErr    bool
+	}{
+		{name: "method not allowed", headStatus: http.StatusMethodNotAllowed},
+		{name: "not implemented", headStatus: http.StatusNotImplemented},
+		// Any other failure is about the index itself, so it is not retried.
+		{name: "forbidden", headStatus: http.StatusForbidden, wantErr: true},
+	} {
+		for _, cached := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s cached=%t", tt.name, cached), func(t *testing.T) {
+				var heads, gets atomic.Int32
+				s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodHead {
+						heads.Add(1)
+						w.WriteHeader(tt.headStatus)
+						return
+					}
+					gets.Add(1)
+					r.URL.Path = strings.TrimPrefix(r.URL.Path, "/x86_64")
+					http.FileServer(http.Dir(testPrimaryPkgDir)).ServeHTTP(w, r)
+				}))
+				defer s.Close()
+
+				ctx := t.Context()
+
+				opts := []Option{WithFS(apkfs.NewMemFS()), WithArch("x86_64")}
+				if cached {
+					opts = append(opts, WithCache(t.TempDir(), false, NewCache(true)))
+				}
+				a, err := New(ctx, opts...)
+				require.NoError(t, err, "unable to create APK")
+				require.NoError(t, a.InitDB(ctx), "unable to init db")
+				require.NoError(t, a.SetRepositories(ctx, []string{s.URL}), "unable to set repositories")
+
+				indexes, err := a.GetRepositoryIndexes(ctx, true)
+				require.NotZero(t, heads.Load(), "index was not probed with HEAD")
+				if tt.wantErr {
+					require.Error(t, err, "should fail when HEAD is rejected with %d", tt.headStatus)
+					require.Zero(t, gets.Load(), "index should not be fetched after HEAD failed")
+					return
+				}
+				require.NoError(t, err, "unable to get indexes")
+				require.Len(t, indexes, 1, "expected the index to be fetched with GET")
+				require.NotEmpty(t, indexes[0].Packages(), "expected packages in the fetched index")
+			})
+		}
+	}
 }
 
 func testGetPackagesAndIndex() ([]*RepositoryPackage, []*RepositoryWithIndex) {
