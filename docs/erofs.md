@@ -68,17 +68,19 @@ The OCI layout under `out/` is a regular OCI image directory — the layer blob 
 ```
 out/
 ├── blobs/sha256/
+│   ├── <index-digest>        # JSON image index (one manifest per arch)
 │   ├── <config-digest>       # JSON image config
 │   ├── <manifest-digest>     # JSON image manifest
 │   └── <layer-digest>        # raw EROFS filesystem image
-├── index.json
+├── index.json                # points at the image index, tagged `latest`
 └── oci-layout
 ```
 
 ### Verify the manifest references EROFS
 
 ```sh
-MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out/index.json)
+INDEX=$(jq -r '.manifests[0].digest | split(":")[1]' out/index.json)
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out/blobs/sha256/$INDEX)
 jq . out/blobs/sha256/$MANIFEST
 ```
 
@@ -261,7 +263,8 @@ apko build erofs-layered.yaml apko-erofs-layered:latest out-layered/ --arch=host
 Inspect the manifest:
 
 ```sh
-MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+INDEX=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/blobs/sha256/$INDEX)
 jq '.layers[] | {mediaType, role: .annotations["org.erofs.role"]}' out-layered/blobs/sha256/$MANIFEST
 ```
 
@@ -284,7 +287,8 @@ The OCI spec composes layers with `overlayfs`-style semantics; for EROFS layers 
 ```sh
 # Pull each layer blob out of the OCI layout.
 BLOBS=$(pwd)/out-layered/blobs/sha256
-MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+INDEX=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/index.json)
+MANIFEST=$(jq -r '.manifests[0].digest | split(":")[1]' out-layered/blobs/sha256/$INDEX)
 mkdir -p mnt/{merged,work,upper}
 
 # Mount every layer; build the overlay lowerdir as we go. overlayfs lists
