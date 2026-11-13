@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -564,6 +565,77 @@ func validatePublicKey(data []byte) error {
 	return nil
 }
 
+// keyNameFromResponse returns the file name resp gives the key in its
+// Content-Disposition header, if it gives one. Some servers serve keys from a
+// URL whose last element is not the key's name: Gitea and Forgejo package
+// registries use .../key, and proxies like Artifactory may drop the .rsa.pub
+// extension. Index signatures name the key that made them, so the key has to be
+// installed under the name the server declares for it.
+//
+// It returns "" when the header names no file. A name that could not be a file
+// in the keyring directory is an error rather than being cleaned up, so the
+// caller can ignore it.
+func keyNameFromResponse(resp *http.Response) (string, error) {
+	cd := resp.Header.Get("Content-Disposition")
+	if cd == "" {
+		return "", nil
+	}
+	// ParseMediaType also decodes RFC 2231 extended values (filename*=...),
+	// which take precedence over a plain filename parameter.
+	_, params, err := mime.ParseMediaType(cd)
+	if err != nil {
+		// Gitea and Forgejo put the name in filename* without percent-encoding
+		// it (filename*=UTF-8''owner@....rsa.pub), which the RFC doesn't allow
+		// and ParseMediaType rejects. They send the same name in filename, so
+		// fall back to the parameters that aren't extended values.
+		_, plain, plainErr := mime.ParseMediaType(withoutExtendedParams(cd))
+		if _, ok := plain["filename"]; plainErr != nil || !ok {
+			return "", fmt.Errorf("parsing Content-Disposition %q: %w", cd, err)
+		}
+		params = plain
+	}
+	name, ok := params["filename"]
+	if !ok {
+		return "", nil
+	}
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return "", fmt.Errorf("invalid key file name %q in Content-Disposition", name)
+	}
+	return name, nil
+}
+
+// withoutExtendedParams returns the header value v, a media type or disposition
+// type followed by parameters, without its RFC 2231 extended parameters (those
+// whose name ends in '*').
+func withoutExtendedParams(v string) string {
+	var params []string
+	start, inQuotes, escaped := 0, false, false
+	for i := 0; i < len(v); i++ {
+		switch c := v[i]; {
+		case escaped:
+			escaped = false
+		case inQuotes && c == '\\':
+			escaped = true
+		case c == '"':
+			inQuotes = !inQuotes
+		case c == ';' && !inQuotes:
+			params = append(params, v[start:i])
+			start = i + 1
+		}
+	}
+	params = append(params, v[start:])
+
+	// The first element is the type itself, which has no name to check.
+	kept := []string{params[0]}
+	for _, p := range params[1:] {
+		name, _, _ := strings.Cut(p, "=")
+		if !strings.HasSuffix(strings.TrimSpace(name), "*") {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, ";")
+}
+
 // Installs the specified keys into the APK keyring inside the build context.
 func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string) error {
 	log := clog.FromContext(ctx)
@@ -601,6 +673,7 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 			}
 
 			var data []byte
+			keyName := filepath.Base(element)
 			switch asURL.Scheme {
 			case "file": //nolint:goconst
 				data, err = os.ReadFile(element)
@@ -647,12 +720,19 @@ func (a *APK) InitKeyring(ctx context.Context, keyFiles, extraKeyFiles []string)
 				if err := validatePublicKey(data); err != nil {
 					return fmt.Errorf("apk key from %s is not a valid public key: %w", asURL.Redacted(), err)
 				}
+
+				if name, err := keyNameFromResponse(resp); err != nil {
+					log.Warnf("ignoring the file name the server gave apk key %s, installing it as %s: %v", asURL.Redacted(), keyName, err)
+				} else if name != "" {
+					log.Debugf("installing apk key %s as %s, the name the server gave it", asURL.Redacted(), name)
+					keyName = name
+				}
 			default:
 				return fmt.Errorf("scheme %s not supported", asURL.Scheme)
 			}
 
 			// #nosec G306 -- apk keyring must be publicly readable
-			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", filepath.Base(element)), data,
+			if err := a.fs.WriteFile(filepath.Join("etc", "apk", "keys", keyName), data,
 				0o644); err != nil {
 				return fmt.Errorf("failed to write apk key: %w", err)
 			}

@@ -112,7 +112,11 @@ There are multiple possible child elements:
    URLs or file paths. File paths should start with a label like `@local` e.g: `@local /github/workspace/packages`.
    Notice that you need to package name under `packages` with the label e.g `- alpine-baselayout@local`.
  - `packages` defines a list of alpine packages to install inside the image
- - `keyring` PGP keys to add to the keyring for verifying packages.
+ - `keyring` PGP keys to add to the keyring for verifying packages. These can be either URLs or
+   file paths. Each key is installed into `/etc/apk/keys` under the last element of its path or
+   URL, unless the server names the file in a `Content-Disposition` header, as Gitea and Forgejo
+   package registries do for their `.../alpine/key` URL. The name must match the filename the
+   repository's APKINDEX signature references (`.SIGN.RSA256.<name>`).
  - `runtime_repositories` defines a list of alpine repositories that are written to
    `/etc/apk/repositories` in the image but are not used at build time, so `apk add` in the
    running container pulls from them.
