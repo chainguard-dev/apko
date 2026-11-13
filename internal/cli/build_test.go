@@ -22,7 +22,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	ocitypes "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/stretchr/testify/require"
 
@@ -60,8 +62,7 @@ func TestBuild(t *testing.T) {
 	err = cli.BuildCmd(ctx, "golden:latest", tmp, archs, []string{}, true, sbomPath, withIsolatedDirs(t, opts...)...)
 	require.NoError(t, err)
 
-	root, err := layout.ImageIndexFromPath(tmp)
-	require.NoError(t, err)
+	root := taggedIndex(t, tmp, "latest")
 
 	gold, err := layout.ImageIndexFromPath(golden)
 	require.NoError(t, err)
@@ -139,8 +140,7 @@ func TestBuildWithBase(t *testing.T) {
 	err = cli.BuildCmd(ctx, "golden_top:latest", tmp, archs, []string{}, true, sbomPath, withIsolatedDirs(t, opts...)...)
 	require.NoError(t, err)
 
-	root, err := layout.ImageIndexFromPath(tmp)
-	require.NoError(t, err)
+	root := taggedIndex(t, tmp, "latest")
 
 	gold, err := layout.ImageIndexFromPath(golden)
 	require.NoError(t, err)
@@ -157,4 +157,24 @@ func TestBuildWithBase(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, want, got)
+}
+
+// taggedIndex returns the image index in the OCI layout at path whose ref.name is tag, checking that
+// it's the only entry in the layout's index.json.
+func taggedIndex(t *testing.T, path, tag string) v1.ImageIndex {
+	t.Helper()
+
+	p, err := layout.ImageIndexFromPath(path)
+	require.NoError(t, err)
+	m, err := p.IndexManifest()
+	require.NoError(t, err)
+	require.Len(t, m.Manifests, 1)
+
+	desc := m.Manifests[0]
+	require.Equal(t, ocitypes.OCIImageIndex, desc.MediaType)
+	require.Equal(t, tag, desc.Annotations["org.opencontainers.image.ref.name"])
+
+	idx, err := p.ImageIndex(desc.Digest)
+	require.NoError(t, err)
+	return idx
 }
