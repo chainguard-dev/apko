@@ -386,9 +386,9 @@ func verifyIndexSignature(ctx context.Context, u string, keys map[string][]byte,
 			if _, ok := keys[keyfile]; ok {
 				// We found a matching key
 			} else if _, ok := keys[trimmedKeyFile]; ok {
-				// When we download keys from proxy servers - like artifactory, we ignore the 'content-disposition' header
-				// (that would be difficult to cache as well), and the header is responsible for providing key name with
-				// proper extension. Here we accept matching keys without proper extension.
+				// Proxy servers - like artifactory - may serve keys from URLs without the proper extension. Unless
+				// they name the key in a 'content-disposition' header, InitKeyring installs it under the name in
+				// the URL. Here we accept matching keys without proper extension.
 				keyfile = trimmedKeyFile
 			} else {
 				clog.FromContext(ctx).Warnf("skipping signature %s due to missing keyfile: %s", signatureFile.Name, keyfile)
