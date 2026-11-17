@@ -88,6 +88,20 @@ func WithCompressedLayerFile(enabled bool) Option {
 	}
 }
 
+// WithAPKLayerOrder writes each tar layer of a layered build from BuildLayers
+// and PlanLayers so that each package's file contents are contiguous and in
+// the order of the package's apk.PackageContents.Entries. When those entries
+// are in archive order, a reader can read the contents in one forward pass
+// over the package. Layer membership, headers and contents are unchanged, but
+// the entry order and so the layer digests differ from a build without it.
+// Other layer formats ignore it.
+func WithAPKLayerOrder(enabled bool) Option {
+	return func(bc *Context) error {
+		bc.o.APKLayerOrder = enabled
+		return nil
+	}
+}
+
 // WithFormat sets the layer payload format ("tar" or "erofs"). The value
 // overrides any format declared in the image configuration, wherever this
 // Option appears in the slice relative to WithImageConfiguration or

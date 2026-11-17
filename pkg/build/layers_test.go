@@ -295,7 +295,7 @@ func testSplitLayersDirectoryCreation(t *testing.T, compressed bool) {
 
 	// Call splitLayers to create the layers
 	ctx := context.Background()
-	layers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir, compressed)
+	layers, err := splitLayers(ctx, fsys, groups, pkgToDiff, tmpDir, compressed, false)
 	if err != nil {
 		t.Fatalf("splitLayers failed: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestSplitLayersFailureCleanup(t *testing.T) {
 			pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
 
 			tmpDir := t.TempDir()
-			layers, err := splitLayers(t.Context(), &failOpenFS{FullFS: fsys, failPath: "usr/zfail"}, groups, pkgToDiff, tmpDir, compressed)
+			layers, err := splitLayers(t.Context(), &failOpenFS{FullFS: fsys, failPath: "usr/zfail"}, groups, pkgToDiff, tmpDir, compressed, false)
 			if err == nil {
 				t.Fatalf("splitLayers: got %d layers, want injected error", len(layers))
 			}
@@ -475,7 +475,7 @@ func TestSplitLayersPartitionsByPackage(t *testing.T) {
 	groups := []*group{{pkgs: []*apk.Package{a}}, {pkgs: []*apk.Package{b}}}
 	pkgToDiff := map[*apk.Package][]byte{a: []byte("alpha info\n"), b: []byte("beta info\n")}
 
-	layers, err := splitLayers(t.Context(), fsys, groups, pkgToDiff, t.TempDir(), false)
+	layers, err := splitLayers(t.Context(), fsys, groups, pkgToDiff, t.TempDir(), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

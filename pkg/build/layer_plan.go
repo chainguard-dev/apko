@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -28,6 +29,7 @@ import (
 	"maps"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -51,6 +53,17 @@ const planVersion = "apko layer plan/1"
 type LayerPlan struct {
 	packages []*apk.Package
 	entries  []PlanEntry
+	// sources holds, for each entry whose content comes unchanged from a
+	// package, where to read it. It is parallel to entries.
+	sources []packageMember
+}
+
+// packageMember names a package file by its name in the package's
+// apk.PackageContents.Entries. A nil pkg means the entry's content comes from
+// the LayerContent.
+type packageMember struct {
+	pkg  *apk.Package
+	name string
 }
 
 // PlanEntry contains a tar header for Render and a content digest for a
@@ -140,17 +153,79 @@ func (c *LayerContent) open(digest string) (io.ReadCloser, error) {
 	return f, nil
 }
 
+// PackageReader reads files from one package.
+type PackageReader interface {
+	// Open returns the content of the package file with the given name, as
+	// the package's apk.PackageContents.Entries spell it. For a name in more
+	// than one entry, it returns the content of the last.
+	Open(member string) (io.ReadCloser, error)
+	Close() error
+}
+
+// RenderOption configures Render.
+type RenderOption func(*renderOptions)
+
+type renderOptions struct {
+	newPackageReader func(*apk.Package) (PackageReader, error)
+	newHash          func(algorithm string) (hash.Hash, bool)
+}
+
+// WithPackageReaders makes Render read file content that comes unchanged from
+// a package through a reader returned by newReader. Render keeps one reader
+// open at a time: it calls newReader when it needs content from a package
+// other than the current reader's, after closing the current reader, and
+// closes the last reader before returning. Render reads each member through a
+// reader at most once. If the plan was built with WithAPKLayerOrder, Render
+// uses one reader per package, in package name order, and Open calls follow
+// the order of the package's apk.PackageContents.Entries. Content generated
+// or changed during the build, and further entries with the same member's
+// content, such as a file reached through two paths, come from the
+// LayerContent.
+//
+// Render checks the content each reader returns against the entry's digest.
+// It hashes sha256 digests itself and other algorithms, named by the part of
+// the digest before the colon, with a hash from newHash, which may be nil.
+// Render returns an error if a digest does not match or it has no hash for
+// the digest's algorithm.
+func WithPackageReaders(newReader func(*apk.Package) (PackageReader, error), newHash func(algorithm string) (hash.Hash, bool)) RenderOption {
+	return func(o *renderOptions) {
+		o.newPackageReader = newReader
+		o.newHash = newHash
+	}
+}
+
+// contentHash returns a hash for checking content against digest.
+func (o renderOptions) contentHash(digest string) (hash.Hash, error) {
+	algorithm, _, ok := strings.Cut(digest, ":")
+	if !ok {
+		return nil, fmt.Errorf("malformed digest %q", digest)
+	}
+	if algorithm == "sha256" {
+		return sha256.New(), nil
+	}
+	if o.newHash != nil {
+		if h, ok := o.newHash(algorithm); ok {
+			return h, nil
+		}
+	}
+	return nil, fmt.Errorf("cannot check %s digests", algorithm)
+}
+
 // Render writes p's layer to w as a gzipped tar archive, reading content
 // from c, and returns its digests. If it returns an error, what it wrote
 // to w is not a valid layer and should be discarded.
-func (p *LayerPlan) Render(ctx context.Context, c *LayerContent, w io.Writer) (*LayerDigests, error) {
+func (p *LayerPlan) Render(ctx context.Context, c *LayerContent, w io.Writer, opts ...RenderOption) (*LayerDigests, error) {
+	var o renderOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	// With the same compression settings, pgzip produces the same output
 	// regardless of worker count, matching BuildLayers.
 	ls, err := newLayerStream(w, true, pgzipThreads)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.writeEntries(ctx, ls.tw, c); err != nil {
+	if err := p.writeEntries(ctx, ls.tw, c, o); err != nil {
 		_, _ = ls.finish()
 		return nil, err
 	}
@@ -161,7 +236,56 @@ func (p *LayerPlan) Render(ctx context.Context, c *LayerContent, w io.Writer) (*
 	return &d, nil
 }
 
-func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerContent) error {
+func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerContent, o renderOptions) (err error) {
+	var (
+		pkg    *apk.Package
+		reader PackageReader
+	)
+	closeReader := func() error {
+		if reader == nil {
+			return nil
+		}
+		r := reader
+		reader = nil
+		if err := r.Close(); err != nil {
+			return fmt.Errorf("closing package %s: %w", pkg.Name, err)
+		}
+		return nil
+	}
+	defer func() {
+		if cerr := closeReader(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+	// open returns entry i's content and, for content from a package reader,
+	// a hash to check it with.
+	open := func(i int) (io.ReadCloser, hash.Hash, error) {
+		src := p.sources[i]
+		if o.newPackageReader == nil || src.pkg == nil {
+			data, err := c.open(p.entries[i].Digest)
+			return data, nil, err
+		}
+		h, err := o.contentHash(p.entries[i].Digest)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reader == nil || pkg != src.pkg {
+			if err := closeReader(); err != nil {
+				return nil, nil, err
+			}
+			pkg = src.pkg
+			reader, err = o.newPackageReader(pkg)
+			if err != nil {
+				return nil, nil, fmt.Errorf("opening package %s: %w", pkg.Name, err)
+			}
+		}
+		data, err := reader.Open(src.name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading %s from package %s: %w", src.name, src.pkg.Name, err)
+		}
+		return data, h, nil
+	}
+
 	buf := make([]byte, 1<<20)
 	for i := range p.entries {
 		if err := ctx.Err(); err != nil {
@@ -175,11 +299,15 @@ func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerCo
 		if !hasContent(&hdr) {
 			continue
 		}
-		data, err := c.open(e.Digest)
+		data, h, err := open(i)
 		if err != nil {
 			return fmt.Errorf("%s: %w", hdr.Name, err)
 		}
-		_, err = io.CopyBuffer(tw, data, buf)
+		var dst io.Writer = tw
+		if h != nil {
+			dst = io.MultiWriter(tw, h)
+		}
+		_, err = io.CopyBuffer(dst, data, buf)
 		// Should never fail in practice.
 		cerr := data.Close()
 		if err != nil {
@@ -187,6 +315,12 @@ func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerCo
 		}
 		if cerr != nil {
 			return fmt.Errorf("closing %s: %w", hdr.Name, cerr)
+		}
+		if h != nil {
+			algorithm, want, _ := strings.Cut(e.Digest, ":")
+			if got := hex.EncodeToString(h.Sum(nil)); got != want {
+				return fmt.Errorf("%s: content has %s digest %s, want %s", hdr.Name, algorithm, got, want)
+			}
 		}
 	}
 	return nil
@@ -211,13 +345,15 @@ func (bc *Context) PlanLayers(ctx context.Context) ([]*LayerPlan, *LayerContent,
 	if err != nil {
 		return nil, nil, err
 	}
-	return planLayers(ctx, bc.fs, groups, pkgToDiff)
+	return planLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.APKLayerOrder)
 }
 
 // planner collects one layer's entries.
 type planner struct {
 	plan    *LayerPlan
 	content *LayerContent
+	// read records package members already assigned to an entry.
+	read map[packageMember]bool
 	// files records entry indices and filesystem sources for digestFiles.
 	files []plannedFile
 }
@@ -230,16 +366,29 @@ type plannedFile struct {
 }
 
 func (pl *planner) add(f *file) error {
+	var src packageMember
 	if hasContent(f.header) {
 		pl.files = append(pl.files, plannedFile{index: len(pl.plan.entries), path: f.path, info: f.info})
+		src.pkg, src.name, _ = f.apkSource()
+		if src.pkg != nil {
+			if pl.read[src] {
+				// Another entry already reads this member, so this one
+				// reads its content from the LayerContent.
+				src = packageMember{}
+			} else {
+				pl.read[src] = true
+			}
+		}
 	}
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *f.header})
+	pl.plan.sources = append(pl.plan.sources, src)
 	return nil
 }
 
 func (pl *planner) addData(hdr *tar.Header, data []byte) error {
 	if !hasContent(hdr) {
 		pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *hdr})
+		pl.plan.sources = append(pl.plan.sources, packageMember{})
 		return nil
 	}
 	h, _, err := v1.SHA256(bytes.NewReader(data))
@@ -248,17 +397,18 @@ func (pl *planner) addData(hdr *tar.Header, data []byte) error {
 	}
 	d := h.String()
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *hdr, Digest: d})
+	pl.plan.sources = append(pl.plan.sources, packageMember{})
 	pl.content.inline[d] = data
 	return nil
 }
 
 // planLayers walks fsys to plan one layer per group followed by the top layer.
-func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte) ([]*LayerPlan, *LayerContent, error) {
+func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, apkOrder bool) ([]*LayerPlan, *LayerContent, error) {
 	content := &LayerContent{fsys: fsys, paths: map[string]string{}, inline: map[string][]byte{}}
 	planners := make([]*planner, 0, len(groups)+1)
 	sinks := make([]layerSink, 0, len(groups)+1)
 	newPlanner := func(pkgs []*apk.Package) {
-		pl := &planner{plan: &LayerPlan{packages: pkgs}, content: content}
+		pl := &planner{plan: &LayerPlan{packages: pkgs}, content: content, read: map[packageMember]bool{}}
 		planners = append(planners, pl)
 		sinks = append(sinks, pl)
 	}
@@ -266,7 +416,7 @@ func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDi
 		newPlanner(slices.Clone(g.pkgs))
 	}
 	newPlanner(nil)
-	if err := partitionLayers(ctx, fsys, groups, pkgToDiff, sinks); err != nil {
+	if err := partitionTarLayers(ctx, fsys, groups, pkgToDiff, sinks, apkOrder); err != nil {
 		return nil, nil, err
 	}
 	if err := digestFiles(ctx, fsys, planners, content); err != nil {

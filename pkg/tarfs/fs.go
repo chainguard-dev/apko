@@ -56,6 +56,7 @@ type tarEntry struct {
 	header   tar.Header
 	checksum []byte
 	pkg      *apk.Package
+	position int
 	// digest is the content digest tfs gave for the entry, if it is an
 	// apk.ContentDigester.
 	digest string
@@ -109,6 +110,12 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 }
 
 func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
+	return m.WriteHeaderAt(hdr, tfs, pkg, 0)
+}
+
+// WriteHeaderAt records the one-based position in PackageContents.Entries.
+// Zero means the position is unknown.
+func (m *memFS) WriteHeaderAt(hdr tar.Header, tfs fs.FS, pkg *apk.Package, position int) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
@@ -161,6 +168,7 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			header:   hdr,
 			checksum: checksum,
 			pkg:      pkg,
+			position: position,
 		}
 		if cd, ok := tfs.(apk.ContentDigester); ok && hdr.Typeflag == tar.TypeReg {
 			if d, ok := cd.ContentDigest(hdr.Name); ok {
@@ -1118,4 +1126,15 @@ func (m *memFileInfo) Package() *apk.Package {
 	}
 
 	return m.te.pkg
+}
+
+// APKSource returns the package and entry name backing this file, and the
+// entry's one-based position in PackageContents.Entries, or zero if unknown.
+// It returns a nil package if the file's content was written during the
+// build.
+func (m *memFileInfo) APKSource() (pkg *apk.Package, name string, position int) {
+	if m.te == nil || m.te.pkg == nil || m.written || len(m.data) != 0 {
+		return nil, "", 0
+	}
+	return m.te.pkg, m.te.header.Name, m.te.position
 }

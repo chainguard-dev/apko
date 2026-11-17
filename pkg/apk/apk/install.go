@@ -489,6 +489,21 @@ func (a *APK) doLazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, ent
 			return nil, err
 		}
 	}
+	// A filesystem that accepts positions records each file's one-based
+	// position in entries.
+	writeHeader := wh.WriteHeader
+	if indexed, ok := wh.(interface {
+		WriteHeaderAt(tar.Header, fs.FS, *Package, int) (bool, error)
+	}); ok {
+		positions := make(map[string]int, len(entries))
+		for i, h := range entries {
+			// A package FS opens the last entry with a repeated name.
+			positions[h.Name] = i + 1
+		}
+		writeHeader = func(h tar.Header, src fs.FS, pkg *Package) (bool, error) {
+			return indexed.WriteHeaderAt(h, src, pkg, positions[h.Name])
+		}
+	}
 
 	files := make([]tar.Header, 0, len(entries))
 
@@ -514,7 +529,7 @@ func (a *APK) doLazilyInstallAPKFiles(ctx context.Context, wh WriteHeaderer, ent
 			return nil, err
 		}
 
-		installed, err := wh.WriteHeader(hdr, src, pkg)
+		installed, err := writeHeader(hdr, src, pkg)
 		if err != nil {
 			return nil, err
 		}

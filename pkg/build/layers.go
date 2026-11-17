@@ -44,7 +44,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
 		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
 	}
-	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.CompressedLayerFile)
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.CompressedLayerFile, bc.o.APKLayerOrder)
 }
 
 // layerGroups builds the image filesystem in bc.fs and groups packages
@@ -269,7 +269,7 @@ func merge(groups ...*group) *group {
 	return merged
 }
 
-func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, compressed bool) ([]v1.Layer, error) {
+func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, compressed, apkOrder bool) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
 	// On failure, shut down every writer while its file is still open (closing a
@@ -325,7 +325,7 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 		writers = append(writers, w)
 		sinks = append(sinks, tarSink{tw: w.w, fsys: fsys, buf: buf})
 	}
-	if err := partitionLayers(ctx, fsys, groups, pkgToDiff, sinks); err != nil {
+	if err := partitionTarLayers(ctx, fsys, groups, pkgToDiff, sinks, apkOrder); err != nil {
 		return nil, err
 	}
 

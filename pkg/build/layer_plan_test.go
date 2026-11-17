@@ -23,14 +23,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"maps"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apktypes "chainguard.dev/apko/pkg/apk/types"
@@ -163,10 +167,10 @@ func planLayers(t *testing.T, bc *build.Context) ([]*build.LayerPlan, *build.Lay
 	return plans, content
 }
 
-func render(t *testing.T, p *build.LayerPlan, content *build.LayerContent) ([]byte, *build.LayerDigests) {
+func render(t *testing.T, p *build.LayerPlan, content *build.LayerContent, opts ...build.RenderOption) ([]byte, *build.LayerDigests) {
 	t.Helper()
 	var buf bytes.Buffer
-	d, err := p.Render(t.Context(), content, &buf)
+	d, err := p.Render(t.Context(), content, &buf, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +218,159 @@ func TestRenderMatchesBuildLayers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// archiveReaders returns package readers that serve pkgs' members. They fail
+// if a package is opened twice or its members are not read in increasing
+// archive order. A repeated name refers to its last occurrence. Use one
+// option per render.
+func archiveReaders(pkgs []apk.PackageContents, newHash func(string) (hash.Hash, bool)) build.RenderOption {
+	archives := map[string]fakePackage{}
+	for _, pc := range pkgs {
+		p := pc.(fakePackage)
+		archives[p.info.Name] = p
+	}
+	opened := map[string]bool{}
+	open := 0
+	return build.WithPackageReaders(func(pkg *apk.Package) (build.PackageReader, error) {
+		if open != 0 {
+			return nil, fmt.Errorf("opening package %s with another reader open", pkg.Name)
+		}
+		p, ok := archives[pkg.Name]
+		if !ok {
+			return nil, fmt.Errorf("no package %s", pkg.Name)
+		}
+		if opened[pkg.Name] {
+			return nil, fmt.Errorf("package %s opened twice", pkg.Name)
+		}
+		opened[pkg.Name] = true
+		open++
+		return &archiveReader{pkg: p, close: func() { open-- }}, nil
+	}, newHash)
+}
+
+type archiveReader struct {
+	pkg   fakePackage
+	last  int
+	close func()
+}
+
+func (r *archiveReader) Open(member string) (io.ReadCloser, error) {
+	pos := 0
+	for i, h := range r.pkg.entries {
+		if h.Name == member {
+			pos = i + 1
+		}
+	}
+	if pos == 0 {
+		return nil, fmt.Errorf("package %s has no member %s", r.pkg.info.Name, member)
+	}
+	if pos <= r.last {
+		return nil, fmt.Errorf("package %s: read %s at position %d after position %d", r.pkg.info.Name, member, pos, r.last)
+	}
+	r.last = pos
+	return io.NopCloser(bytes.NewReader(r.pkg.files[member].Data)), nil
+}
+
+func (r *archiveReader) Close() error {
+	r.close()
+	return nil
+}
+
+// withCopy adds to the named package a file with the same content as from,
+// which may be in another package.
+func withCopy(pkgs []apk.PackageContents, pkgName, name, from string) []apk.PackageContents {
+	var data []byte
+	var src tar.Header
+	for _, pc := range pkgs {
+		p := pc.(fakePackage)
+		for _, h := range p.entries {
+			if h.Name == from {
+				data, src = p.files[from].Data, h
+			}
+		}
+	}
+	for i, pc := range pkgs {
+		p := pc.(fakePackage)
+		if p.info.Name != pkgName {
+			continue
+		}
+		hdr := src
+		hdr.Name = name
+		p.entries = append(slices.Clone(p.entries), hdr)
+		p.files = maps.Clone(p.files)
+		p.files[name] = &fstest.MapFile{Data: data, Mode: 0o644}
+		pkgs[i] = p
+	}
+	return pkgs
+}
+
+func TestAPKLayerOrder(t *testing.T) {
+	ctx := t.Context()
+	// b-dev's copy of b's data puts identical bytes in two packages of one layer.
+	pkgs := withCopy(fakePackages(reportSHA256), "b-dev", "usr/include/c-data", "usr/share/b/data")
+	ordered := []build.Option{build.WithPreResolvedPackages(pkgs), build.WithAPKLayerOrder(true)}
+	normal, err := newContext(t, reportSHA256, build.WithPreResolvedPackages(pkgs)).BuildLayers(ctx)
+	require.NoError(t, err)
+	reordered, err := newContext(t, reportSHA256, ordered...).BuildLayers(ctx)
+	require.NoError(t, err)
+	plans, content := planLayers(t, newContext(t, reportSHA256, ordered...))
+	require.Len(t, reordered, len(normal))
+	require.Len(t, plans, len(normal))
+
+	read := func(layer v1.Layer) []writtenEntry {
+		rc, err := layer.Compressed()
+		require.NoError(t, err)
+		defer rc.Close()
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		return readLayer(t, data)
+	}
+	for i, layer := range reordered {
+		before, after := read(normal[i]), read(layer)
+		require.ElementsMatch(t, before, after, "entries of layer %d", i)
+		_, digests := render(t, plans[i], content)
+		builtDigest, err := layer.Digest()
+		require.NoError(t, err)
+		require.Equal(t, builtDigest, digests.Digest)
+		// Reading packages forward produces the same layer, including the
+		// rewritten etc/passwd, which still comes from the LayerContent.
+		_, streamed := render(t, plans[i], content, archiveReaders(pkgs, nil))
+		require.Equal(t, builtDigest, streamed.Digest, "layer %d read from packages", i)
+
+		var paths []string
+		for _, e := range plans[i].Entries() {
+			paths = append(paths, e.Header.Name)
+		}
+		if slices.Contains(paths, "usr/bin/a-alias") {
+			require.Less(t, slices.Index(paths, "usr/bin/a"), slices.Index(paths, "etc/a.conf"))
+			require.Less(t, slices.Index(paths, "usr/bin/a"), slices.Index(paths, "usr/bin/a-alias"))
+		}
+	}
+}
+
+// A name repeated in an APK is ordered by its last occurrence, which is the
+// one a package filesystem opens.
+func TestAPKLayerOrderRepeatedName(t *testing.T) {
+	pkgs := fakePackages(reportSHA256)
+	p := pkgs[0].(fakePackage)
+	for _, h := range p.entries {
+		if h.Name == "usr/bin/a" {
+			p.entries = append(p.entries, h)
+			break
+		}
+	}
+	pkgs[0] = p
+	opts := []build.Option{build.WithPreResolvedPackages(pkgs), build.WithAPKLayerOrder(true)}
+	layers, err := newContext(t, reportSHA256, opts...).BuildLayers(t.Context())
+	require.NoError(t, err)
+	plans, content := planLayers(t, newContext(t, reportSHA256, opts...))
+	for i, layer := range layers {
+		want, err := layer.Digest()
+		require.NoError(t, err)
+		_, got := render(t, plans[i], content, archiveReaders(pkgs, nil))
+		require.Equal(t, want, got.Digest, "layer %d", i)
 	}
 }
 
@@ -408,5 +565,133 @@ func TestPlanLayersNeedsLayeredTar(t *testing.T) {
 
 	if _, _, err := newContext(t, reportSHA256, build.WithFormat("erofs")).PlanLayers(ctx); err == nil {
 		t.Error("erofs build: got = nil, wanted an error")
+	}
+}
+
+// TestRenderChecksPackageContent checks that Render verifies content from
+// package readers, hashing digests other than sha256 with the caller's hash.
+func TestRenderChecksPackageContent(t *testing.T) {
+	reportSHA1 := func(_ string, data []byte) string { return fmt.Sprintf("sha1:%x", sha1.Sum(data)) } //nolint:gosec
+	newSHA1 := func(algorithm string) (hash.Hash, bool) { return sha1.New(), algorithm == "sha1" }     //nolint:gosec
+	for _, tc := range []struct {
+		name    string
+		report  func(string, []byte) string
+		newHash func(string) (hash.Hash, bool)
+		corrupt bool
+		wantErr string
+	}{
+		{name: "sha256", report: reportSHA256},
+		{name: "caller hash", report: reportSHA1, newHash: newSHA1},
+		{name: "no hash", report: reportSHA1, wantErr: "cannot check sha1 digests"},
+		{name: "mismatch", report: reportSHA256, corrupt: true, wantErr: "content has sha256 digest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ordered := build.WithAPKLayerOrder(true)
+			layers, err := newContext(t, tc.report, ordered).BuildLayers(t.Context())
+			require.NoError(t, err)
+			plans, content := planLayers(t, newContext(t, tc.report, ordered))
+			served := fakePackages(tc.report)
+			if tc.corrupt {
+				for i, pc := range served {
+					p := pc.(fakePackage)
+					p.files = maps.Clone(p.files)
+					for name, f := range p.files {
+						p.files[name] = &fstest.MapFile{Data: bytes.ToUpper(f.Data), Mode: f.Mode}
+					}
+					served[i] = p
+				}
+			}
+			var errs []error
+			for i, p := range plans {
+				d, err := p.Render(t.Context(), content, io.Discard, archiveReaders(served, tc.newHash))
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				want, err := layers[i].Digest()
+				require.NoError(t, err)
+				require.Equal(t, want, d.Digest, "layer %d", i)
+			}
+			if tc.wantErr == "" {
+				require.NoError(t, errors.Join(errs...))
+			} else {
+				require.ErrorContains(t, errors.Join(errs...), tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestAPKLayerOrderSharedSource checks files reached through two paths that
+// are both written as regular files, a paths hardlink mutation and an APK
+// hard link whose name goes through a symlinked directory, and a hard link
+// whose target goes through a symlinked directory.
+func TestAPKLayerOrderSharedSource(t *testing.T) {
+	ic := types.ImageConfiguration{
+		Contents: types.ImageContents{Repositories: []string{unusedRepository}},
+		Paths:    []types.PathMutation{{Path: "usr/bin/a2", Type: "hardlink", Source: "usr/bin/a"}},
+		Layering: &types.Layering{Strategy: "origin", Budget: 2},
+	}
+	symlinked := fakePackages(reportSHA256)
+	p := symlinked[0].(fakePackage)
+	var bin tar.Header
+	for _, h := range p.entries {
+		if h.Name == "usr/bin/a" {
+			bin = h
+		}
+	}
+	reg := bin
+	reg.Name = "bin/x"
+	p.files["bin/x"] = p.files["usr/bin/a"]
+	p.entries = append(p.entries,
+		tar.Header{Typeflag: tar.TypeSymlink, Name: "bin", Linkname: "usr/bin", PAXRecords: bin.PAXRecords},
+		reg,
+		tar.Header{Typeflag: tar.TypeLink, Name: "bin/y", Linkname: "bin/x"},
+	)
+	symlinked[0] = p
+
+	// A hard link reached through a symlinked directory, in a package whose
+	// archive order differs from path order around it.
+	barrier := fakePackages(reportSHA256)
+	p = barrier[0].(fakePackage)
+	data := bin
+	data.Name = "usr/share/a/zdata"
+	p.files["usr/share/a/zdata"] = &fstest.MapFile{Data: []byte("z data\n"), Mode: 0o644}
+	sum := sha1.Sum(p.files["usr/share/a/zdata"].Data) //nolint:gosec
+	data.Size = int64(len(p.files["usr/share/a/zdata"].Data))
+	data.PAXRecords = map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])}
+	var entries []tar.Header
+	for _, h := range p.entries {
+		if h.Name == "etc/a.conf" {
+			entries = append(entries, data)
+		}
+		entries = append(entries, h)
+	}
+	entries = append(entries,
+		tar.Header{Typeflag: tar.TypeSymlink, Name: "bin", Linkname: "usr/bin", PAXRecords: bin.PAXRecords},
+		tar.Header{Typeflag: tar.TypeLink, Name: "usr/bin/zz", Linkname: "bin/a"},
+	)
+	p.entries = entries
+	barrier[0] = p
+
+	for name, tc := range map[string]struct {
+		pkgs []apk.PackageContents
+		opts []build.Option
+	}{
+		"hard link through symlink target": {pkgs: barrier, opts: []build.Option{build.WithPreResolvedPackages(barrier)}},
+		"paths hardlink":                   {pkgs: fakePackages(reportSHA256), opts: []build.Option{build.WithImageConfiguration(ic)}},
+		"hard link through symlink":        {pkgs: symlinked, opts: []build.Option{build.WithPreResolvedPackages(symlinked)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			opts := append(slices.Clone(tc.opts), build.WithAPKLayerOrder(true))
+			layers, err := newContext(t, reportSHA256, opts...).BuildLayers(t.Context())
+			require.NoError(t, err)
+			plans, content := planLayers(t, newContext(t, reportSHA256, opts...))
+			for i, layer := range layers {
+				want, err := layer.Digest()
+				require.NoError(t, err)
+				_, got := render(t, plans[i], content, archiveReaders(tc.pkgs, nil))
+				require.Equal(t, want, got.Digest, "layer %d", i)
+			}
+		})
 	}
 }

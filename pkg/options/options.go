@@ -61,6 +61,7 @@ type Options struct {
 	ImageConfigChecksum     string                `json:"configChecksum,omitempty"`
 	TarballPath             string                `json:"tarballPath,omitempty"`
 	CompressedLayerFile     bool                  `json:"compressedLayerFile,omitempty"`
+	APKLayerOrder           bool                  `json:"apkLayerOrder,omitempty"`
 	Tags                    []string              `json:"tags,omitempty"`
 	SourceDateEpoch         time.Time             `json:"sourceDateEpoch,omitempty"`
 	SBOMPath                string                `json:"sbomPath,omitempty"`
