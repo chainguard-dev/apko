@@ -38,7 +38,7 @@ require (
 	golang.org/x/time v0.16.0
 	google.golang.org/api v0.311.0
 	google.golang.org/protobuf v1.36.12
-	gopkg.in/ini.v1 v1.67.3
+	gopkg.in/ini.v1 v1.68.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.37.2
 	sigs.k8s.io/release-utils v0.12.5
