@@ -29,15 +29,11 @@ import (
 // With apkOrder, it writes each layer's entries in this order:
 //
 //  1. directories, symlinks, and entries whose content does not come from a
-//     package, in walk order;
+//     known position in a package, in walk order;
 //  2. file contents from packages, by package name and then position in
-//     the package's apk.PackageContents.Entries;
-//  3. further paths to a package member already in the second group, and
-//     then hard links, each in walk order.
-//
-// Each package's contents are then contiguous and in Entries order. Every
-// parent directory precedes its children because directories are in the first
-// group, and a hard link's target is in an earlier group or a lower layer.
+//     the package's apk.PackageContents.Entries, with further paths to one
+//     package file right after the first;
+//  3. hard links, in walk order.
 func partitionTarLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, sinks []layerSink, apkOrder bool) error {
 	if !apkOrder {
 		return partitionLayers(ctx, fsys, groups, pkgToDiff, sinks)
@@ -46,7 +42,6 @@ func partitionTarLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group,
 	layers := make([]orderedLayer, len(sinks))
 	buffers := make([]layerSink, len(sinks))
 	for i := range layers {
-		layers[i].members = map[packageMember]bool{}
 		buffers[i] = &layers[i]
 	}
 	if err := partitionLayers(ctx, fsys, groups, pkgToDiff, buffers); err != nil {
@@ -65,9 +60,7 @@ func partitionTarLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group,
 // partitionTarLayers writes. File contents are read from the build filesystem
 // as each entry is written.
 type orderedLayer struct {
-	first, contents, copies, links []orderedLayerEntry
-	// members records the package members in contents.
-	members map[packageMember]bool
+	first, contents, links []orderedLayerEntry
 }
 
 type orderedLayerEntry struct {
@@ -86,15 +79,11 @@ func (l *orderedLayer) add(f *file) error {
 		header := *f.header
 		entry.header = &header
 	}
-	pkg, name, pos := f.apkSource()
-	src := packageMember{pkg, name}
+	pkg, pos := f.packagePosition()
 	switch {
 	case f.header.Typeflag == tar.TypeLink:
 		l.links = append(l.links, entry)
-	case pkg != nil && l.members[src]:
-		l.copies = append(l.copies, entry)
 	case pkg != nil:
-		l.members[src] = true
 		entry.pkgName, entry.position = pkg.Name, pos
 		l.contents = append(l.contents, entry)
 	default:
@@ -112,7 +101,7 @@ func (l *orderedLayer) writeTo(ctx context.Context, sink layerSink) error {
 	slices.SortStableFunc(l.contents, func(a, b orderedLayerEntry) int {
 		return cmp.Or(cmp.Compare(a.pkgName, b.pkgName), cmp.Compare(a.position, b.position))
 	})
-	for _, group := range [][]orderedLayerEntry{l.first, l.contents, l.copies, l.links} {
+	for _, group := range [][]orderedLayerEntry{l.first, l.contents, l.links} {
 		for _, entry := range group {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -129,23 +118,21 @@ func (l *orderedLayer) writeTo(ctx context.Context, sink layerSink) error {
 	return nil
 }
 
-// apkSource returns the package and entry name backing f's content, and the
-// entry's one-based position in the package's apk.PackageContents.Entries. It
-// returns a nil package for content generated or changed during the build,
-// and for content whose position is unknown.
-func (f *file) apkSource() (pkg *apk.Package, name string, position int) {
+// packagePosition returns the package backing f's content and the content's
+// one-based position in the package's apk.PackageContents.Entries. It returns
+// a nil package for content generated or changed during the build, and for
+// content whose position is unknown.
+func (f *file) packagePosition() (*apk.Package, int) {
 	if !hasContent(f.header) {
-		return nil, "", 0
+		return nil, 0
 	}
-	src, ok := f.info.(interface {
-		APKSource() (*apk.Package, string, int)
-	})
+	src, ok := f.info.(apk.PackageEntryInfo)
 	if !ok {
-		return nil, "", 0
+		return nil, 0
 	}
-	pkg, name, position = src.APKSource()
+	pkg, position := src.Package(), src.PackagePosition()
 	if pkg == nil || position <= 0 {
-		return nil, "", 0
+		return nil, 0
 	}
-	return pkg, name, position
+	return pkg, position
 }

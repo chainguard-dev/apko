@@ -49,7 +49,11 @@ const (
 	xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 )
 
-var _ apk.WriteHeaderer = (*memFS)(nil)
+var (
+	_ apk.WriteHeaderer      = (*memFS)(nil)
+	_ apk.PackageEntryWriter = (*memFS)(nil)
+	_ apk.PackageEntryInfo   = (*memFileInfo)(nil)
+)
 
 type tarEntry struct {
 	tfs      fs.FS
@@ -110,12 +114,12 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 }
 
 func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
-	return m.WriteHeaderAt(hdr, tfs, pkg, 0)
+	return m.WriteHeaderFromEntry(hdr, tfs, pkg, 0)
 }
 
-// WriteHeaderAt records the one-based position in PackageContents.Entries.
+// WriteHeaderFromEntry records the header's one-based position in PackageContents.Entries.
 // Zero means the position is unknown.
-func (m *memFS) WriteHeaderAt(hdr tar.Header, tfs fs.FS, pkg *apk.Package, position int) (bool, error) {
+func (m *memFS) WriteHeaderFromEntry(hdr tar.Header, tfs fs.FS, pkg *apk.Package, position int) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
@@ -1128,13 +1132,11 @@ func (m *memFileInfo) Package() *apk.Package {
 	return m.te.pkg
 }
 
-// APKSource returns the package and entry name backing this file, and the
-// entry's one-based position in PackageContents.Entries, or zero if unknown.
-// It returns a nil package if the file's content was written during the
-// build.
-func (m *memFileInfo) APKSource() (pkg *apk.Package, name string, position int) {
+// PackagePosition returns the one-based position of the entry backing the
+// file's content, or zero for an unknown position or content held in memory.
+func (m *memFileInfo) PackagePosition() int {
 	if m.te == nil || m.te.pkg == nil || m.written || len(m.data) != 0 {
-		return nil, "", 0
+		return 0
 	}
-	return m.te.pkg, m.te.header.Name, m.te.position
+	return m.te.position
 }

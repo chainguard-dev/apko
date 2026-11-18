@@ -23,10 +23,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"io/fs"
 	"maps"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
 	"slices"
 	"testing"
 	"testing/fstest"
@@ -167,10 +170,10 @@ func planLayers(t *testing.T, bc *build.Context) ([]*build.LayerPlan, *build.Lay
 	return plans, content
 }
 
-func render(t *testing.T, p *build.LayerPlan, content *build.LayerContent, opts ...build.RenderOption) ([]byte, *build.LayerDigests) {
+func render(t *testing.T, p *build.LayerPlan, content *build.LayerContent) ([]byte, *build.LayerDigests) {
 	t.Helper()
 	var buf bytes.Buffer
-	d, err := p.Render(t.Context(), content, &buf, opts...)
+	d, err := p.Render(t.Context(), content, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,63 +224,6 @@ func TestRenderMatchesBuildLayers(t *testing.T) {
 	}
 }
 
-// archiveReaders returns package readers that serve pkgs' members. They fail
-// if a package is opened twice or its members are not read in increasing
-// archive order. A repeated name refers to its last occurrence. Use one
-// option per render.
-func archiveReaders(pkgs []apk.PackageContents, newHash func(string) (hash.Hash, bool)) build.RenderOption {
-	archives := map[string]fakePackage{}
-	for _, pc := range pkgs {
-		p := pc.(fakePackage)
-		archives[p.info.Name] = p
-	}
-	opened := map[string]bool{}
-	open := 0
-	return build.WithPackageReaders(func(pkg *apk.Package) (build.PackageReader, error) {
-		if open != 0 {
-			return nil, fmt.Errorf("opening package %s with another reader open", pkg.Name)
-		}
-		p, ok := archives[pkg.Name]
-		if !ok {
-			return nil, fmt.Errorf("no package %s", pkg.Name)
-		}
-		if opened[pkg.Name] {
-			return nil, fmt.Errorf("package %s opened twice", pkg.Name)
-		}
-		opened[pkg.Name] = true
-		open++
-		return &archiveReader{pkg: p, close: func() { open-- }}, nil
-	}, newHash)
-}
-
-type archiveReader struct {
-	pkg   fakePackage
-	last  int
-	close func()
-}
-
-func (r *archiveReader) Open(member string) (io.ReadCloser, error) {
-	pos := 0
-	for i, h := range r.pkg.entries {
-		if h.Name == member {
-			pos = i + 1
-		}
-	}
-	if pos == 0 {
-		return nil, fmt.Errorf("package %s has no member %s", r.pkg.info.Name, member)
-	}
-	if pos <= r.last {
-		return nil, fmt.Errorf("package %s: read %s at position %d after position %d", r.pkg.info.Name, member, pos, r.last)
-	}
-	r.last = pos
-	return io.NopCloser(bytes.NewReader(r.pkg.files[member].Data)), nil
-}
-
-func (r *archiveReader) Close() error {
-	r.close()
-	return nil
-}
-
 // withCopy adds to the named package a file with the same content as from,
 // which may be in another package.
 func withCopy(pkgs []apk.PackageContents, pkgName, name, from string) []apk.PackageContents {
@@ -316,6 +262,10 @@ func TestAPKLayerOrder(t *testing.T) {
 	reordered, err := newContext(t, reportSHA256, ordered...).BuildLayers(ctx)
 	require.NoError(t, err)
 	plans, content := planLayers(t, newContext(t, reportSHA256, ordered...))
+	checkLayerOrder(t, plans)
+	// The build rewrites etc/passwd and keeps usr/bin/a-alias as a hard link.
+	checkLayerPaths(t, plans, "a", "etc/passwd", "usr/bin/a", "etc/a.conf", "usr/bin/a-alias")
+	checkLayerPaths(t, plans, "b", "usr/bin/b", "usr/share/b/data", "usr/include/b.h", "usr/include/c-data")
 	require.Len(t, reordered, len(normal))
 	require.Len(t, plans, len(normal))
 
@@ -333,25 +283,72 @@ func TestAPKLayerOrder(t *testing.T) {
 		_, digests := render(t, plans[i], content)
 		builtDigest, err := layer.Digest()
 		require.NoError(t, err)
-		require.Equal(t, builtDigest, digests.Digest)
-		// Reading packages forward produces the same layer, including the
-		// rewritten etc/passwd, which still comes from the LayerContent.
-		_, streamed := render(t, plans[i], content, archiveReaders(pkgs, nil))
-		require.Equal(t, builtDigest, streamed.Digest, "layer %d read from packages", i)
+		require.Equal(t, builtDigest, digests.Digest, "layer %d", i)
+	}
+}
 
-		var paths []string
-		for _, e := range plans[i].Entries() {
-			paths = append(paths, e.Header.Name)
+// checkLayerPaths checks that the layer with the named package's files lists
+// the given paths in that order, each once, and returns their positions among
+// the layer's entries.
+func checkLayerPaths(t *testing.T, plans []*build.LayerPlan, pkg string, want ...string) map[string]int {
+	t.Helper()
+	for _, p := range plans {
+		if !slices.ContainsFunc(p.Packages(), func(q *apk.Package) bool { return q.Name == pkg }) {
+			continue
 		}
-		if slices.Contains(paths, "usr/bin/a-alias") {
-			require.Less(t, slices.Index(paths, "usr/bin/a"), slices.Index(paths, "etc/a.conf"))
-			require.Less(t, slices.Index(paths, "usr/bin/a"), slices.Index(paths, "usr/bin/a-alias"))
+		var got []string
+		at := map[string]int{}
+		for i, e := range p.Entries() {
+			if slices.Contains(want, e.Header.Name) {
+				got = append(got, e.Header.Name)
+				at[e.Header.Name] = i
+			}
+		}
+		require.Equal(t, want, got, "paths in the layer with package %s", pkg)
+		return at
+	}
+	require.FailNow(t, "no layer has package "+pkg)
+	return nil
+}
+
+// checkLayerOrder checks that no entry of the plans' layers has a symlink
+// among its parent directories, so extracting the layers never writes through
+// a symlink, and that each entry comes after its parent directory and, for a
+// hard link, after its target, when those are in the same layer.
+func checkLayerOrder(t *testing.T, plans []*build.LayerPlan) {
+	t.Helper()
+	symlinks := map[string]bool{}
+	for _, p := range plans {
+		for _, e := range p.Entries() {
+			if e.Header.Typeflag == tar.TypeSymlink {
+				symlinks[path.Clean(e.Header.Name)] = true
+			}
+		}
+	}
+	for _, p := range plans {
+		index := map[string]int{}
+		for i, e := range p.Entries() {
+			index[path.Clean(e.Header.Name)] = i
+		}
+		for i, e := range p.Entries() {
+			name := path.Clean(e.Header.Name)
+			for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+				require.False(t, symlinks[dir], "%s is under the symlink %s", name, dir)
+			}
+			if j, ok := index[path.Dir(name)]; ok {
+				require.Less(t, j, i, "%s precedes its parent directory", name)
+			}
+			if e.Header.Typeflag == tar.TypeLink {
+				if j, ok := index[path.Clean(e.Header.Linkname)]; ok {
+					require.Less(t, j, i, "hard link %s precedes its target", name)
+				}
+			}
 		}
 	}
 }
 
-// A name repeated in an APK is ordered by its last occurrence, which is the
-// one a package filesystem opens.
+// A name repeated in an APK with the same content is ordered by its first
+// occurrence, which is the one the build filesystem keeps.
 func TestAPKLayerOrderRepeatedName(t *testing.T) {
 	pkgs := fakePackages(reportSHA256)
 	p := pkgs[0].(fakePackage)
@@ -366,10 +363,12 @@ func TestAPKLayerOrderRepeatedName(t *testing.T) {
 	layers, err := newContext(t, reportSHA256, opts...).BuildLayers(t.Context())
 	require.NoError(t, err)
 	plans, content := planLayers(t, newContext(t, reportSHA256, opts...))
+	checkLayerOrder(t, plans)
+	checkLayerPaths(t, plans, "a", "etc/passwd", "usr/bin/a", "etc/a.conf", "usr/bin/a-alias")
 	for i, layer := range layers {
 		want, err := layer.Digest()
 		require.NoError(t, err)
-		_, got := render(t, plans[i], content, archiveReaders(pkgs, nil))
+		_, got := render(t, plans[i], content)
 		require.Equal(t, want, got.Digest, "layer %d", i)
 	}
 }
@@ -568,59 +567,6 @@ func TestPlanLayersNeedsLayeredTar(t *testing.T) {
 	}
 }
 
-// TestRenderChecksPackageContent checks that Render verifies content from
-// package readers, hashing digests other than sha256 with the caller's hash.
-func TestRenderChecksPackageContent(t *testing.T) {
-	reportSHA1 := func(_ string, data []byte) string { return fmt.Sprintf("sha1:%x", sha1.Sum(data)) } //nolint:gosec
-	newSHA1 := func(algorithm string) (hash.Hash, bool) { return sha1.New(), algorithm == "sha1" }     //nolint:gosec
-	for _, tc := range []struct {
-		name    string
-		report  func(string, []byte) string
-		newHash func(string) (hash.Hash, bool)
-		corrupt bool
-		wantErr string
-	}{
-		{name: "sha256", report: reportSHA256},
-		{name: "caller hash", report: reportSHA1, newHash: newSHA1},
-		{name: "no hash", report: reportSHA1, wantErr: "cannot check sha1 digests"},
-		{name: "mismatch", report: reportSHA256, corrupt: true, wantErr: "content has sha256 digest"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ordered := build.WithAPKLayerOrder(true)
-			layers, err := newContext(t, tc.report, ordered).BuildLayers(t.Context())
-			require.NoError(t, err)
-			plans, content := planLayers(t, newContext(t, tc.report, ordered))
-			served := fakePackages(tc.report)
-			if tc.corrupt {
-				for i, pc := range served {
-					p := pc.(fakePackage)
-					p.files = maps.Clone(p.files)
-					for name, f := range p.files {
-						p.files[name] = &fstest.MapFile{Data: bytes.ToUpper(f.Data), Mode: f.Mode}
-					}
-					served[i] = p
-				}
-			}
-			var errs []error
-			for i, p := range plans {
-				d, err := p.Render(t.Context(), content, io.Discard, archiveReaders(served, tc.newHash))
-				if err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				want, err := layers[i].Digest()
-				require.NoError(t, err)
-				require.Equal(t, want, d.Digest, "layer %d", i)
-			}
-			if tc.wantErr == "" {
-				require.NoError(t, errors.Join(errs...))
-			} else {
-				require.ErrorContains(t, errors.Join(errs...), tc.wantErr)
-			}
-		})
-	}
-}
-
 // TestAPKLayerOrderSharedSource checks files reached through two paths that
 // are both written as regular files, a paths hardlink mutation and an APK
 // hard link whose name goes through a symlinked directory, and a hard link
@@ -674,24 +620,108 @@ func TestAPKLayerOrderSharedSource(t *testing.T) {
 	barrier[0] = p
 
 	for name, tc := range map[string]struct {
-		pkgs []apk.PackageContents
-		opts []build.Option
+		pkgs     []apk.PackageContents
+		opts     []build.Option
+		want     []string
+		sameFile []string
 	}{
-		"hard link through symlink target": {pkgs: barrier, opts: []build.Option{build.WithPreResolvedPackages(barrier)}},
-		"paths hardlink":                   {pkgs: fakePackages(reportSHA256), opts: []build.Option{build.WithImageConfiguration(ic)}},
-		"hard link through symlink":        {pkgs: symlinked, opts: []build.Option{build.WithPreResolvedPackages(symlinked)}},
+		"hard link through symlink target": {
+			pkgs: barrier,
+			want: []string{"etc/passwd", "usr/bin/a", "usr/share/a/zdata", "etc/a.conf", "usr/bin/a-alias", "usr/bin/zz"},
+		},
+		"paths hardlink": {
+			pkgs: fakePackages(reportSHA256), opts: []build.Option{build.WithImageConfiguration(ic)},
+			want:     []string{"usr/bin/a", "usr/bin/a2", "etc/a.conf", "usr/bin/a-alias"},
+			sameFile: []string{"usr/bin/a", "usr/bin/a2"},
+		},
+		"hard link through symlink": {
+			pkgs:     symlinked,
+			want:     []string{"etc/passwd", "usr/bin/a", "etc/a.conf", "usr/bin/x", "usr/bin/y", "usr/bin/a-alias"},
+			sameFile: []string{"usr/bin/x", "usr/bin/y"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			opts := append(slices.Clone(tc.opts), build.WithAPKLayerOrder(true))
+			opts := append(slices.Clone(tc.opts), build.WithPreResolvedPackages(tc.pkgs), build.WithAPKLayerOrder(true))
 			layers, err := newContext(t, reportSHA256, opts...).BuildLayers(t.Context())
 			require.NoError(t, err)
 			plans, content := planLayers(t, newContext(t, reportSHA256, opts...))
+			checkLayerOrder(t, plans)
+			at := checkLayerPaths(t, plans, "a", tc.want...)
+			for i := 1; i < len(tc.sameFile); i++ {
+				require.Equal(t, at[tc.sameFile[i-1]]+1, at[tc.sameFile[i]], "%s is not right after %s", tc.sameFile[i], tc.sameFile[i-1])
+			}
 			for i, layer := range layers {
 				want, err := layer.Digest()
 				require.NoError(t, err)
-				_, got := render(t, plans[i], content, archiveReaders(tc.pkgs, nil))
+				_, got := render(t, plans[i], content)
 				require.Equal(t, want, got.Digest, "layer %d", i)
 			}
 		})
 	}
+}
+
+func TestAPKLayerOrderPreservesSymlinkAcrossLayers(t *testing.T) {
+	tarBin, err := exec.LookPath("tar")
+	if err != nil {
+		t.Skip("tar is required to unpack the layers")
+	}
+	pkgs := fakePackages(reportSHA256)[:2]
+	base := pkgs[0].(fakePackage)
+	sum := sha1.Sum([]byte("usr/bin")) //nolint:gosec // APK per-file checksums are SHA-1
+	base.entries = append(base.entries, tar.Header{
+		Typeflag: tar.TypeSymlink, Name: "bin", Linkname: "usr/bin",
+		PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])},
+	})
+	pkgs[0] = base
+
+	app := pkgs[1].(fakePackage)
+	app.entries = append(app.entries, tar.Header{Typeflag: tar.TypeDir, Name: "bin/", Mode: 0o755})
+	pkgs[1] = app
+	pkgs = withCopy(pkgs, app.info.Name, "bin/tool", "usr/bin/b")
+
+	plans, content := planLayers(t, newContext(t, reportSHA256, build.WithPreResolvedPackages(pkgs), build.WithAPKLayerOrder(true)))
+	root := t.TempDir()
+	tool := filepath.Join(root, "usr/bin/tool")
+	for i, p := range plans {
+		data, _ := render(t, p, content)
+		// Creating device nodes requires privileges.
+		cmd := exec.CommandContext(t.Context(), tarBin, "--exclude=dev", "--no-same-owner", "-xzf", "-")
+		cmd.Dir = root
+		cmd.Stdin = bytes.NewReader(data)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "unpacking layer %d: %s", i, out)
+
+		target, err := os.Readlink(filepath.Join(root, "bin"))
+		require.NoError(t, err, "bin after layer %d", i)
+		require.Equal(t, "usr/bin", target, "bin after layer %d", i)
+		if i == 0 {
+			_, err := os.Lstat(tool)
+			require.ErrorIs(t, err, fs.ErrNotExist, "tool must come from a later layer")
+		}
+	}
+	got, err := os.ReadFile(tool)
+	require.NoError(t, err)
+	require.Equal(t, app.files["usr/bin/b"].Data, got)
+}
+
+// TestAPKLayerOrderFileConflict checks that two packages shipping different
+// content at one path still fail the build with the order option.
+func TestAPKLayerOrderFileConflict(t *testing.T) {
+	const content = "not b\n"
+	pkgs := fakePackages(reportSHA256)
+	a := pkgs[0].(fakePackage)
+	sum := sha1.Sum([]byte(content)) //nolint:gosec
+	a.entries = append(slices.Clone(a.entries), tar.Header{
+		Typeflag: tar.TypeReg, Name: "usr/bin/b", Mode: 0o755, Size: int64(len(content)),
+		PAXRecords: map[string]string{"APK-TOOLS.checksum.SHA1": hex.EncodeToString(sum[:])},
+	})
+	a.files = maps.Clone(a.files)
+	a.files["usr/bin/b"] = &fstest.MapFile{Data: []byte(content), Mode: 0o755}
+	pkgs[0] = a
+	opts := []build.Option{build.WithPreResolvedPackages(pkgs), build.WithAPKLayerOrder(true)}
+
+	_, err := newContext(t, reportSHA256, opts...).BuildLayers(t.Context())
+	require.ErrorAs(t, err, &apk.FileConflictError{})
+	_, _, err = newContext(t, reportSHA256, opts...).PlanLayers(t.Context())
+	require.ErrorAs(t, err, &apk.FileConflictError{})
 }
