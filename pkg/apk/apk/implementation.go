@@ -1355,6 +1355,20 @@ type WriteHeaderer interface {
 	WriteHeader(hdr tar.Header, tfs fs.FS, pkg *Package) (bool, error)
 }
 
+// PackageEntryWriter lets a [WriteHeaderer] record a header's one-based
+// position in [PackageContents.Entries]. Zero means the position is unknown.
+type PackageEntryWriter interface {
+	WriteHeaderFromEntry(hdr tar.Header, tfs fs.FS, pkg *Package, position int) (bool, error)
+}
+
+// PackageEntryInfo reports the package that owns a file and the entry backing
+// its content. PackagePosition returns a one-based index in [PackageContents.Entries],
+// or zero if the position is unknown or the content has been rewritten.
+type PackageEntryInfo interface {
+	Package() *Package
+	PackagePosition() int
+}
+
 // installPackage installs a single package and updates installed db.
 func (a *APK) installPackage(ctx context.Context, pkg *Package, contents PackageContents, sourceDateEpoch *time.Time) ([]tar.Header, error) {
 	log := clog.FromContext(ctx)

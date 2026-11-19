@@ -49,13 +49,18 @@ const (
 	xattrTarPAXRecordsPrefix = "SCHILY.xattr."
 )
 
-var _ apk.WriteHeaderer = (*memFS)(nil)
+var (
+	_ apk.WriteHeaderer      = (*memFS)(nil)
+	_ apk.PackageEntryWriter = (*memFS)(nil)
+	_ apk.PackageEntryInfo   = (*memFileInfo)(nil)
+)
 
 type tarEntry struct {
 	tfs      fs.FS
 	header   tar.Header
 	checksum []byte
 	pkg      *apk.Package
+	position int
 	// digest is the content digest tfs gave for the entry, if it is an
 	// apk.ContentDigester.
 	digest string
@@ -109,6 +114,12 @@ func checksumFromHeader(header *tar.Header) ([]byte, error) {
 }
 
 func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, error) {
+	return m.WriteHeaderFromEntry(hdr, tfs, pkg, 0)
+}
+
+// WriteHeaderFromEntry records the header's one-based position in PackageContents.Entries.
+// Zero means the position is unknown.
+func (m *memFS) WriteHeaderFromEntry(hdr tar.Header, tfs fs.FS, pkg *apk.Package, position int) (bool, error) {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
@@ -161,6 +172,7 @@ func (m *memFS) WriteHeader(hdr tar.Header, tfs fs.FS, pkg *apk.Package) (bool, 
 			header:   hdr,
 			checksum: checksum,
 			pkg:      pkg,
+			position: position,
 		}
 		if cd, ok := tfs.(apk.ContentDigester); ok && hdr.Typeflag == tar.TypeReg {
 			if d, ok := cd.ContentDigest(hdr.Name); ok {
@@ -1118,4 +1130,13 @@ func (m *memFileInfo) Package() *apk.Package {
 	}
 
 	return m.te.pkg
+}
+
+// PackagePosition returns the one-based position of the entry backing the
+// file's content, or zero for an unknown position or content held in memory.
+func (m *memFileInfo) PackagePosition() int {
+	if m.te == nil || m.te.pkg == nil || m.written || len(m.data) != 0 {
+		return 0
+	}
+	return m.te.position
 }
