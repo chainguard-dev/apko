@@ -154,6 +154,19 @@ func TestInitDBOfflineWithoutCacheIgnoresMissingAlpineKeys(t *testing.T) {
 	require.Empty(t, ent)
 }
 
+func TestInitRuntimeKeysWithoutCacheReturnsAlpineFetchError(t *testing.T) {
+	a, err := New(t.Context(),
+		WithFS(apkfs.NewMemFS()),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithTransport(&testLocalTransport{fail: true}),
+	)
+	require.NoError(t, err)
+	require.Nil(t, a.cache)
+
+	err = a.InitRuntimeKeys(t.Context(), "https://example.invalid/alpine/v3.22/main")
+	require.ErrorContains(t, err, "failed to fetch alpine runtime keys")
+}
+
 func TestInitDB_ChainguardDiscovery(t *testing.T) {
 	src := apkfs.NewMemFS()
 	apk, err := New(t.Context(), WithFS(src), WithIgnoreMknodErrors(ignoreMknodErrors))
@@ -549,9 +562,29 @@ func TestInitKeyring(t *testing.T) {
 		keyPath, "https://alpinelinux.org/keys/alpine-devel%40lists.alpinelinux.org-4a6a0840.rsa.pub",
 	}
 
-	require.NoError(t, a.InitKeyring(context.Background(), keyfiles, nil))
+	stopKeyringReader := make(chan struct{})
+	keyringReaderReady := make(chan struct{})
+	keyringReaderDone := make(chan struct{})
+	go func() {
+		close(keyringReaderReady)
+		defer close(keyringReaderDone)
+		for {
+			select {
+			case <-stopKeyringReader:
+				return
+			default:
+				_ = a.keyringSnapshot()
+				runtime.Gosched()
+			}
+		}
+	}()
+	<-keyringReaderReady
+	initErr := a.InitKeyring(context.Background(), keyfiles, nil)
+	close(stopKeyringReader)
+	<-keyringReaderDone
+	require.NoError(t, initErr)
 	// InitKeyring should have copied the local key and remote key to the build-time keyring
-	require.Len(t, a.keys, 2)
+	require.Len(t, a.keyringSnapshot(), 2)
 
 	// Add an invalid file
 	keyfiles = []string{
@@ -617,6 +650,92 @@ func TestInitKeyring(t *testing.T) {
 			require.True(t, called, "did not make request")
 		})
 	})
+}
+
+func TestKeyringSnapshotDoesNotAliasSharedState(t *testing.T) {
+	a, err := New(t.Context())
+	require.NoError(t, err)
+	a.addkey(Key{ID: "test.rsa.pub", Bytes: []byte("key contents")})
+
+	snapshot := a.keyringSnapshot()
+	delete(snapshot, "test.rsa.pub")
+	snapshot["other.rsa.pub"] = []byte("other key")
+	snapshot["test.rsa.pub"] = []byte("mutated contents")
+	snapshot["test.rsa.pub"][0] = 'X'
+
+	got := a.keyringSnapshot()
+	require.Equal(t, map[string][]byte{"test.rsa.pub": []byte("key contents")}, got)
+}
+
+func TestInitRuntimeAlpineKeysStayOutOfBuildKeyring(t *testing.T) {
+	const keyURL = "https://alpinelinux.org/keys/alpine-test.rsa.pub"
+	const keyData = "alpine public key"
+	releases := `{"release_branches":[{"rel_branch":"v3.22","keys":{"x86_64":[{"url":"` + keyURL + `"}]}}]}`
+	transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case alpineReleasesURL:
+			return discoveryHTTPResponse(req, http.StatusOK, releases, nil), nil
+		case keyURL:
+			return discoveryHTTPResponse(req, http.StatusOK, keyData, nil), nil
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", req.URL)
+		}
+	})
+	a, err := New(t.Context(),
+		WithFS(apkfs.NewMemFS()),
+		WithIgnoreMknodErrors(ignoreMknodErrors),
+		WithArch("x86_64"),
+		WithTransport(transport),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, a.InitRuntimeKeys(t.Context(), "https://example.invalid/alpine/v3.22/main"))
+	require.NotContains(t, a.keyringSnapshot(), filepath.Base(keyURL))
+	require.Equal(t, []byte(keyData), a.runtimeKeys[filepath.Base(keyURL)])
+}
+
+func TestWriteRuntimeKeysDoesNotOverwriteExistingKeys(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		existing string
+		runtime  string
+		wantErr  bool
+	}{
+		{name: "different key conflicts", existing: "configured key", runtime: "discovered key", wantErr: true},
+		{name: "identical key is preserved", existing: "same key", runtime: "same key"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := apkfs.NewMemFS()
+			require.NoError(t, fsys.MkdirAll(keysDirPath, 0o755))
+			keyPath := filepath.Join(keysDirPath, "same-name.rsa.pub")
+			require.NoError(t, fsys.WriteFile(keyPath, []byte(tt.existing), 0o644))
+
+			a, err := New(t.Context(), WithFS(fsys))
+			require.NoError(t, err)
+			a.addRuntimeKey(Key{ID: "same-name.rsa.pub", Bytes: []byte(tt.runtime)})
+
+			err = a.WriteRuntimeKeys()
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			got, err := fsys.ReadFile(keyPath)
+			require.NoError(t, err)
+			require.Equal(t, []byte(tt.existing), got)
+		})
+	}
+}
+
+func TestWriteRuntimeKeysRejectsPathTraversal(t *testing.T) {
+	fsys := apkfs.NewMemFS()
+	a, err := New(t.Context(), WithFS(fsys))
+	require.NoError(t, err)
+	a.addRuntimeKey(Key{ID: "../../../escaped.rsa.pub", Bytes: []byte("key")})
+
+	require.ErrorContains(t, a.WriteRuntimeKeys(), "must be a filename")
+	_, err = fsys.Lstat("/escaped.rsa.pub")
+	require.ErrorIs(t, err, fs.ErrNotExist)
 }
 
 func TestLoadSystemKeyring(t *testing.T) {

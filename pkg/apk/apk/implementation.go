@@ -38,6 +38,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -59,24 +60,28 @@ import (
 const (
 	// DefaultHTTPResponseSize is the default maximum size for HTTP responses (2 GB).
 	DefaultHTTPResponseSize = 2 << 30
+
+	runtimeOnlyKeyDiscoveryTimeout = 5 * time.Second
 )
 
 type APK struct {
-	arch               string
-	version            string
-	fs                 apkfs.FullFS
-	executor           Executor
-	ignoreMknodErrors  bool
-	client             *http.Client
-	cache              *cache
-	offline            bool
-	ignoreSignatures   bool
-	noSignatureIndexes []string
-	auth               auth.Authenticator
-	jwksAllowedOrigins []string
-	packageGetter      PackageGetter
-	sizeLimits         *SizeLimits
+	arch                 string
+	version              string
+	fs                   apkfs.FullFS
+	executor             Executor
+	ignoreMknodErrors    bool
+	client               *http.Client
+	runtimeOnlyKeyClient *http.Client
+	cache                *cache
+	offline              bool
+	ignoreSignatures     bool
+	noSignatureIndexes   []string
+	auth                 auth.Authenticator
+	jwksAllowedOrigins   []string
+	packageGetter        PackageGetter
+	sizeLimits           *SizeLimits
 
+	keysMu      sync.RWMutex
 	keys        map[string][]byte
 	runtimeKeys map[string][]byte
 	// filename to owning package, last write wins
@@ -124,6 +129,10 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	}
 	transport = newLimitedResponseTransport(transport, httpResponseMaxSize)
 
+	runtimeOnlyKeyClient := &http.Client{
+		Transport: transport,
+		Timeout:   runtimeOnlyKeyDiscoveryTimeout,
+	}
 	client := retryablehttp.NewClient()
 	client.HTTPClient = &http.Client{Transport: transport}
 	client.Logger = clog.FromContext(ctx)
@@ -131,6 +140,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	httpClient := client.StandardClient()
 	if opt.offline {
 		httpClient.Transport = offlineTransport{}
+		runtimeOnlyKeyClient.Transport = offlineTransport{}
 	}
 
 	// Create default PackageGetter if none provided
@@ -149,28 +159,43 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 	}
 
 	return &APK{
-		client:             httpClient,
-		fs:                 opt.fs,
-		arch:               opt.arch,
-		executor:           opt.executor,
-		ignoreMknodErrors:  opt.ignoreMknodErrors,
-		version:            opt.version,
-		cache:              opt.cache,
-		offline:            opt.offline,
-		ignoreSignatures:   opt.ignoreSignatures,
-		noSignatureIndexes: opt.noSignatureIndexes,
-		jwksAllowedOrigins: opt.jwksAllowedOrigins,
-		keys:               make(map[string][]byte),
-		runtimeKeys:        make(map[string][]byte),
-		installedFiles:     map[string]*Package{},
-		auth:               opt.auth,
-		packageGetter:      packageGetter,
-		sizeLimits:         opt.sizeLimits,
+		client:               httpClient,
+		runtimeOnlyKeyClient: runtimeOnlyKeyClient,
+		fs:                   opt.fs,
+		arch:                 opt.arch,
+		executor:             opt.executor,
+		ignoreMknodErrors:    opt.ignoreMknodErrors,
+		version:              opt.version,
+		cache:                opt.cache,
+		offline:              opt.offline,
+		ignoreSignatures:     opt.ignoreSignatures,
+		noSignatureIndexes:   opt.noSignatureIndexes,
+		jwksAllowedOrigins:   opt.jwksAllowedOrigins,
+		keys:                 make(map[string][]byte),
+		runtimeKeys:          make(map[string][]byte),
+		installedFiles:       map[string]*Package{},
+		auth:                 opt.auth,
+		packageGetter:        packageGetter,
+		sizeLimits:           opt.sizeLimits,
 	}, nil
 }
 
 func (a *APK) addkey(key Key) {
+	a.keysMu.Lock()
+	defer a.keysMu.Unlock()
+
 	a.keys[key.ID] = key.Bytes
+}
+
+func (a *APK) keyringSnapshot() map[string][]byte {
+	a.keysMu.RLock()
+	defer a.keysMu.RUnlock()
+
+	keys := make(map[string][]byte, len(a.keys))
+	for id, data := range a.keys {
+		keys[id] = bytes.Clone(data)
+	}
+	return keys
 }
 
 func (a *APK) addRuntimeKey(key Key) {
@@ -406,7 +431,7 @@ func (a *APK) InitRuntimeKeys(ctx context.Context, repositories ...string) error
 		if ver, ok := ParseAlpineVersion(repo); ok {
 			if err := a.fetchAlpineKeys(ctx, true, ver); err != nil {
 				var noKeysErr *NoKeysFoundError
-				if !a.cache.offline && !errors.As(err, &noKeysErr) {
+				if !a.offline && !errors.As(err, &noKeysErr) {
 					return fmt.Errorf("failed to fetch alpine runtime keys: %w", err)
 				}
 			}
@@ -414,6 +439,42 @@ func (a *APK) InitRuntimeKeys(ctx context.Context, repositories ...string) error
 		}
 		if err := a.fetchChainguardKeys(ctx, true, repo); err != nil {
 			return fmt.Errorf("failed to fetch chainguard runtime keys for %s: %w", repo, err)
+		}
+	}
+	return nil
+}
+
+// InitRuntimeOnlyKeys discovers keys from repositories that are only used by
+// the final image. Discovery is best-effort because these repositories are not
+// needed to complete the build. Successful keys are still added to the runtime
+// keyring. Caller cancellation is still returned to stop the build.
+func (a *APK) InitRuntimeOnlyKeys(ctx context.Context, repositories ...string) error {
+	log := clog.FromContext(ctx)
+	for _, repo := range repositories {
+		repoCtx, cancel := context.WithTimeout(ctx, runtimeOnlyKeyDiscoveryTimeout)
+		var err error
+		if ver, ok := ParseAlpineVersion(repo); ok {
+			err = a.fetchAlpineKeysWithClient(repoCtx, true, a.runtimeOnlyKeyClient, ver)
+		} else if strings.HasPrefix(repo, "https://") || strings.HasPrefix(repo, "http://") {
+			var keys []Key
+			keys, err = DiscoverKeys(repoCtx, a.runtimeOnlyKeyClient, a.auth, repo, a.jwksAllowedOrigins...)
+			if err == nil {
+				for _, key := range keys {
+					a.addRuntimeKey(key)
+				}
+			}
+		} else {
+			log.Debugf("ignoring non-http(s) runtime-only repository %s", repo)
+			cancel()
+			continue
+		}
+		cancel()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			log.Warnf("key discovery for runtime-only repository %s failed; continuing build without its discovered keys: %v", repo, err)
 		}
 	}
 	return nil
@@ -428,11 +489,48 @@ func (a *APK) WriteRuntimeKeys() error {
 	}
 
 	for name, data := range a.runtimeKeys {
+		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\\`) {
+			return fmt.Errorf("runtime key name %q must be a filename", name)
+		}
 		filename := filepath.Join(keysDirPath, name)
+		stat, err := a.fs.Lstat(filename)
+		if err == nil {
+			if !stat.Mode().IsRegular() {
+				return fmt.Errorf("runtime key path %s exists and is not a regular file", filename)
+			}
+			existing, err := a.fs.ReadFile(filename)
+			if err != nil {
+				return fmt.Errorf("failed to read existing runtime key %s: %w", filename, err)
+			}
+			if !bytes.Equal(existing, data) {
+				return fmt.Errorf("runtime key %s conflicts with an existing key", filename)
+			}
+			continue
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to check runtime key path %s: %w", filename, err)
+		}
 
 		if err := a.fs.WriteFile(filename, data, 0o644); err != nil {
 			return fmt.Errorf("failed to write runtime keys %s: %w", filename, err)
 		}
+	}
+	return nil
+}
+
+// AddRuntimeKeysFromKeyring makes explicitly configured keyring entries
+// available to runtime repositories. Callers pass the configured key files,
+// rather than the full build key map, so keys discovered only for build-time
+// repositories are not copied into the image.
+func (a *APK) AddRuntimeKeysFromKeyring(keyFiles ...string) error {
+	keys := a.keyringSnapshot()
+	for _, keyFile := range keyFiles {
+		keyID := filepath.Base(keyFile)
+		keyBytes, ok := keys[keyID]
+		if !ok {
+			return fmt.Errorf("configured key %q was not loaded into the build keyring", keyFile)
+		}
+		a.addRuntimeKey(Key{ID: keyID, Bytes: keyBytes})
 	}
 	return nil
 }
@@ -1110,13 +1208,17 @@ func FetchAlpineReleases(ctx context.Context, client *http.Client) (*Releases, e
 
 // fetchAlpineKeys fetches the public keys for the repositories in the APK database.
 func (a *APK) fetchAlpineKeys(ctx context.Context, runtime bool, alpineVersions ...string) error {
-	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
-	defer span.End()
-
 	client := a.client
 	if a.cache != nil {
 		client = a.cache.client(client, true)
 	}
+	return a.fetchAlpineKeysWithClient(ctx, runtime, client, alpineVersions...)
+}
+
+func (a *APK) fetchAlpineKeysWithClient(ctx context.Context, runtime bool, client *http.Client, alpineVersions ...string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "fetchAlpineKeys")
+	defer span.End()
+
 	releases, err := FetchAlpineReleases(ctx, client)
 	if err != nil {
 		return err
@@ -1163,11 +1265,6 @@ func (a *APK) fetchAlpineKeys(ctx context.Context, runtime bool, alpineVersions 
 		} else {
 			a.addkey(key)
 		}
-
-		a.addkey(Key{
-			ID:    basefilename,
-			Bytes: data,
-		})
 	}
 	return nil
 }
@@ -1277,6 +1374,7 @@ func validateJWKSURI(raw string, repositoryURL *url.URL, allowedOrigins map[stri
 func clientWithRedirectPolicy(client *http.Client, validateTarget func(*url.URL) error) *http.Client {
 	policyClient := *client
 	previousCheckRedirect := client.CheckRedirect
+	//nolint:gosec // Headers are cleared on cross-origin redirects to prevent credential forwarding.
 	policyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		var previousOrigin string
 		if len(via) > 0 {

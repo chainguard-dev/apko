@@ -162,7 +162,7 @@ func (a *APK) GetRepositoryIndexes(ctx context.Context, ignoreSignatures bool) (
 	arch := strings.TrimSuffix(string(archB), "\n")
 
 	// GetRepositoryIndexes now gets the keys from the in-memory keyring
-	keys := maps.Clone(a.keys)
+	keys := a.keyringSnapshot()
 	httpClient := a.client
 	if a.cache != nil {
 		httpClient = a.cache.client(httpClient, true)

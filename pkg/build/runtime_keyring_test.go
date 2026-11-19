@@ -15,6 +15,9 @@
 package build
 
 import (
+	"archive/tar"
+	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -23,11 +26,21 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/chainguard-dev/clog"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/stretchr/testify/require"
+
+	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
@@ -239,6 +252,176 @@ func TestRuntimeKeyringDisjointFromBuildKeyring(t *testing.T) {
 	if len(ic.Contents.Keyring) != 0 {
 		t.Errorf("runtime_keyring leaked into contents.keyring (the InitKeyring source): %v", ic.Contents.Keyring)
 	}
+}
+
+type runtimeKeyDiscoveryRoundTripper func(*http.Request) (*http.Response, error)
+
+func (rt runtimeKeyDiscoveryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt(req)
+}
+
+type runtimeKeyDiscoveryBlockingRoundTripper struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func (rt *runtimeKeyDiscoveryBlockingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.once.Do(func() { close(rt.started) })
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+func TestBuildLayerIncludesConfiguredRuntimeKeyringOnly(t *testing.T) {
+	t.Setenv("HTTP_AUTH", "")
+	t.Setenv("SOURCE_DATE_EPOCH", "1337")
+
+	buildKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	runtimeSigningKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	runtimeDER, err := x509.MarshalPKIXPublicKey(&runtimeSigningKey.PublicKey)
+	require.NoError(t, err)
+	runtimePEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: runtimeDER})
+	runtimeKey := rsaPublicKeyPEM(t)
+	keyFile := filepath.Join(t.TempDir(), "runtime-local.rsa.pub")
+	require.NoError(t, os.WriteFile(keyFile, []byte(runtimeKey), 0o644))
+
+	jwks, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &buildKey.PublicKey, KeyID: "build-only"}}})
+	require.NoError(t, err)
+	runtimeJWKS, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &runtimeSigningKey.PublicKey, KeyID: "runtime-only"}}})
+	require.NoError(t, err)
+	transport := runtimeKeyDiscoveryRoundTripper(func(req *http.Request) (*http.Response, error) {
+		var body string
+		switch req.URL.Host + req.URL.Path {
+		case "build.example/build-only/apk-configuration":
+			body = `{"jwks_uri":"https://build.example/build-only/jwks"}`
+		case "build.example/build-only/jwks":
+			body = string(jwks)
+		case "runtime.example/runtime-only/apk-configuration":
+			body = `{"jwks_uri":"https://keys.example/runtime-only/jwks"}`
+		case "keys.example/runtime-only/jwks":
+			body = string(runtimeJWKS)
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", req.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}, nil
+	})
+
+	localRepo := filepath.Join(t.TempDir(), "local-repo")
+	imageConfig := types.ImageConfiguration{Contents: types.ImageContents{
+		BuildRepositories:       []string{"https://build.example/build-only"},
+		RuntimeOnlyRepositories: []string{"https://runtime.example/runtime-only"},
+		Repositories:            []string{localRepo},
+		Keyring:                 []string{keyFile},
+	}}
+	bc, err := New(t.Context(), apkfs.NewMemFS(),
+		WithImageConfiguration(imageConfig),
+		WithJWKSAllowedOrigins("https://keys.example"),
+		WithTransport(transport),
+		WithCache(t.TempDir(), false, apk.NewCache(false)),
+		WithPreResolvedPackages([]apk.PackageContents{}),
+		WithArch(types.ParseArchitecture("amd64")),
+	)
+	require.NoError(t, err)
+
+	_, layer, err := bc.BuildLayer(context.Background())
+	require.NoError(t, err)
+	contents, err := layer.Uncompressed()
+	require.NoError(t, err)
+	defer contents.Close()
+
+	keyFiles := map[string][]byte{}
+	tarReader := tar.NewReader(contents)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if strings.HasPrefix(header.Name, "etc/apk/keys/") && header.Typeflag == tar.TypeReg {
+			data, err := io.ReadAll(tarReader)
+			require.NoError(t, err)
+			keyFiles[header.Name] = data
+		}
+	}
+
+	require.Equal(t, []byte(runtimeKey), keyFiles["etc/apk/keys/runtime-local.rsa.pub"])
+	require.Equal(t, runtimePEM, keyFiles["etc/apk/keys/runtime-only.rsa.pub"])
+	require.NotContains(t, keyFiles, "etc/apk/keys/build-only.rsa.pub")
+}
+
+func TestRuntimeOnlyKeyDiscoveryFailureWarnsAndContinuesBuild(t *testing.T) {
+	t.Setenv("HTTP_AUTH", "")
+	var logs bytes.Buffer
+	ctx := clog.WithLogger(t.Context(), clog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	var requests int
+	transport := runtimeKeyDiscoveryRoundTripper(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Status:     "503 Service Unavailable",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("unavailable")),
+			Request:    req,
+		}, nil
+	})
+	imageConfig := types.ImageConfiguration{Contents: types.ImageContents{
+		BuildRepositories:       []string{filepath.Join(t.TempDir(), "build-repo")},
+		RuntimeOnlyRepositories: []string{"https://runtime.example/unavailable"},
+	}}
+	bc, err := New(ctx, apkfs.NewMemFS(),
+		WithImageConfiguration(imageConfig),
+		WithTransport(transport),
+		WithPreResolvedPackages([]apk.PackageContents{}),
+		WithArch(types.ParseArchitecture("amd64")),
+	)
+	require.NoError(t, err)
+
+	_, _, err = bc.BuildLayer(ctx)
+	require.NoError(t, err, "runtime-only discovery failure must not fail the build")
+	require.Equal(t, 1, requests, "runtime-only discovery must not retry an unavailable endpoint")
+	require.Contains(t, logs.String(), "key discovery for runtime-only repository")
+	require.Contains(t, logs.String(), "runtime.example/unavailable")
+	require.Contains(t, logs.String(), "503 Service Unavailable")
+	require.Contains(t, logs.String(), "continuing build")
+}
+
+func TestRuntimeOnlyKeyDiscoveryTimesOutQuickly(t *testing.T) {
+	t.Setenv("HTTP_AUTH", "")
+	var logs bytes.Buffer
+	ctx := clog.WithLogger(t.Context(), clog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	transport := &runtimeKeyDiscoveryBlockingRoundTripper{started: make(chan struct{})}
+	imageConfig := types.ImageConfiguration{Contents: types.ImageContents{
+		BuildRepositories:       []string{filepath.Join(t.TempDir(), "build-repo")},
+		RuntimeOnlyRepositories: []string{"https://runtime.example/unreachable"},
+	}}
+	bc, err := New(ctx, apkfs.NewMemFS(),
+		WithImageConfiguration(imageConfig),
+		WithTransport(transport),
+		WithPreResolvedPackages([]apk.PackageContents{}),
+		WithArch(types.ParseArchitecture("amd64")),
+	)
+	require.NoError(t, err)
+
+	buildCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, _, err = bc.BuildLayer(buildCtx)
+	elapsed := time.Since(start)
+	require.NoError(t, err, "an unreachable runtime-only repository must not fail the build")
+	require.Less(t, elapsed, 7*time.Second, "runtime-only discovery should use its short client timeout")
+	select {
+	case <-transport.started:
+	default:
+		t.Fatal("runtime-only repository was not contacted")
+	}
+	require.Contains(t, logs.String(), "continuing build")
 }
 
 func TestParsePublicKey(t *testing.T) {

@@ -69,6 +69,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	var extraKeys []string
 	var extraBuildRepos []string
 	var extraRepos []string
+	var jwksAllowedOrigins []string
 	var archstrs []string
 	var output string
 	var includePaths []string
@@ -98,6 +99,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 					build.WithExtraKeys(extraKeys),
 					build.WithExtraBuildRepos(extraBuildRepos),
 					build.WithExtraRepos(extraRepos),
+					build.WithJWKSAllowedOrigins(jwksAllowedOrigins...),
 					build.WithIncludePaths(includePaths),
 					build.WithIgnoreSignatures(ignoreSignatures),
 					build.WithCache(cacheDir, false, apk.NewCache(true)),
@@ -109,6 +111,7 @@ func lockInternal(cmdName string, extension string, deprecated string) *cobra.Co
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	addJWKSAllowedOriginFlag(cmd, &jwksAllowedOrigins)
 	cmd.Flags().StringSliceVar(&archstrs, "arch", nil, "architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on")
 	cmd.Flags().StringVar(&output, "output", "", "path to file where lock file will be written")
 	cmd.Flags().StringSliceVar(&includePaths, "include-paths", []string{}, "Additional include paths where to look for input files (config, base image, etc.). By default apko will search for paths only in workdir. Include paths may be absolute, or relative. Relative paths are interpreted relative to workdir. For adding extra paths for packages, use --repository-append")
