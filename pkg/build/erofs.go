@@ -148,9 +148,10 @@ func hardlinkTarget(info fs.FileInfo) (string, bool) {
 // materializes. That happens when the Linkname names something that never
 // made it into the image (a `paths` directive removed it), when it routes
 // through a symlinked directory component, which the writer's flat path
-// lookup does not follow, and for a chain of links, whose middle name is
+// lookup does not follow, for a chain of links, whose middle name is
 // deferred rather than emitted and so may not exist yet when the last one is
-// linked.
+// linked, and, in a layered build, for a target that splitErofsLayers routed
+// to a different layer than the link.
 func emitErofsHardlinks(ctx context.Context, w *erofs.Writer, links []erofsHardlink, fsys apkfs.FullFS, buf []byte) error {
 	for _, l := range links {
 		if cerr := ctx.Err(); cerr != nil {
