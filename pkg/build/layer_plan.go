@@ -114,28 +114,29 @@ func field(h hash.Hash, b []byte) {
 	h.Write(b)
 }
 
-// LayerContent provides content for a build's layer plans by digest. It
-// reads files from the build filesystem and holds content generated during
-// planning. It trusts digests reported by the filesystem to identify the
-// content correctly. The filesystem must remain available and unchanged
+// LayerContent provides content for a build's layer plans. It reads each
+// file from its own path in the build filesystem and holds content generated
+// during planning. The filesystem must remain available and unchanged
 // from planning until rendering completes.
 type LayerContent struct {
 	fsys   apkfs.FullFS
-	paths  map[string]string
-	inline map[string][]byte
+	inline map[inlineID][]byte
 }
 
-func (c *LayerContent) open(digest string) (io.ReadCloser, error) {
-	if b, ok := c.inline[digest]; ok {
+// inlineID identifies content generated during planning by path and digest,
+// so one path can have different generated content in each layer and a
+// package file with the same bytes is still read from its own path.
+type inlineID struct {
+	name, digest string
+}
+
+func (c *LayerContent) open(e *PlanEntry) (io.ReadCloser, error) {
+	if b, ok := c.inline[inlineID{e.Header.Name, e.Digest}]; ok {
 		return io.NopCloser(bytes.NewReader(b)), nil
 	}
-	path, ok := c.paths[digest]
-	if !ok {
-		return nil, fmt.Errorf("no content for %s: %w", digest, fs.ErrNotExist)
-	}
-	f, err := c.fsys.Open(path)
+	f, err := c.fsys.Open(e.Header.Name)
 	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
+		return nil, fmt.Errorf("opening %s: %w", e.Header.Name, err)
 	}
 	return f, nil
 }
@@ -175,7 +176,7 @@ func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerCo
 		if !hasContent(&hdr) {
 			continue
 		}
-		data, err := c.open(e.Digest)
+		data, err := c.open(e)
 		if err != nil {
 			return fmt.Errorf("%s: %w", hdr.Name, err)
 		}
@@ -218,20 +219,19 @@ func (bc *Context) PlanLayers(ctx context.Context) ([]*LayerPlan, *LayerContent,
 type planner struct {
 	plan    *LayerPlan
 	content *LayerContent
-	// files records entry indices and filesystem sources for digestFiles.
+	// files records entry indices and file info for digestFiles.
 	files []plannedFile
 }
 
 // plannedFile is an entry with content from the build filesystem.
 type plannedFile struct {
 	index int
-	path  string
 	info  fs.FileInfo
 }
 
 func (pl *planner) add(f *file) error {
 	if hasContent(f.header) {
-		pl.files = append(pl.files, plannedFile{index: len(pl.plan.entries), path: f.path, info: f.info})
+		pl.files = append(pl.files, plannedFile{index: len(pl.plan.entries), info: f.info})
 	}
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *f.header})
 	return nil
@@ -248,13 +248,13 @@ func (pl *planner) addData(hdr *tar.Header, data []byte) error {
 	}
 	d := h.String()
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *hdr, Digest: d})
-	pl.content.inline[d] = data
+	pl.content.inline[inlineID{hdr.Name, d}] = data
 	return nil
 }
 
 // planLayers walks fsys to plan one layer per group followed by the top layer.
 func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte) ([]*LayerPlan, *LayerContent, error) {
-	content := &LayerContent{fsys: fsys, paths: map[string]string{}, inline: map[string][]byte{}}
+	content := &LayerContent{fsys: fsys, inline: map[inlineID][]byte{}}
 	planners := make([]*planner, 0, len(groups)+1)
 	sinks := make([]layerSink, 0, len(groups)+1)
 	newPlanner := func(pkgs []*apk.Package) {
@@ -269,7 +269,7 @@ func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDi
 	if err := partitionLayers(ctx, fsys, groups, pkgToDiff, sinks); err != nil {
 		return nil, nil, err
 	}
-	if err := digestFiles(ctx, fsys, planners, content); err != nil {
+	if err := digestFiles(ctx, fsys, planners); err != nil {
 		return nil, nil, err
 	}
 	plans := make([]*LayerPlan, len(planners))
@@ -280,9 +280,8 @@ func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDi
 }
 
 // digestFiles assigns content digests to planned files, processing each path
-// once in parallel. It records the first planned path for each digest in
-// content.
-func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner, content *LayerContent) error {
+// once in parallel.
+func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner) error {
 	var (
 		mu      sync.Mutex
 		digests = map[string]string{}
@@ -292,17 +291,18 @@ func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner, co
 	queued := map[string]bool{}
 	for _, pl := range planners {
 		for _, f := range pl.files {
-			if queued[f.path] {
+			name := pl.plan.entries[f.index].Header.Name
+			if queued[name] {
 				continue
 			}
-			queued[f.path] = true
+			queued[name] = true
 			g.Go(func() error {
-				d, err := fileDigest(gctx, fsys, f)
+				d, err := fileDigest(gctx, fsys, name, f.info)
 				if err != nil {
 					return err
 				}
 				mu.Lock()
-				digests[f.path] = d
+				digests[name] = d
 				mu.Unlock()
 				return nil
 			})
@@ -313,40 +313,37 @@ func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner, co
 	}
 	for _, pl := range planners {
 		for _, f := range pl.files {
-			d := digests[f.path]
-			pl.plan.entries[f.index].Digest = d
-			if _, ok := content.paths[d]; !ok {
-				content.paths[d] = f.path
-			}
+			e := &pl.plan.entries[f.index]
+			e.Digest = digests[e.Header.Name]
 		}
 		pl.files = nil
 	}
 	return nil
 }
 
-// fileDigest returns f's FileInfo.ContentDigest result if non-empty.
-// Otherwise, it reads the file through fsys and returns its SHA-256 digest.
-func fileDigest(ctx context.Context, fsys apkfs.FullFS, f plannedFile) (string, error) {
+// fileDigest returns info's ContentDigest result if non-empty.
+// Otherwise, it reads name through fsys and returns its SHA-256 digest.
+func fileDigest(ctx context.Context, fsys apkfs.FullFS, name string, info fs.FileInfo) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if cd, ok := f.info.(interface{ ContentDigest() (string, error) }); ok {
+	if cd, ok := info.(interface{ ContentDigest() (string, error) }); ok {
 		d, err := cd.ContentDigest()
 		if err != nil {
-			return "", fmt.Errorf("naming %s: %w", f.path, err)
+			return "", fmt.Errorf("naming %s: %w", name, err)
 		}
 		if d != "" {
 			return d, nil
 		}
 	}
-	r, err := fsys.Open(f.path)
+	r, err := fsys.Open(name)
 	if err != nil {
-		return "", fmt.Errorf("opening %s: %w", f.path, err)
+		return "", fmt.Errorf("opening %s: %w", name, err)
 	}
 	defer r.Close()
 	h, _, err := v1.SHA256(r)
 	if err != nil {
-		return "", fmt.Errorf("hashing %s: %w", f.path, err)
+		return "", fmt.Errorf("hashing %s: %w", name, err)
 	}
 	return h.String(), nil
 }
