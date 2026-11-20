@@ -219,20 +219,19 @@ func (bc *Context) PlanLayers(ctx context.Context) ([]*LayerPlan, *LayerContent,
 type planner struct {
 	plan    *LayerPlan
 	content *LayerContent
-	// files records entry indices and filesystem sources for digestFiles.
+	// files records entry indices and file info for digestFiles.
 	files []plannedFile
 }
 
 // plannedFile is an entry with content from the build filesystem.
 type plannedFile struct {
 	index int
-	path  string
 	info  fs.FileInfo
 }
 
 func (pl *planner) add(f *file) error {
 	if hasContent(f.header) {
-		pl.files = append(pl.files, plannedFile{index: len(pl.plan.entries), path: f.path, info: f.info})
+		pl.files = append(pl.files, plannedFile{index: len(pl.plan.entries), info: f.info})
 	}
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *f.header})
 	return nil
@@ -292,17 +291,18 @@ func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner) er
 	queued := map[string]bool{}
 	for _, pl := range planners {
 		for _, f := range pl.files {
-			if queued[f.path] {
+			name := pl.plan.entries[f.index].Header.Name
+			if queued[name] {
 				continue
 			}
-			queued[f.path] = true
+			queued[name] = true
 			g.Go(func() error {
-				d, err := fileDigest(gctx, fsys, f)
+				d, err := fileDigest(gctx, fsys, name, f.info)
 				if err != nil {
 					return err
 				}
 				mu.Lock()
-				digests[f.path] = d
+				digests[name] = d
 				mu.Unlock()
 				return nil
 			})
@@ -313,36 +313,37 @@ func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner) er
 	}
 	for _, pl := range planners {
 		for _, f := range pl.files {
-			pl.plan.entries[f.index].Digest = digests[f.path]
+			e := &pl.plan.entries[f.index]
+			e.Digest = digests[e.Header.Name]
 		}
 		pl.files = nil
 	}
 	return nil
 }
 
-// fileDigest returns f's FileInfo.ContentDigest result if non-empty.
-// Otherwise, it reads the file through fsys and returns its SHA-256 digest.
-func fileDigest(ctx context.Context, fsys apkfs.FullFS, f plannedFile) (string, error) {
+// fileDigest returns info's ContentDigest result if non-empty.
+// Otherwise, it reads name through fsys and returns its SHA-256 digest.
+func fileDigest(ctx context.Context, fsys apkfs.FullFS, name string, info fs.FileInfo) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if cd, ok := f.info.(interface{ ContentDigest() (string, error) }); ok {
+	if cd, ok := info.(interface{ ContentDigest() (string, error) }); ok {
 		d, err := cd.ContentDigest()
 		if err != nil {
-			return "", fmt.Errorf("naming %s: %w", f.path, err)
+			return "", fmt.Errorf("naming %s: %w", name, err)
 		}
 		if d != "" {
 			return d, nil
 		}
 	}
-	r, err := fsys.Open(f.path)
+	r, err := fsys.Open(name)
 	if err != nil {
-		return "", fmt.Errorf("opening %s: %w", f.path, err)
+		return "", fmt.Errorf("opening %s: %w", name, err)
 	}
 	defer r.Close()
 	h, _, err := v1.SHA256(r)
 	if err != nil {
-		return "", fmt.Errorf("hashing %s: %w", f.path, err)
+		return "", fmt.Errorf("hashing %s: %w", name, err)
 	}
 	return h.String(), nil
 }
