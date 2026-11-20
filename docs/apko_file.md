@@ -25,7 +25,7 @@ environment:
 ```
 
 Running `apko build` on this file will produce a tar file containing an Alpine base container image.
-The image can be used by container runtimes (for example, running  `docker load image.tar` will add
+The image can be used by container runtimes (for example, running  `docker load < image.tar` will add
 the image to Docker). The command `apko publish` can also be used to directly push the image to an
 image registry.
 
