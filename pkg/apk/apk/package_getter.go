@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -105,7 +106,8 @@ const packageCacheMaxEntries = 4096
 
 // globalApkCache is the shared in-memory singleflight cache used by DefaultPackageGetter.
 // This ensures deduplication of concurrent requests across all APK instances in a process.
-var globalApkCache = newFlightCache[string, *expandapk.APKExpanded](packageCacheMaxEntries)
+// Entries are released by defaultPackageGetter.Close.
+var globalApkCache = newPackageCache(packageCacheMaxEntries)
 
 // defaultPackageGetter implements the standard disk-caching behavior
 // with in-memory singleflight deduplication using a global cache.
@@ -115,6 +117,11 @@ type defaultPackageGetter struct {
 	auth              auth.Authenticator
 	apkControlMaxSize int64
 	apkDataMaxSize    int64
+
+	// held is what this getter has handed out and must release on Close.
+	mu    sync.Mutex
+	refs  []*packageRef
+	owned []*expandapk.APKExpanded
 }
 
 // packageGetterOption is a functional option for configuring defaultPackageGetter.
@@ -169,28 +176,60 @@ func (d *defaultPackageGetter) GetPackage(ctx context.Context, pkg InstallablePa
 		// If we don't have a cache configured, don't use the global cache.
 		// Calling APKExpanded.Close() will clean up a tempdir.
 		// This is fine when we have a cache because we move all the backing files into the cache.
-		// This is not fine when we don't have a cache because the tempdir contains all our state.
-		return d.getPackageImpl(ctx, pkg)
+		// This is not fine when we don't have a cache because the tempdir contains all our state,
+		// so it is only cleaned up by Close.
+		return d.getOwned(ctx, pkg)
 	}
 
-	val, cached, err := globalApkCache.Do(pkg.URL(), func() (*expandapk.APKExpanded, error) {
+	val, cached, ref, err := globalApkCache.acquire(pkg.URL(), func() (*expandapk.APKExpanded, error) {
 		return d.getPackageImpl(ctx, pkg)
 	})
-	if !cached {
-		// We've just executed the callback - either successfully cached or
-		// failed (errors aren't cached). Either way, no validation needed.
-		return val, err
+	if err != nil {
+		return nil, err
 	}
-	if val != nil {
-		// If we find a value in the cache, we should check to make sure the tar file it references still exists.
-		// If it references a non-existent file, we should act as though this was a cache miss and expand the
-		// APK again.
-		if !val.IsValid() {
-			globalApkCache.Forget(pkg.URL())
-			return d.getPackageImpl(ctx, pkg)
-		}
+	if cached && !val.IsValid() {
+		// The cached entry references files that are gone, so act as though
+		// this was a cache miss and expand the APK again.
+		ref.Forget()
+		ref.Release()
+		return d.getOwned(ctx, pkg)
 	}
-	return val, err
+
+	d.mu.Lock()
+	d.refs = append(d.refs, ref)
+	d.mu.Unlock()
+	return val, nil
+}
+
+// getOwned expands pkg outside the in-memory cache. The result belongs to
+// this getter and is released by Close.
+func (d *defaultPackageGetter) getOwned(ctx context.Context, pkg InstallablePackage) (*expandapk.APKExpanded, error) {
+	exp, err := d.getPackageImpl(ctx, pkg)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	d.owned = append(d.owned, exp)
+	d.mu.Unlock()
+	return exp, nil
+}
+
+// Close releases every package this getter returned. Packages still held by
+// another getter stay open until that one is closed too. Packages returned
+// before Close must not be used after it.
+func (d *defaultPackageGetter) Close() error {
+	d.mu.Lock()
+	refs, owned := d.refs, d.owned
+	d.refs, d.owned = nil, nil
+	d.mu.Unlock()
+
+	for _, r := range refs {
+		r.Release()
+	}
+	for _, exp := range owned {
+		closeExpanded(exp)
+	}
+	return nil
 }
 
 // getPackageImpl is the actual implementation that fetches/expands/caches a package.

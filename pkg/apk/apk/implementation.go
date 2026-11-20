@@ -72,7 +72,10 @@ type APK struct {
 	noSignatureIndexes []string
 	auth               auth.Authenticator
 	packageGetter      PackageGetter
-	sizeLimits         *SizeLimits
+	// defaultGetter is packageGetter when New created it, and nil when the
+	// caller supplied one with WithPackageGetter.
+	defaultGetter *defaultPackageGetter
+	sizeLimits    *SizeLimits
 
 	// filename to owning package, last write wins
 	installedFiles map[string]*Package
@@ -130,6 +133,7 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 
 	// Create default PackageGetter if none provided
 	packageGetter := opt.packageGetter
+	var defaultGetter *defaultPackageGetter
 	if packageGetter == nil {
 		var getterOpts []packageGetterOption
 		if opt.sizeLimits != nil {
@@ -140,7 +144,8 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 				getterOpts = append(getterOpts, withAPKDataMaxSize(opt.sizeLimits.APKDataMaxSize))
 			}
 		}
-		packageGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
+		defaultGetter = newDefaultPackageGetter(httpClient, opt.cache, opt.auth, getterOpts...)
+		packageGetter = defaultGetter
 	}
 
 	return &APK{
@@ -157,8 +162,21 @@ func New(ctx context.Context, options ...Option) (*APK, error) {
 		installedFiles:     map[string]*Package{},
 		auth:               opt.auth,
 		packageGetter:      packageGetter,
+		defaultGetter:      defaultGetter,
 		sizeLimits:         opt.sizeLimits,
 	}, nil
+}
+
+// Close releases the expanded packages this APK fetched, including the open
+// descriptors and temp files behind them. Long-lived callers should call it
+// once they are done with the APK; packages it returned (for example from
+// CalculateWorld) must not be used afterwards. A PackageGetter supplied with
+// WithPackageGetter is the caller's to close.
+func (a *APK) Close() error {
+	if a.defaultGetter == nil {
+		return nil
+	}
+	return a.defaultGetter.Close()
 }
 
 type directory struct {

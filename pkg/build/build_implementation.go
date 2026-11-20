@@ -432,7 +432,11 @@ func updateCache(ctx context.Context, fsys apkfs.FullFS) error {
 		return fmt.Errorf("creating /etc/ld.so.cache: %w", err)
 	}
 	if err := cacheFile.Write(lsc); err != nil {
+		lsc.Close()
 		return fmt.Errorf("writing /etc/ld.so.cache: %w", err)
+	}
+	if err := lsc.Close(); err != nil {
+		return fmt.Errorf("closing /etc/ld.so.cache: %w", err)
 	}
 	if err := fsys.Chmod("etc/ld.so.cache", 0644); err != nil {
 		return fmt.Errorf("chmod /etc/ld.so.cache: %w", err)

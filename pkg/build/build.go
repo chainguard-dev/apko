@@ -649,3 +649,13 @@ func (bc *Context) WantSBOM() bool {
 func (bc *Context) APK() *apk.APK {
 	return bc.apk
 }
+
+// Close releases resources held by the build, such as cached packages and
+// their open descriptors. Long-lived library callers should call it once they
+// are done with the Context. The filesystem passed to New is not closed.
+func (bc *Context) Close() error {
+	if bc.apk == nil {
+		return nil
+	}
+	return bc.apk.Close()
+}
