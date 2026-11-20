@@ -349,3 +349,16 @@ func WithSizeLimits(limits options.SizeLimits) Option {
 		return nil
 	}
 }
+
+// WithCompression sets the compression algorithm for tar layers ("gzip" or
+// "zstd"). It has no effect on erofs layers, which are written uncompressed.
+func WithCompression(compression string) Option {
+	return func(bc *Context) error {
+		comp := options.Compression(compression)
+		if !comp.IsValid() {
+			return fmt.Errorf("invalid compression algorithm %q (supported: %s, %s)", compression, options.Gzip, options.Zstd)
+		}
+		bc.o.Compression = comp
+		return nil
+	}
+}

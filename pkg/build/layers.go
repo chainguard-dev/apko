@@ -29,6 +29,7 @@ import (
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/options"
 
 	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -44,7 +45,7 @@ func (bc *Context) buildLayers(ctx context.Context) ([]v1.Layer, error) {
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
 		return splitErofsLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.SourceDateEpoch)
 	}
-	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.CompressedLayerFile)
+	return splitLayers(ctx, bc.fs, groups, pkgToDiff, bc.o.TempDir(), bc.o.CompressedLayerFile, bc.o.Compression)
 }
 
 // layerGroups builds the image filesystem in bc.fs and groups packages
@@ -269,7 +270,7 @@ func merge(groups ...*group) *group {
 	return merged
 }
 
-func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, compressed bool) ([]v1.Layer, error) {
+func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte, tmpdir string, compressed bool, compression options.Compression) ([]v1.Layer, error) {
 	buf := make([]byte, 1<<20)
 
 	// On failure, shut down every writer while its file is still open (closing a
@@ -297,14 +298,14 @@ func splitLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToD
 	}()
 
 	// Every writer stays open through the whole filesystem walk, so compressed
-	// mode gets one pgzip worker each: bound compressor memory by layer count
+	// mode gets one compressor worker each: bound compressor memory by layer count
 	// rather than multiplying it by the per-writer fan-out.
 	newOpenWriter := func() (*layerWriter, error) {
-		f, err := os.CreateTemp(tmpdir, "layer-*.tar.gz")
+		f, err := os.CreateTemp(tmpdir, "layer-*.tar"+compression.Extension())
 		if err != nil {
 			return nil, err
 		}
-		w, err := newLayerWriter(f, compressed, 1)
+		w, err := newLayerWriter(f, compressed, compression, 1)
 		if err != nil {
 			_ = f.Close()
 			_ = os.Remove(f.Name())

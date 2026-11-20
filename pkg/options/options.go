@@ -92,6 +92,7 @@ type Options struct {
 	Transport           http.RoundTripper     `json:"-"`
 	PackageGetter       apk.PackageGetter     `json:"-"`
 	SizeLimits          SizeLimits            `json:"sizeLimits,omitempty"`
+	Compression         Compression           `json:"compression,omitempty"`
 }
 
 type Auth struct{ User, Pass string }
@@ -103,6 +104,7 @@ var Default = Options{
 	DiskCacheEnabled: true,
 	SharedCache:      apk.NewCache(false),
 	SizeLimits:       DefaultSizeLimits(),
+	Compression:      Gzip,
 }
 
 // Tempdir returns the temporary directory where apko will create
@@ -122,11 +124,11 @@ func (o *Options) TempDir() string {
 
 // TarballFileName returns a deterministic filename for the layer taball
 func (o Options) TarballFileName() string {
-	tarName := "apko.tar.gz"
+	ext := "tar" + o.Compression.Extension()
 	if o.Arch.String() != "" {
-		tarName = fmt.Sprintf("apko-%s.tar.gz", o.Arch.ToAPK())
+		return fmt.Sprintf("apko-%s.%s", o.Arch.ToAPK(), ext)
 	}
-	return tarName
+	return fmt.Sprintf("apko.%s", ext)
 }
 
 // LayerFileName returns a deterministic filename for a layer blob in the given

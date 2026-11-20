@@ -25,30 +25,31 @@ import (
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1types "github.com/google/go-containerregistry/pkg/v1/types"
 
 	"chainguard.dev/apko/pkg/options"
 )
 
-// buildTestLayer writes a deterministic mixed-compressibility layer (large
-// enough to span several pgzip blocks) in the requested mode, returning the
+// buildTestLayer writes a deterministic mixed-compressibility layer of size
+// bytes in the requested mode with workers compressor workers, returning the
 // layer, the directory holding its files, and the file the writer wrote to.
-func buildTestLayer(t *testing.T, compressed bool) (v1.Layer, string, string) {
+func buildTestLayer(t *testing.T, compressed bool, compression options.Compression, workers, size int) (v1.Layer, string, string) {
 	t.Helper()
 
 	dir := t.TempDir()
-	f, err := os.CreateTemp(dir, "layer-*.tar.gz")
+	f, err := os.CreateTemp(dir, "layer-*.tar"+compression.Extension())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
 
-	lw, err := newLayerWriter(f, compressed, 4)
+	lw, err := newLayerWriter(f, compressed, compression, workers)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	content := make([]byte, 3<<20)
-	rand.New(rand.NewSource(0x2781)).Read(content[:1<<20]) // 1 MiB incompressible, 2 MiB zeros
+	content := make([]byte, size)
+	rand.New(rand.NewSource(0x2781)).Read(content[:1<<20]) // 1 MiB incompressible, the rest zeros
 	hdr := &tar.Header{Name: "usr/blob", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))}
 	if err := lw.w.WriteHeader(hdr); err != nil {
 		t.Fatal(err)
@@ -64,14 +65,23 @@ func buildTestLayer(t *testing.T, compressed bool) (v1.Layer, string, string) {
 	return l, dir, f.Name()
 }
 
+// gzipFixtureSize spans several pgzip blocks. goldenCompressedDigest depends
+// on it.
+const gzipFixtureSize = 3 << 20
+
+// zstdFixtureSize spans more than one zstd concurrent-blocks job (32 MiB at
+// the default window), which the encoder lays out differently from a serial
+// stream.
+const zstdFixtureSize = 64 << 20
+
 // goldenCompressedDigest is the gzip digest of buildTestLayer's fixture under
 // the current pgzip level and block size. A deliberate change to either is
 // expected to update it.
 const goldenCompressedDigest = "sha256:8bd4b60ed50be8a11f45c8ec53652e3fca95ad67b9eceb78a6dc371135458b7a"
 
 func TestCompressedLayerEquivalence(t *testing.T) {
-	legacy, legacyDir, _ := buildTestLayer(t, false)
-	single, singleDir, singleFile := buildTestLayer(t, true)
+	legacy, legacyDir, _ := buildTestLayer(t, false, options.Gzip, 4, gzipFixtureSize)
+	single, singleDir, singleFile := buildTestLayer(t, true, options.Gzip, 4, gzipFixtureSize)
 
 	legacyDiff, err := legacy.DiffID()
 	if err != nil {
@@ -80,7 +90,7 @@ func TestCompressedLayerEquivalence(t *testing.T) {
 	// The legacy Digest call below populates the process-global
 	// compressionCache; without this cleanup, a repeat run (-count>1) takes
 	// the cache-hit path and never creates the legacy .gz file.
-	t.Cleanup(func() { compressionCache.Delete(legacyDiff.String()) })
+	t.Cleanup(func() { compressionCache.Delete(legacy.(*layer).cacheKey()) })
 	singleDiff, err := single.DiffID()
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +153,80 @@ func TestCompressedLayerEquivalence(t *testing.T) {
 	}
 }
 
+// TestCompressedLayerEquivalenceZstd checks that zstd layers written in a
+// single pass match ones compressed in a second pass, carry the zstd media
+// type, and round-trip back to the same tar. Single-pass multi-layer builds
+// use one worker per layer while other paths use pgzipThreads, so the
+// single-pass layer is written with both to pin that the bytes do not depend
+// on the worker count.
+func TestCompressedLayerEquivalenceZstd(t *testing.T) {
+	legacy, legacyDir, _ := buildTestLayer(t, false, options.Zstd, pgzipThreads, zstdFixtureSize)
+	single, singleDir, singleFile := buildTestLayer(t, true, options.Zstd, 1, zstdFixtureSize)
+	singleN, _, _ := buildTestLayer(t, true, options.Zstd, 8, zstdFixtureSize)
+	t.Cleanup(func() { compressionCache.Delete(legacy.(*layer).cacheKey()) })
+
+	for _, l := range []v1.Layer{legacy, single, singleN} {
+		mt, err := l.MediaType()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mt != v1types.OCILayerZStd {
+			t.Errorf("MediaType: got = %v, want = %v", mt, v1types.OCILayerZStd)
+		}
+	}
+
+	legacyDigest, err := legacy.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleDigest, err := single.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDigest != singleDigest {
+		t.Errorf("compressed digest: got = %v, want = %v", singleDigest, legacyDigest)
+	}
+	singleNDigest, err := singleN.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if singleNDigest != singleDigest {
+		t.Errorf("compressed digest with 8 workers: got = %v, want = %v (1 worker)", singleNDigest, singleDigest)
+	}
+
+	// The gzip fixture has the same diffID, so a shared cache entry would
+	// hand back the gzip digest.
+	gzipLayer, _, _ := buildTestLayer(t, true, options.Gzip, 4, gzipFixtureSize)
+	gzipDigest, err := gzipLayer.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gzipDigest == singleDigest {
+		t.Errorf("zstd digest equals gzip digest %v", gzipDigest)
+	}
+
+	if got := countFiles(t, singleDir); got != 1 {
+		t.Errorf("single-pass files: got = %d, want = 1", got)
+	}
+	if got := countFiles(t, legacyDir); got != 2 {
+		t.Errorf("legacy files: got = %d, want = 2 (plain + zst)", got)
+	}
+
+	raw, err := os.ReadFile(singleFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(raw, []byte{0x28, 0xb5, 0x2f, 0xfd}) {
+		t.Errorf("compressed file does not start with zstd magic: % x", raw[:min(4, len(raw))])
+	}
+
+	legacyTar := readAllUncompressed(t, legacy)
+	singleTar := readAllUncompressed(t, single)
+	if !bytes.Equal(legacyTar, singleTar) {
+		t.Errorf("Uncompressed() bytes differ: legacy %d bytes, single-pass %d bytes", len(legacyTar), len(singleTar))
+	}
+}
+
 func readAllUncompressed(t *testing.T, l v1.Layer) []byte {
 	t.Helper()
 	rc, err := l.Uncompressed()
@@ -174,7 +258,7 @@ func countFiles(t *testing.T, dir string) int {
 // nothing to look up, and a regression there would report a cache miss for
 // every single-pass layer while still returning the right digest.
 func TestSinglePassLayerBypassesCompressionCache(t *testing.T) {
-	l, _, _ := buildTestLayer(t, true)
+	l, _, _ := buildTestLayer(t, true, options.Gzip, 4, gzipFixtureSize)
 	sl, ok := l.(*layer)
 	if !ok {
 		t.Fatalf("single-pass layer: got %T, want *layer", l)
@@ -182,8 +266,8 @@ func TestSinglePassLayerBypassesCompressionCache(t *testing.T) {
 
 	// The legacy half of the equivalence test writes the same fixture, so the
 	// cache may already hold this diffID from another test in this process.
-	compressionCache.Delete(sl.diffid.String())
-	t.Cleanup(func() { compressionCache.Delete(sl.diffid.String()) })
+	compressionCache.Delete(sl.cacheKey())
+	t.Cleanup(func() { compressionCache.Delete(sl.cacheKey()) })
 
 	if _, err := l.Digest(); err != nil {
 		t.Fatal(err)
@@ -195,7 +279,7 @@ func TestSinglePassLayerBypassesCompressionCache(t *testing.T) {
 	if sl.cacheCounted {
 		t.Error("cacheCounted = true, want false: a single-pass layer records no cache access")
 	}
-	if _, ok := compressionCache.Load(sl.diffid.String()); ok {
+	if _, ok := compressionCache.Load(sl.cacheKey()); ok {
 		t.Error("compressionCache holds an entry for a single-pass layer's diffID")
 	}
 }
@@ -212,7 +296,7 @@ func TestLayerWriterFinalizeTwice(t *testing.T) {
 			}
 			defer f.Close()
 
-			lw, err := newLayerWriter(f, compressed, 2)
+			lw, err := newLayerWriter(f, compressed, options.Gzip, 2)
 			if err != nil {
 				t.Fatal(err)
 			}

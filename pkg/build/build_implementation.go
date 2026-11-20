@@ -17,6 +17,7 @@ package build
 import (
 	"archive/tar"
 	"bufio"
+	stdgzip "compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +36,7 @@ import (
 	"github.com/chainguard-dev/clog"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	v1types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/klauspost/compress/zstd"
 	gzip "github.com/klauspost/pgzip"
 
 	ldsocache "chainguard.dev/apko/internal/ldso-cache"
@@ -121,13 +123,13 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 // need to know to implement a v1.Layer, which it will produce when finalize()
 // is called.
 //
-// When compressed is set, the tar is gzipped in the same pass with workers
-// pgzip workers and the compressed digest and size are captured as the bytes
-// stream, so the plain tar never exists on disk. Otherwise the plain tar is
-// written and compression is deferred to layer.compress(). workers is ignored
-// unless compressed is set.
-func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, error) {
-	ls, err := newLayerStream(out, compressed, workers)
+// When compressed is set, the tar is compressed with compression in the same
+// pass with workers compressor workers and the compressed digest and size are
+// captured as the bytes stream, so the plain tar never exists on disk.
+// Otherwise the plain tar is written and compression is deferred to
+// layer.compress(). workers is ignored unless compressed is set.
+func newLayerWriter(out *os.File, compressed bool, compression options.Compression, workers int) (*layerWriter, error) {
+	ls, err := newLayerStream(out, compressed, compression, workers)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +146,9 @@ func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, e
 			}
 
 			l := &layer{
+				compression: compression,
 				desc: &v1.Descriptor{
-					MediaType: v1types.OCILayer,
+					MediaType: layerMediaType(compression),
 				},
 				diffid: &d.DiffID,
 			}
@@ -162,12 +165,54 @@ func newLayerWriter(out *os.File, compressed bool, workers int) (*layerWriter, e
 	}, nil
 }
 
+// layerMediaType returns the OCI layer media type for a tar compressed with c.
+func layerMediaType(c options.Compression) v1types.MediaType {
+	if c == options.Zstd {
+		return v1types.OCILayerZStd
+	}
+	return v1types.OCILayer
+}
+
+// newCompressor wraps w in a compressing writer for c using workers
+// compressor workers. Both pgzip and zstd produce the same output for any
+// worker count.
+func newCompressor(w io.Writer, c options.Compression, workers int) (io.WriteCloser, error) {
+	if c == options.Zstd {
+		// Without WithConcurrentBlocks, a zstd stream only overlaps compressing
+		// one block with filling the next, so concurrency above 2 adds nothing.
+		zw, err := zstd.NewWriter(w, zstd.WithEncoderConcurrency(min(workers, 2)))
+		if err != nil {
+			return nil, fmt.Errorf("creating zstd writer: %w", err)
+		}
+		return zw, nil
+	}
+	gzw := gzip.NewWriter(w)
+	if err := gzw.SetConcurrency(1<<20, workers); err != nil {
+		return nil, fmt.Errorf("setting pgzip concurrency to %d: %w", workers, err)
+	}
+	return gzw, nil
+}
+
+// newDecompressor returns a reader of the plain bytes in r, which was
+// compressed with c. Closing it does not close r.
+func newDecompressor(r io.Reader, c options.Compression) (io.ReadCloser, error) {
+	if c == options.Zstd {
+		zr, err := zstd.NewReader(r)
+		if err != nil {
+			return nil, err
+		}
+		return zr.IOReadCloser(), nil
+	}
+	return stdgzip.NewReader(r)
+}
+
 // LayerDigests identify a written layer: the digest of its tar (its diff
-// ID) and, when the layer is gzipped, the digest and size of the gzip.
+// ID) and, when the layer is compressed, the digest and size of the
+// compressed tar.
 type LayerDigests struct {
 	// DiffID is the digest of the uncompressed tar.
 	DiffID v1.Hash
-	// Digest and Size describe the gzipped tar, with Size measured in bytes.
+	// Digest and Size describe the compressed tar, with Size measured in bytes.
 	// Both have their zero values when compression is disabled.
 	Digest v1.Hash
 	Size   int64
@@ -182,19 +227,19 @@ type layerStream struct {
 	finish func() (LayerDigests, error)
 }
 
-// newLayerStream starts a layer's tar on out, gzipped with workers pgzip
-// workers when compressed is set (the output is the same for any worker
-// count) and buffered otherwise. finish flushes and closes the writers,
-// even after an error, and returns the digests; a second call returns
-// errStreamFinished.
-func newLayerStream(out io.Writer, compressed bool, workers int) (*layerStream, error) {
+// newLayerStream starts a layer's tar on out, compressed with compression
+// using workers compressor workers when compressed is set (the output is the
+// same for any worker count) and buffered otherwise. finish flushes and
+// closes the writers, even after an error, and returns the digests; a second
+// call returns errStreamFinished.
+func newLayerStream(out io.Writer, compressed bool, compression options.Compression, workers int) (*layerStream, error) {
 	diffid := sha256.New()
 
 	// The modes differ only in what sits between the tar writer and out.
 	var (
 		dst io.Writer
 		buf *bufio.Writer
-		gzw *gzip.Writer
+		zw  io.WriteCloser
 		// Track the compressed digest and byte count while writing because
 		// out may not support reading.
 		digest hash.Hash
@@ -203,11 +248,12 @@ func newLayerStream(out io.Writer, compressed bool, workers int) (*layerStream, 
 	if compressed {
 		digest = sha256.New()
 		cw = &countingWriter{w: io.MultiWriter(digest, out)}
-		gzw = gzip.NewWriter(cw)
-		if err := gzw.SetConcurrency(1<<20, workers); err != nil {
-			return nil, fmt.Errorf("setting pgzip concurrency to %d: %w", workers, err)
+		var err error
+		zw, err = newCompressor(cw, compression, workers)
+		if err != nil {
+			return nil, err
 		}
-		dst = gzw
+		dst = zw
 	} else {
 		buf = pooledBufioWriter(out)
 		dst = buf
@@ -224,8 +270,8 @@ func newLayerStream(out io.Writer, compressed bool, workers int) (*layerStream, 
 			}
 			done = true
 
-			// Every close runs even after an earlier one fails: a live pgzip
-			// writer is a running pipeline, so skipping its Close would leak
+			// Every close runs even after an earlier one fails: a live
+			// compressor is a running pipeline, so skipping its Close would leak
 			// the goroutines it is waiting on.
 			var rerr error
 			fail := func(err error) {
@@ -236,9 +282,9 @@ func newLayerStream(out io.Writer, compressed bool, workers int) (*layerStream, 
 			if err := w.Close(); err != nil {
 				fail(fmt.Errorf("closing tar writer: %w", err))
 			}
-			if gzw != nil {
-				if err := gzw.Close(); err != nil {
-					fail(fmt.Errorf("closing gzip writer: %w", err))
+			if zw != nil {
+				if err := zw.Close(); err != nil {
+					fail(fmt.Errorf("closing compressor: %w", err))
 				}
 			}
 			if buf != nil {
