@@ -93,10 +93,11 @@ func (n *namedRepositoryWithIndex) Source() string {
 }
 
 // repositoryPackage is a package that is part of a repository.
-// it is nearly identical to RepositoryPackage, but it includes the pinned name of the repository.
+// it is nearly identical to RepositoryPackage, but it includes the pinned name and index of the repository.
 type repositoryPackage struct {
 	*RepositoryPackage
 	pinnedName string
+	repoIndex  int
 }
 
 // SetRepositories sets the contents of /etc/apk/repositories file.
@@ -319,7 +320,7 @@ func newPkgResolver(ctx context.Context, indexes []NamedIndex) *PkgResolver {
 	_, span := otel.Tracer("go-apk").Start(ctx, "NewPkgResolver")
 	defer span.End()
 
-	nameMap, installIfMap := mapPackages(indexes)
+	nameMap, installIfMap := mapPackages(indexes, 0)
 	return &PkgResolver{
 		indexes:      indexes,
 		nameMap:      nameMap,
@@ -340,7 +341,7 @@ func (p *PkgResolver) Extend(ctx context.Context, indexes ...NamedIndex) *PkgRes
 	_, span := otel.Tracer("go-apk").Start(ctx, "PkgResolver.Extend")
 	defer span.End()
 
-	addNames, addInstallIf := mapPackages(indexes)
+	addNames, addInstallIf := mapPackages(indexes, len(p.indexes))
 
 	nameMap := maps.Clone(p.nameMap)
 	for name, pkgs := range addNames {
@@ -365,7 +366,7 @@ func (p *PkgResolver) Extend(ctx context.Context, indexes ...NamedIndex) *PkgRes
 
 // mapPackages indexes the packages of indexes by name and provided name, and
 // by each of their install-if triggers.
-func mapPackages(indexes []NamedIndex) (nameMap, installIfMap map[string][]*repositoryPackage) {
+func mapPackages(indexes []NamedIndex, repoOffset int) (nameMap, installIfMap map[string][]*repositoryPackage) {
 	numPackages := 0
 	for _, index := range indexes {
 		numPackages += index.Count()
@@ -373,33 +374,29 @@ func mapPackages(indexes []NamedIndex) (nameMap, installIfMap map[string][]*repo
 
 	nameMap = make(map[string][]*repositoryPackage, numPackages)
 	installIfMap = map[string][]*repositoryPackage{}
+	allPkgs := make([]*repositoryPackage, 0, numPackages)
 
 	// create a map of every package by name and version to its RepositoryPackage
-	for _, index := range indexes {
+	for i, index := range indexes {
+		repoIdx := repoOffset + i
 		for _, pkg := range index.Packages() {
-			nameMap[pkg.Name] = append(nameMap[pkg.Name], &repositoryPackage{
+			rp := &repositoryPackage{
 				RepositoryPackage: pkg,
 				pinnedName:        index.Name(),
-			})
+				repoIndex:         repoIdx,
+			}
+			nameMap[pkg.Name] = append(nameMap[pkg.Name], rp)
+			allPkgs = append(allPkgs, rp)
 			for _, dep := range pkg.InstallIf {
-				installIfMap[dep] = append(installIfMap[dep], &repositoryPackage{
-					RepositoryPackage: pkg,
-					pinnedName:        index.Name(),
-				})
+				installIfMap[dep] = append(installIfMap[dep], rp)
 			}
 		}
 	}
 	// create a map of every provided file to its package
-	allPkgs := make([][]*repositoryPackage, 0, len(nameMap))
-	for _, pkgVersions := range nameMap {
-		allPkgs = append(allPkgs, pkgVersions)
-	}
-	for _, pkgVersions := range allPkgs {
-		for _, pkg := range pkgVersions {
-			for _, provide := range pkg.Provides {
-				name := cachedResolvePackageNameVersionPin(provide).Name
-				nameMap[name] = append(nameMap[name], pkg)
-			}
+	for _, pkg := range allPkgs {
+		for _, provide := range pkg.Provides {
+			name := cachedResolvePackageNameVersionPin(provide).Name
+			nameMap[name] = append(nameMap[name], pkg)
 		}
 	}
 	return nameMap, installIfMap
@@ -1187,7 +1184,7 @@ func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 // are named "a", but others that provided "a". In that case, we should look not at the
 // version of the package, but the version of "a" that the package provides.
 func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) {
-	slices.SortFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
+	slices.SortStableFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
 }
 
 func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
@@ -1326,7 +1323,21 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 				return -1 * versions
 			}
 		}
-		// if versions are equal, compare names
+
+		// When versions tie for the same package name, prefer the
+		// earlier-configured repository (or the caller's explicit rank).
+		if a.Name == b.Name {
+			if p.rank != nil {
+				if r := cmp.Compare(p.rank(a.RepositoryPackage), p.rank(b.RepositoryPackage)); r != 0 {
+					return r
+				}
+			}
+			if a.repoIndex != b.repoIndex {
+				return cmp.Compare(a.repoIndex, b.repoIndex)
+			}
+		}
+
+		// if versions are equal across different package names, compare names
 		return cmp.Compare(a.Name, b.Name)
 	}
 }
