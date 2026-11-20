@@ -70,6 +70,10 @@ type Context struct {
 	formatOverride      types.LayerFormat
 	annotationOverrides map[string]string
 
+	// ownedTarball is the layer file ImageLayoutToLayer created under the
+	// temp dir, as opposed to a path the caller set through WithTarball.
+	ownedTarball string
+
 	s6      *s6.Context
 	fs      apkfs.FullFS
 	apk     *apk.APK
@@ -186,7 +190,12 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		err     error
 	)
 
-	if bc.o.TarballPath != "" {
+	// A path set through WithTarball belongs to the caller; only a file apko
+	// named itself is removed on failure. A Context reused after a successful
+	// call still has apko's own file in TarballPath, so ownership is tracked
+	// in ownedTarball rather than inferred from TarballPath alone.
+	owned := bc.o.TarballPath == "" || bc.o.TarballPath == bc.ownedTarball
+	if !owned {
 		outfile, err = os.Create(bc.o.TarballPath)
 	} else {
 		outfile, err = os.Create(filepath.Join(bc.o.TempDir(), bc.o.LayerFileName(bc.ic.Format)))
@@ -195,6 +204,22 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, fmt.Errorf("creating tarball file: %w", err)
 	}
 	bc.o.TarballPath = outfile.Name()
+	if owned {
+		bc.ownedTarball = outfile.Name()
+	}
+
+	// A caller that gets an error gets no layer, so the partial file is
+	// removed rather than left in a temp dir that library callers may never
+	// clean up.
+	done := false
+	defer func() {
+		if done || !owned {
+			return
+		}
+		_ = os.Remove(outfile.Name())
+		bc.o.TarballPath = ""
+		bc.ownedTarball = ""
+	}()
 
 	if bc.ic.Format.Resolved() == types.LayerFormatErofs {
 		// The EROFS path does not defer Close: it hashes the finished file, so
@@ -214,6 +239,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		if err != nil {
 			return "", nil, fmt.Errorf("finalizing erofs layer: %w", err)
 		}
+		done = true
 		return outName, l, nil
 	}
 
@@ -245,6 +271,7 @@ func (bc *Context) ImageLayoutToLayer(ctx context.Context) (string, v1.Layer, er
 		return "", nil, fmt.Errorf("closing %s: %w", outfile.Name(), err)
 	}
 
+	done = true
 	return outfile.Name(), l, nil
 }
 
