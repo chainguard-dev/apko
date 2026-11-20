@@ -398,17 +398,20 @@ func partitionLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pk
 		}
 
 		// Maintain our "main" stack.
-		if f.header.Typeflag == tar.TypeDir {
-			// Pop off any directories that are not parents of the current file's directory.
-			for i, v := range slices.Backward(stack) {
-				if v.path == path.Dir(f.path) {
-					break
-				}
-
-				stack = stack[:i]
+		// Pop off any directories that are not parents of the current file's directory.
+		// This has to happen for every entry, not just directories: otherwise a file
+		// that follows another directory's subtree would see that subtree still on the
+		// stack, and alignStacks would write those unrelated directories into its layer.
+		for i, v := range slices.Backward(stack) {
+			if v.path == path.Dir(f.path) {
+				break
 			}
 
-			// Push the current file onto the stack.
+			stack = stack[:i]
+		}
+
+		// Push directories onto the stack.
+		if f.header.Typeflag == tar.TypeDir {
 			stack = append(stack, f)
 		}
 

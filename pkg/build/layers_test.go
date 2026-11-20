@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
@@ -479,31 +480,7 @@ func TestSplitLayersPartitionsByPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := make([][]string, 0, len(layers))
-	for _, l := range layers {
-		rc, err := l.Uncompressed()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var entries []string
-		tr := tar.NewReader(rc)
-		for {
-			hdr, err := tr.Next()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := io.ReadAll(tr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			entries = append(entries, fmt.Sprintf("%s %c %d %q", hdr.Name, hdr.Typeflag, hdr.ModTime.Unix(), data))
-		}
-		rc.Close()
-		got = append(got, entries)
-	}
+	got := layerEntries(t, layers)
 	want := [][]string{{
 		`etc 5 1000 ""`,
 		`etc/alpha.conf 0 1000 "alpha conf\n"`,
@@ -535,4 +512,79 @@ func TestSplitLayersPartitionsByPackage(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("layer entries (-want +got):\n%s", diff)
 	}
+}
+
+// TestSplitLayersNoStaleDirectories pins that a layer only gets the parent
+// directories of its own entries. A file that follows another package's
+// subdirectories in the walk must not drag those subdirectories into its
+// layer: they would make the layer's digest depend on unrelated packages and
+// defeat sharing it across images.
+func TestSplitLayersNoStaleDirectories(t *testing.T) {
+	t1, t2, t3 := time.Unix(1000, 0), time.Unix(2000, 0), time.Unix(3000, 0)
+	a, b := newPkg("alpha"), newPkg("beta")
+	fsys := tarfsFixture(t, []entry{
+		{path: "usr", dir: true, mtime: t3},
+		{path: "usr/lib", dir: true, mtime: t3},
+		{path: "usr/lib/beta", dir: true, mtime: t2},
+		{path: "usr/lib/beta/sub", dir: true, mtime: t2},
+		{path: "usr/lib/beta/sub/beta.so", data: "beta\n", pkg: b, mtime: t2},
+		{path: "usr/lib/libalpha.so", data: "alpha\n", pkg: a, mtime: t1},
+	})
+	groups := []*group{{pkgs: []*apk.Package{a}}, {pkgs: []*apk.Package{b}}}
+
+	layers, err := splitLayers(t.Context(), fsys, groups, map[*apk.Package][]byte{}, t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{
+		`usr 5 1000 ""`,
+		`usr/lib 5 1000 ""`,
+		`usr/lib/libalpha.so 0 1000 "alpha\n"`,
+	}, {
+		`usr 5 2000 ""`,
+		`usr/lib 5 2000 ""`,
+		`usr/lib/beta 5 2000 ""`,
+		`usr/lib/beta/sub 5 2000 ""`,
+		`usr/lib/beta/sub/beta.so 0 2000 "beta\n"`,
+	}, {
+		// Directories belong to no package, so the top layer has them all.
+		`usr 5 3000 ""`,
+		`usr/lib 5 3000 ""`,
+		`usr/lib/beta 5 2000 ""`,
+		`usr/lib/beta/sub 5 2000 ""`,
+	}}
+	if diff := cmp.Diff(want, layerEntries(t, layers)); diff != "" {
+		t.Errorf("layer entries (-want +got):\n%s", diff)
+	}
+}
+
+// layerEntries lists each layer's tar entries as "name typeflag mtime data".
+func layerEntries(t *testing.T, layers []v1.Layer) [][]string {
+	t.Helper()
+	got := make([][]string, 0, len(layers))
+	for _, l := range layers {
+		rc, err := l.Uncompressed()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []string
+		tr := tar.NewReader(rc)
+		for {
+			hdr, err := tr.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries = append(entries, fmt.Sprintf("%s %c %d %q", hdr.Name, hdr.Typeflag, hdr.ModTime.Unix(), data))
+		}
+		rc.Close()
+		got = append(got, entries)
+	}
+	return got
 }
