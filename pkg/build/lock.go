@@ -89,6 +89,12 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 				return nil, nil, nil, err
 			}
 		}
+		// Arch2LockedPackages only returns the architectures it finds in the
+		// lock file, so a requested architecture the lock file was never
+		// generated for would otherwise silently drop out of the build.
+		if err := verifyLockfileArchitectures(o.Lockfile, l, input.Archs); err != nil {
+			return nil, nil, nil, err
+		}
 		pls = l.Arch2LockedPackages(input.Archs)
 	}
 
@@ -112,6 +118,52 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 	}
 
 	return ics, missing, resolvedPkgs, nil
+}
+
+// verifyLockfileArchitectures fails when the lock file was not generated for
+// one of the requested architectures.
+//
+// A lock file pins what `apko lock` resolved, for the architectures it was
+// run for. Any other architecture could only be left out of the image index
+// or resolved live, and both defeat the point of building from a lock file.
+//
+// A lock file that covers more than the requested architectures is fine, and
+// so is a covered architecture without a single locked package: see
+// pkglock.Lock.Architectures for what counts as covered.
+func verifyLockfileArchitectures(lockfile string, l pkglock.Lock, archs []types.Architecture) error {
+	missing := l.MissingArchitectures(archs)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	locked := l.Architectures()
+
+	// Suggest a lock file that keeps serving the builds the current one does.
+	var regenerate []string
+	for _, a := range slices.Sorted(slices.Values(slices.Concat(locked, missing))) {
+		regenerate = append(regenerate, a.String())
+	}
+
+	noun := "architecture"
+	if len(missing) > 1 {
+		noun = "architectures"
+	}
+	return fmt.Errorf("lockfile %q does not cover requested %s %s: it was generated for %s; regenerate it with `apko lock --arch=%s`",
+		lockfile, noun, describeArchs(missing), describeArchs(locked), strings.Join(regenerate, ","))
+}
+
+// describeArchs renders architectures for diagnostics, adding the APK name
+// where it differs from the OCI one, e.g. "amd64 (x86_64), riscv64".
+func describeArchs(archs []types.Architecture) string {
+	out := make([]string, 0, len(archs))
+	for _, a := range archs {
+		if apkArch := a.ToAPK(); apkArch != a.String() {
+			out = append(out, fmt.Sprintf("%s (%s)", a, apkArch))
+			continue
+		}
+		out = append(out, a.String())
+	}
+	return strings.Join(out, ", ")
 }
 
 func resolvePackageList(ctx context.Context, mc *MultiArch) ([]resolved, map[types.Architecture][]*apk.RepositoryPackage, error) {
