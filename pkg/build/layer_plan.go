@@ -114,28 +114,29 @@ func field(h hash.Hash, b []byte) {
 	h.Write(b)
 }
 
-// LayerContent provides content for a build's layer plans by digest. It
-// reads files from the build filesystem and holds content generated during
-// planning. It trusts digests reported by the filesystem to identify the
-// content correctly. The filesystem must remain available and unchanged
+// LayerContent provides content for a build's layer plans. It reads each
+// file from its own path in the build filesystem and holds content generated
+// during planning. The filesystem must remain available and unchanged
 // from planning until rendering completes.
 type LayerContent struct {
 	fsys   apkfs.FullFS
-	paths  map[string]string
-	inline map[string][]byte
+	inline map[inlineID][]byte
 }
 
-func (c *LayerContent) open(digest string) (io.ReadCloser, error) {
-	if b, ok := c.inline[digest]; ok {
+// inlineID identifies content generated during planning by path and digest,
+// so one path can have different generated content in each layer and a
+// package file with the same bytes is still read from its own path.
+type inlineID struct {
+	name, digest string
+}
+
+func (c *LayerContent) open(e *PlanEntry) (io.ReadCloser, error) {
+	if b, ok := c.inline[inlineID{e.Header.Name, e.Digest}]; ok {
 		return io.NopCloser(bytes.NewReader(b)), nil
 	}
-	path, ok := c.paths[digest]
-	if !ok {
-		return nil, fmt.Errorf("no content for %s: %w", digest, fs.ErrNotExist)
-	}
-	f, err := c.fsys.Open(path)
+	f, err := c.fsys.Open(e.Header.Name)
 	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
+		return nil, fmt.Errorf("opening %s: %w", e.Header.Name, err)
 	}
 	return f, nil
 }
@@ -175,7 +176,7 @@ func (p *LayerPlan) writeEntries(ctx context.Context, tw *tar.Writer, c *LayerCo
 		if !hasContent(&hdr) {
 			continue
 		}
-		data, err := c.open(e.Digest)
+		data, err := c.open(e)
 		if err != nil {
 			return fmt.Errorf("%s: %w", hdr.Name, err)
 		}
@@ -248,13 +249,13 @@ func (pl *planner) addData(hdr *tar.Header, data []byte) error {
 	}
 	d := h.String()
 	pl.plan.entries = append(pl.plan.entries, PlanEntry{Header: *hdr, Digest: d})
-	pl.content.inline[d] = data
+	pl.content.inline[inlineID{hdr.Name, d}] = data
 	return nil
 }
 
 // planLayers walks fsys to plan one layer per group followed by the top layer.
 func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDiff map[*apk.Package][]byte) ([]*LayerPlan, *LayerContent, error) {
-	content := &LayerContent{fsys: fsys, paths: map[string]string{}, inline: map[string][]byte{}}
+	content := &LayerContent{fsys: fsys, inline: map[inlineID][]byte{}}
 	planners := make([]*planner, 0, len(groups)+1)
 	sinks := make([]layerSink, 0, len(groups)+1)
 	newPlanner := func(pkgs []*apk.Package) {
@@ -269,7 +270,7 @@ func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDi
 	if err := partitionLayers(ctx, fsys, groups, pkgToDiff, sinks); err != nil {
 		return nil, nil, err
 	}
-	if err := digestFiles(ctx, fsys, planners, content); err != nil {
+	if err := digestFiles(ctx, fsys, planners); err != nil {
 		return nil, nil, err
 	}
 	plans := make([]*LayerPlan, len(planners))
@@ -280,9 +281,8 @@ func planLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, pkgToDi
 }
 
 // digestFiles assigns content digests to planned files, processing each path
-// once in parallel. It records the first planned path for each digest in
-// content.
-func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner, content *LayerContent) error {
+// once in parallel.
+func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner) error {
 	var (
 		mu      sync.Mutex
 		digests = map[string]string{}
@@ -313,11 +313,7 @@ func digestFiles(ctx context.Context, fsys apkfs.FullFS, planners []*planner, co
 	}
 	for _, pl := range planners {
 		for _, f := range pl.files {
-			d := digests[f.path]
-			pl.plan.entries[f.index].Digest = d
-			if _, ok := content.paths[d]; !ok {
-				content.paths[d] = f.path
-			}
+			pl.plan.entries[f.index].Digest = digests[f.path]
 		}
 		pl.files = nil
 	}

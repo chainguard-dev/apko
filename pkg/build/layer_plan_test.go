@@ -339,6 +339,30 @@ func TestLayerPlanReportedDigests(t *testing.T) {
 	}
 }
 
+// TestRenderReadsEachPath checks that Render reads each file from its own
+// path. Every package file reports the same digest, so the digest alone
+// cannot tell the files apart, and Render still matches BuildLayers.
+func TestRenderReadsEachPath(t *testing.T) {
+	same := func(string, []byte) string { return "test:same" }
+	want, err := newContext(t, same).BuildLayers(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, content := planLayers(t, newContext(t, same))
+	if len(plans) != len(want) {
+		t.Fatalf("planned %d layers, BuildLayers wrote %d", len(plans), len(want))
+	}
+	for i, p := range plans {
+		wantDigest, err := want[i].Digest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, d := render(t, p, content); d.Digest != wantDigest {
+			t.Errorf("layer %d: Render digest = %s, want %s", i, d.Digest, wantDigest)
+		}
+	}
+}
+
 func planDigests(t *testing.T, plans []*build.LayerPlan) [][sha256.Size]byte {
 	t.Helper()
 	out := make([][sha256.Size]byte, 0, len(plans))
