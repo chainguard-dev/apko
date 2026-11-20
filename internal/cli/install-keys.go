@@ -12,7 +12,9 @@ import (
 )
 
 func installKeys() *cobra.Command {
-	return &cobra.Command{
+	var jwksAllowedOrigins []string
+
+	cmd := &cobra.Command{
 		Use:     "install-keys",
 		Example: `apko install-keys`,
 		Short:   "Discover and install keys for all repositories",
@@ -21,7 +23,7 @@ func installKeys() *cobra.Command {
 			ctx := cmd.Context()
 			log := clog.FromContext(ctx)
 
-			a, err := apk.New(ctx)
+			a, err := apk.New(ctx, apk.WithJWKSAllowedOrigins(jwksAllowedOrigins...))
 			if err != nil {
 				return err
 			}
@@ -49,4 +51,6 @@ func installKeys() *cobra.Command {
 			return nil
 		},
 	}
+	addJWKSAllowedOriginFlag(cmd, &jwksAllowedOrigins)
+	return cmd
 }

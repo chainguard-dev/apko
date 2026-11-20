@@ -31,8 +31,8 @@ import (
 )
 
 // TestInitKeyringRejectsBadRemoteKeys covers the checks a key fetched over
-// HTTP must pass before it is written into /etc/apk/keys: a size limit and
-// a parse as a PEM RSA public key.
+// HTTP must pass before it is added to the in-memory keyring: a size limit
+// and a parse as a PEM RSA public key.
 func TestInitKeyringRejectsBadRemoteKeys(t *testing.T) {
 	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -71,8 +71,8 @@ func TestInitKeyringRejectsBadRemoteKeys(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.wantErr)
 
-			_, err = src.Stat(DefaultKeyRingPath + "/bad.rsa.pub")
-			require.Error(t, err, "rejected key must not be written to the keyring")
+			require.NotContains(t, a.keyringSnapshot(), "bad.rsa.pub",
+				"rejected key must not be added to the in-memory keyring")
 		})
 	}
 
@@ -96,9 +96,9 @@ func TestInitKeyringRejectsBadRemoteKeys(t *testing.T) {
 			require.NoError(t, err)
 
 			require.NoError(t, a.InitKeyring(t.Context(), []string{s.URL + "/good.rsa.pub"}, nil))
-			got, err := src.ReadFile(DefaultKeyRingPath + "/good.rsa.pub")
-			require.NoError(t, err)
-			require.Equal(t, body, got)
+			keys := a.keyringSnapshot()
+			require.Contains(t, keys, "good.rsa.pub")
+			require.Equal(t, body, keys["good.rsa.pub"])
 		})
 	}
 }
