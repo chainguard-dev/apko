@@ -139,6 +139,81 @@ func (bc *Context) GenerateImageSBOM(ctx context.Context, arch types.Architectur
 	return sboms, nil
 }
 
+func (bc *Context) GenerateLayerSBOM(ctx context.Context, arch types.Architecture, layer v1.Layer) ([]types.SBOM, error) {
+	log := clog.FromContext(ctx).With("arch", arch.ToAPK())
+	ctx = clog.WithLogger(ctx, log)
+
+	_, span := otel.Tracer("apko").Start(ctx, "GenerateLayerSBOM")
+	defer span.End()
+
+	if !bc.WantSBOM() {
+		log.Warnf("skipping SBOM generation")
+		return nil, nil
+	}
+
+	bde, err := bc.GetBuildDateEpoch()
+	if err != nil {
+		return nil, fmt.Errorf("computing build date epoch: %w", err)
+	}
+
+	layerDigest, err := layer.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("getting %s layer digest: %w", arch, err)
+	}
+
+	layerSize, err := layer.Size()
+	if err != nil {
+		return nil, fmt.Errorf("getting %s layer size: %w", arch, err)
+	}
+
+	layerMediaType, err := layer.MediaType()
+	if err != nil {
+		return nil, fmt.Errorf("getting %s layer media type: %w", arch, err)
+	}
+
+	s := newSBOM(ctx, bc.fs, bc.o, bc.ic, bde)
+	log.Debug("Generating layer SBOM")
+
+	s.ImageInfo.Layers = []v1.Descriptor{{
+		MediaType: layerMediaType,
+		Size:      layerSize,
+		Digest:    layerDigest,
+	}}
+
+	info, err := fetchFSReleaseData(bc.fs)
+	if err != nil {
+		return nil, fmt.Errorf("reading release data: %w", err)
+	}
+
+	s.OS.Name = info.Name
+	s.OS.ID = info.ID
+	s.OS.Version = info.VersionID
+	s.ImageInfo.Arch = arch
+
+	pkgs, err := bc.apk.GetInstalled()
+	if err != nil {
+		return nil, fmt.Errorf("reading apk package index: %w", err)
+	}
+
+	s.Packages = pkgs
+
+	sboms := make([]types.SBOM, 0)
+	for _, gen := range bc.o.SBOMGenerators {
+		filename := filepath.Join(s.OutputDir, s.FileName+"."+gen.Ext())
+		if err := gen.Generate(ctx, &s, filename); err != nil {
+			return nil, fmt.Errorf("generating %s sbom: %w", gen.Key(), err)
+		}
+		sboms = append(sboms, types.SBOM{
+			Path:          filename,
+			Format:        gen.Key(),
+			PredicateType: gen.PredicateType(),
+			Arch:          arch.String(),
+			Digest:        layerDigest,
+		})
+	}
+	return sboms, nil
+}
+
 type ReleaseData struct {
 	ID         string
 	Name       string
