@@ -524,7 +524,7 @@ func (p *PkgResolver) disqualifyProviders(constraint string, dq map[*RepositoryP
 		return
 	}
 
-	conflicting := filterPackages(providers, dq, withVersion(parsed.Version, parsed.dep), withPreferPin(parsed.pin))
+	conflicting := filterPackages(providers, dq, withVersion(parsed.Version, parsed.dep), withPreferPin(parsed.pin), withQueryName(parsed.Name))
 
 	for _, conflict := range conflicting {
 		if _, dqed := dq[conflict.RepositoryPackage]; dqed {
@@ -890,7 +890,7 @@ func (p *PkgResolver) ResolvePackage(pkgName string, dq map[*RepositoryPackage]s
 
 	// pkgsWithVersions contains a map of all versions of the package
 	// get the one that most matches what was requested
-	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin))
+	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin), withQueryName(name))
 	if len(packages) == 0 {
 		return nil, maybedqerror(pkgsWithVersions, dq)
 	}
@@ -917,7 +917,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 
 	// pkgsWithVersions contains a map of all versions of the package
 	// get the one that most matches what was requested
-	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin))
+	packages := filterPackages(pkgsWithVersions, dq, withVersion(version, compare), withPreferPin(pin), withQueryName(name))
 	if len(packages) == 0 {
 		return nil, maybedqerror(pkgsWithVersions, dq)
 	}
@@ -1079,6 +1079,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 				withVersion(version, compare),
 				withAllowPin(allowPin),
 				withInstalledPackage(existing[name]),
+				withQueryName(name),
 			)
 			if len(pkgs) == 0 {
 				return nil, nil, &ConstraintError{dep, maybedqerror(depPkgWithVersions, dq)}
