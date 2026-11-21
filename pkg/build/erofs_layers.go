@@ -262,6 +262,17 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 		if err := emitAncestors(owner, absPath, info.ModTime()); err != nil {
 			return err
 		}
+		// A second name for a file waits for the walk to finish, exactly as
+		// in writeErofs, and then links to the inode its owner already holds.
+		// tarfs gives both names one node, so they report the same Package()
+		// and almost always route to the same writer. One whose target landed
+		// in another layer cannot share an inode across images, and
+		// emitErofsHardlinks materializes it there instead.
+		if target, ok := hardlinkTarget(info); ok {
+			owner.links = append(owner.links, erofsHardlink{path: fpath, target: target, info: info})
+			owner.emitted[absPath] = true
+			return nil
+		}
 		if err := emitErofsEntry(owner.w, absPath, fpath, info, fsys, buf); err != nil {
 			return err
 		}
@@ -274,6 +285,9 @@ func splitErofsLayers(ctx context.Context, fsys apkfs.FullFS, groups []*group, p
 	// Finalize each writer and produce v1.Layer values.
 	layers := make([]v1.Layer, 0, len(writers))
 	for i, gw := range writers {
+		if err := emitErofsHardlinks(ctx, gw.w, gw.links, fsys, buf); err != nil {
+			return nil, err
+		}
 		if err := gw.finish(); err != nil {
 			return nil, err
 		}
@@ -309,6 +323,7 @@ type erofsGroupWriter struct {
 	file    *os.File
 	w       *erofs.Writer
 	emitted map[string]bool // absPath -> already emitted into this writer
+	links   []erofsHardlink // second names, linked once the walk is done
 	closed  bool
 }
 
