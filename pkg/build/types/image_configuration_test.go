@@ -3,6 +3,7 @@ package types_test
 import (
 	"context"
 	"crypto/sha256"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -65,6 +66,37 @@ func TestUserContents(t *testing.T) {
 
 	// Ensure this does not cause panic when users[1].gid is empty (defaulting to 0)
 	ic.Summarize(ctx)
+}
+
+func TestLoadDetectsRecursiveInclude(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+
+	self := filepath.Join(tmp, "self.apko.yaml")
+	require.NoError(t, os.WriteFile(self, []byte("include: self.apko.yaml\n"), 0o644))
+
+	hasher := sha256.New()
+	ic := types.ImageConfiguration{}
+	err := ic.Load(ctx, self, []string{tmp}, hasher)
+	require.ErrorContains(t, err, "recursive include detected")
+	require.ErrorContains(t, err, self)
+}
+
+func TestLoadDetectsRecursiveIncludeChain(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+
+	first := filepath.Join(tmp, "first.apko.yaml")
+	second := filepath.Join(tmp, "second.apko.yaml")
+	require.NoError(t, os.WriteFile(first, []byte("include: second.apko.yaml\n"), 0o644))
+	require.NoError(t, os.WriteFile(second, []byte("include: first.apko.yaml\n"), 0o644))
+
+	hasher := sha256.New()
+	ic := types.ImageConfiguration{}
+	err := ic.Load(ctx, first, []string{tmp}, hasher)
+	require.ErrorContains(t, err, "recursive include detected")
+	require.ErrorContains(t, err, first)
+	require.ErrorContains(t, err, second)
 }
 
 func TestMergeInto(t *testing.T) {
