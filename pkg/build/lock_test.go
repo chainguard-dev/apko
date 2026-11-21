@@ -86,6 +86,36 @@ func TestUnify(t *testing.T) {
 			},
 		},
 	}, {
+		name:      "locked and pinned parent meta-package",
+		originals: []string{"foo=1.2.3", "bar-parent=2.4.6@local", "baz=0.0.1"},
+		inputs: []resolved{{
+			arch:     "amd64",
+			packages: sets.New("foo", "bar", "baz"),
+			versions: map[string]string{
+				"foo": "1.2.3",
+				"bar": "2.4.6",
+				"baz": "0.0.1",
+			},
+			pinned: map[string]string{
+				"bar-parent": "@local",
+			},
+			provided: map[string]sets.Set[string]{
+				"bar": sets.New("bar-parent"),
+			},
+		}},
+		want: map[string][]string{
+			"amd64": {
+				"bar=2.4.6@local",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
+			"index": {
+				"bar=2.4.6@local",
+				"baz=0.0.1",
+				"foo=1.2.3",
+			},
+		},
+	}, {
 		name:      "transitive dependency",
 		originals: []string{"foo", "bar", "baz"},
 		inputs: []resolved{{
