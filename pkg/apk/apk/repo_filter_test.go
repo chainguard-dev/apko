@@ -699,3 +699,37 @@ func requireNotCached[V any](t *testing.T, c *lruCache[V], indexes map[string]Na
 		}
 	}
 }
+
+// TestResolverPrefersEarlierRepositoryForIdenticalPackage verifies that
+// the first repository wins when packages have the same name and version.
+func TestResolverPrefersEarlierRepositoryForIdenticalPackage(t *testing.T) {
+	first := &Package{
+		Name:     "dup",
+		Version:  "1-r0",
+		Checksum: []byte("first"),
+	}
+	second := &Package{
+		Name:     "dup",
+		Version:  "1-r0",
+		Checksum: []byte("second"),
+	}
+
+	index := func(uri string, pkg *Package) NamedIndex {
+		repo := &Repository{URI: uri}
+		return NewNamedRepositoryWithIndex(
+			"",
+			repo.WithIndex(&APKIndex{Packages: []*Package{pkg}}),
+		)
+	}
+
+	resolver := BuildPkgResolver(t.Context(), []NamedIndex{
+		index("https://repo-first.example", first),
+		index("https://repo-second.example", second),
+	})
+
+	got, _, err := resolveForTest(t, resolver, []string{"dup"})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Contains(t, got[0], fmt.Sprintf("dup-1-r0 %x ", first.Checksum))
+	require.Contains(t, got[0], "https://repo-first.example/")
+}

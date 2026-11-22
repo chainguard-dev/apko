@@ -54,8 +54,14 @@ func LockImageConfigurationWithPackages(ctx context.Context, ic types.ImageConfi
 		return nil, nil, nil, err
 	}
 
-	input.Contents.BuildRepositories = sets.List(sets.New(input.Contents.BuildRepositories...).Insert(o.ExtraBuildRepos...))
-	input.Contents.Repositories = sets.List(sets.New(input.Contents.Repositories...).Insert(o.ExtraRepos...))
+	input.Contents.BuildRepositories = orderedUniqueStrings(
+		input.Contents.BuildRepositories,
+		o.ExtraBuildRepos,
+	)
+	input.Contents.Repositories = orderedUniqueStrings(
+		input.Contents.Repositories,
+		o.ExtraRepos,
+	)
 	input.Contents.Keyring = sets.List(sets.New(input.Contents.Keyring...).Insert(o.ExtraKeyFiles...))
 
 	mc, err := NewMultiArch(ctx, input.Archs, append(slices.Clone(opts), WithImageConfiguration(*input))...)
