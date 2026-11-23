@@ -312,6 +312,7 @@ func (t *cacheTransport) get(ctx context.Context, request *http.Request, cacheFi
 }
 
 func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Request, cacheFile string) (*http.Response, error) {
+	var header http.Header
 	initialEtag := request.Header.Get("I-Cant-Believe-Its-Not-If-None-Match")
 	if initialEtag == "" {
 		resp, err := t.head(request, cacheFile)
@@ -329,6 +330,13 @@ func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Reques
 		}
 
 		initialEtag = etag
+
+		// The response below is served from the cache, so it has none of the
+		// server's headers. Keep the file name the server gives the resource,
+		// which callers like InitKeyring need when the URL doesn't carry it.
+		if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+			header = http.Header{"Content-Disposition": {cd}}
+		}
 	}
 
 	// This is a bit of a hack. We cache parsed APKINDEX files in globalIndexCache, which needs the etag as a cache key.
@@ -354,6 +362,7 @@ func (t *cacheTransport) fetchAndCache(ctx context.Context, request *http.Reques
 
 	return &http.Response{
 		StatusCode:    http.StatusOK,
+		Header:        header,
 		Body:          f,
 		ContentLength: fi.Size(),
 	}, nil
