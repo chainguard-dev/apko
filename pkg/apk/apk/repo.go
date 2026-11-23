@@ -729,9 +729,25 @@ func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages 
 		installTracked  = map[string]*RepositoryPackage{}
 	)
 
+	for _, s := range constraints {
+		if s == "!" {
+			return nil, nil, fmt.Errorf("package list entry %q names no package", s)
+		}
+	}
+
 	if err := p.constrain(constraints, dq); err != nil {
 		return nil, nil, fmt.Errorf("constraining initial packages: %w", err)
 	}
+
+	// A !name entry excludes name, as in an apk world file. constrain has
+	// already disqualified its providers, so drop the entry.
+	constraints = slices.DeleteFunc(constraints, func(s string) bool {
+		if name, ok := strings.CutPrefix(s, "!"); ok {
+			conflicts = append(conflicts, name)
+			return true
+		}
+		return false
+	})
 
 	for len(constraints) != 0 {
 		next, err := p.nextPackage(constraints, dq)
@@ -757,6 +773,9 @@ func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages 
 
 	// now get the dependencies for each package
 	for _, pkgName := range packages {
+		if strings.HasPrefix(pkgName, "!") {
+			continue
+		}
 		pkg, deps, confs, err := p.GetPackageWithDependencies(ctx, pkgName, dependenciesMap, dq)
 		if err != nil {
 			return toInstall, nil, &ConstraintError{pkgName, err}
