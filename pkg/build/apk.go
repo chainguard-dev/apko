@@ -30,12 +30,43 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 	//
 	// We do not include the build-time repositories here, because this is
 	// what defines the /etc/apk/repositories file in the final image.
-	runtimeRepos := sets.List(
-		sets.New(bc.ic.Contents.Repositories...).
-			Insert(bc.ic.Contents.RuntimeOnlyRepositories...).
-			Insert(bc.o.ExtraRepos...))
+	runtimeRepoSet := sets.New(bc.ic.Contents.Repositories...).
+		Insert(bc.ic.Contents.RuntimeOnlyRepositories...).
+		Insert(bc.o.ExtraRepos...)
+	runtimeRepos := sets.List(runtimeRepoSet)
 	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
 		return fmt.Errorf("failed to set apk repositories: %w", err)
+	}
+
+	regularRuntimeRepos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))
+	if err := bc.apk.InitRuntimeKeys(ctx, regularRuntimeRepos...); err != nil {
+		return fmt.Errorf("failed to initialize runtime repository keys: %w", err)
+	}
+
+	// Runtime-only repositories are not needed to build the image. Their key
+	// discovery must not make builds fail or wait through the retry policy used
+	// for build-time repositories.
+	regularRuntimeRepoSet := sets.New(regularRuntimeRepos...)
+	var runtimeOnlyRepos []string
+	for _, repo := range sets.List(sets.New(bc.ic.Contents.RuntimeOnlyRepositories...)) {
+		if regularRuntimeRepoSet.Has(repo) {
+			continue
+		}
+		runtimeOnlyRepos = append(runtimeOnlyRepos, repo)
+	}
+	if err := bc.apk.InitRuntimeOnlyKeys(ctx, runtimeOnlyRepos...); err != nil {
+		return fmt.Errorf("failed to initialize runtime-only repository keys: %w", err)
+	}
+
+	if len(runtimeRepos) > 0 {
+		keyring := sets.List(sets.New(bc.ic.Contents.Keyring...).Insert(bc.o.ExtraKeyFiles...))
+		if err := bc.apk.AddRuntimeKeysFromKeyring(keyring...); err != nil {
+			return fmt.Errorf("failed to add configured runtime repository keys: %w", err)
+		}
+	}
+
+	if err := bc.apk.WriteRuntimeKeys(); err != nil {
+		return fmt.Errorf("failed to write runtime repository keys: %w", err)
 	}
 	// TODO(sfc-gh-mhazy) Handle the rest of apk files (scripts, triggers)
 	return nil

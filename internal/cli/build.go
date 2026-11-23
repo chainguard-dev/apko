@@ -52,6 +52,7 @@ func buildCmd() *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
 	var extraRepos []string
+	var jwksAllowedOrigins []string
 	var extraPackages []string
 	var rawAnnotations []string
 	var cacheDir string
@@ -110,6 +111,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
+				build.WithJWKSAllowedOrigins(jwksAllowedOrigins...),
 				build.WithExtraPackages(extraPackages),
 				build.WithTags(args[1]),
 				build.WithVCS(withVCS),
@@ -134,6 +136,7 @@ Along the image, apko will generate SBOMs (software bill of materials) describin
 	cmd.Flags().StringSliceVar(&sbomFormats, "sbom-formats", []string{"spdx"}, "SBOM formats to output")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	addJWKSAllowedOriginFlag(cmd, &jwksAllowedOrigins)
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	cmd.Flags().StringSliceVar(&rawAnnotations, "annotations", []string{}, "OCI annotations to add. Separate with colon (key:value)")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "directory to use for caching apk packages and indexes (default '' means to use system-defined cache directory)")

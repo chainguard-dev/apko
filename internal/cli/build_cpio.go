@@ -40,6 +40,7 @@ func buildCPIO() *cobra.Command {
 	var extraKeys []string
 	var extraBuildRepos []string
 	var extraRepos []string
+	var jwksAllowedOrigins []string
 	var extraPackages []string
 	var sizeLimits options.SizeLimits
 
@@ -56,6 +57,7 @@ func buildCPIO() *cobra.Command {
 				build.WithExtraKeys(extraKeys),
 				build.WithExtraBuildRepos(extraBuildRepos),
 				build.WithExtraRepos(extraRepos),
+				build.WithJWKSAllowedOrigins(jwksAllowedOrigins...),
 				build.WithExtraPackages(extraPackages),
 				build.WithBuildDate(buildDate),
 				build.WithSBOM(sbomPath),
@@ -71,6 +73,7 @@ func buildCPIO() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")
+	addJWKSAllowedOriginFlag(cmd, &jwksAllowedOrigins)
 	cmd.Flags().StringSliceVarP(&extraPackages, "package-append", "p", []string{}, "extra packages to include")
 	addClientLimitFlags(cmd, &sizeLimits)
 
