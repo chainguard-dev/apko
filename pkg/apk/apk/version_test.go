@@ -910,10 +910,10 @@ func TestResolveVersion(t *testing.T) {
 			found := filterPackages(pkgs, map[*RepositoryPackage]string{}, withVersion(tt.version, tt.compare), withPreferPin(tt.pin), withInstalledPackage(tt.installed))
 			// add the existing in, if any
 			existing := make(map[string]*RepositoryPackage)
-			existingOrigins := make(map[string]string)
+			existingOrigins := originVersions{}
 			if tt.installed != nil {
 				existing[tt.installed.Name] = tt.installed
-				existingOrigins[tt.installed.Origin] = tt.installed.Version
+				existingOrigins.add(tt.installed.Origin, tt.installed.Version)
 			}
 			pkg := pr.bestPackage(found, nil, "", existing, existingOrigins, tt.pin)
 			if tt.want == "" {

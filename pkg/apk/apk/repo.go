@@ -801,6 +801,32 @@ func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages 
 	return toInstall, conflicts, nil
 }
 
+// originVersions records every version of each origin that has been selected
+// so far. One origin can be selected at more than one version, for example
+// libicu78 and libicu79 from the icu origin during a soname transition, so a
+// single version per origin would depend on which package was recorded last.
+type originVersions map[string]map[string]struct{}
+
+func (o originVersions) add(origin, version string) {
+	if origin == "" {
+		return
+	}
+	versions, ok := o[origin]
+	if !ok {
+		versions = map[string]struct{}{}
+		o[origin] = versions
+	}
+	versions[version] = struct{}{}
+}
+
+func (o originVersions) has(origin, version string) bool {
+	if origin == "" {
+		return false
+	}
+	_, ok := o[origin][version]
+	return ok
+}
+
 // GetPackageWithDependencies get all of the dependencies for a single package as well as looking
 // up the package itself and resolving its version, based on the indexes.
 // Requires the existing set because the logic for resolving dependencies between competing
@@ -809,11 +835,11 @@ func (p *PkgResolver) getPackagesWithDependencies(ctx context.Context, packages 
 func (p *PkgResolver) GetPackageWithDependencies(ctx context.Context, pkgName string, existing map[string]*RepositoryPackage, dq map[*RepositoryPackage]string) (*RepositoryPackage, []*RepositoryPackage, []string, error) {
 	parents := make(map[string]bool)
 	localExisting := make(map[string]*RepositoryPackage, len(existing))
-	existingOrigins := map[string]string{}
+	existingOrigins := originVersions{}
 	for k, v := range existing {
 		localExisting[k] = v
-		if v != nil && v.Origin != "" {
-			existingOrigins[v.Origin] = v.Version
+		if v != nil {
+			existingOrigins.add(v.Origin, v.Version)
 		}
 	}
 
@@ -952,7 +978,7 @@ func (p *PkgResolver) resolvePackage(pkgName string, dq map[*RepositoryPackage]s
 // It might change the order of install.
 // In other words, this _should_ be a DAG (acyclical), but because the packages
 // are just listing dependencies in text, it might be cyclical. We need to be careful of that.
-func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins map[string]string, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
+func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *RepositoryPackage, allowPin string, parents map[string]bool, existing map[string]*RepositoryPackage, existingOrigins originVersions, dq map[*RepositoryPackage]string) (dependencies []*RepositoryPackage, conflicts []string, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, context.Cause(ctx)
 	}
@@ -1142,9 +1168,7 @@ func (p *PkgResolver) getPackageDependencies(ctx context.Context, pkg *Repositor
 		conflicts = append(conflicts, confs...)
 		for _, dep := range subDeps {
 			existing[dep.Name] = dep
-			if dep.Origin != "" {
-				existingOrigins[dep.Origin] = dep.Version
-			}
+			existingOrigins.add(dep.Origin, dep.Version)
 		}
 	}
 	return dependencies, conflicts, nil
@@ -1186,11 +1210,11 @@ func cachedResolvePackageNameVersionPin(pkgName string) ParsedConstraint {
 // For example, if the original search was for package "a", then pkgs may contain some that
 // are named "a", but others that provided "a". In that case, we should look not at the
 // version of the package, but the version of "a" that the package provides.
-func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) {
+func (p *PkgResolver) sortPackages(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins originVersions, pin string) {
 	slices.SortFunc(pkgs, p.comparePackages(compare, name, existing, existingOrigins, pin))
 }
 
-func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
+func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins originVersions, pin string) func(a, b *repositoryPackage) int { //nolint:gocyclo
 	return func(a, b *repositoryPackage) int {
 		// determine versions
 		iVersionStr := p.getDepVersionForName(a, name)
@@ -1236,8 +1260,8 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 		// the version we pulled in. Otherwise this heuristic would keep us on
 		// an older version of an origin (e.g. when a package moves origins at
 		// a newer version, or an old binary lingers in the index after rebuild).
-		iOriginMatched := a.Origin != "" && existingOrigins[a.Origin] == a.Version
-		jOriginMatched := b.Origin != "" && existingOrigins[b.Origin] == b.Version
+		iOriginMatched := existingOrigins.has(a.Origin, a.Version)
+		jOriginMatched := existingOrigins.has(b.Origin, b.Version)
 		if iOriginMatched && !jOriginMatched {
 			return -1
 		}
@@ -1331,7 +1355,7 @@ func (p *PkgResolver) comparePackages(compare *RepositoryPackage, name string, e
 	}
 }
 
-func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins map[string]string, pin string) *repositoryPackage {
+func (p *PkgResolver) bestPackage(pkgs []*repositoryPackage, compare *RepositoryPackage, name string, existing map[string]*RepositoryPackage, existingOrigins originVersions, pin string) *repositoryPackage {
 	if len(pkgs) == 0 {
 		return nil
 	}
