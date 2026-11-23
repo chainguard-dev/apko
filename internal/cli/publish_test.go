@@ -101,7 +101,7 @@ func TestPublish(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:1cc2a29f39af74ad432a283ee466dd43130dd9292e49f18baaaa3d890a857347"
+	want := "sha256:e471896795f517b1b4966c76891922894ec5d2b400326932ac8c7abd0ffe082e"
 	require.Equal(t, want, digest.String())
 
 	// Check that the sbomPath is not empty.
@@ -177,7 +177,7 @@ func TestPublishLayering(t *testing.T) {
 
 	// This test will fail if we ever make a change in apko that changes the image.
 	// Sometimes, this is intentional, and we need to change this and bump the version.
-	want := "sha256:f5dc65ebea1afb5693ec323d6fdfa4b899a0c73af634d776a88bd44852d4216c"
+	want := "sha256:c01a30839d370d1b8f89798a124411723a1ee9855b56f457f0f316331651445c"
 	require.Equal(t, want, digest.String())
 
 	im, err := idx.IndexManifest()
