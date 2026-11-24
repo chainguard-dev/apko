@@ -35,6 +35,7 @@ func buildMinirootFS() *cobra.Command {
 	var buildArch string
 	var sbomPath string
 	var ignoreSignatures bool
+	var compression string
 	var extraKeys []string
 	var extraBuildRepos []string
 	var extraRepos []string
@@ -61,6 +62,7 @@ func buildMinirootFS() *cobra.Command {
 				build.WithSBOM(sbomPath),
 				build.WithArch(types.ParseArchitecture(buildArch)),
 				build.WithIgnoreSignatures(ignoreSignatures),
+				build.WithCompression(compression),
 				build.WithSizeLimits(sizeLimits),
 			)
 		},
@@ -70,6 +72,7 @@ func buildMinirootFS() *cobra.Command {
 	cmd.Flags().StringVar(&buildArch, "build-arch", runtime.GOARCH, "architecture to build for -- default is Go runtime architecture")
 	cmd.Flags().StringVar(&sbomPath, "sbom-path", "", "generate an SBOM")
 	cmd.Flags().BoolVar(&ignoreSignatures, "ignore-signatures", false, "ignore repository signature verification")
+	cmd.Flags().StringVar(&compression, "compression", "gzip", "compression algorithm to use for layers (gzip or zstd)")
 	cmd.Flags().StringSliceVarP(&extraKeys, "keyring-append", "k", []string{}, "path to extra keys to include in the keyring")
 	cmd.Flags().StringSliceVarP(&extraBuildRepos, "build-repository-append", "b", []string{}, "path to extra repositories to include")
 	cmd.Flags().StringSliceVarP(&extraRepos, "repository-append", "r", []string{}, "path to extra repositories to include")

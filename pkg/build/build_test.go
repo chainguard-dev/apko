@@ -34,6 +34,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -529,4 +530,42 @@ func TestAuth_bad(t *testing.T) {
 	)...)
 	require.Error(t, err, "build should have failed to init keyring")
 	require.True(t, called)
+}
+
+func TestBuildImageWithZstd(t *testing.T) {
+	ctx := context.Background()
+
+	opts := []build.Option{
+		build.WithConfig("apko.yaml", []string{"testdata"}),
+		build.WithCompression("zstd"),
+	}
+
+	bc, err := build.New(ctx, fs.NewMemFS(), opts...)
+	require.NoError(t, err)
+
+	err = bc.BuildImage(ctx)
+	require.NoError(t, err)
+
+	_, layer, err := bc.ImageLayoutToLayer(ctx)
+	require.NoError(t, err)
+
+	mediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	require.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", string(mediaType))
+
+	rc, err := layer.Compressed()
+	require.NoError(t, err)
+	defer rc.Close()
+
+	decoder, err := zstd.NewReader(rc)
+	require.NoError(t, err)
+	defer decoder.Close()
+
+	_, err = io.Copy(io.Discard, decoder)
+	require.NoError(t, err, "failed to decode zstd compressed layer")
+}
+
+func TestWithCompressionInvalid(t *testing.T) {
+	_, err := build.New(context.Background(), fs.NewMemFS(), build.WithCompression("lz4"))
+	require.ErrorContains(t, err, `invalid compression algorithm "lz4"`)
 }
