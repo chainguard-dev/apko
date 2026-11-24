@@ -80,6 +80,12 @@ func (ic *ImageConfiguration) parse(ctx context.Context, configData []byte, incl
 		}
 	}
 
+	// Check accounts on the merged result, so an include cannot contribute a
+	// user the top-level configuration would have been refused for.
+	if err := ic.Accounts.validate(); err != nil {
+		return err
+	}
+
 	ic.Contents.BuildRepositories = trimRepos(ic.Contents.BuildRepositories)
 	ic.Contents.RuntimeOnlyRepositories = trimRepos(ic.Contents.RuntimeOnlyRepositories)
 	ic.Contents.Repositories = trimRepos(ic.Contents.Repositories)
@@ -166,6 +172,28 @@ func (ic *ImageConfiguration) MergeInto(target *ImageConfiguration) error {
 	return ic.Contents.MergeInto(&target.Contents)
 }
 
+// validate rejects users and groups that must never reach /etc/passwd and
+// /etc/group. It runs both when a configuration is loaded (after includes
+// are merged) and in Validate, and does not mutate the accounts.
+func (a *ImageAccounts) validate() error {
+	for _, u := range a.Users {
+		if u.UserName == "" {
+			return fmt.Errorf("configured user %v has no configured user name", u)
+		}
+
+		if u.UID == 0 {
+			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
+		}
+	}
+
+	for _, g := range a.Groups {
+		if g.GroupName == "" {
+			return fmt.Errorf("configured group %v has no configured group name", g)
+		}
+	}
+	return nil
+}
+
 func (a *ImageAccounts) MergeInto(target *ImageAccounts) error {
 	if target.RunAs == "" {
 		target.RunAs = a.RunAs
@@ -220,23 +248,13 @@ func (ic *ImageConfiguration) Validate() error {
 		}
 	}
 
-	for i, u := range ic.Accounts.Users {
-		if u.UserName == "" {
-			return fmt.Errorf("configured user %v has no configured user name", u)
-		}
-
-		if u.UID == 0 {
-			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
-		}
-
-		if u.HomeDir == "" {
-			ic.Accounts.Users[i].HomeDir = "/home/" + u.UserName
-		}
+	if err := ic.Accounts.validate(); err != nil {
+		return err
 	}
 
-	for _, g := range ic.Accounts.Groups {
-		if g.GroupName == "" {
-			return fmt.Errorf("configured group %v has no configured group name", g)
+	for i, u := range ic.Accounts.Users {
+		if u.HomeDir == "" {
+			ic.Accounts.Users[i].HomeDir = "/home/" + u.UserName
 		}
 	}
 

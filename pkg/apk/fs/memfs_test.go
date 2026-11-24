@@ -1,9 +1,12 @@
 package fs
 
 import (
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -462,4 +465,100 @@ func TestMemFSCreate(t *testing.T) {
 	fileInfo, err := fd.Stat()
 	require.NoError(t, err)
 	require.Equal(t, fileInfo.Mode(), fs.FileMode(0o644))
+}
+
+// TestMemFSConcurrentHandles exercises concurrent readers and writers on
+// the same file through separate handles. Run with -race: node.data is
+// shared by every handle, so each access must hold node.mu.
+func TestMemFSConcurrentHandles(t *testing.T) {
+	m := NewMemFS()
+	require.NoError(t, m.WriteFile("/shared", []byte("seed"), 0o644))
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			f, err := m.OpenFile("/shared", os.O_RDONLY, 0o644)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer f.Close()
+			for range 50 {
+				// Size and the end offset both read len(node.data).
+				fi, err := m.Stat("/shared")
+				if err != nil {
+					t.Errorf("stat: %v", err)
+					return
+				}
+				if fi.Size() < int64(len("seed")) {
+					t.Errorf("stat: size %d", fi.Size())
+					return
+				}
+				if _, err := f.Seek(0, io.SeekEnd); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			f, err := m.OpenFile("/shared", os.O_WRONLY|os.O_APPEND, 0o644)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer f.Close()
+			for range 50 {
+				if _, err := f.Write([]byte{byte('a' + i)}); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			f, err := m.Open("/shared")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer f.Close()
+			buf := make([]byte, 16)
+			for range 50 {
+				if _, err := f.Read(buf); err != nil && !errors.Is(err, io.EOF) {
+					t.Error(err)
+					return
+				}
+				if _, err := f.(io.ReaderAt).ReadAt(buf, 0); err != nil && !errors.Is(err, io.EOF) {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Each handle keeps its own offset, so concurrent appenders may overwrite
+	// each other; the invariant under test is that no access races, which
+	// the race detector reports, and that the file stays readable.
+	got, err := m.ReadFile("/shared")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(got), len("seed"))
+}
+
+func TestMemFSLstatReportsSymlink(t *testing.T) {
+	m := NewMemFS()
+	require.NoError(t, m.MkdirAll("/usr/lib", 0o755))
+	require.NoError(t, m.Symlink("/usr/lib", "/lib"))
+
+	fi, err := m.Lstat("/lib")
+	require.NoError(t, err)
+	require.NotZero(t, fi.Mode()&os.ModeSymlink, "Lstat must describe the link itself")
+
+	fi, err = m.Stat("/lib")
+	require.NoError(t, err)
+	require.Zero(t, fi.Mode()&os.ModeSymlink, "Stat follows the link")
+	require.True(t, fi.IsDir())
 }

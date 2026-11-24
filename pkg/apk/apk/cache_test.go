@@ -15,10 +15,12 @@
 package apk
 
 import (
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -170,4 +172,107 @@ func TestFlightCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, hit)
 	require.Equal(t, 20, value)
+}
+
+// TestFlightCacheJoinedCallersRetryAfterFailure checks that a transient
+// error is reported only to the caller whose call failed. Callers that
+// joined that in-flight call retry with their own call rather than all
+// surfacing the same error.
+func TestFlightCacheJoinedCallersRetryAfterFailure(t *testing.T) {
+	s := newFlightCache[string, int](1)
+
+	var called atomic.Int32
+	started := make(chan struct{}) // closed once the first call is in flight
+	release := make(chan struct{}) // closed to let the first call fail
+
+	var failures, successes atomic.Int32
+	call := func() {
+		v, _, err := s.Do("test", func() (int, error) {
+			if called.Add(1) == 1 {
+				close(started)
+				<-release
+				return 0, assert.AnError
+			}
+			return 42, nil
+		})
+		if err != nil {
+			failures.Add(1)
+			return
+		}
+		if v == 42 {
+			successes.Add(1)
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Go(call)
+	<-started // The failing call is now in flight, so every later caller joins it.
+
+	var arrived atomic.Int32
+	for range 9 {
+		wg.Go(func() {
+			arrived.Add(1)
+			call()
+		})
+	}
+	for arrived.Load() < 9 {
+		runtime.Gosched()
+	}
+	// The joiners are at or inside Do by now; give them a moment to block
+	// on the in-flight call before it is allowed to fail. Without the retry
+	// in Do, every joiner would report the first call's error here.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	require.EqualValues(t, 1, failures.Load(), "only the caller that ran the failing call sees its error")
+	require.EqualValues(t, 9, successes.Load(), "every other caller retries and succeeds")
+	require.GreaterOrEqual(t, called.Load(), int32(2))
+
+	// The failed call must only have evicted its own entry: the successful
+	// retry is still cached, so a new caller hits it without another call.
+	before := called.Load()
+	v, hit, err := s.Do("test", func() (int, error) { return -1, nil })
+	require.NoError(t, err)
+	require.True(t, hit, "the successful entry stays cached after the failed one is evicted")
+	require.Equal(t, 42, v)
+	require.Equal(t, before, called.Load())
+}
+
+// TestFlightCacheFailedCallEvictsOnlyItsOwnEntry pins the guard in do: a
+// call that fails after its entry was replaced must not evict the newer,
+// successful entry for the same key.
+func TestFlightCacheFailedCallEvictsOnlyItsOwnEntry(t *testing.T) {
+	s := newFlightCache[string, int](1)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.Do("k", func() (int, error) {
+			close(started)
+			<-release
+			return 0, assert.AnError
+		})
+		done <- err
+	}()
+	<-started
+
+	// Replace the in-flight entry with a fresh, successful one.
+	s.Forget("k")
+	v, hit, err := s.Do("k", func() (int, error) { return 42, nil })
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Equal(t, 42, v)
+
+	// Now let the old call fail. It owned the evicted entry, not the new one.
+	close(release)
+	require.ErrorIs(t, <-done, assert.AnError)
+
+	var called bool
+	v, hit, err = s.Do("k", func() (int, error) { called = true; return -1, nil })
+	require.NoError(t, err)
+	require.True(t, hit, "the newer successful entry must survive the old call's failure")
+	require.Equal(t, 42, v)
+	require.False(t, called)
 }

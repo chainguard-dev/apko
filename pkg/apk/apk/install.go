@@ -39,7 +39,14 @@ func (a *APK) writeOneFile(header *tar.Header, r io.Reader, allowOverwrite bool)
 	if _, err := a.fs.Stat(header.Name); err == nil {
 		if !allowOverwrite {
 			// get the sum of the file, so we can compare it to the new file
-			w := sha1.New() //nolint:gosec // this is what apk tools is using
+			//
+			// SHA-1 is deliberate: it is apk's Q1 file checksum, the format
+			// apk-tools records in the installed database and in tar headers,
+			// and it is only used to tell whether an existing file is the one a
+			// package shipped. Package contents are authenticated before this
+			// point by the signed APKINDEX and the .apk signature, so a SHA-1
+			// collision here changes nothing about what gets installed.
+			w := sha1.New() //nolint:gosec // apk's Q1 checksum format is SHA-1
 			f, err := a.fs.Open(header.Name)
 			if err != nil {
 				return fmt.Errorf("unable to open existing file to calculate sum %s: %w", header.Name, err)
@@ -84,8 +91,9 @@ func (a *APK) installRegularFile(header *tar.Header, tr *tar.Reader, tmpDir stri
 
 	if checksum == nil {
 		// There was no checksum header, which is unexpected, but we can just recalculate it.
+		// SHA-1 is the Q1 checksum format apk-tools fixes for this record; see writeOneFile.
 
-		w := sha1.New() //nolint:gosec // this is what apk tools is using
+		w := sha1.New() //nolint:gosec // apk's Q1 checksum format is SHA-1
 		tee := io.TeeReader(tr, w)
 
 		// we need to calculate the checksum of the file, and then pass it to the writeOneFile,
@@ -292,14 +300,19 @@ func (a *APK) doInstallAPKFiles(ctx context.Context, in io.Reader, pkg *Package)
 			// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
 			// otherwise, we need to create the directory.
 			// Whether it already exists also decides if we get to set its
-			// metadata below, so keep the error from this one Stat.
-			existing, statErr := a.fs.Stat(header.Name)
+			// metadata below, so keep the error from this one Lstat. It has
+			// to be Lstat: Stat follows the link, so its mode could never
+			// carry ModeSymlink and the special case would never apply.
+			// Stat on the same path then follows the link, resolving a
+			// relative target against the link's own directory, which a Stat
+			// of the raw Readlink value would not. The entry's mode, owner
+			// and xattrs belong to the link's path, not to the directory it
+			// points at, so none of them are applied to the target.
+			existing, statErr := a.fs.Lstat(header.Name)
 			if statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
-				if target, err := a.fs.Readlink(header.Name); err == nil {
-					if fi, err := a.fs.Stat(target); err == nil && fi.IsDir() {
-						// "break" rather than "continue", so that any handling outside of this switch statement is processed
-						break
-					}
+				if fi, err := a.fs.Stat(header.Name); err == nil && fi.IsDir() {
+					// "break" rather than "continue", so that any handling outside of this switch statement is processed
+					break
 				}
 			}
 			mode := header.FileInfo().Mode()

@@ -65,9 +65,10 @@ func buildTestLayer(t *testing.T, compressed bool) (v1.Layer, string, string) {
 }
 
 // goldenCompressedDigest is the gzip digest of buildTestLayer's fixture under
-// the current pgzip level and block size. A deliberate change to either is
+// the current pgzip level and block size. A deliberate change to either, or a
+// klauspost/compress release that changes the deflate encoder's output, is
 // expected to update it.
-const goldenCompressedDigest = "sha256:8bd4b60ed50be8a11f45c8ec53652e3fca95ad67b9eceb78a6dc371135458b7a"
+const goldenCompressedDigest = "sha256:e2391c8141f9bbb8ba8506c5c2202b718bc136f5098f727e41da56727943f207"
 
 func TestCompressedLayerEquivalence(t *testing.T) {
 	legacy, legacyDir, _ := buildTestLayer(t, false)
