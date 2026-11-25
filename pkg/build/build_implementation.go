@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"context"
+	"crypto/sha1" //nolint:gosec // apk package checksums are SHA-1
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -30,6 +31,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/chainguard-dev/clog"
@@ -322,6 +324,10 @@ func (bc *Context) buildImage(ctx context.Context) ([]apk.InstalledDiff, error) 
 		}
 	}
 
+	if err := bc.blockExcluded(ctx); err != nil {
+		return nil, fmt.Errorf("blocking excluded packages: %w", err)
+	}
+
 	// For now adding additional accounts is banned when using base image. On the other hand, we don't want to
 	// wipe out the users set in base.
 	// If one wants to add a support for adding additional users they would need to look into this piece of code.
@@ -553,4 +559,44 @@ func (bc *Context) ResolveWithBase(ctx context.Context) ([]*apk.APKResolved, err
 
 func (bc *Context) InstalledPackages() ([]*apk.InstalledPackage, error) {
 	return bc.apk.GetInstalled()
+}
+
+// excludedPackage is the installed package that conflicts with the !name
+// entries of the world.
+const excludedPackage = ".apko-excluded"
+
+// blockExcluded records excludedPackage with a !name dependency for each
+// !name entry of the world, as glibc depends on !musl. A later apk add of
+// name then fails.
+func (bc *Context) blockExcluded(ctx context.Context) error {
+	world, err := bc.apk.GetWorld()
+	if err != nil {
+		return err
+	}
+	var excluded []string
+	for _, w := range world {
+		if strings.HasPrefix(w, "!") {
+			excluded = append(excluded, w)
+		}
+	}
+	if len(excluded) == 0 {
+		return nil
+	}
+	// apk-tools cannot rewrite its database for a package without a
+	// checksum, so the package gets one from its dependencies.
+	sum := sha1.Sum([]byte(strings.Join(excluded, " "))) //nolint:gosec // apk package checksums are SHA-1
+	pkg := &apk.Package{
+		Name:         excludedPackage,
+		Version:      "0-r0",
+		Arch:         "noarch",
+		Description:  "conflicts with the excluded packages of the image",
+		Dependencies: excluded,
+		Checksum:     sum[:],
+	}
+	if _, err := bc.apk.AddInstalledPackage(pkg, nil); err != nil {
+		return err
+	}
+	// apk keeps a package that no repository has when the world pins its
+	// version, as for apk add --virtual.
+	return bc.apk.SetWorld(ctx, append(world, excludedPackage+"="+pkg.Version))
 }

@@ -824,6 +824,37 @@ func TestExcludedDeps(t *testing.T) {
 	}
 }
 
+// TestWorldConflict checks that a !name entry excludes name and reports it
+// as a conflict.
+func TestWorldConflict(t *testing.T) {
+	providers := map[string][]string{
+		"musl=1.23-r4":      {"so:ld-linux-aarch64.so.1"},
+		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1"},
+	}
+	dependers := map[string][]string{
+		"glibc=2.38-r10": {"so:ld-linux-aarch64.so.1"},
+	}
+
+	resolver := makeResolver(providers, dependers)
+	// Without the exclusion, glibc gets ld-linux.
+	pkgs, conflicts, err := resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc", "!ld-linux"}, nil)
+	require.NoError(t, err)
+
+	wantPkgs := []string{
+		"musl-1.23-r4.apk",
+		"glibc-2.38-r10.apk",
+	}
+	require.Equal(t, []string{"ld-linux"}, conflicts)
+
+	require.Len(t, pkgs, len(wantPkgs))
+	for i, pkg := range pkgs {
+		require.Equal(t, wantPkgs[i], pkg.Filename())
+	}
+
+	_, _, err = resolver.GetPackagesWithDependencies(context.Background(), []string{"glibc", "!"}, nil)
+	require.ErrorContains(t, err, `"!" names no package`)
+}
+
 func TestSameProvidedVersion(t *testing.T) {
 	providers := map[string][]string{
 		"ld-linux=2.38-r10": {"so:ld-linux-aarch64.so.1=1.0"},

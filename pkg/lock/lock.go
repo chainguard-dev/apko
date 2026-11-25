@@ -30,6 +30,9 @@ type LockContents struct {
 	Repositories            []LockRepo    `json:"repositories"`
 	// Packages in order of installation -> for a single architecture.
 	Packages []LockPkg `json:"packages"`
+	// Excluded holds the !name entries of the package list, for every
+	// architecture.
+	Excluded []string `json:"excluded,omitempty"`
 }
 
 type LockPkg struct {
@@ -96,6 +99,9 @@ func (lock Lock) Arch2LockedPackages(archs []types.Architecture) map[string][]st
 				fmt.Sprintf("%s=%s", p.Name, p.Version),
 			)
 		}
+	}
+	for arch, pkgs := range wantedPackages {
+		wantedPackages[arch] = append(pkgs, lock.Contents.Excluded...)
 	}
 	return wantedPackages
 }
