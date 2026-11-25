@@ -184,6 +184,9 @@ func (a *ImageAccounts) validate() error {
 		if u.UID == 0 {
 			return fmt.Errorf("configured user %v has UID 0 (to run as root, use `run-as: 0`)", u)
 		}
+		if u.GECOS != nil && strings.ContainsAny(*u.GECOS, ":\r\n\x00") {
+			return fmt.Errorf("GECOS for user %q contains a colon, line break, or NUL byte", u.UserName)
+		}
 	}
 
 	for _, g := range a.Groups {

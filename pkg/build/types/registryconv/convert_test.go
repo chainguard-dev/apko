@@ -41,11 +41,13 @@ func TestRoundTrip(t *testing.T) {
 		// raw apko service surface.
 		// Format (apko v1.2.38+) is not supported either: the build service
 		// only emits tar layers. TestFormatIsDropped pins that.
+		// User GECOS is available in native apko configs.
 		// We ignore them here to avoid the diff.
 		// https://github.com/chainguard-dev/apko/blob/main/pkg/build/types/types.go#L185-L186
 		if d := cmp.Diff(apko, apko2,
 			cmpopts.IgnoreFields(apkotypes.ImageConfiguration{}, "Include", "Format"),
-			cmpopts.IgnoreFields(apkotypes.ImageContents{}, "BaseImage", "RuntimeKeyring")); d != "" {
+			cmpopts.IgnoreFields(apkotypes.ImageContents{}, "BaseImage", "RuntimeKeyring"),
+			cmpopts.IgnoreFields(apkotypes.User{}, "GECOS")); d != "" {
 			t.Errorf("apko diff(-want,+got): %s", d)
 			return false
 		}

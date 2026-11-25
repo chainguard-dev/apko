@@ -177,7 +177,12 @@ There are several child elements:
     - username: nginx
       uid: 10000
       shell: /bin/sh
+      gecos: "nginx service account"
 ```
+
+   The optional `gecos` field sets the user's comment in `/etc/passwd`. Omitting it uses
+   `Account created by apko`. Use `gecos: ""` for an empty comment.
+
  - `run-as`: name of the user to run the main process under (should match a username or uid specified in
    users)
  - `groups`: list of group names and associated gids to include in the image e.g:

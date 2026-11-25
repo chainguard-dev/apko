@@ -23,8 +23,8 @@ import (
 )
 
 // ToApkoProto converts an apko image configuration to the Registry API's
-// ApkoConfig. Include, Format, Contents.BaseImage and Contents.RuntimeKeyring
-// have no ApkoConfig counterpart and are dropped.
+// ApkoConfig. Include, Format, Contents.BaseImage, Contents.RuntimeKeyring,
+// and user GECOS have no ApkoConfig counterpart and are dropped.
 func ToApkoProto(ic apkotypes.ImageConfiguration) *registryv1.ApkoConfig {
 	return &registryv1.ApkoConfig{
 		Contents: &registryv1.ApkoConfig_Contents{

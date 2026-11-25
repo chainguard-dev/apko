@@ -64,6 +64,9 @@ type User struct {
 	Shell string `json:"shell,omitempty"`
 	// Optional: The user's home directory
 	HomeDir string `json:"homedir,omitempty"`
+	// Optional: The user's GECOS (comment) field in /etc/passwd. Defaults to
+	// "Account created by apko"; an empty string leaves it empty.
+	GECOS *string `json:"gecos,omitempty" yaml:"gecos,omitempty"`
 }
 
 type GID *uint32

@@ -17,6 +17,8 @@ package build
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	apkfs "chainguard.dev/apko/pkg/apk/fs"
 	"chainguard.dev/apko/pkg/build/types"
 )
@@ -28,6 +30,34 @@ var (
 	id1235  = uint32(1235)
 	id1235T = types.GID(&id1235)
 )
+
+func TestMutateAccountsWritesGECOS(t *testing.T) {
+	t.Parallel()
+
+	fsys := apkfs.NewMemFS()
+	require.NoError(t, fsys.MkdirAll("etc", 0o755))
+	const existing = "existing:x:999:999:Existing account:/dev/null:/sbin/nologin\n"
+	require.NoError(t, fsys.WriteFile("etc/passwd", []byte(existing), 0o644))
+
+	ic := &types.ImageConfiguration{
+		Accounts: types.ImageAccounts{
+			Users: []types.User{
+				{UserName: "default", UID: 10000},
+				{UserName: "custom", UID: 10001, GECOS: new("Build worker")},
+				{UserName: "empty", UID: 10002, GECOS: new("")},
+			},
+		},
+	}
+	require.NoError(t, mutateAccounts(fsys, ic))
+
+	got, err := fsys.ReadFile("etc/passwd")
+	require.NoError(t, err)
+	want := existing +
+		"default:x:10000:10000:Account created by apko:/home/default:/bin/sh\n" +
+		"custom:x:10001:10001:Build worker:/home/custom:/bin/sh\n" +
+		"empty:x:10002:10002::/home/empty:/bin/sh\n"
+	require.Equal(t, want, string(got))
+}
 
 func Test_userToUserEntry_UID_GID_mapping(t *testing.T) {
 	for _, test := range []struct {
