@@ -15,12 +15,17 @@
 package cli
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
@@ -170,4 +175,55 @@ func TestDiscoverKeysForLockRejectsCrossOriginWithoutCLIAllowlist(t *testing.T) 
 	_, err := discoverKeysForLock(t.Context(), imageConfig, nil, &http.Client{Transport: transport})
 	require.NoError(t, err)
 	require.False(t, jwksRequested, "a cross-origin JWKS URL must remain blocked without an explicit CLI allowlist")
+}
+
+func TestDiscoverKeysForLockEscapesKeyIDInURL(t *testing.T) {
+	t.Setenv("HTTP_AUTH", "")
+	const repo = "https://repo.example/wolfi"
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	jwksBody, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+		{Key: &rsaKey.PublicKey, KeyID: "rsa-test"},
+		{Key: &rsaKey.PublicKey, KeyID: "a?b#c%2f"},
+	}})
+	require.NoError(t, err)
+
+	transport := lockTestRoundTripper(func(req *http.Request) (*http.Response, error) {
+		var body string
+		switch req.URL.Host + req.URL.Path {
+		case "repo.example/wolfi/apk-configuration":
+			body = `{"jwks_uri":"https://repo.example/jwks"}`
+		case "repo.example/jwks":
+			body = string(jwksBody)
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", req.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}, nil
+	})
+	imageConfig := &types.ImageConfiguration{}
+	imageConfig.Contents.BuildRepositories = []string{repo}
+
+	keys, err := discoverKeysForLock(t.Context(), imageConfig, nil, &http.Client{Transport: transport})
+	require.NoError(t, err)
+	require.Len(t, keys, 2)
+	urls := make(map[string]string, len(keys))
+	requestedPaths := make([]string, 0, len(keys))
+	for _, key := range keys {
+		urls[key.URL] = key.Name
+		parsed, err := url.Parse(key.URL)
+		require.NoError(t, err)
+		requestedPaths = append(requestedPaths, parsed.Path)
+	}
+	require.Equal(t, map[string]string{
+		repo + "/rsa-test.rsa.pub":       "repo.example/wolfi/rsa-test.rsa.pub",
+		repo + "/a%3Fb%23c%252f.rsa.pub": "repo.example/wolfi/a%3Fb%23c%252f.rsa.pub",
+	}, urls, "ordinary key IDs must be unchanged and other key IDs must be escaped as one path segment")
+	require.ElementsMatch(t, []string{"/wolfi/rsa-test.rsa.pub", "/wolfi/a?b#c%2f.rsa.pub"}, requestedPaths,
+		"a consumer fetching the key URL must request the literal key ID as one path segment")
 }

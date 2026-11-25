@@ -1528,6 +1528,11 @@ func DiscoverKeys(ctx context.Context, client *http.Client, auth auth.Authentica
 		if key.KeyID == "" {
 			return nil, fmt.Errorf(`key missing "kid"`)
 		}
+		// The repository chooses the kid and it becomes a file name, so it must
+		// not be able to name a path outside the keys directory.
+		if strings.ContainsAny(key.KeyID, `/\`) || strings.Contains(key.KeyID, "..") {
+			return nil, fmt.Errorf(`invalid "kid" %q: must not contain path separators or ".."`, key.KeyID)
+		}
 		keyName := key.KeyID + ".rsa.pub"
 
 		rsaKey, ok := key.Key.(*rsa.PublicKey)

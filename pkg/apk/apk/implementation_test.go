@@ -1202,6 +1202,61 @@ func TestDiscoverKeysRejectsUnsafeJWKSURIs(t *testing.T) {
 	}
 }
 
+func TestDiscoverKeysRejectsUnsafeKeyIDs(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		kids    []string
+		wantErr string
+		wantIDs []string
+	}{
+		{name: "parent traversal", kids: []string{"../evil"}, wantErr: `invalid "kid" "../evil"`},
+		{name: "forward slash", kids: []string{"a/b"}, wantErr: `invalid "kid" "a/b"`},
+		{name: "backslash", kids: []string{`a\b`}, wantErr: `invalid "kid" "a\\b"`},
+		{name: "dot dot", kids: []string{".."}, wantErr: `invalid "kid" ".."`},
+		{name: "unsafe after safe", kids: []string{"good", "../evil"}, wantErr: `invalid "kid" "../evil"`},
+		{name: "unsafe before safe", kids: []string{"../evil", "good"}, wantErr: `invalid "kid" "../evil"`},
+		{name: "plain file names", kids: []string{"good", "key-1.2"}, wantIDs: []string{"good.rsa.pub", "key-1.2.rsa.pub"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jwks := jose.JSONWebKeySet{}
+			for _, kid := range tt.kids {
+				jwks.Keys = append(jwks.Keys, jose.JSONWebKey{Key: &rsaKey.PublicKey, KeyID: kid})
+			}
+			jwksBody, err := json.Marshal(jwks)
+			require.NoError(t, err)
+
+			transport := discoverKeysRoundTripper(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Path {
+				case "/repo/apk-configuration":
+					return discoveryHTTPResponse(req, http.StatusOK, `{"jwks_uri":"https://repo.example/jwks"}`, nil), nil
+				case "/jwks":
+					return discoveryHTTPResponse(req, http.StatusOK, string(jwksBody), nil), nil
+				default:
+					return nil, fmt.Errorf("unexpected request to %s", req.URL)
+				}
+			})
+
+			keys, err := DiscoverKeys(t.Context(), &http.Client{Transport: transport}, auth.StaticAuth("", "", ""), "https://repo.example/repo")
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, keys, "no keys may be returned when any kid is unsafe")
+				return
+			}
+			require.NoError(t, err)
+			ids := make([]string, 0, len(keys))
+			for _, key := range keys {
+				ids = append(ids, key.ID)
+			}
+			require.Equal(t, tt.wantIDs, ids)
+		})
+	}
+}
+
 func TestDiscoverKeysAllowsExplicitMirrorOrigin(t *testing.T) {
 	const repository = "https://repo.example/wolfi"
 	const jwksOrigin = "https://keys.mirror.example:8443"

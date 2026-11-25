@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -381,10 +382,10 @@ func discoverKeysForLock(ctx context.Context, ic *types.ImageConfiguration, arch
 			log.Debugf("Chainguard-style key discovery failed for %s: %v", repo, err)
 		} else if len(keys) > 0 {
 			log.Debugf("Discovered %d Chainguard-style keys for %s", len(keys), repo)
-			// For each JWKS key, emit a URL: repository + "/" + KeyID
+			// For each JWKS key, emit a URL: repository + "/" + path-escaped KeyID
 			repoBase := strings.TrimSuffix(repo, "/")
 			for _, key := range keys {
-				keyURL := repoBase + "/" + key.ID
+				keyURL := repoBase + "/" + url.PathEscape(key.ID)
 				discoveredKeyMap[keyURL] = pkglock.LockKeyring{
 					Name:    stripURLScheme(keyURL),
 					URL:     keyURL,
