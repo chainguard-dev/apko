@@ -62,6 +62,18 @@ func TestUnify(t *testing.T) {
 			},
 		},
 	}, {
+		name:      "excluded package",
+		originals: []string{"foo", "!bar"},
+		inputs: []resolved{{
+			arch:     "amd64",
+			packages: sets.New("foo"),
+			versions: map[string]string{"foo": "1.2.3"},
+		}},
+		want: map[string][]string{
+			"amd64": {"!bar", "foo=1.2.3"},
+			"index": {"!bar", "foo=1.2.3"},
+		},
+	}, {
 		name:      "locked versions",
 		originals: []string{"foo=1.2.3", "bar=2.4.6", "baz=0.0.1"},
 		inputs: []resolved{{

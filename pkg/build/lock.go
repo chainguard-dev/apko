@@ -177,7 +177,14 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 
 	byArch := map[string][]string{}
 
+	// A !name entry installs nothing. Keep it as is in every locked list.
+	var excluded []string
+
 	for _, orig := range originals {
+		if strings.HasPrefix(orig, "!") {
+			excluded = append(excluded, orig)
+			continue
+		}
 		name := orig
 		version := ""
 		pinned := ""
@@ -309,6 +316,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 		}
 		pl = append(pl, pkgName)
 	}
+	pl = append(pl, excluded...)
 	// Sort the package list explicitly with the `=` included.
 	// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
 	// due to the presence or absence of the `=` character.
@@ -327,6 +335,7 @@ func unify(originals []string, inputs []resolved) (map[string][]string, map[stri
 			}
 			pl = append(pl, pkgName)
 		}
+		pl = append(pl, excluded...)
 		// Sort the package list explicitly with the `=` included.
 		// This is because (foo, foo-bar) sorts differently than (foo=1, foo-bar=1)
 		// due to the presence or absence of the `=` character.
