@@ -18,7 +18,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // apk package checksums are SHA-1
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -584,7 +584,7 @@ func (bc *Context) blockExcluded(ctx context.Context) error {
 	}
 	// apk-tools cannot rewrite its database for a package without a
 	// checksum, so the package gets one from its dependencies.
-	sum := sha1.Sum([]byte(strings.Join(excluded, " "))) // #nosec G401 -- apk package checksums are SHA-1
+	sum := sha1.Sum([]byte(strings.Join(excluded, " "))) //nolint:gosec // apk package checksums are SHA-1
 	pkg := &apk.Package{
 		Name:         excludedPackage,
 		Version:      "0-r0",
