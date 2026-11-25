@@ -168,6 +168,11 @@ func LockCmd(ctx context.Context, output string, archs []types.Architecture, opt
 			Keyrings:                make([]pkglock.LockKeyring, 0, len(ic.Contents.Keyring)),
 		},
 	}
+	for _, p := range ic.Contents.Packages {
+		if strings.HasPrefix(p, "!") {
+			lock.Contents.Excluded = append(lock.Contents.Excluded, p)
+		}
+	}
 
 	explicitClient := &http.Client{}
 	for _, keyring := range ic.Contents.Keyring {

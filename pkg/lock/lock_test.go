@@ -15,6 +15,7 @@
 package lock
 
 import (
+	"slices"
 	"testing"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -38,5 +39,24 @@ func TestArch2LockedPackages(t *testing.T) {
 	archs := []types.Architecture{types.ParseArchitecture("arm64")}
 	if got, want := len(l.Arch2LockedPackages(archs)), 1; got != want {
 		t.Errorf("wanted %d arch, got %d", want, got)
+	}
+}
+
+func TestArch2LockedPackagesExcluded(t *testing.T) {
+	l := Lock{
+		Contents: LockContents{
+			Packages: []LockPkg{{
+				Name:         "glibc",
+				Version:      "2.38-r10",
+				Architecture: "x86_64",
+			}},
+			Excluded: []string{"!musl"},
+		},
+	}
+
+	got := l.Arch2LockedPackages([]types.Architecture{types.ParseArchitecture("amd64")})
+	want := []string{"glibc=2.38-r10", "!musl"}
+	if !slices.Equal(got["amd64"], want) {
+		t.Errorf("got %v, want %v", got["amd64"], want)
 	}
 }
