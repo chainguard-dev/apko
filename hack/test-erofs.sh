@@ -82,6 +82,21 @@ fail() {
     exit 1
 }
 
+# image_manifest LAYOUT prints the path of the (single, --arch=host) image
+# manifest in an OCI layout, through the image index that index.json points at.
+image_manifest() {
+    local index manifest
+    [ "$(jq -r '.manifests | length' "$1/index.json")" = 1 ] ||
+        fail "expected a single entry in $1/index.json"
+    index=$(jq -r '.manifests[0].digest | split(":")[1]' "$1/index.json")
+    [[ "${index}" =~ ^[0-9a-f]{64}$ ]] || fail "bad index digest: ${index}"
+    [ "$(jq -r '.manifests | length' "$1/blobs/sha256/${index}")" = 1 ] ||
+        fail "expected a single manifest for --arch=host"
+    manifest=$(jq -r '.manifests[0].digest | split(":")[1]' "$1/blobs/sha256/${index}")
+    [[ "${manifest}" =~ ^[0-9a-f]{64}$ ]] || fail "bad manifest digest: ${manifest}"
+    echo "$1/blobs/sha256/${manifest}"
+}
+
 assert_mounted() {
     mountpoint -q "$1" || fail "expected $1 to be a mountpoint"
 }
@@ -156,21 +171,17 @@ echo "::group::build ${name} as erofs"
 echo "::endgroup::"
 
 # Resolve the layer blob through the OCI index, as docs/erofs.md describes.
-[ "$(jq -r '.manifests | length' "${out}/index.json")" = 1 ] ||
-    { echo "expected a single manifest for --arch=host" >&2; exit 1; }
-manifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${out}/index.json")
-[[ "${manifest}" =~ ^[0-9a-f]{64}$ ]] ||
-    { echo "bad manifest digest: ${manifest}" >&2; exit 1; }
+manifest=$(image_manifest "${out}")
 
 # Without `layering` in the config, apko emits exactly one layer.
-[ "$(jq -r '.layers | length' "${out}/blobs/sha256/${manifest}")" = 1 ] ||
+[ "$(jq -r '.layers | length' "${manifest}")" = 1 ] ||
     { echo "expected a single layer" >&2; exit 1; }
-layer=$(jq -r '.layers[0].digest | split(":")[1]' "${out}/blobs/sha256/${manifest}")
+layer=$(jq -r '.layers[0].digest | split(":")[1]' "${manifest}")
 [[ "${layer}" =~ ^[0-9a-f]{64}$ ]] ||
     { echo "bad layer digest: ${layer}" >&2; exit 1; }
 
 blob="${out}/blobs/sha256/${layer}"
-mediatype=$(jq -r '.layers[0].mediaType' "${out}/blobs/sha256/${manifest}")
+mediatype=$(jq -r '.layers[0].mediaType' "${manifest}")
 [ "${mediatype}" = "application/vnd.erofs" ] ||
     { echo "unexpected layer mediaType: ${mediatype}" >&2; exit 1; }
 
@@ -380,10 +391,7 @@ echo "::group::build ${name} as layered erofs, and as layered tar to compare"
     --arch=host --lockfile "${lock}"
 echo "::endgroup::"
 
-lmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${lout}/index.json")
-[[ "${lmanifest}" =~ ^[0-9a-f]{64}$ ]] ||
-    fail "bad layered manifest digest: ${lmanifest}"
-lmanifest="${lout}/blobs/sha256/${lmanifest}"
+lmanifest=$(image_manifest "${lout}")
 
 nlayers=$(jq -r '.layers | length' "${lmanifest}")
 [ "${nlayers}" -gt 1 ] ||
@@ -469,8 +477,7 @@ echo "::endgroup::"
 echo "::group::compare the merged tree against the tar build of the same config"
 tarroot="${workdir}/tarroot"
 mkdir -p "${tarroot}"
-tmanifest=$(jq -r '.manifests[0].digest | split(":")[1]' "${tout}/index.json")
-tmanifest="${tout}/blobs/sha256/${tmanifest}"
+tmanifest=$(image_manifest "${tout}")
 while read -r digest; do
     [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
         fail "bad tar layer digest: ${digest}"
