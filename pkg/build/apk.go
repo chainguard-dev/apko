@@ -34,8 +34,8 @@ func (bc *Context) postBuildSetApk(ctx context.Context) error {
 		Insert(bc.ic.Contents.RuntimeOnlyRepositories...).
 		Insert(bc.o.ExtraRepos...)
 	runtimeRepos := sets.List(runtimeRepoSet)
-	if err := bc.apk.SetRepositories(ctx, runtimeRepos); err != nil {
-		return fmt.Errorf("failed to set apk repositories: %w", err)
+	if err := bc.apk.WriteRuntimeRepositories(ctx, runtimeRepos); err != nil {
+		return fmt.Errorf("failed to write apk repositories: %w", err)
 	}
 
 	regularRuntimeRepos := sets.List(sets.New(bc.ic.Contents.Repositories...).Insert(bc.o.ExtraRepos...))

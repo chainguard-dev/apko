@@ -95,6 +95,11 @@ type APK struct {
 	// This is a map of arch to apk.APK for every arch in a mult-arch situation.
 	// It's stuffed here to avoid plumbing it across every method, but it's optional.
 	ByArch map[string]*APK
+
+	// repos is the repository list set by SetRepositories, which this APK
+	// resolves against. Sibling arches in ByArch read it concurrently.
+	reposMu sync.RWMutex
+	repos   []string
 }
 
 // apkIndexDecompressedMaxSize returns the configured max decompressed APK index size or 0 for default.
