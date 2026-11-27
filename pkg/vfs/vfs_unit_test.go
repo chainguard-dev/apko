@@ -23,6 +23,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// chownTargetID returns an id to chown to that differs from current, so the
+// test can observe the ownership change whichever uid owns the testdata.
+func chownTargetID(current uint32) uint32 {
+	if current == 65532 {
+		return 65533
+	}
+	return 65532
+}
+
+func TestChownTargetID(t *testing.T) {
+	for _, current := range []uint32{0, 1000, 65532, 65533} {
+		require.NotEqual(t, current, chownTargetID(current), "target must differ from current id %d", current)
+	}
+}
+
 func TestVFS(t *testing.T) {
 	var (
 		st1            *syscall.Stat_t
@@ -60,9 +75,10 @@ func TestVFS(t *testing.T) {
 	} else {
 		uid = st2.Uid
 	}
-	assert.NotEqual(t, uid, uint32(65532), "Uid should not be 65532")
+	target := chownTargetID(uid)
+	require.NotEqual(t, uid, target, "Uid should not be %d before chown", target)
 
-	err = vfs.Chown("./etc/motd", 65532, 65532)
+	err = vfs.Chown("./etc/motd", target, target)
 	require.NoError(t, err)
 
 	fi, err = vfs.Stat("./etc/motd")
@@ -80,8 +96,8 @@ func TestVFS(t *testing.T) {
 		uid = st2.Uid
 		gid = st2.Gid
 	}
-	assert.Equal(t, uid, uint32(65532), "Uid must be 65532")
-	assert.Equal(t, gid, uint32(65532), "Gid must be 65532")
+	assert.Equal(t, uid, target, "Uid must be %d", target)
+	assert.Equal(t, gid, target, "Gid must be %d", target)
 
 	dentry, err = vfs.ReadDir("./etc")
 	require.NoError(t, err)
@@ -105,8 +121,8 @@ func TestVFS(t *testing.T) {
 		gid = st2.Gid
 	}
 
-	require.Equal(t, uid, uint32(65532), "Uid must be 65532")
-	require.Equal(t, gid, uint32(65532), "Gid must be 65532")
+	require.Equal(t, uid, target, "Uid must be %d", target)
+	require.Equal(t, gid, target, "Gid must be %d", target)
 
 	err = vfs.Chmod("./etc/motd", 0755)
 	require.NoError(t, err)
