@@ -99,7 +99,8 @@ type repositoryPackage struct {
 	pinnedName string
 }
 
-// SetRepositories sets the contents of /etc/apk/repositories file.
+// SetRepositories sets the repositories this APK resolves against and writes
+// them to /etc/apk/repositories.
 // The base directory of /etc/apk must already exist, i.e. this only works on an initialized APK database.
 func (a *APK) SetRepositories(ctx context.Context, repos []string) error {
 	ctx, span := otel.Tracer("go-apk").Start(ctx, "SetRepositories")
@@ -107,6 +108,29 @@ func (a *APK) SetRepositories(ctx context.Context, repos []string) error {
 
 	clog.DebugContextf(ctx, "setting apk repositories: %v", repos)
 
+	if err := a.writeRepositories(repos); err != nil {
+		return err
+	}
+
+	a.reposMu.Lock()
+	defer a.reposMu.Unlock()
+	a.repos = slices.Clone(repos)
+
+	return nil
+}
+
+// WriteRuntimeRepositories writes repos to /etc/apk/repositories for the final
+// image, without changing the repositories this APK resolves against. Sibling
+// arches in ByArch may still be resolving against them.
+func (a *APK) WriteRuntimeRepositories(ctx context.Context, repos []string) error {
+	ctx, span := otel.Tracer("go-apk").Start(ctx, "WriteRuntimeRepositories")
+	defer span.End()
+
+	clog.DebugContextf(ctx, "writing runtime apk repositories: %v", repos)
+	return a.writeRepositories(repos)
+}
+
+func (a *APK) writeRepositories(repos []string) error {
 	if len(repos) == 0 {
 		return fmt.Errorf("must provide at least one repository")
 	}
@@ -122,7 +146,17 @@ func (a *APK) SetRepositories(ctx context.Context, repos []string) error {
 	return nil
 }
 
+// GetRepositories returns the repositories this APK resolves against: the ones
+// set by SetRepositories, or the contents of /etc/apk/repositories if it wasn't
+// called, e.g. when operating on an existing root.
 func (a *APK) GetRepositories() (repos []string, err error) {
+	a.reposMu.RLock()
+	repos = slices.Clone(a.repos)
+	a.reposMu.RUnlock()
+	if repos != nil {
+		return repos, nil
+	}
+
 	// get the repository URLs
 	reposFile, err := a.fs.Open(reposFilePath)
 	if err != nil {
