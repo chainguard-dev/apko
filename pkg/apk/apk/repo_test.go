@@ -771,7 +771,7 @@ func TestSortPackages(t *testing.T) {
 				pkgs            []*RepositoryPackage
 				pkg             *RepositoryPackage
 				existing        = map[string]*RepositoryPackage{}
-				existingOrigins = map[string]string{}
+				existingOrigins = originVersions{}
 			)
 			for _, pkg := range tt.pkgs {
 				// we cheat and use the InstalledSize for the preferred order, so that it gets carried around.
@@ -785,7 +785,7 @@ func TestSortPackages(t *testing.T) {
 			}
 			for _, pkg := range tt.existing {
 				existing[pkg.pkg.Name] = NewRepositoryPackage(pkg.pkg, &RepositoryWithIndex{Repository: &Repository{URI: pkg.repo}})
-				existingOrigins[pkg.pkg.Origin] = pkg.pkg.Version
+				existingOrigins.add(pkg.pkg.Origin, pkg.pkg.Version)
 			}
 			namedPkgs := testNamedPackageFromPackages(pkgs)
 			pr := NewPkgResolver(context.Background(), []NamedIndex{})
@@ -1007,6 +1007,55 @@ func TestSameOriginVersionBeatsStaleProviderPriority(t *testing.T) {
 	}
 	require.Contains(t, got, "py3.10-pybind11-3.0.4-r0.apk", "should select the current build of py3.10-pybind11")
 	require.NotContains(t, got, "py3.10-pybind11-2.13.6-r1.apk", "should not select the stale higher-priority build")
+}
+
+// An origin can be selected at two versions at once, here icu 79.1 (via
+// dotnet-runtime) and libicu78 from icu 78.3 (via libre2) during a soname
+// transition. The same-origin heuristic must then accept either version
+// instead of whichever was recorded last, or it picks icu-dev 78.3, which
+// needs icu 78.3 and conflicts with the installed icu 79.1.
+// https://github.com/chainguard-dev/apko/issues/2607
+func TestSameOriginSelectedAtTwoVersions(t *testing.T) {
+	repo := Repository{}
+	index := repo.WithIndex(&APKIndex{
+		Packages: []*Package{
+			{Name: "icu", Version: "79.1-r0", Origin: "icu", Provides: []string{"cmd:derb=79.1-r0"}, Dependencies: []string{"libicu79"}},
+			{Name: "libicu79", Version: "79.1-r0", Origin: "icu", Provides: []string{"so:libicuuc.so.79=79"}},
+			{Name: "icu-dev", Version: "79.1-r0", Origin: "icu", Dependencies: []string{"icu", "so:libicuuc.so.79"}},
+			{Name: "icu", Version: "78.3-r4", Origin: "icu", Provides: []string{"cmd:derb=78.3-r4", "so:libicutest.so.78=78"}, Dependencies: []string{"libicu78"}},
+			{Name: "libicu78", Version: "78.3-r4", Origin: "icu", Provides: []string{"so:libicuuc.so.78=78"}},
+			{Name: "icu-dev", Version: "78.3-r4", Origin: "icu", Dependencies: []string{"icu", "so:libicutest.so.78"}},
+			{Name: "dotnet-runtime", Version: "10.0-r0", Origin: "dotnet", Dependencies: []string{"icu"}},
+			{Name: "libre2", Version: "1-r0", Origin: "re2", Dependencies: []string{"so:libicuuc.so.78"}},
+			{Name: "re2-dev", Version: "1-r0", Origin: "re2", Dependencies: []string{"icu-dev", "libre2"}},
+		},
+	})
+	for _, names := range [][]string{
+		// existing holds icu 79.1 and libicu78 78.3 when re2-dev is resolved,
+		// so the recorded icu version depended on map iteration order.
+		{"dotnet-runtime", "libre2", "re2-dev"},
+		// libre2 is resolved inside the re2-dev walk and recorded icu 78.3
+		// last, so this failed every time.
+		{"dotnet-runtime", "re2-dev"},
+	} {
+		t.Run(strings.Join(names, ","), func(t *testing.T) {
+			// The first case depends on map iteration order, so repeat it.
+			for range 50 {
+				resolver := NewPkgResolver(context.Background(), testNamedRepositoryFromIndexes([]*RepositoryWithIndex{index}))
+				pkgs, _, err := resolver.GetPackagesWithDependencies(context.Background(), names, nil)
+				require.NoError(t, err)
+
+				got := make([]string, 0, len(pkgs))
+				for _, p := range pkgs {
+					got = append(got, p.Filename())
+				}
+				require.Contains(t, got, "icu-79.1-r0.apk")
+				require.Contains(t, got, "icu-dev-79.1-r0.apk")
+				require.Contains(t, got, "libicu78-78.3-r4.apk")
+				require.Contains(t, got, "libicu79-79.1-r0.apk")
+			}
+		})
+	}
 }
 
 // Provider priority arbitrates between different packages providing the same
