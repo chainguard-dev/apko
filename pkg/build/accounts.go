@@ -49,13 +49,17 @@ func userToUserEntry(user types.User) passwd.UserEntry {
 	if user.GID != nil {
 		gid = *user.GID
 	}
+	info := "Account created by apko"
+	if user.GECOS != nil {
+		info = *user.GECOS
+	}
 	return passwd.UserEntry{
 		UserName: user.UserName,
 		UID:      user.UID,
 		GID:      gid,
 		HomeDir:  user.HomeDir,
 		Password: "x",
-		Info:     "Account created by apko",
+		Info:     info,
 		Shell:    user.Shell,
 	}
 }

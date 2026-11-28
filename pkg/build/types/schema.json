@@ -339,6 +339,10 @@
         "homedir": {
           "type": "string",
           "description": "Optional: The user's home directory"
+        },
+        "gecos": {
+          "type": "string",
+          "description": "Optional: The user's GECOS (comment) field in /etc/passwd. Defaults to\n\"Account created by apko\"; an empty string leaves it empty."
         }
       },
       "additionalProperties": false,

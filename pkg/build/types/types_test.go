@@ -391,3 +391,17 @@ homedir: ""
 		}
 	}
 }
+
+func TestUserGECOSYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	for _, gecos := range []string{"Build worker", ""} {
+		user := User{UserName: "app", UID: id1234, GECOS: new(gecos)}
+		data, err := yaml.Marshal(user)
+		require.NoError(t, err)
+
+		var decoded User
+		require.NoError(t, yaml.Unmarshal(data, &decoded))
+		require.Equal(t, user, decoded)
+	}
+}

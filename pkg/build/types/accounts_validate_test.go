@@ -17,6 +17,8 @@ package types_test
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -51,4 +53,30 @@ func TestValidateRejectsUID0User(t *testing.T) {
 	ic.Accounts.Users = []types.User{{UserName: "app", UID: 65532}}
 	require.NoError(t, ic.Validate())
 	require.Equal(t, "/home/app", ic.Accounts.Users[0].HomeDir, "Validate still fills in the home directory")
+}
+
+func TestLoadRejectsInvalidGECOS(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		gecos string
+	}{
+		{name: "colon", gecos: "name:comment"},
+		{name: "newline", gecos: "name\ncomment"},
+		{name: "carriage return", gecos: "name\rcomment"},
+		{name: "NUL", gecos: "name\x00comment"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "apko.yaml")
+			config := fmt.Sprintf("accounts:\n  users:\n    - username: app\n      uid: 65532\n      gecos: %q\n", test.gecos)
+			require.NoError(t, os.WriteFile(path, []byte(config), 0o644))
+
+			var ic types.ImageConfiguration
+			err := ic.Load(t.Context(), path, nil, sha256.New())
+			require.ErrorContains(t, err, "GECOS for user \"app\" contains")
+		})
+	}
 }
