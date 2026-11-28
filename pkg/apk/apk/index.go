@@ -121,10 +121,6 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
-		}
-
 		fetchAndParse := func(etag string) (NamedIndex, error) {
 			b, _, err := fetchRepositoryIndex(ctx, u, etag, opts)
 			if err != nil {
@@ -135,6 +131,19 @@ func (i *indexCache) get(ctx context.Context, repoName, repoURL string, keys map
 				return nil, fmt.Errorf("parsing %s: %w", asURL.Redacted(), err)
 			}
 			return NewNamedRepositoryWithIndex(repoName, repoRef.WithIndex(idx)), nil
+		}
+
+		if headUnsupported(resp.StatusCode) {
+			// Some servers (e.g. Gitea and Forgejo package registries) and
+			// middleboxes refuse HEAD for the index even though GET works.
+			// Without a HEAD there is no etag to key the cache on, so fetch
+			// the index directly, as we do when the server sends no etag.
+			apkometrics.RecordIndexCacheAccess(apkometrics.CacheResultBypass)
+			return fetchAndParse("")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 		}
 
 		etag, ok := etagFromResponse(resp)
@@ -196,6 +205,13 @@ func cacheResult(hit bool) apkometrics.CacheResult {
 		return apkometrics.CacheResultHit
 	}
 	return apkometrics.CacheResultMiss
+}
+
+// headUnsupported reports whether status is how a server says it will not
+// answer a HEAD request for a resource, as opposed to the resource being
+// missing or inaccessible. A GET for the same resource may still succeed.
+func headUnsupported(status int) bool {
+	return status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented
 }
 
 // IndexURL returns the full URL to the index file for the given repo and arch.
