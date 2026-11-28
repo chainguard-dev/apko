@@ -11,8 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-apiVersion: tekton.dev/v1beta1
+apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: apko
@@ -21,23 +20,23 @@ spec:
   params:
     - name: dev.mink.sources.bundle
       description: A self-extracting container image of source
+      type: string
     - name: dev.mink.images.target
       description: Where to publish an image.
+      type: string
     - name: path
       description: The bundle-relative path to the config file to build.
       default: .apko.yaml
-
+      type: string
   results:
     - name: IMAGES
       description: The list of images produced by this task (for chains)
     - name: dev.mink.images.digest
       description: The digest of the resulting image.
-
   steps:
     - name: extract-bundle
       image: $(params["dev.mink.sources.bundle"])
       workingDir: /workspace
-
     - name: build-and-push-image
       image: ko://chainguard.dev/apko
       workingDir: /workspace
@@ -46,7 +45,6 @@ spec:
       - --image-refs=/tekton/results/IMAGES
       - $(params["path"])
       - $(params["dev.mink.images.target"])
-
     # mink wants just the digest in its result, but the above produces
     # a fully qualified digest.
     - name: massage-digest
