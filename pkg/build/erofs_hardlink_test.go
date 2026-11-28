@@ -27,6 +27,7 @@ import (
 	"testing/fstest"
 
 	erofs "github.com/erofs/go-erofs"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -420,3 +421,122 @@ type fakeInfo struct {
 }
 
 func (f *fakeInfo) Sys() any { return f.sys }
+
+// TestSplitErofsLayers_HardlinksShareOneInode is the layered counterpart of
+// TestWriteErofs_HardlinksShareOneInode and TestWriteErofs_HardlinksCostOneCopy:
+// a link and its target owned by the same package land in the same group
+// layer, which has everything it needs to share the inode.
+func TestSplitErofsLayers_HardlinksShareOneInode(t *testing.T) {
+	// Comfortably more than one 4K block, so a second copy cannot hide in
+	// padding.
+	data := string(make([]byte, 64*1024))
+	names := []string{"usr/bin/coreutils", "usr/bin/[", "usr/bin/yes"}
+
+	split := func(links ...string) []v1.Layer {
+		t.Helper()
+
+		pkg1, pkg2 := newPkg("pkg1"), newPkg("pkg2")
+		m := tarfsFixture(t, []entry{
+			dirEntry("usr/lib/apk/db"),
+			{path: "usr/lib/apk/db/installed", data: "pkg1 info\npkg2 info\n"},
+			{path: linkedFile, data: data, pkg: pkg1},
+			{path: "usr/bin/two", data: "two\n", pkg: pkg2},
+		})
+		// tarfs hangs a link name off its target's node, so the owning
+		// package comes along with it.
+		for _, l := range links {
+			writeTarfsLink(t, m.(tarfsWriter), l, linkedFile)
+		}
+
+		groups := []*group{
+			{pkgs: []*apk.Package{pkg1}, size: 2000, tiebreaker: "pkg1"},
+			{pkgs: []*apk.Package{pkg2}, size: 1000, tiebreaker: "pkg2"},
+		}
+		pkgToDiff := map[*apk.Package][]byte{
+			pkg1: []byte("pkg1 info\n"),
+			pkg2: []byte("pkg2 info\n"),
+		}
+		layers, err := splitErofsLayers(context.Background(), m, groups, pkgToDiff, t.TempDir(), epoch)
+		require.NoError(t, err)
+		require.Len(t, layers, 3)
+		return layers
+	}
+
+	layers := split(names[1:]...)
+
+	// Every name routes with the package that owns the inode, and only there.
+	group1, group2, top := layerPaths(t, layers[0]), layerPaths(t, layers[1]), layerPaths(t, layers[2])
+	for _, name := range names {
+		require.Contains(t, group1, name)
+		require.NotContains(t, group2, name)
+		require.NotContains(t, top, name)
+	}
+
+	erl, ok := layers[0].(*erofsLayer)
+	require.True(t, ok, "layer is not an *erofsLayer")
+	img := openImage(t, erl.path)
+
+	// One inode, three names, and the metadata that hangs off it.
+	want := statOf(t, img, linkedFile)
+	require.EqualValues(t, len(names), want.Nlink, "link count")
+	for _, name := range names {
+		content, err := fs.ReadFile(img, name)
+		require.NoError(t, err, "reading %s", name)
+		require.Equal(t, data, string(content), "content mismatch for %s", name)
+		require.Equal(t, want.Ino, statOf(t, img, name).Ino, "%s does not share the inode", name)
+	}
+
+	// Two more dirents cost a little metadata; two more copies of a 64K file
+	// would cost 128K.
+	size := func(l v1.Layer) int64 {
+		t.Helper()
+		n, err := l.Size()
+		require.NoError(t, err)
+		return n
+	}
+	alone := split()
+	require.Less(t, size(layers[0])-size(alone[0]), int64(32*1024),
+		"two hardlinks grew the group layer by %d bytes, which looks like copied data", size(layers[0])-size(alone[0]))
+
+	if fsckBin := optionalFsckErofs(t); fsckBin != "" {
+		for i, l := range layers {
+			erl, ok := l.(*erofsLayer)
+			require.True(t, ok, "layer[%d] is not an *erofsLayer", i)
+			output, err := exec.Command(fsckBin, "-d3", erl.path).CombinedOutput()
+			require.NoError(t, err, "fsck.erofs rejected layer[%d]:\n%s", i, output)
+		}
+	}
+}
+
+// TestSplitErofsLayers_HardlinkWithoutTargetInLayerIsCopied covers the
+// fallback in a layered build. The Linkname reaches its target through /lib,
+// a symlink no package owns, so the group layer that receives the link holds
+// the file but has nothing at "/lib/libfoo.so" to share. It gets a copy, the
+// same as writeErofs gives it, rather than failing the build.
+func TestSplitErofsLayers_HardlinkWithoutTargetInLayerIsCopied(t *testing.T) {
+	const data = "not really a shared object\n"
+
+	pkg1 := newPkg("pkg1")
+	m := tarfsFixture(t, []entry{
+		dirEntry("usr/lib/apk/db"),
+		{path: "usr/lib/apk/db/installed", data: "pkg1 info\n"},
+		{path: "usr/lib/libfoo.so", data: data, pkg: pkg1},
+	})
+	require.NoError(t, m.Symlink("usr/lib", "lib"))
+	writeTarfsLink(t, m.(tarfsWriter), "usr/bin/libfoo.so", "lib/libfoo.so")
+
+	groups := []*group{{pkgs: []*apk.Package{pkg1}, size: 1000, tiebreaker: "pkg1"}}
+	pkgToDiff := map[*apk.Package][]byte{pkg1: []byte("pkg1 info\n")}
+	layers, err := splitErofsLayers(context.Background(), m, groups, pkgToDiff, t.TempDir(), epoch)
+	require.NoError(t, err)
+	require.Len(t, layers, 2)
+
+	require.Equal(t, data, string(readLayerFile(t, layers[0], "usr/bin/libfoo.so")))
+	require.NotContains(t, layerPaths(t, layers[1]), "usr/bin/libfoo.so")
+
+	erl, ok := layers[0].(*erofsLayer)
+	require.True(t, ok, "layer is not an *erofsLayer")
+	img := openImage(t, erl.path)
+	require.NotEqual(t, statOf(t, img, "usr/lib/libfoo.so").Ino, statOf(t, img, "usr/bin/libfoo.so").Ino,
+		"the layer had nothing at the Linkname to share")
+}
