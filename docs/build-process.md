@@ -1,3 +1,4 @@
+---
 # apko Build Process
 
 apko builds an OCI-compliant image, stored in a tar file, that can then be loaded into a container runtime.
@@ -24,7 +25,7 @@ The process is as follows:
 1. Refresh the `build.Context`, which sets initialization and runtime parameters, such as isolation, working directory, the executor and the s6 context.
 1. Build the layer in the working directory, the heart of the build, calling [`build.Context.BuildLayer()`](../pkg/build/build.go#L80-109). This results in the entire laid out filesystem packaged up into a `.tar.gz` file. More detail on this follows later in this document.
 1. Generate an SBoM.
-1. Generate an OCI image tar file from the single layer `.tar.gz` file in [`oci.BuildImageTarballFromLayer()`](../pkg/build/oci/oci.go#L285).
+1. Generate an OCI image tar file from the single layer `.tar.gz` file in [`oci.BuildImageTarballFromLayer()`](../pkg/build/oci/oci.go#L285). Note that `apko build` appends the architecture to user-specified tag names (e.g. `image:latest-amd64`).
 
 ## Layer Build
 
